@@ -5427,7 +5427,7 @@ export default function StockTAssistant() {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ── News Analysis State ──
+  // ── News Analysis State (with localStorage caching) ──
   const [showNewsAnalysis, setShowNewsAnalysis] = useState(true);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsData, setNewsData] = useState<{
@@ -5436,6 +5436,52 @@ export default function StockTAssistant() {
     stock?: any;
   }>({});
   const [newsActiveTab, setNewsActiveTab] = useState<"market" | "sector" | "stock">("market");
+
+  // ── News localStorage cache helpers ──
+  const getNewsCacheKey = useCallback((sym: string) => {
+    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" }); // YYYY-MM-DD
+    return `news_${sym}_${today}`;
+  }, []);
+
+  const saveNewsCache = useCallback((sym: string, data: { market?: any; sector?: any; stock?: any }) => {
+    try {
+      const key = getNewsCacheKey(sym);
+      localStorage.setItem(key, JSON.stringify({ data, savedAt: Date.now() }));
+    } catch {}
+  }, [getNewsCacheKey]);
+
+  const loadNewsCache = useCallback((sym: string): { market?: any; sector?: any; stock?: any } | null => {
+    try {
+      const key = getNewsCacheKey(sym);
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // Only use cache if saved today and within 4 hours
+      if (parsed.savedAt && Date.now() - parsed.savedAt < 4 * 60 * 60 * 1000) {
+        return parsed.data;
+      }
+      // Expired – remove stale cache
+      localStorage.removeItem(key);
+      return null;
+    } catch {
+      return null;
+    }
+  }, [getNewsCacheKey]);
+
+  // Clean up stale news cache entries from previous days (run once on mount)
+  useEffect(() => {
+    try {
+      const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" });
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("news_") && !k.includes(today)) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch {}
+  }, []);
 
   // ── Menu Bar Stocks (persisted to localStorage) ──
   // Initialize with default to avoid hydration mismatch (localStorage read after mount)
@@ -5686,8 +5732,17 @@ export default function StockTAssistant() {
   }, [selectStock]);
 
   // ── News Analysis: fetch data from API ──
-  const fetchNewsAnalysis = useCallback(async () => {
-    setNewsLoading(true);
+  // Use a ref to avoid newsData in the dependency array (prevents re-render loops)
+  const newsDataRef = useRef(newsData);
+  newsDataRef.current = newsData;
+
+  const fetchNewsAnalysis = useCallback(async (options?: { incremental?: boolean }) => {
+    const isIncremental = options?.incremental === true;
+    const currentNewsData = newsDataRef.current;
+    // For incremental mode, don't show loading spinner if we already have data
+    if (!isIncremental || !currentNewsData.market) {
+      setNewsLoading(true);
+    }
     try {
       const stockName = quote?.name || symbol;
       const sectorName = sectorInfo?.name || "";
@@ -5696,6 +5751,18 @@ export default function StockTAssistant() {
       params.set("stockName", stockName);
       params.set("sectorName", sectorName);
 
+      // In incremental mode, send lastTimestamp for each tab so server can skip if data unchanged
+      if (isIncremental) {
+        params.set("mode", "incremental");
+        const lastTs = [currentNewsData.market, currentNewsData.sector, currentNewsData.stock]
+          .filter(Boolean)
+          .map((d: any) => d.timestamp)
+          .filter(Boolean)
+          .sort()
+          .pop(); // latest timestamp across all tabs
+        if (lastTs) params.set("lastTimestamp", lastTs);
+      }
+
       const [marketRes, sectorRes, stockRes] = await Promise.allSettled([
         fetch(`/api/stock/news-analysis?${params}&type=market`),
         sectorName ? fetch(`/api/stock/news-analysis?${params}&type=sector`) : Promise.resolve(null),
@@ -5703,29 +5770,69 @@ export default function StockTAssistant() {
       ]);
 
       const newData: any = {};
+      let anyUpdate = false;
       if (marketRes.status === "fulfilled" && marketRes.value) {
         const m = await marketRes.value.json();
-        if (m.success) newData.market = m;
+        if (m.success && !m.noUpdate) { newData.market = m; anyUpdate = true; }
       }
       if (sectorRes.status === "fulfilled" && sectorRes.value) {
         const s = await sectorRes.value.json();
-        if (s.success) newData.sector = s;
+        if (s.success && !s.noUpdate) { newData.sector = s; anyUpdate = true; }
       }
       if (stockRes.status === "fulfilled" && stockRes.value) {
         const st = await stockRes.value.json();
-        if (st.success) newData.stock = st;
+        if (st.success && !st.noUpdate) { newData.stock = st; anyUpdate = true; }
       }
-      setNewsData(newData);
+
+      if (anyUpdate) {
+        // Use functional update to merge with latest state (avoids stale closure)
+        setNewsData(prev => {
+          const merged = { ...prev };
+          if (newData.market) merged.market = newData.market;
+          if (newData.sector) merged.sector = newData.sector;
+          if (newData.stock) merged.stock = newData.stock;
+          saveNewsCache(symbol, merged);
+          return merged;
+        });
+      }
     } catch (e) {
       console.error("News analysis fetch error:", e);
     } finally {
       setNewsLoading(false);
     }
-  }, [symbol, quote, sectorInfo]);
+  }, [symbol, quote, sectorInfo, saveNewsCache]);
 
-  // Auto-fetch news analysis on mount (since showNewsAnalysis defaults to true)
+  // When symbol changes, reset newsData and load from cache for the new symbol
+  const prevNewsSymbolRef = useRef(symbol);
   useEffect(() => {
-    if (showNewsAnalysis && !newsData.market && !newsLoading) {
+    if (symbol !== prevNewsSymbolRef.current) {
+      prevNewsSymbolRef.current = symbol;
+      // Try loading cached data for the new symbol
+      const cached = loadNewsCache(symbol);
+      if (cached && (cached.market || cached.sector || cached.stock)) {
+        setNewsData(cached);
+        setNewsLoading(false);
+        // Background incremental refresh for the new symbol
+        fetchNewsAnalysis({ incremental: true });
+      } else {
+        setNewsData({});
+      }
+    }
+  }, [symbol, loadNewsCache, fetchNewsAnalysis]);
+
+  // Auto-fetch news analysis: load from localStorage cache first, then incremental refresh
+  useEffect(() => {
+    if (!showNewsAnalysis) return;
+    // 1. Try loading from localStorage cache (instant display)
+    if (!newsData.market && !newsLoading) {
+      const cached = loadNewsCache(symbol);
+      if (cached && (cached.market || cached.sector || cached.stock)) {
+        setNewsData(cached);
+        // Then do an incremental check in the background (no loading spinner)
+        fetchNewsAnalysis({ incremental: true });
+        return;
+      }
+      // 2. No cache – do a full fetch with loading spinner
       fetchNewsAnalysis();
     }
   }, [showNewsAnalysis]);
@@ -7219,11 +7326,27 @@ export default function StockTAssistant() {
                       {Object.values(newsData[newsActiveTab].sourceDiversity).reduce((a: number, b: any) => a + Number(b), 0)}条资讯 · {Object.keys(newsData[newsActiveTab].sourceDiversity).length}类渠道
                     </span>
                   )}
+                  {/* Show "本地缓存" badge when data is from localStorage and incremental check is running */}
+                  {newsData[newsActiveTab] && !newsData[newsActiveTab]?.cached && newsLoading && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      本地缓存·检查更新中
+                    </span>
+                  )}
+                  {!newsLoading && newsData[newsActiveTab] && !newsData[newsActiveTab]?.cached && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      本地缓存
+                    </span>
+                  )}
+                  {newsData[newsActiveTab]?.cached && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                      服务端缓存
+                    </span>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs px-2"
-                    onClick={fetchNewsAnalysis}
+                    onClick={() => fetchNewsAnalysis()}
                     disabled={newsLoading}
                   >
                     <RefreshCw className={`h-3.5 w-3.5 mr-1 ${newsLoading ? 'animate-spin' : ''}`} />
@@ -7327,7 +7450,6 @@ export default function StockTAssistant() {
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   {newsActiveTab === "market" ? "大盘" : newsActiveTab === "sector" ? `${data.sectorName}板块` : quote?.name || symbol} · 更新于 {data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "--"}
-                                  {data.cached ? " (缓存)" : ""}
                                 </div>
                               </div>
                             </div>

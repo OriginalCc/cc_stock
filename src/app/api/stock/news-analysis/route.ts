@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-// Cache results for 10 minutes
+// Cache results for the current trading day (until 16:00 CST the next day if after hours)
 const cache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 10 * 60 * 1000;
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes – balance freshness vs cost
+
+function getTodayKey(): string {
+  const now = new Date();
+  // Use China timezone for date key
+  const china = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  return `${china.getFullYear()}-${String(china.getMonth() + 1).padStart(2, '0')}-${String(china.getDate()).padStart(2, '0')}`;
+}
 
 // Shared ZAI instance
 let zaiInstance: any = null;
@@ -219,12 +226,30 @@ export async function GET(req: NextRequest) {
     const type = (searchParams.get("type") || "market") as "market" | "sector" | "stock";
     const sectorName = searchParams.get("sectorName") || "";
     const stockName = searchParams.get("stockName") || "";
+    const mode = searchParams.get("mode") || ""; // "incremental" for smart refresh
+    const lastTimestamp = searchParams.get("lastTimestamp") || ""; // ISO string of last cached data's timestamp
 
     // Check cache
-    const cacheKey = `${type}-${symbol}-${sectorName}`;
+    const cacheKey = `${type}-${symbol}-${sectorName}-${getTodayKey()}`;
     const cached = cache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return NextResponse.json({ success: true, ...cached.data, cached: true });
+
+    // ── Incremental mode: return cached data if fresh enough ──
+    if (mode === "incremental") {
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        // Server cache is still valid
+        if (lastTimestamp && new Date(cached.data.timestamp) <= new Date(lastTimestamp)) {
+          // Client already has the latest data – no update needed
+          return NextResponse.json({ success: true, noUpdate: true });
+        }
+        // Server has newer data than client – return it
+        return NextResponse.json({ success: true, ...cached.data, cached: true });
+      }
+      // Server cache expired or missing – fall through to full pipeline
+    } else {
+      // Normal mode (full fetch or manual refresh)
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        return NextResponse.json({ success: true, ...cached.data, cached: true });
+      }
     }
 
     const params = { sectorName, stockName, symbol };

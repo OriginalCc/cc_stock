@@ -599,3 +599,40 @@ Stage Summary:
 - 进入新分钟时自动插入数据点（不等待30秒的timeline API刷新）
 - MACD和信号也会跟随实时价格变化
 - lint通过，dev server正常运行
+
+---
+Task ID: 1
+Agent: main
+Task: 资讯版块新增当日资讯缓存功能，不用每次进入页面都重新请求
+
+Work Log:
+- 分析现有资讯数据流：API route 有服务端10分钟内存缓存，客户端无缓存，每次进入页面都要重新请求
+- 修改服务端 API (`/api/stock/news-analysis/route.ts`):
+  1. 缓存TTL从10分钟延长到30分钟（平衡时效性和成本）
+  2. 缓存key增加日期后缀 `${type}-${symbol}-${sectorName}-${date}`，确保跨日不使用旧缓存
+  3. 新增 `mode=incremental` 参数支持增量查询
+  4. 新增 `lastTimestamp` 参数：客户端传入上次缓存数据的时间戳
+  5. 增量模式逻辑：如果服务端缓存有效且时间戳 ≤ lastTimestamp → 返回 { noUpdate: true }；如果更新 → 返回新数据；如果缓存过期 → 走完整搜索流程
+  6. 新增 `getTodayKey()` 辅助函数（Asia/Shanghai 时区的 YYYY-MM-DD）
+- 修改客户端 (`page.tsx`):
+  1. 新增 `getNewsCacheKey()`, `saveNewsCache()`, `loadNewsCache()` 辅助函数
+  2. localStorage 缓存key格式：`news_${symbol}_${YYYY-MM-DD}`，4小时TTL
+  3. `fetchNewsAnalysis` 支持增量模式：`fetchNewsAnalysis({ incremental: true })`
+  4. 增量模式不显示loading spinner（已有数据时），后台静默检查更新
+  5. 使用 `newsDataRef` 避免将 newsData 放入 useCallback 依赖数组（防止无限重渲染）
+  6. 使用 `setNewsData(prev => ...)` 函数式更新避免闭包陈旧数据
+  7. 新增 `prevNewsSymbolRef` 监听股票切换，自动加载新股票的缓存数据
+  8. 自动加载流程：优先从 localStorage 读取 → 即时显示 → 后台增量检查更新
+  9. 手动"刷新"按钮强制全量重新获取（不走增量模式）
+  10. 新增每日缓存清理：mount时删除前一天的news_开头的localStorage条目
+- UI改进：
+  1. 新增缓存状态徽章：本地缓存(绿色)、本地缓存·检查更新中(橙色)、服务端缓存(蓝色)
+  2. 移除趋势卡片内的"(缓存)"文本，改用头部徽章统一显示
+
+Stage Summary:
+- 资讯数据现在有两层缓存：服务端内存缓存(30分钟) + 客户端localStorage缓存(4小时)
+- 进入页面时优先显示本地缓存数据（即时），然后后台增量检查更新
+- 服务器支持增量查询模式，避免重复搜索和LLM分析
+- 股票切换时自动加载对应缓存
+- 前一天的缓存自动清理
+- lint通过，dev server正常运行
