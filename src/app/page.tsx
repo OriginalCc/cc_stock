@@ -2146,7 +2146,7 @@ function TimeSharingPanel({
             />
             {/* Crosshair vertical line - shared across panels */}
             {crosshairIdx != null && crosshairItem?.hasData && (
-              <ReferenceLine yAxisId="price" x={crosshairIdx} stroke="#94a3b8" strokeWidth={0.8} strokeDasharray="3 3" />
+              <ReferenceLine yAxisId="price" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
             )}
             <Customized component={TimelineSignalRenderer} />
           </ComposedChart>
@@ -2211,7 +2211,7 @@ function TimeSharingPanel({
             </Bar>
             {/* Crosshair vertical line - shared across panels */}
             {crosshairIdx != null && crosshairItem?.hasData && (
-              <ReferenceLine yAxisId="vol-right" x={crosshairIdx} stroke="#94a3b8" strokeWidth={0.8} strokeDasharray="3 3" />
+              <ReferenceLine yAxisId="vol-right" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
             )}
           </ComposedChart>
         </ResponsiveContainer>
@@ -2317,7 +2317,7 @@ function TimeSharingPanel({
             />
             {/* Crosshair vertical line - shared across panels */}
             {crosshairIdx != null && crosshairItem?.hasData && (
-              <ReferenceLine yAxisId="macd-right" x={crosshairIdx} stroke="#94a3b8" strokeWidth={0.8} strokeDasharray="3 3" />
+              <ReferenceLine yAxisId="macd-right" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
             )}
           </ComposedChart>
         </ResponsiveContainer>
