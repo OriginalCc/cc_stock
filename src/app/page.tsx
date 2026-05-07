@@ -5114,7 +5114,7 @@ export default function StockTAssistant() {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── News Analysis State ──
-  const [showNewsAnalysis, setShowNewsAnalysis] = useState(false);
+  const [showNewsAnalysis, setShowNewsAnalysis] = useState(true);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsData, setNewsData] = useState<{
     market?: any;
@@ -5408,6 +5408,13 @@ export default function StockTAssistant() {
       setNewsLoading(false);
     }
   }, [symbol, quote, sectorInfo]);
+
+  // Auto-fetch news analysis on mount (since showNewsAnalysis defaults to true)
+  useEffect(() => {
+    if (showNewsAnalysis && !newsData.market && !newsLoading) {
+      fetchNewsAnalysis();
+    }
+  }, [showNewsAnalysis]);
 
   // ── Timeline last data slot index (matches fullDayData indexing in TimeSharingPanel) ──
   const tlLastDataIdx = useMemo(() => {
