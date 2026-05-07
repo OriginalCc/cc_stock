@@ -1181,7 +1181,7 @@ function MiniTimelinePanel({
     const macdValues = macdData.flatMap(d => [d.dif, d.dea, d.macd]).filter((v): v is number => v != null);
     const mMin = macdValues.length ? macdValues.reduce((mn, v) => (v < mn ? v : mn), macdValues[0]) : -1;
     const mMax = macdValues.length ? macdValues.reduce((mx, v) => (v > mx ? v : mx), macdValues[0]) : 1;
-    const mPad = (mMax - mMin) * 0.1 || 0.1;
+    const mPad = (mMax - mMin) * 0.05 || 0.1;
 
     // Last data info
     const li = data[data.length - 1];
@@ -1646,7 +1646,7 @@ function TimeSharingPanel({
     const macdVals = macdData.flatMap((d) => [d.dif, d.dea, d.macd]).filter((v): v is number => v != null);
     const mMin = macdVals.length ? macdVals.reduce((mn, v) => (v < mn ? v : mn), macdVals[0]) : -1;
     const mMax = macdVals.length ? macdVals.reduce((mx, v) => (v > mx ? v : mx), macdVals[0]) : 1;
-    const mPad = (mMax - mMin) * 0.1 || 0.1;
+    const mPad = (mMax - mMin) * 0.05 || 0.1;
 
     // Last item & last signal
     const li = data[data.length - 1];
@@ -2168,10 +2168,10 @@ function TimeSharingPanel({
         <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] select-none pointer-events-none">
           <span className="text-muted-foreground font-medium">VOL</span>
         </div>
-        <ResponsiveContainer width="100%" height={68}>
+        <ResponsiveContainer width="100%" height={90}>
           <ComposedChart
             data={zoomData}
-            margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
+            margin={{ top: 2, right: 9, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
                 setCrosshairIdx(state.activeTooltipIndex);
@@ -2183,7 +2183,7 @@ function TimeSharingPanel({
             {/* Hidden left YAxis to align with price chart */}
             <YAxis
               yAxisId="vol-left"
-              domain={[0, maxVolume * 1.1]}
+              domain={[0, maxVolume * 1.05]}
               tick={false}
               tickLine={false}
               axisLine={false}
@@ -2192,7 +2192,7 @@ function TimeSharingPanel({
             <YAxis
               yAxisId="vol-right"
               orientation="right"
-              domain={[0, maxVolume * 1.1]}
+              domain={[0, maxVolume * 1.05]}
               tick={{ fontSize: 8, fill: "hsl(var(--muted-foreground))" }}
               tickLine={false}
               axisLine={false}
@@ -2240,10 +2240,10 @@ function TimeSharingPanel({
             <span className="text-orange-600">DEA</span>
           </span>
         </div>
-        <ResponsiveContainer width="100%" height={78}>
+        <ResponsiveContainer width="100%" height={100}>
           <ComposedChart
             data={zoomData}
-            margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
+            margin={{ top: 2, right: 9, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
                 setCrosshairIdx(state.activeTooltipIndex);
@@ -5564,7 +5564,7 @@ export default function StockTAssistant() {
       .filter((v): v is number => v != null);
     const mMin = macdVals.length ? macdVals.reduce((mn, v) => (v < mn ? v : mn), macdVals[0]) : -1;
     const mMax = macdVals.length ? macdVals.reduce((mx, v) => (v > mx ? v : mx), macdVals[0]) : 1;
-    const mPad = (mMax - mMin) * 0.1 || 0.1;
+    const mPad = (mMax - mMin) * 0.05 || 0.1;
 
     const mv = chartData.reduce((mx, d) => (d.volume > mx ? d.volume : mx), 1);
 
@@ -6335,10 +6335,10 @@ export default function StockTAssistant() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pb-2 px-2">
-                <ResponsiveContainer width="100%" height={100}>
+                <ResponsiveContainer width="100%" height={130}>
                   <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-                    <YAxis domain={[0, maxVolume * 1.1]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => formatVolume(v)} />
+                    <YAxis domain={[0, maxVolume * 1.05]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => formatVolume(v)} />
                     <Tooltip content={<VolumeTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
                     <Bar dataKey="volume" isAnimationActive={false} barSize={chartData.length > 150 ? 3 : chartData.length > 80 ? 5 : chartData.length > 50 ? 7 : 10}>
                       {chartData.map((entry, index) => (
@@ -6371,7 +6371,7 @@ export default function StockTAssistant() {
                 </div>
               </CardHeader>
               <CardContent className="pb-2 px-2">
-                <ResponsiveContainer width="100%" height={140}>
+                <ResponsiveContainer width="100%" height={170}>
                   <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
