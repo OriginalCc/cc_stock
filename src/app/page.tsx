@@ -3401,6 +3401,7 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
               <TabsTrigger value="regime" className="text-xs px-3 h-6">趋势识别</TabsTrigger>
               <TabsTrigger value="corelogic" className="text-xs px-3 h-6">核心逻辑</TabsTrigger>
               <TabsTrigger value="customfactors" className="text-xs px-3 h-6">自定义因子</TabsTrigger>
+              <TabsTrigger value="newsprinciple" className="text-xs px-3 h-6">资讯原理</TabsTrigger>
             </TabsList>
 
             {/* ── Tab: 策略总纲 ── */}
@@ -5070,6 +5071,309 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
             {/* ── Tab: 自定义因子 ── */}
             {activeTab === "customfactors" && (
               <CustomFactorsTab />
+            )}
+
+            {/* ── Tab: 资讯原理 ── */}
+            {activeTab === "newsprinciple" && (
+              <div className="space-y-4">
+                {/* Header */}
+                <div className="p-4 rounded-lg border border-border bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Newspaper className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <h3 className="text-base font-bold">资讯分析原理</h3>
+                    <Badge variant="outline" className="text-[10px] h-5">v1.0</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    资讯分析模块通过多渠道、多维度搜索与AI深度分析，为做T操作提供消息面参考。系统自动聚合宏观政策、资金流向、外盘影响、技术分析等多个维度的资讯，结合全文深度阅读和LLM推理，输出明日走势预判。
+                  </p>
+                </div>
+
+                {/* Section 1: 多渠道搜索架构 */}
+                <div className="rounded-lg border border-border/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold">1</span>
+                    <h4 className="text-sm font-semibold">多渠道并行搜索架构</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                    传统单一搜索容易遗漏关键信息。本系统采用<strong>4维度×3类型=12路并行搜索</strong>策略，确保资讯覆盖的全面性。
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {/* 大盘 */}
+                    <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3">
+                      <div className="text-xs font-bold text-red-600 dark:text-red-400 mb-2">📈 大盘分析</div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-red-400" />宏观政策（央行/财政）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-red-400" />资金流向（北向/融资融券）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-red-400" />外盘影响（美股/纳斯达克）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-red-400" />技术分析（支撑/压力位）
+                        </div>
+                      </div>
+                    </div>
+                    {/* 板块 */}
+                    <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3">
+                      <div className="text-xs font-bold text-amber-600 dark:text-amber-400 mb-2">🏭 板块分析</div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" />行业政策（利好/利空）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" />板块资金（主力/龙头）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" />技术形态（走势预测）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" />关联市场（产业链/商品）
+                        </div>
+                      </div>
+                    </div>
+                    {/* 个股 */}
+                    <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                      <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-2">📊 个股分析</div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400" />公司资讯（公告/新闻）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400" />研报评级（券商/目标价）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400" />技术分析（支撑/压力）
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400" />资金动向（龙虎榜/大宗）
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: 深度阅读 */}
+                <div className="rounded-lg border border-border/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 text-xs font-bold">2</span>
+                    <h4 className="text-sm font-semibold">全文深度阅读（Web Reader）</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                    仅依赖搜索摘要（snippet）容易丢失关键细节。系统对Top 2高相关性文章自动读取<strong>全文内容</strong>，提取纯文本后作为LLM分析的核心素材。
+                  </p>
+                  <div className="flex items-center gap-3 text-[11px]">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/30">
+                      <span className="text-muted-foreground">搜索结果</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium">Top 2 文章</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/30">
+                      <span className="font-medium">page_reader</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium">HTML → 纯文本</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/30">
+                      <span className="font-medium">截取前1500字</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium">LLM深度分析</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: 来源分类 */}
+                <div className="rounded-lg border border-border/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-xs font-bold">3</span>
+                    <h4 className="text-sm font-semibold">资讯来源自动分类</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                    系统根据域名自动识别资讯来源类型，帮助判断信息可信度。不同来源的可信度权重不同，券商研报 &gt; 财经媒体 &gt; 政策公告 &gt; 外媒 &gt; 投资社区 &gt; 综合资讯。
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <div className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-purple-500/5 border border-purple-500/20">
+                      <span className="shrink-0 w-2 h-2 rounded-full bg-purple-500" />
+                      <div>
+                        <div className="text-[11px] font-medium">券商研报</div>
+                        <div className="text-[10px] text-muted-foreground">东方财富、同花顺</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-blue-500/5 border border-blue-500/20">
+                      <span className="shrink-0 w-2 h-2 rounded-full bg-blue-500" />
+                      <div>
+                        <div className="text-[11px] font-medium">财经媒体</div>
+                        <div className="text-[10px] text-muted-foreground">新浪、财新、第一财经</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-red-500/5 border border-red-500/20">
+                      <span className="shrink-0 w-2 h-2 rounded-full bg-red-500" />
+                      <div>
+                        <div className="text-[11px] font-medium">政策公告</div>
+                        <div className="text-[10px] text-muted-foreground">国务院、证监会、央行</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-cyan-500/5 border border-cyan-500/20">
+                      <span className="shrink-0 w-2 h-2 rounded-full bg-cyan-500" />
+                      <div>
+                        <div className="text-[11px] font-medium">投资社区</div>
+                        <div className="text-[10px] text-muted-foreground">雪球、股吧</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-amber-500/5 border border-amber-500/20">
+                      <span className="shrink-0 w-2 h-2 rounded-full bg-amber-500" />
+                      <div>
+                        <div className="text-[11px] font-medium">外媒</div>
+                        <div className="text-[10px] text-muted-foreground">路透社、彭博、CNBC</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-gray-500/5 border border-gray-500/20">
+                      <span className="shrink-0 w-2 h-2 rounded-full bg-gray-500" />
+                      <div>
+                        <div className="text-[11px] font-medium">综合资讯</div>
+                        <div className="text-[10px] text-muted-foreground">其他来源</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 4: AI分析流程 */}
+                <div className="rounded-lg border border-border/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs font-bold">4</span>
+                    <h4 className="text-sm font-semibold">AI多维度分析流程</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                    LLM基于多渠道、全文深度阅读的内容，从<strong>四个维度</strong>进行全方位评估，输出结构化分析结果。
+                  </p>
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-3 p-2.5 rounded-md bg-muted/10">
+                      <span className="text-base shrink-0">📊</span>
+                      <div>
+                        <div className="text-xs font-medium">技术面分析</div>
+                        <div className="text-[11px] text-muted-foreground">支撑位/压力位、K线形态、均线趋势、MACD/KDJ等技术指标信号</div>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3 p-2.5 rounded-md bg-muted/10">
+                      <span className="text-base shrink-0">💰</span>
+                      <div>
+                        <div className="text-xs font-medium">资金面分析</div>
+                        <div className="text-[11px] text-muted-foreground">北向资金流向、主力资金进出、融资融券变化、大宗交易数据</div>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3 p-2.5 rounded-md bg-muted/10">
+                      <span className="text-base shrink-0">📜</span>
+                      <div>
+                        <div className="text-xs font-medium">政策/消息面分析</div>
+                        <div className="text-[11px] text-muted-foreground">宏观政策、行业政策、公司公告、券商研报评级调整</div>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3 p-2.5 rounded-md bg-muted/10">
+                      <span className="text-base shrink-0">🎭</span>
+                      <div>
+                        <div className="text-xs font-medium">情绪面分析</div>
+                        <div className="text-[11px] text-muted-foreground">市场恐慌/贪婪指数、投资者情绪、舆论风向、板块轮动情绪</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 5: 输出字段说明 */}
+                <div className="rounded-lg border border-border/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-bold">5</span>
+                    <h4 className="text-sm font-semibold">分析输出字段说明</h4>
+                  </div>
+                  <div className="space-y-2">
+                    {[
+                      { field: "trend", label: "明日走势预判", values: "上升 / 下降 / 震荡", desc: "综合四维分析得出的明日方向性判断" },
+                      { field: "confidence", label: "信心度", values: "1-100", desc: "对趋势判断的信心程度，≥70高信心，40-70中等，<40低信心" },
+                      { field: "riskLevel", label: "风险等级", values: "高 / 中 / 低", desc: "明日操作风险评级，高=建议谨慎，低=相对安全" },
+                      { field: "newsSentiment", label: "资讯情绪", values: "偏多🔺 / 偏空🔻 / 中性↔️", desc: "整体资讯面偏向看涨还是看跌" },
+                      { field: "suggestion", label: "做T建议", values: "正T / 反T / 观望", desc: "基于趋势预判给出的具体做T方向建议" },
+                      { field: "keyFactors", label: "关键因素", values: "3-5个", desc: "影响明日走势的核心驱动因素列表" },
+                      { field: "technicalView", label: "技术面观点", values: "30字以内", desc: "技术面维度的独立判断摘要" },
+                      { field: "capitalView", label: "资金面观点", values: "30字以内", desc: "资金面维度的独立判断摘要" },
+                      { field: "policyView", label: "政策/消息面观点", values: "30字以内", desc: "政策消息面维度的独立判断摘要" },
+                      { field: "sentimentView", label: "情绪面观点", values: "30字以内", desc: "市场情绪面维度的独立判断摘要" },
+                      { field: "detailedReasoning", label: "详细推理", values: "200字以内", desc: "四维分析的完整推理过程，可展开查看" },
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-start gap-3 p-2 rounded-md bg-muted/5 hover:bg-muted/15 transition-colors">
+                        <code className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-muted/30 font-mono text-foreground/70">{item.field}</code>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-medium">{item.label}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground">{item.values}</span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Section 6: 缓存策略 */}
+                <div className="rounded-lg border border-border/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-bold">6</span>
+                    <h4 className="text-sm font-semibold">缓存与更新策略</h4>
+                  </div>
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400" />
+                      <span>缓存有效期：<strong className="text-foreground/80">10分钟</strong>，过期后需手动刷新</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400" />
+                      <span>搜索时效：最近<strong className="text-foreground/80">2天</strong>内的资讯（recency_days=2）</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400" />
+                      <span>去重策略：按URL去重，避免不同维度搜索结果重复</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400" />
+                      <span>排序规则：按发布时间倒序，取最新Top 10条</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400" />
+                      <span>深度阅读：仅对Top 2文章读取全文，平衡效率与深度</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 7: 使用建议 */}
+                <div className="rounded-lg border border-border/50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 text-xs font-bold">7</span>
+                    <h4 className="text-sm font-semibold">使用建议与风险提示</h4>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="p-3 rounded-md bg-red-500/5 border border-red-500/20">
+                      <div className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">⚠️ 重要提示</div>
+                      <div className="text-[11px] text-muted-foreground leading-relaxed">
+                        资讯分析结果<strong>仅供参考</strong>，不构成投资建议。AI分析基于公开资讯和模型推理，可能存在偏差或遗漏。投资者应结合自身判断做出决策。
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      {[
+                        "多维度交叉验证：当技术面和资金面方向一致时，预判可靠性更高",
+                        "关注信心度：信心度≥70的分析更值得关注，<40的建议谨慎参考",
+                        "注意风险等级：高风险情况下即使趋势看涨也应控制仓位",
+                        "收盘后刷新：收盘后资讯更全面，分析结果更准确",
+                        "结合做T指数：资讯分析与做T指数、信号系统综合使用效果更佳",
+                        "警惕单一来源：仅依赖一类渠道的资讯容易出现偏差",
+                      ].map((tip, i) => (
+                        <div key={i} className="flex items-start gap-2 text-[11px] text-muted-foreground">
+                          <span className="shrink-0 mt-0.5 text-yellow-500">•</span>
+                          <span>{tip}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Loading state */}
