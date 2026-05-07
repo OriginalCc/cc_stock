@@ -1973,6 +1973,8 @@ function TimeSharingPanel({
               if (level.name.startsWith("涨停") || level.name.startsWith("跌停")) return null;
               // Skip 整数关口 (user requested to hide)
               if (level.name.includes("整数关")) return null;
+              // Skip Fibonacci回撤位 (user requested to hide)
+              if (level.name.startsWith("Fib")) return null;
               const isSupport = level.type === "support";
               const lineColor = isSupport ? "#16a34a" : "#dc2626";  // green-600 / red-600 (stronger)
               return (
