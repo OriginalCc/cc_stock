@@ -6815,9 +6815,14 @@ export default function StockTAssistant() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <Newspaper className="h-4 w-4" />
-                  资讯分析
+                  资讯分析 · 明日预判
                 </CardTitle>
                 <div className="flex items-center gap-2">
+                  {newsData[newsActiveTab]?.sourceDiversity && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {Object.values(newsData[newsActiveTab].sourceDiversity).reduce((a: number, b: any) => a + Number(b), 0)}条资讯 · {Object.keys(newsData[newsActiveTab].sourceDiversity).length}类渠道
+                    </span>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -6860,6 +6865,14 @@ export default function StockTAssistant() {
                     </Button>
                   );
                 })}
+                {/* Search Channel Tags */}
+                {newsData[newsActiveTab]?.searchGroups && (
+                  <div className="ml-auto flex items-center gap-1">
+                    {newsData[newsActiveTab].searchGroups.map((g: string, i: number) => (
+                      <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/40 text-muted-foreground">{g}</span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Content */}
@@ -6867,18 +6880,19 @@ export default function StockTAssistant() {
                 <div className="flex flex-col items-center justify-center py-12 gap-3">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">
-                    {newsActiveTab === "market" ? "正在搜索大盘资讯，分析明日走势..." :
-                     newsActiveTab === "sector" ? "正在搜索板块资讯，分析明日走势..." :
-                     "正在搜索个股资讯，分析明日走势..."}
+                    {newsActiveTab === "market" ? "正在多渠道搜索大盘资讯，深度分析明日走势..." :
+                     newsActiveTab === "sector" ? "正在多渠道搜索板块资讯，深度分析明日走势..." :
+                     "正在多渠道搜索个股资讯，深度分析明日走势..."}
                   </span>
+                  <span className="text-xs text-muted-foreground/60">搜索维度：宏观政策 · 资金流向 · 外盘影响 · 技术分析</span>
                 </div>
               ) : newsData[newsActiveTab] ? (
-                <div className="space-y-4">
-                  {/* Analysis Result Card */}
+                <div className="space-y-3">
                   {(() => {
                     const data = newsData[newsActiveTab];
                     const analysis = data.analysis;
                     if (!analysis) return null;
+
                     const trendConfig: Record<string, { bg: string; text: string; icon: string; border: string }> = {
                       "上升": { bg: "bg-red-500/10", text: "text-red-600 dark:text-red-400", icon: "📈", border: "border-red-500/30" },
                       "下降": { bg: "bg-green-500/10", text: "text-green-600 dark:text-green-400", icon: "📉", border: "border-green-500/30" },
@@ -6891,90 +6905,216 @@ export default function StockTAssistant() {
                       "观望": { bg: "bg-gray-500/10 border-gray-500/30", text: "text-gray-600 dark:text-gray-400" },
                     };
                     const sCfg = suggestionConfig[analysis.suggestion] || suggestionConfig["观望"];
+                    const riskConfig: Record<string, { bg: string; text: string }> = {
+                      "高": { bg: "bg-red-500/15 border-red-500/30", text: "text-red-600 dark:text-red-400" },
+                      "中": { bg: "bg-yellow-500/15 border-yellow-500/30", text: "text-yellow-600 dark:text-yellow-400" },
+                      "低": { bg: "bg-green-500/15 border-green-500/30", text: "text-green-600 dark:text-green-400" },
+                    };
+                    const rCfg = riskConfig[analysis.riskLevel] || riskConfig["中"];
+                    const sentimentConfig: Record<string, { icon: string; text: string; color: string }> = {
+                      "偏多": { icon: "😊", text: "偏多", color: "text-red-500" },
+                      "偏空": { icon: "😟", text: "偏空", color: "text-green-500" },
+                      "中性": { icon: "😐", text: "中性", color: "text-yellow-500" },
+                    };
+                    const sentCfg = sentimentConfig[analysis.newsSentiment] || sentimentConfig["中性"];
 
                     return (
-                      <div className={`rounded-lg border p-4 ${cfg.bg} ${cfg.border}`}>
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <span className="text-2xl">{cfg.icon}</span>
-                            <div>
-                              <div className={`text-lg font-bold ${cfg.text}`}>
-                                明日预判：{analysis.trend}
+                      <>
+                        {/* ── Top: Trend Overview Card ── */}
+                        <div className={`rounded-lg border p-4 ${cfg.bg} ${cfg.border}`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">{cfg.icon}</span>
+                              <div>
+                                <div className={`text-lg font-bold ${cfg.text}`}>
+                                  明日预判：{analysis.trend}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {newsActiveTab === "market" ? "大盘" : newsActiveTab === "sector" ? `${data.sectorName}板块` : quote?.name || symbol} · 更新于 {data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "--"}
+                                  {data.cached ? " (缓存)" : ""}
+                                </div>
                               </div>
-                              <div className="text-xs text-muted-foreground">
-                                {newsActiveTab === "market" ? "大盘" : newsActiveTab === "sector" ? `${data.sectorName}板块` : quote?.name || symbol} · 更新于 {data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "--"}
-                                {data.cached ? " (缓存)" : ""}
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${sCfg.bg} ${sCfg.text}`}>
+                                明日建议：{analysis.suggestion}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-medium ${rCfg.bg} ${rCfg.text}`}>
+                                  风险{analysis.riskLevel}
+                                </span>
+                                <span className={`text-xs font-medium ${sentCfg.color}`}>
+                                  {sentCfg.icon} {sentCfg.text}
+                                </span>
                               </div>
                             </div>
                           </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${sCfg.bg} ${sCfg.text}`}>
-                              明日建议：{analysis.suggestion}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              信心度 {analysis.confidence}%
-                            </span>
+
+                          {/* Confidence Bar */}
+                          <div className="mb-3">
+                            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                              <span>信心度</span>
+                              <span className="font-medium">{analysis.confidence}%</span>
+                            </div>
+                            <div className="h-2 w-full bg-muted/30 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{
+                                  width: `${Math.min(analysis.confidence || 0, 100)}%`,
+                                  backgroundColor: analysis.confidence >= 70 ? '#22c55e' : analysis.confidence >= 40 ? '#f59e0b' : '#ef4444',
+                                }}
+                              />
+                            </div>
                           </div>
+
+                          {/* Summary */}
+                          <p className="text-sm text-foreground/80 mb-3">{analysis.summary}</p>
+
+                          {/* Key Factors */}
+                          {analysis.keyFactors && analysis.keyFactors.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {analysis.keyFactors.map((factor: string, i: number) => (
+                                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/50 text-xs text-muted-foreground">
+                                  <Zap className="h-3 w-3" />
+                                  {factor}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        {/* Confidence Bar */}
-                        <div className="mb-3">
-                          <div className="h-2 w-full bg-muted/30 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{
-                                width: `${Math.min(analysis.confidence || 0, 100)}%`,
-                                backgroundColor: analysis.confidence >= 70 ? '#22c55e' : analysis.confidence >= 40 ? '#f59e0b' : '#ef4444',
-                              }}
-                            />
-                          </div>
-                        </div>
-                        {/* Summary */}
-                        <p className="text-sm text-foreground/80 mb-3">{analysis.summary}</p>
-                        {/* Key Factors */}
-                        {analysis.keyFactors && analysis.keyFactors.length > 0 && (
-                          <div className="flex flex-wrap gap-2">
-                            {analysis.keyFactors.map((factor: string, i: number) => (
-                              <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/50 text-xs text-muted-foreground">
-                                <Zap className="h-3 w-3" />
-                                {factor}
-                              </span>
-                            ))}
+
+                        {/* ── Multi-Dimensional Analysis Cards ── */}
+                        {(analysis.technicalView || analysis.capitalView || analysis.policyView || analysis.sentimentView) && (
+                          <div className="grid grid-cols-2 gap-2">
+                            {analysis.technicalView && (
+                              <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-xs">📊</span>
+                                  <span className="text-xs font-medium text-muted-foreground">技术面</span>
+                                </div>
+                                <p className="text-xs text-foreground/80 leading-relaxed">{analysis.technicalView}</p>
+                              </div>
+                            )}
+                            {analysis.capitalView && (
+                              <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-xs">💰</span>
+                                  <span className="text-xs font-medium text-muted-foreground">资金面</span>
+                                </div>
+                                <p className="text-xs text-foreground/80 leading-relaxed">{analysis.capitalView}</p>
+                              </div>
+                            )}
+                            {analysis.policyView && (
+                              <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-xs">📜</span>
+                                  <span className="text-xs font-medium text-muted-foreground">{newsActiveTab === "stock" ? "消息面" : newsActiveTab === "sector" ? "政策/行业" : "政策面"}</span>
+                                </div>
+                                <p className="text-xs text-foreground/80 leading-relaxed">{analysis.policyView}</p>
+                              </div>
+                            )}
+                            {analysis.sentimentView && (
+                              <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-xs">🎭</span>
+                                  <span className="text-xs font-medium text-muted-foreground">情绪面</span>
+                                </div>
+                                <p className="text-xs text-foreground/80 leading-relaxed">{analysis.sentimentView}</p>
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
+
+                        {/* ── Detailed Reasoning (Collapsible) ── */}
+                        {analysis.detailedReasoning && (
+                          <details className="group">
+                            <summary className="flex items-center gap-1 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors py-1">
+                              <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+                              详细分析推理
+                            </summary>
+                            <div className="mt-2 p-3 rounded-lg bg-muted/10 border border-border/50">
+                              <p className="text-xs text-foreground/70 leading-relaxed whitespace-pre-line">{analysis.detailedReasoning}</p>
+                            </div>
+                          </details>
+                        )}
+
+                        {/* ── Source Diversity Stats ── */}
+                        {data.sourceDiversity && Object.keys(data.sourceDiversity).length > 0 && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] text-muted-foreground">资讯渠道:</span>
+                            {Object.entries(data.sourceDiversity).map(([type, count]: [string, any]) => {
+                              const typeColors: Record<string, string> = {
+                                "券商研报": "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+                                "财经媒体": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                                "政策公告": "bg-red-500/10 text-red-600 dark:text-red-400",
+                                "投资社区": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+                                "外媒": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                                "综合资讯": "bg-gray-500/10 text-gray-600 dark:text-gray-400",
+                              };
+                              return (
+                                <span key={type} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${typeColors[type] || typeColors["综合资讯"]}`}>
+                                  {type} {String(count)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
 
-                  {/* News List */}
+                  {/* ── News List with Source Tags ── */}
                   {newsData[newsActiveTab]?.news && newsData[newsActiveTab].news.length > 0 && (
                     <div>
-                      <h4 className="text-xs font-medium text-muted-foreground mb-2">相关资讯</h4>
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {newsData[newsActiveTab].news.map((item: any, i: number) => (
-                          <a
-                            key={i}
-                            href={item.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block p-2.5 rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors group"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-foreground/90 group-hover:text-foreground line-clamp-1">
-                                  {item.title}
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-xs font-medium text-muted-foreground">相关资讯</h4>
+                        <span className="text-[10px] text-muted-foreground/60">{newsData[newsActiveTab].news.length}条</span>
+                      </div>
+                      <div className="space-y-2 max-h-80 overflow-y-auto">
+                        {newsData[newsActiveTab].news.map((item: any, i: number) => {
+                          const sourceTypeColors: Record<string, string> = {
+                            "券商研报": "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+                            "财经媒体": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                            "政策公告": "bg-red-500/10 text-red-600 dark:text-red-400",
+                            "投资社区": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+                            "外媒": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                            "综合资讯": "bg-gray-500/10 text-gray-600 dark:text-gray-400",
+                          };
+                          const tagColor = sourceTypeColors[item.sourceType] || sourceTypeColors["综合资讯"];
+                          return (
+                            <a
+                              key={i}
+                              href={item.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block p-2.5 rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors group"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-foreground/90 group-hover:text-foreground line-clamp-1">
+                                    {item.title}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                    {item.snippet}
+                                  </div>
                                 </div>
-                                <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                  {item.snippet}
-                                </div>
+                                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 mt-0.5" />
                               </div>
-                              <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 mt-0.5" />
-                            </div>
-                            <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground/60">
-                              <span>{item.source}</span>
-                              {item.date && <span>· {item.date}</span>}
-                            </div>
-                          </a>
-                        ))}
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${tagColor}`}>
+                                  {item.sourceType}
+                                </span>
+                                {item.searchLabel && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground">
+                                    {item.searchLabel}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-muted-foreground/60 ml-auto">{item.source}</span>
+                                {item.date && <span className="text-[10px] text-muted-foreground/60">· {item.date}</span>}
+                              </div>
+                            </a>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -6982,7 +7122,8 @@ export default function StockTAssistant() {
               ) : (
                 <div className="flex flex-col items-center justify-center py-8 gap-2">
                   <Newspaper className="h-8 w-8 text-muted-foreground/40" />
-                  <span className="text-sm text-muted-foreground">点击"刷新"获取资讯分析</span>
+                  <span className="text-sm text-muted-foreground">点击"刷新"获取多渠道资讯分析</span>
+                  <span className="text-xs text-muted-foreground/60">覆盖：宏观政策 · 资金流向 · 外盘影响 · 技术分析 · 研报评级</span>
                 </div>
               )}
             </CardContent>

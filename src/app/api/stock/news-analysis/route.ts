@@ -6,27 +6,164 @@ export const dynamic = "force-dynamic";
 const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 10 * 60 * 1000;
 
-async function searchWeb(query: string, num = 10) {
-  const ZAI = (await import("z-ai-web-dev-sdk")).default;
-  const zai = await ZAI.create();
+// Shared ZAI instance
+let zaiInstance: any = null;
+async function getZAI() {
+  if (!zaiInstance) {
+    const ZAI = (await import("z-ai-web-dev-sdk")).default;
+    zaiInstance = await ZAI.create();
+  }
+  return zaiInstance;
+}
+
+// ── Step 1: Multi-angle search queries ──
+const SEARCH_QUERIES: Record<string, (p: { sectorName: string; stockName: string; symbol: string }) => { label: string; query: string }[]> = {
+  market: () => [
+    { label: "宏观政策", query: "A股 大盘 宏观政策 央行 财政 资讯" },
+    { label: "资金流向", query: "A股 北向资金 融资融券 资金流向 今日" },
+    { label: "外盘影响", query: "美股 纳斯达克 A股 影响 隔夜 外盘" },
+    { label: "技术分析", query: "A股 大盘 技术分析 支撑 压力 明日 走势" },
+  ],
+  sector: ({ sectorName }) => [
+    { label: "行业政策", query: `${sectorName} 板块 行业政策 利好 利空 资讯` },
+    { label: "板块资金", query: `${sectorName} 板块 主力资金 龙头股 今日` },
+    { label: "技术形态", query: `${sectorName} 板块 技术分析 走势 明日 预测` },
+    { label: "关联市场", query: `${sectorName} 产业链 上下游 商品 价格` },
+  ],
+  stock: ({ stockName, symbol }) => [
+    { label: "公司资讯", query: `${stockName} ${symbol} 公司公告 新闻 资讯` },
+    { label: "研报评级", query: `${stockName} 研报 券商 评级 目标价` },
+    { label: "技术分析", query: `${stockName} 技术分析 支撑 压力 明日 走势` },
+    { label: "资金动向", query: `${stockName} 主力资金 北向 大宗交易 龙虎榜` },
+  ],
+};
+
+async function searchWeb(query: string, num = 6) {
+  const zai = await getZAI();
   return zai.functions.invoke("web_search", {
     query,
     num,
-    recency_days: 1,
+    recency_days: 2,
   });
 }
 
+// ── Step 2: Read full content from top articles ──
+async function readArticleContent(url: string): Promise<string | null> {
+  try {
+    const zai = await getZAI();
+    const result = await zai.functions.invoke("page_reader", { url });
+    if (result?.data?.html) {
+      // Extract plain text from HTML, limit to 1500 chars for efficiency
+      const text = result.data.html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]*>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/\s+/g, " ")
+        .trim();
+      return text.slice(0, 1500);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Step 3: Classify news source type ──
+function classifySource(hostName: string): string {
+  const map: [string, string][] = [
+    // 券商/研报
+    ["eastmoney", "券商研报"], ["10jqka", "券商研报"], ["stockstar", "券商研报"],
+    // 财经媒体
+    ["sina", "财经媒体"], ["finance.sina", "财经媒体"], ["cs.com.cn", "财经媒体"],
+    ["caixin", "财经媒体"], ["yicai", "财经媒体"], ["stcn", "财经媒体"],
+    ["21jingji", "财经媒体"], ["jjckb", "财经媒体"], ["ce.cn", "财经媒体"],
+    ["thepaper", "财经媒体"], ["guancha", "财经媒体"],
+    // 政策/官方
+    ["gov.cn", "政策公告"], ["csrc", "政策公告"], ["pbc", "政策公告"],
+    ["ndrc", "政策公告"], ["sse", "政策公告"], ["szse", "政策公告"],
+    // 互动/自媒体
+    ["xueqiu", "投资社区"], ["guba", "投资社区"], ["zhihu", "投资社区"],
+    ["tonghuashun", "投资社区"], ["snowball", "投资社区"],
+    // 外媒
+    ["reuters", "外媒"], ["bloomberg", "外媒"], ["wsj", "外媒"],
+    ["ft", "外媒"], ["cnbc", "外媒"], ["yahoo", "外媒"],
+    ["investing", "外媒"],
+  ];
+  const lower = hostName.toLowerCase();
+  for (const [key, label] of map) {
+    if (lower.includes(key)) return label;
+  }
+  return "综合资讯";
+}
+
+// ── Step 4: Enhanced LLM analysis with multi-dimensional output ──
 async function analyzeWithLLM(context: string, type: "market" | "sector" | "stock") {
-  const ZAI = (await import("z-ai-web-dev-sdk")).default;
-  const zai = await ZAI.create();
+  const zai = await getZAI();
 
   const systemPrompts: Record<string, string> = {
     market:
-      "你是一位专业的A股大盘分析师。根据提供的资讯，综合分析大盘明日走势预判。你需要结合当日收盘情况、资金流向、政策消息、外盘影响等因素，判断明日大盘走势。用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（明日做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
+      `你是一位资深的A股大盘分析师，拥有20年实战经验。请根据提供的多源资讯，综合分析大盘明日走势。
+你需要从技术面、资金面、政策面、情绪面四个维度进行全方位评估。
+
+返回JSON格式，包含以下字段：
+- trend: 明日走势预判（上升/下降/震荡）
+- confidence: 信心度1-100
+- summary: 100字以内的综合摘要
+- keyFactors: 3-5个关键影响因素数组
+- suggestion: 明日做T建议（正T/反T/观望）
+- riskLevel: 风险等级（高/中/低）
+- newsSentiment: 整体资讯情绪（偏多/偏空/中性）
+- technicalView: 技术面观点（30字以内）
+- capitalView: 资金面观点（30字以内）
+- policyView: 政策/消息面观点（30字以内）
+- sentimentView: 市场情绪面观点（30字以内）
+- detailedReasoning: 详细分析推理过程（200字以内）
+
+只返回JSON，不要其他文字。`,
+
     sector:
-      "你是一位专业的A股行业板块分析师。根据提供的资讯，综合分析该板块明日走势预判。你需要结合板块当日表现、资金进出、龙头股走势、行业政策等因素，判断明日板块走势。用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（明日做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
+      `你是一位资深的A股行业板块分析师，拥有15年行业研究经验。请根据提供的多源资讯，综合分析该板块明日走势。
+你需要从技术面、资金面、政策面、行业基本面四个维度进行全方位评估。
+
+返回JSON格式，包含以下字段：
+- trend: 明日走势预判（上升/下降/震荡）
+- confidence: 信心度1-100
+- summary: 100字以内的综合摘要
+- keyFactors: 3-5个关键影响因素数组
+- suggestion: 明日做T建议（正T/反T/观望）
+- riskLevel: 风险等级（高/中/低）
+- newsSentiment: 整体资讯情绪（偏多/偏空/中性）
+- technicalView: 技术面观点（30字以内）
+- capitalView: 资金面观点（30字以内）
+- policyView: 政策/行业面观点（30字以内）
+- sentimentView: 板块情绪面观点（30字以内）
+- detailedReasoning: 详细分析推理过程（200字以内）
+
+只返回JSON，不要其他文字。`,
+
     stock:
-      "你是一位专业的A股个股分析师。根据提供的资讯，综合分析该个股明日走势预判。你需要结合个股当日走势、成交量变化、技术面形态、消息面利好利空等因素，判断明日个股走势。用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（明日做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
+      `你是一位资深的A股个股分析师，拥有15年个股投研经验。请根据提供的多源资讯，综合分析该个股明日走势。
+你需要从技术面、资金面、消息面、估值面四个维度进行全方位评估。
+
+返回JSON格式，包含以下字段：
+- trend: 明日走势预判（上升/下降/震荡）
+- confidence: 信心度1-100
+- summary: 100字以内的综合摘要
+- keyFactors: 3-5个关键影响因素数组
+- suggestion: 明日做T建议（正T/反T/观望）
+- riskLevel: 风险等级（高/中/低）
+- newsSentiment: 整体资讯情绪（偏多/偏空/中性）
+- technicalView: 技术面观点（30字以内）
+- capitalView: 资金面观点（30字以内）
+- policyView: 消息/公告面观点（30字以内）
+- sentimentView: 市场情绪面观点（30字以内）
+- detailedReasoning: 详细分析推理过程（200字以内）
+
+只返回JSON，不要其他文字。`,
   };
 
   const completion = await zai.chat.completions.create({
@@ -41,15 +178,37 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
   try {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
+      // Ensure all fields have defaults
+      return {
+        trend: parsed.trend || "震荡",
+        confidence: parsed.confidence || 50,
+        summary: parsed.summary || "",
+        keyFactors: Array.isArray(parsed.keyFactors) ? parsed.keyFactors : ["资讯解析异常"],
+        suggestion: parsed.suggestion || "观望",
+        riskLevel: parsed.riskLevel || "中",
+        newsSentiment: parsed.newsSentiment || "中性",
+        technicalView: parsed.technicalView || "",
+        capitalView: parsed.capitalView || "",
+        policyView: parsed.policyView || "",
+        sentimentView: parsed.sentimentView || "",
+        detailedReasoning: parsed.detailedReasoning || "",
+      };
     }
   } catch {}
   return {
     trend: "震荡",
     confidence: 50,
-    summary: content.slice(0, 50),
+    summary: content.slice(0, 100),
     keyFactors: ["资讯解析异常"],
     suggestion: "观望",
+    riskLevel: "中",
+    newsSentiment: "中性",
+    technicalView: "",
+    capitalView: "",
+    policyView: "",
+    sentimentView: "",
+    detailedReasoning: "",
   };
 }
 
@@ -68,44 +227,106 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, ...cached.data, cached: true });
     }
 
-    // Step 1: Search for relevant news
-    const queries: Record<string, string> = {
-      market: "A股 大盘 明日 走势 预测 资讯",
-      sector: `A股 ${sectorName} 板块 明日 走势 预测 资讯`,
-      stock: `A股 ${stockName} ${symbol} 明日 走势 预测 资讯`,
-    };
+    const params = { sectorName, stockName, symbol };
+    const queryGroups = SEARCH_QUERIES[type]?.(params) || SEARCH_QUERIES.market(params);
 
-    const searchQuery = queries[type] || queries.market;
-    const searchResults = await searchWeb(searchQuery, 8);
+    // Step 1: Parallel multi-angle search
+    const searchPromises = queryGroups.map(async (g) => {
+      try {
+        const results = await searchWeb(g.query, 5);
+        return { label: g.label, results: Array.isArray(results) ? results : [] };
+      } catch {
+        return { label: g.label, results: [] };
+      }
+    });
+    const searchGroupResults = await Promise.allSettled(searchPromises);
+    const groups = searchGroupResults
+      .filter((r): r is PromiseFulfilledResult<{ label: string; results: any[] }> => r.status === "fulfilled")
+      .map((r) => r.value);
 
-    // Step 2: Format news for LLM analysis
-    const newsContext = searchResults
-      .slice(0, 6)
-      .map((r: any, i: number) => `${i + 1}. ${r.name}\n   ${r.snippet}\n   来源: ${r.host_name} | ${r.date || "未知日期"}`)
+    // Deduplicate by URL and collect all news with source labels
+    const seenUrls = new Set<string>();
+    const allNews: any[] = [];
+    for (const group of groups) {
+      for (const item of group.results) {
+        if (!seenUrls.has(item.url)) {
+          seenUrls.add(item.url);
+          allNews.push({
+            title: item.name,
+            snippet: item.snippet,
+            source: item.host_name,
+            sourceType: classifySource(item.host_name),
+            searchLabel: group.label,
+            date: item.date,
+            url: item.url,
+          });
+        }
+      }
+    }
+
+    // Sort by date (newest first), keep top 10
+    allNews.sort((a, b) => {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+    const topNews = allNews.slice(0, 10);
+
+    // Step 2: Read full content from top 2 most relevant articles
+    const articleReadPromises = topNews.slice(0, 2).map(async (item) => {
+      const content = await readArticleContent(item.url);
+      return { ...item, fullContent: content };
+    });
+    const enrichedNews = await Promise.allSettled(articleReadPromises);
+    const finalNews = topNews.map((item, i) => {
+      if (i < 2) {
+        const settled = enrichedNews[i];
+        if (settled.status === "fulfilled" && settled.value.fullContent) {
+          return { ...item, fullContent: settled.value.fullContent };
+        }
+      }
+      return item;
+    });
+
+    // Step 3: Build comprehensive LLM context
+    const newsContextByGroup: Record<string, string[]> = {};
+    for (const item of finalNews) {
+      const label = item.searchLabel;
+      if (!newsContextByGroup[label]) newsContextByGroup[label] = [];
+      let entry = `• ${item.title}\n  摘要: ${item.snippet}\n  来源: ${item.source}(${item.sourceType}) | ${item.date || "未知日期"}`;
+      if (item.fullContent) {
+        entry += `\n  详细内容: ${item.fullContent}`;
+      }
+      newsContextByGroup[label].push(entry);
+    }
+
+    const groupedContext = Object.entries(newsContextByGroup)
+      .map(([label, items]) => `【${label}】\n${items.join("\n\n")}`)
       .join("\n\n");
 
     const contextMap: Record<string, string> = {
-      market: `以下是A股大盘最新资讯：\n\n${newsContext}\n\n请综合以上资讯，结合当日收盘数据、资金流向、外盘表现、政策消息等，分析大盘明日走势预判。`,
-      sector: `以下是${sectorName}板块最新资讯：\n\n${newsContext}\n\n请综合以上资讯，结合板块当日表现、资金进出、龙头股走势、行业政策等，分析${sectorName}板块明日走势预判。`,
-      stock: `以下是${stockName}(${symbol})最新资讯：\n\n${newsContext}\n\n请综合以上资讯，结合个股当日走势、成交量变化、技术面形态、消息面利好利空等，分析${stockName}明日走势预判。`,
+      market: `以下是A股大盘多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、政策面、情绪面四个维度，分析大盘明日走势预判。`,
+      sector: `以下是${sectorName}板块多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、政策面、行业基本面四个维度，分析${sectorName}板块明日走势预判。`,
+      stock: `以下是${stockName}(${symbol})多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、消息面、估值面四个维度，分析${stockName}明日走势预判。`,
     };
 
-    // Step 3: LLM Analysis
+    // Step 4: LLM Analysis
     const analysis = await analyzeWithLLM(contextMap[type], type);
 
-    // Step 4: Compile result
+    // Step 5: Compile result with source diversity stats
+    const sourceTypes = new Map<string, number>();
+    for (const item of finalNews) {
+      sourceTypes.set(item.sourceType, (sourceTypes.get(item.sourceType) || 0) + 1);
+    }
+
     const result = {
       type,
       symbol,
       sectorName,
-      news: searchResults.slice(0, 6).map((r: any) => ({
-        title: r.name,
-        snippet: r.snippet,
-        source: r.host_name,
-        date: r.date,
-        url: r.url,
-      })),
+      news: finalNews.map(({ fullContent, ...rest }) => rest),
       analysis,
+      sourceDiversity: Object.fromEntries(sourceTypes),
+      searchGroups: queryGroups.map((g) => g.label),
       timestamp: new Date().toISOString(),
     };
 
