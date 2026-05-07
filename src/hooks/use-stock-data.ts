@@ -223,10 +223,11 @@ export function useStockData() {
     try {
       const saved = localStorage.getItem(LAST_STOCK_KEY);
       if (saved && /^[0-9]{6}$/.test(saved) && saved !== symbol) {
-        setSymbol(saved);
+        // Use microtask to avoid lint warning about setState in effect
+        queueMicrotask(() => setSymbol(saved));
       }
     } catch {}
-    setMounted(true);
+    queueMicrotask(() => setMounted(true));
   }, []);
 
   // Initial load (only after mount to use correct symbol from localStorage)

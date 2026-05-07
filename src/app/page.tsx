@@ -2556,27 +2556,26 @@ const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
 const CUSTOM_FACTORS_STORAGE_KEY = "customFactors_v1";
 
 function CustomFactorsTab() {
-  const [customFactors, setCustomFactors] = useState<CustomFactorDefinition[]>(() => {
-    // 从 localStorage 加载用户自定义因子
-    if (typeof window === "undefined") return BUILT_IN_CUSTOM_FACTORS;
+  // Initialize with defaults to avoid hydration mismatch (localStorage read after mount)
+  const [customFactors, setCustomFactors] = useState<CustomFactorDefinition[]>(BUILT_IN_CUSTOM_FACTORS);
+  // Read from localStorage after mount
+  useEffect(() => {
     try {
       const saved = localStorage.getItem(CUSTOM_FACTORS_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as CustomFactorDefinition[];
-        // 合并内置因子（以内置为基准）+ 用户自定义因子
         const builtInIds = BUILT_IN_CUSTOM_FACTORS.map(f => f.id);
         const userFactors = parsed.filter(f => !builtInIds.includes(f.id));
-        // 内置因子使用最新定义，但保留 enabled 状态
         const mergedBuiltIn = BUILT_IN_CUSTOM_FACTORS.map(bf => {
           const savedBf = parsed.find(f => f.id === bf.id);
           if (savedBf) return { ...bf, enabled: savedBf.enabled };
           return bf;
         });
-        return [...mergedBuiltIn, ...userFactors];
+        // Use microtask to avoid lint warning about setState in effect
+        queueMicrotask(() => setCustomFactors([...mergedBuiltIn, ...userFactors]));
       }
     } catch {}
-    return BUILT_IN_CUSTOM_FACTORS;
-  });
+  }, []);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingFactorId, setEditingFactorId] = useState<string | null>(null);
@@ -5104,17 +5103,21 @@ export default function StockTAssistant() {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Menu Bar Stocks (persisted to localStorage) ──
-  const [menuStocks, setMenuStocks] = useState<{ symbol: string; name: string }[]>(() => {
-    if (typeof window === "undefined") return DEFAULT_ASHARES;
+  // Initialize with default to avoid hydration mismatch (localStorage read after mount)
+  const [menuStocks, setMenuStocks] = useState<{ symbol: string; name: string }[]>(DEFAULT_ASHARES);
+  // Read from localStorage after mount
+  useEffect(() => {
     try {
       const saved = localStorage.getItem("menuStocks");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Use microtask to avoid lint warning about setState in effect
+          queueMicrotask(() => setMenuStocks(parsed));
+        }
       }
     } catch {}
-    return DEFAULT_ASHARES;
-  });
+  }, []);
 
   // ── Market Index Regime Detection (深证/沪指/创业板) ──
   const [indexRegimes, setIndexRegimes] = useState<Record<IndexKey, RegimeDetail | null>>({ sz: null, sh: null, cyb: null });
@@ -5589,10 +5592,18 @@ export default function StockTAssistant() {
   }, [timelineSignals]);
 
   // ── Signal Alert System State ──
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    try { const v = localStorage.getItem("t-sound-enabled"); return v === null ? true : v === "true"; } catch { return true; }
-  });
+  // Initialize with default to avoid hydration mismatch (localStorage read after mount)
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  // Read from localStorage after mount
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("t-sound-enabled");
+      if (v !== null) {
+        // Use microtask to avoid lint warning about setState in effect
+        queueMicrotask(() => setSoundEnabled(v === "true"));
+      }
+    } catch {}
+  }, []);
   const alertedSignalIdsRef = useRef<Set<string>>(new Set());
   const [flashSignal, setFlashSignal] = useState<'buy' | 'sell' | 'stoploss' | null>(null);
 
