@@ -1948,9 +1948,9 @@ function TimeSharingPanel({
               yAxisId="price"
               y={prevClose}
               stroke="hsl(var(--muted-foreground))"
-              strokeDasharray="4 2"
-              strokeWidth={0.5}
-              label={{ value: "0%", position: "left", fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+              strokeWidth={1}
+              strokeOpacity={0.7}
+              label={{ value: "  0%", position: "insideTopLeft", fill: "hsl(var(--foreground))", fontSize: 11, fontWeight: 600 }}
             />
             {/* Today's MA lines as dashed references */}
             {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
