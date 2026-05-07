@@ -5730,6 +5730,55 @@ export default function StockTAssistant() {
     }
   }, [showNewsAnalysis]);
 
+  // ── Live Timeline: inject real-time quote price into the latest minute ──
+  // Tencent API returns 1-minute granularity; quote updates every ~3s during trading.
+  // By replacing the last timeline point with quote.price, the chart moves in near-real-time.
+  const liveTimeline = useMemo(() => {
+    if (timeline.length === 0) return timeline;
+    // Only inject if quote has a valid price that differs from the last timeline point
+    if (!quote || !quote.price || quote.price <= 0) return timeline;
+    const last = timeline[timeline.length - 1];
+    if (last.price === quote.price) return timeline; // no change, avoid new ref
+
+    // Determine the current minute time string (HH:MM)
+    const now = new Date();
+    const curMin = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    // If the last timeline point is the current minute, update it with live price
+    if (last.time === curMin) {
+      const updated = timeline.slice(0, -1);
+      const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : last.changePercent;
+      // Update avgPrice using weighted average of existing avg + new price
+      updated.push({
+        ...last,
+        price: quote.price,
+        changePercent: Number(changePercent.toFixed(2)),
+        // Keep avgPrice from API (VWAP) — it's cumulative and accurate
+      });
+      return updated;
+    }
+
+    // If we're in a new minute that the timeline hasn't captured yet,
+    // add a new point (e.g. timeline shows 10:30 but it's 10:31 now)
+    // Only add during trading hours (9:30-11:30, 13:00-15:00)
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
+    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
+    if (isMorningSession || isAfternoonSession) {
+      const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : 0;
+      return [...timeline, {
+        time: curMin,
+        price: quote.price,
+        avgPrice: quote.price, // approximate VWAP for the new minute
+        volume: 0, // unknown until API updates
+        changePercent: Number(changePercent.toFixed(2)),
+      }];
+    }
+
+    return timeline;
+  }, [timeline, quote]);
+
   // ── Timeline last data slot index (matches fullDayData indexing in TimeSharingPanel) ──
   const tlLastDataIdx = useMemo(() => {
     if (liveTimeline.length === 0) return -1;
@@ -5944,55 +5993,6 @@ export default function StockTAssistant() {
 
     return { minPrice: mnP, maxPrice: mxP, pricePadding: pp, macdMin: mMin, macdMax: mMax, macdPadding: mPad, maxVolume: mv };
   }, [chartData]);
-
-  // ── Live Timeline: inject real-time quote price into the latest minute ──
-  // Tencent API returns 1-minute granularity; quote updates every ~3s during trading.
-  // By replacing the last timeline point with quote.price, the chart moves in near-real-time.
-  const liveTimeline = useMemo(() => {
-    if (timeline.length === 0) return timeline;
-    // Only inject if quote has a valid price that differs from the last timeline point
-    if (!quote || !quote.price || quote.price <= 0) return timeline;
-    const last = timeline[timeline.length - 1];
-    if (last.price === quote.price) return timeline; // no change, avoid new ref
-
-    // Determine the current minute time string (HH:MM)
-    const now = new Date();
-    const curMin = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-
-    // If the last timeline point is the current minute, update it with live price
-    if (last.time === curMin) {
-      const updated = timeline.slice(0, -1);
-      const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : last.changePercent;
-      // Update avgPrice using weighted average of existing avg + new price
-      updated.push({
-        ...last,
-        price: quote.price,
-        changePercent: Number(changePercent.toFixed(2)),
-        // Keep avgPrice from API (VWAP) — it's cumulative and accurate
-      });
-      return updated;
-    }
-
-    // If we're in a new minute that the timeline hasn't captured yet,
-    // add a new point (e.g. timeline shows 10:30 but it's 10:31 now)
-    // Only add during trading hours (9:30-11:30, 13:00-15:00)
-    const h = now.getHours();
-    const m = now.getMinutes();
-    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
-    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
-    if (isMorningSession || isAfternoonSession) {
-      const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : 0;
-      return [...timeline, {
-        time: curMin,
-        price: quote.price,
-        avgPrice: quote.price, // approximate VWAP for the new minute
-        volume: 0, // unknown until API updates
-        changePercent: Number(changePercent.toFixed(2)),
-      }];
-    }
-
-    return timeline;
-  }, [timeline, quote]);
 
   // Calculate MACD from 1-minute timeline data directly (同花顺 style: 1-min MACD on 分时图)
   // 同花顺分时图MACD是直接用1分钟数据计算的，不用日K线预热
