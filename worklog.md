@@ -451,3 +451,52 @@ Stage Summary:
 - Fibonacci retracement levels added as dynamic support/resistance in computeKeyPriceLevels
 - 6 new KDJ conditions available for custom factor compositions
 - Dev server running without errors
+## Performance Optimization - TimeSharingPanel & Main Component Memoization
+
+**Date:** 2025-03-04
+
+### Summary
+Applied 7 performance optimizations to `/home/z/my-project/src/app/page.tsx` to reduce unnecessary re-computations on every render. No visual behavior was changed.
+
+### Changes Made
+
+1. **Change 1: Memoize zoomData and all derived calculations in TimeSharingPanel**
+   - Wrapped the entire zoom slicing + Y-axis range + signal counts + MACD range + volume range + lastItem + lastSignal + barSize computation (formerly lines 1563-1670) into a single `useMemo` block
+   - Dependencies: `[fullDayData, data, visibleMinutes, panOffset, timeTicks, prevClose, signals, macdData]`
+   - Replaced `Math.min(...spread)` / `Math.max(...spread)` with `reduce` to avoid call stack issues
+   - Replaced repeated `.filter()` calls for signal counting with a single `for...of` loop
+   - Moved early return `if (data.length === 0) return null;` after all hooks to comply with React Hooks rules
+
+2. **Change 2: Memoize MiniTimelinePanel computations**
+   - Wrapped `safePrevClose`, Y-axis range, percent range, maxVolume, barSize, MACD range, lastItem, isUp calculations into a `useMemo`
+   - Dependencies: `[data, prevClose, chartData, macdData]`
+   - Used `reduce` for min/max instead of spread
+   - Added early-return inside useMemo for empty data case; moved `if (data.length === 0) return null;` after the hook
+
+3. **Change 3: Memoize K-line range calculations in main component**
+   - Changed `allChartData = history.filter(...)` to `useMemo(() => history.filter(...), [history])`
+   - Wrapped `minPrice`, `maxPrice`, `pricePadding`, `macdMin`, `macdMax`, `macdPadding`, `maxVolume` into a single `useMemo`
+   - Dependencies: `[chartData]`
+   - Used `reduce` for min/max instead of spread
+
+4. **Change 4: Fix customFactors 5-second polling**
+   - Changed `setCustomFactors(parsed)` to `setCustomFactors(prev => { if (JSON.stringify(prev) === JSON.stringify(parsed)) return prev; return parsed; })` to avoid unnecessary state updates
+   - Same pattern applied for `BUILT_IN_CUSTOM_FACTORS` case and catch block
+
+5. **Change 5: Memoize signal counts in main page component**
+   - Created a single `signalCounts` useMemo that computes buyCount, strongBuys, sellCount, strongSells, totalSigs, strongSigs, mediumSigs, weakSigs, confluenceCount, keyLevelCount, vwapSlopeCount, indexRegimeCount in one pass
+   - Dependencies: `[timelineSignals]`
+   - Replaced 2 IIFE blocks (buy/sell signal cards) with direct usage of `signalCounts` values
+   - Replaced the v3.6 enhancement IIFE block with destructured values from `signalCounts`
+
+6. **Change 6: Memoize detectMarketRegimeDetail in TimeSharingPanel**
+   - Extracted `detectMarketRegimeDetail(data, prevClose)` from inside an IIFE in JSX to a `useMemo` before the return
+   - Dependencies: `[data, prevClose]`
+   - Updated the IIFE to use `regimeDetail` instead of calling the function directly
+
+7. **Change 7: Combine ref sync useEffects**
+   - In TimeSharingPanel: Combined 8 separate `useEffect` calls (panOffset, visibleMinutes, fullDayData, onPanOffsetChange, onZoomIn, onZoomOut, zoomIdx, maxZoomIdx) into a single `useEffect`
+   - In main component: Combined 3 separate `useEffect` calls (klinePanOffset, klineVisibleBars, allChartData) into a single `useEffect`
+
+### Lint Status
+All lint checks pass with 0 errors, 0 warnings.

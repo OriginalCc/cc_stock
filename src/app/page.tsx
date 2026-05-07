@@ -1152,38 +1152,45 @@ function MiniTimelinePanel({
     macd: macdByTime.get(d.time)?.macd ?? undefined,
   })), [fullDayData, macdByTime]);
 
+  const { safePrevClose, yMin, yMax, percentMin, percentMax, maxVolume, barSize, macdMin, macdMax, macdPad, lastItem, isUp } = useMemo(() => {
+    if (data.length === 0) return { safePrevClose: 0, yMin: 0, yMax: 1, percentMin: 0, percentMax: 0, maxVolume: 1, barSize: 2, macdMin: -1, macdMax: 1, macdPad: 0.1, lastItem: null as never, isUp: true };
+    const spc = prevClose > 0 ? prevClose : data[0].price;
+
+    // Smart Y-axis (same as main chart)
+    const allPrices = data.map(d => d.price);
+    const allAvgPrices = data.filter(d => d.avgPrice != null).map(d => d.avgPrice!);
+    // Use reduce for min/max to avoid call stack issues with spread on large arrays
+    const combined = [...allPrices, ...allAvgPrices];
+    const dataMin = combined.reduce((mn, v) => (v < mn ? v : mn), combined[0] ?? 0);
+    const dataMax = combined.reduce((mx, v) => (v > mx ? v : mx), combined[0] ?? 0);
+    const dataRange = dataMax - dataMin || spc * 0.001;
+    const padding = Math.max(dataRange * 0.2, spc * 0.002);
+    let ymn = dataMin - padding;
+    let ymx = dataMax + padding;
+    const prevCloseMargin = spc * 0.002;
+    if (spc < ymn) ymn = spc - prevCloseMargin;
+    else if (spc > ymx) ymx = spc + prevCloseMargin;
+
+    const pMin = ((ymn - spc) / spc) * 100;
+    const pMax = ((ymx - spc) / spc) * 100;
+
+    const mv = data.reduce((mx, d) => (d.volume > mx ? d.volume : mx), 1);
+    const bs = chartData.length > 200 ? 1 : chartData.length > 100 ? 1.5 : 2;
+
+    // MACD range
+    const macdValues = macdData.flatMap(d => [d.dif, d.dea, d.macd]).filter((v): v is number => v != null);
+    const mMin = macdValues.length ? macdValues.reduce((mn, v) => (v < mn ? v : mn), macdValues[0]) : -1;
+    const mMax = macdValues.length ? macdValues.reduce((mx, v) => (v > mx ? v : mx), macdValues[0]) : 1;
+    const mPad = (mMax - mMin) * 0.1 || 0.1;
+
+    // Last data info
+    const li = data[data.length - 1];
+    const iu = li.changePercent >= 0;
+
+    return { safePrevClose: spc, yMin: ymn, yMax: ymx, percentMin: pMin, percentMax: pMax, maxVolume: mv, barSize: bs, macdMin: mMin, macdMax: mMax, macdPad: mPad, lastItem: li, isUp: iu };
+  }, [data, prevClose, chartData, macdData]);
+
   if (data.length === 0) return null;
-
-  const safePrevClose = prevClose > 0 ? prevClose : data[0].price;
-
-  // Smart Y-axis (same as main chart)
-  const allPrices = data.map(d => d.price);
-  const allAvgPrices = data.filter(d => d.avgPrice != null).map(d => d.avgPrice!);
-  const dataMin = Math.min(...allPrices, ...allAvgPrices);
-  const dataMax = Math.max(...allPrices, ...allAvgPrices);
-  const dataRange = dataMax - dataMin || safePrevClose * 0.001;
-  const padding = Math.max(dataRange * 0.2, safePrevClose * 0.002);
-  let yMin = dataMin - padding;
-  let yMax = dataMax + padding;
-  const prevCloseMargin = safePrevClose * 0.002;
-  if (safePrevClose < yMin) yMin = safePrevClose - prevCloseMargin;
-  else if (safePrevClose > yMax) yMax = safePrevClose + prevCloseMargin;
-
-  const percentMin = ((yMin - safePrevClose) / safePrevClose) * 100;
-  const percentMax = ((yMax - safePrevClose) / safePrevClose) * 100;
-
-  const maxVolume = Math.max(...data.map(d => d.volume), 1);
-  const barSize = chartData.length > 200 ? 1 : chartData.length > 100 ? 1.5 : 2;
-
-  // MACD range
-  const macdValues = macdData.flatMap(d => [d.dif, d.dea, d.macd]).filter((v): v is number => v != null);
-  const macdMin = macdValues.length ? Math.min(...macdValues) : -1;
-  const macdMax = macdValues.length ? Math.max(...macdValues) : 1;
-  const macdPad = (macdMax - macdMin) * 0.1 || 0.1;
-
-  // Last data info
-  const lastItem = data[data.length - 1];
-  const isUp = lastItem.changePercent >= 0;
 
   return (
     <div className="bg-card rounded-lg border border-border overflow-hidden">
@@ -1441,14 +1448,16 @@ function TimeSharingPanel({
   const onZoomOutRef = useRef(onZoomOut);
   const zoomIdxRef = useRef(zoomIdx);
   const maxZoomIdxRef = useRef(maxZoomIdx);
-  useEffect(() => { panOffsetRef.current = panOffset; }, [panOffset]);
-  useEffect(() => { visibleMinutesRef.current = visibleMinutes; }, [visibleMinutes]);
-  useEffect(() => { fullDayDataRef.current = fullDayData; }, [fullDayData]);
-  useEffect(() => { onPanOffsetChangeRef.current = onPanOffsetChange; }, [onPanOffsetChange]);
-  useEffect(() => { onZoomInRef.current = onZoomIn; }, [onZoomIn]);
-  useEffect(() => { onZoomOutRef.current = onZoomOut; }, [onZoomOut]);
-  useEffect(() => { zoomIdxRef.current = zoomIdx; }, [zoomIdx]);
-  useEffect(() => { maxZoomIdxRef.current = maxZoomIdx; }, [maxZoomIdx]);
+  useEffect(() => {
+    panOffsetRef.current = panOffset;
+    visibleMinutesRef.current = visibleMinutes;
+    fullDayDataRef.current = fullDayData;
+    onPanOffsetChangeRef.current = onPanOffsetChange;
+    onZoomInRef.current = onZoomIn;
+    onZoomOutRef.current = onZoomOut;
+    zoomIdxRef.current = zoomIdx;
+    maxZoomIdxRef.current = maxZoomIdx;
+  }, [panOffset, visibleMinutes, fullDayData, onPanOffsetChange, onZoomIn, onZoomOut, zoomIdx, maxZoomIdx]);
 
   // ── Drag-to-pan & scroll-to-pan (stable native events via ref pattern) ──
   useEffect(() => {
@@ -1558,116 +1567,114 @@ function TimeSharingPanel({
     };
   }, []); // empty deps — stable listeners via refs
 
-  if (data.length === 0) return null;
+  // ── Memoized: zoom slicing + all derived calculations ──
+  const {
+    zoomData, xDomain, zoomTimeTicks, isZoomed, safePrevClose,
+    yMin, yMax, percentMin, percentMax,
+    buySignals, sellSignals, stoplossSignals,
+    maxVolume, macdMin, macdMax, macdPad,
+    lastItem, lastSignal, barSize,
+  } = useMemo(() => {
+    // ── Zoom: slice fullDayData to show only visibleMinutes ──
+    const lastDataIdx = fullDayData.reduce((last, item, idx) => (item.hasData ? idx : last), -1);
+    const totalSlots = fullDayData.length;
 
-  // ── Zoom: slice fullDayData to show only visibleMinutes ──
-  // Find the last data point with actual data
-  const lastDataIdx = fullDayData.reduce((last, item, idx) => (item.hasData ? idx : last), -1);
-  const totalSlots = fullDayData.length;
+    // Calculate the visible range
+    let zd: typeof fullDayData;
+    let xd: [number, number];
+    let ztt: number[];
 
-  // Calculate the visible range
-  let zoomData: typeof fullDayData;
-  let xDomain: [number, number];
-  let zoomTimeTicks: number[];
+    if (visibleMinutes >= totalSlots || lastDataIdx < 0) {
+      zd = fullDayData;
+      xd = [0, totalSlots - 1];
+      ztt = timeTicks;
+    } else {
+      const baseEndIdx = lastDataIdx;
+      const endIdx = Math.min(baseEndIdx, Math.max(visibleMinutes - 1, baseEndIdx - panOffset));
+      const startIdx = Math.max(0, endIdx - visibleMinutes + 1);
+      zd = fullDayData.slice(startIdx, endIdx + 1);
+      zd = zd.map((item, i) => ({ ...item, idx: i }));
+      xd = [0, zd.length - 1];
 
-  if (visibleMinutes >= totalSlots || lastDataIdx < 0) {
-    // Full day view (default)
-    zoomData = fullDayData;
-    xDomain = [0, totalSlots - 1];
-    zoomTimeTicks = timeTicks;
-  } else {
-    // Zoomed in: show `visibleMinutes` minutes, offset by panOffset from the latest data
-    const maxPanStart = Math.max(0, lastDataIdx - visibleMinutes + 1);
-    const baseEndIdx = lastDataIdx;
-    // panOffset > 0 means panning to the left (seeing earlier data)
-    const endIdx = Math.min(baseEndIdx, Math.max(visibleMinutes - 1, baseEndIdx - panOffset));
-    const startIdx = Math.max(0, endIdx - visibleMinutes + 1);
-    zoomData = fullDayData.slice(startIdx, endIdx + 1);
-    // Re-index data so idx starts from 0
-    zoomData = zoomData.map((item, i) => ({ ...item, idx: i }));
-    xDomain = [0, zoomData.length - 1];
-
-    // Generate time ticks for the zoomed range
-    const tickInterval = zoomData.length <= 60 ? 10 : zoomData.length <= 120 ? 20 : 30;
-    zoomTimeTicks = [];
-    for (let i = 0; i < zoomData.length; i += tickInterval) {
-      zoomTimeTicks.push(i);
+      const tickInterval = zd.length <= 60 ? 10 : zd.length <= 120 ? 20 : 30;
+      ztt = [];
+      for (let i = 0; i < zd.length; i += tickInterval) {
+        ztt.push(i);
+      }
+      if (ztt[ztt.length - 1] !== zd.length - 1) {
+        ztt.push(zd.length - 1);
+      }
     }
-    // Always include last point
-    if (zoomTimeTicks[zoomTimeTicks.length - 1] !== zoomData.length - 1) {
-      zoomTimeTicks.push(zoomData.length - 1);
-    }
-  }
 
-  const isZoomed = visibleMinutes < totalSlots;
+    const iz = visibleMinutes < totalSlots;
+
+    // Smart Y-axis auto-scaling
+    const spc = prevClose > 0 ? prevClose : data[0]?.price ?? 0;
+    const visiblePrices = zd.filter(d => d.hasData && d.price != null).map(d => d.price!);
+    const visibleAvgPrices = zd.filter(d => d.hasData && d.avgPrice != null).map(d => d.avgPrice!);
+    const ap = visiblePrices.length > 0 ? visiblePrices : data.map((d) => d.price);
+    const aap = visibleAvgPrices.length > 0 ? visibleAvgPrices : data.filter(d => d.avgPrice != null).map(d => d.avgPrice!);
+
+    // Use reduce for min/max to avoid call stack issues with spread on large arrays
+    const allVals = [...ap, ...aap];
+    const dMin = allVals.reduce((mn, v) => (v < mn ? v : mn), allVals[0] ?? 0);
+    const dMax = allVals.reduce((mx, v) => (v > mx ? v : mx), allVals[0] ?? 0);
+    const dRange = dMax - dMin || spc * 0.001;
+    const pad = Math.max(dRange * 0.2, spc * 0.002);
+
+    let ymn = dMin - pad;
+    let ymx = dMax + pad;
+    const pcm = spc * 0.002;
+    if (spc < ymn) ymn = spc - pcm;
+    else if (spc > ymx) ymx = spc + pcm;
+
+    const pMin = ((ymn - spc) / spc) * 100;
+    const pMax = ((ymx - spc) / spc) * 100;
+
+    // Count signals
+    let bs = 0, ss = 0, sls = 0;
+    for (const s of signals) {
+      if (s?.type === "buy") bs++;
+      else if (s?.type === "sell") ss++;
+      else if (s?.type === "stoploss") sls++;
+    }
+
+    // Volume range (use reduce to avoid spread)
+    const mv = data.reduce((mx, d) => (d.volume > mx ? d.volume : mx), 1);
+
+    // MACD range (use reduce)
+    const macdVals = macdData.flatMap((d) => [d.dif, d.dea, d.macd]).filter((v): v is number => v != null);
+    const mMin = macdVals.length ? macdVals.reduce((mn, v) => (v < mn ? v : mn), macdVals[0]) : -1;
+    const mMax = macdVals.length ? macdVals.reduce((mx, v) => (v > mx ? v : mx), macdVals[0]) : 1;
+    const mPad = (mMax - mMin) * 0.1 || 0.1;
+
+    // Last item & last signal
+    const li = data[data.length - 1];
+    let ls: typeof signals[number] = null;
+    for (let i = signals.length - 1; i >= 0; i--) {
+      if (signals[i]) { ls = signals[i]; break; }
+    }
+
+    const brs = zd.length > 200 ? 1 : zd.length > 100 ? 1.5 : zd.length > 60 ? 2 : 3;
+
+    return {
+      zoomData: zd, xDomain: xd, zoomTimeTicks: ztt, isZoomed: iz, safePrevClose: spc,
+      yMin: ymn, yMax: ymx, percentMin: pMin, percentMax: pMax,
+      buySignals: bs, sellSignals: ss, stoplossSignals: sls,
+      maxVolume: mv, macdMin: mMin, macdMax: mMax, macdPad: mPad,
+      lastItem: li, lastSignal: ls, barSize: brs,
+    };
+  }, [fullDayData, data, visibleMinutes, panOffset, timeTicks, prevClose, signals, macdData]);
 
   // ── Crosshair item (must be after zoomData is computed) ──
   const crosshairItem = crosshairIdx != null && crosshairIdx >= 0 && crosshairIdx < zoomData.length
     ? zoomData[crosshairIdx]
     : null;
 
-  // Smart Y-axis auto-scaling: adapt to actual data range instead of always centering on prevClose
-  // This makes fluctuations more visible when price only moves in one direction
-  const safePrevClose = prevClose > 0 ? prevClose : data[0].price;
+  // ── Memoize detectMarketRegimeDetail (was called inside IIFE on every render) ──
+  const regimeDetail = useMemo(() => detectMarketRegimeDetail(data, prevClose), [data, prevClose]);
 
-  // Collect actual visible prices from zoomData (not full data)
-  const visiblePrices = zoomData.filter(d => d.hasData && d.price != null).map(d => d.price!);
-  const visibleAvgPrices = zoomData.filter(d => d.hasData && d.avgPrice != null).map(d => d.avgPrice!);
-
-  // Fallback to full data range if no visible prices
-  const allPrices = visiblePrices.length > 0 ? visiblePrices : data.map((d) => d.price);
-  const allAvgPrices = visibleAvgPrices.length > 0 ? visibleAvgPrices : data.filter(d => d.avgPrice != null).map(d => d.avgPrice!);
-
-  const dataMin = Math.min(...allPrices, ...allAvgPrices);
-  const dataMax = Math.max(...allPrices, ...allAvgPrices);
-  const dataRange = dataMax - dataMin || safePrevClose * 0.001;
-
-  // Add proportional padding (20% on each side, with minimum)
-  const padding = Math.max(dataRange * 0.2, safePrevClose * 0.002);
-
-  let yMin = dataMin - padding;
-  let yMax = dataMax + padding;
-
-  // Ensure prevClose (昨收价) reference line is always visible at the edge
-  // But don't extend the range too far just to center on it
-  const prevCloseMargin = safePrevClose * 0.002;
-  if (safePrevClose < yMin) {
-    // All data is above prevClose: extend yMin to include prevClose
-    yMin = safePrevClose - prevCloseMargin;
-  } else if (safePrevClose > yMax) {
-    // All data is below prevClose: extend yMax to include prevClose
-    yMax = safePrevClose + prevCloseMargin;
-  }
-
-  // Calculate percent range (aligned with price axis)
-  const percentMin = ((yMin - safePrevClose) / safePrevClose) * 100;
-  const percentMax = ((yMax - safePrevClose) / safePrevClose) * 100;
-
-  // Count signals
-  const buySignals = signals.filter((s) => s?.type === "buy").length;
-  const sellSignals = signals.filter((s) => s?.type === "sell").length;
-  const stoplossSignals = signals.filter((s) => s?.type === "stoploss").length;
-
-  // Volume range
-  const maxVolume = Math.max(...data.map((d) => d.volume), 1);
-
-  // MACD range
-  const macdValues = macdData.flatMap((d) => [d.dif, d.dea, d.macd]).filter((v) => v != null) as number[];
-  const macdMin = macdValues.length ? Math.min(...macdValues) : -1;
-  const macdMax = macdValues.length ? Math.max(...macdValues) : 1;
-  const macdPad = (macdMax - macdMin) * 0.1 || 0.1;
-
-  // Current price info for header display
-  const lastItem = data[data.length - 1];
-  const lastSignal = (() => {
-    for (let i = signals.length - 1; i >= 0; i--) {
-      if (signals[i]) return signals[i];
-    }
-    return null;
-  })();
-
-  // Bar size for volume/MACD based on zoomed data count
-  const barSize = zoomData.length > 200 ? 1 : zoomData.length > 100 ? 1.5 : zoomData.length > 60 ? 2 : 3;
+  if (data.length === 0) return null;
 
   return (
     <div
@@ -1737,7 +1744,7 @@ function TimeSharingPanel({
         )}
         {/* Market Regime Badge - prominent + T-mode recommendation */}
         {(() => {
-          const detail = detectMarketRegimeDetail(data, prevClose);
+          const detail = regimeDetail;
           const regimeConfig: Record<string, { bg: string; text: string; icon: string }> = {
             "上升通道": { bg: "bg-red-600/20 border-red-600/40", text: "text-red-700 dark:text-red-300", icon: "↑" },
             "下跌趋势": { bg: "bg-green-600/20 border-green-600/40", text: "text-green-700 dark:text-green-300", icon: "↓" },
@@ -5281,13 +5288,22 @@ export default function StockTAssistant() {
         const saved = localStorage.getItem(CUSTOM_FACTORS_STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved) as CustomFactorDefinition[];
-          setCustomFactors(parsed);
+          setCustomFactors(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(parsed)) return prev;
+            return parsed;
+          });
         } else {
           // Use built-in defaults if nothing saved
-          setCustomFactors(BUILT_IN_CUSTOM_FACTORS);
+          setCustomFactors(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(BUILT_IN_CUSTOM_FACTORS)) return prev;
+            return BUILT_IN_CUSTOM_FACTORS;
+          });
         }
       } catch {
-        setCustomFactors(BUILT_IN_CUSTOM_FACTORS);
+        setCustomFactors(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(BUILT_IN_CUSTOM_FACTORS)) return prev;
+          return BUILT_IN_CUSTOM_FACTORS;
+        });
       }
     };
     loadCustomFactors();
@@ -5332,7 +5348,7 @@ export default function StockTAssistant() {
   const [klinePanOffset, setKlinePanOffset] = useState<number>(0); // pan offset for K-line (0 = rightmost/latest)
   const klineDragRef = useRef<{ startX: number; startPanOffset: number; isDragging: boolean }>({ startX: 0, startPanOffset: 0, isDragging: false });
   const klineChartContainerRef = useRef<HTMLDivElement>(null);
-  const allChartData = history.filter((h) => h.close > 0);
+  const allChartData = useMemo(() => history.filter((h) => h.close > 0), [history]);
 
   // ── Timeline zoom state ──
   const TL_ZOOM_LEVELS = [250, 180, 120, 90, 60]; // minutes visible: full day(250>242 ensures full view), ~3h, ~2h, 1.5h, 1h
@@ -5446,9 +5462,11 @@ export default function StockTAssistant() {
   const klinePanOffsetRef = useRef(klinePanOffset);
   const klineVisibleBarsRef = useRef(klineVisibleBars);
   const allChartDataRef = useRef(allChartData);
-  useEffect(() => { klinePanOffsetRef.current = klinePanOffset; }, [klinePanOffset]);
-  useEffect(() => { klineVisibleBarsRef.current = klineVisibleBars; }, [klineVisibleBars]);
-  useEffect(() => { allChartDataRef.current = allChartData; }, [allChartData]);
+  useEffect(() => {
+    klinePanOffsetRef.current = klinePanOffset;
+    klineVisibleBarsRef.current = klineVisibleBars;
+    allChartDataRef.current = allChartData;
+  }, [klinePanOffset, klineVisibleBars, allChartData]);
 
   // Pan helper — defined inside useEffect to avoid memoization issues
   useEffect(() => {
@@ -5534,23 +5552,24 @@ export default function StockTAssistant() {
   const isUp = quote ? quote.change >= 0 : true;
   const priceColor = isUp ? "text-red-500" : "text-green-500";
 
-  // Price range for Y-axis
-  const allPrices = chartData.flatMap((d) => [d.high, d.low]).filter(Boolean);
-  const minPrice = allPrices.length ? Math.min(...allPrices) : 0;
-  const maxPrice = allPrices.length ? Math.max(...allPrices) : 100;
-  const pricePadding = (maxPrice - minPrice) * 0.05;
+  // Price/MACD/Volume ranges for Y-axis (memoized)
+  const { minPrice, maxPrice, pricePadding, macdMin, macdMax, macdPadding, maxVolume } = useMemo(() => {
+    const allPrices = chartData.flatMap((d) => [d.high, d.low]).filter(Boolean) as number[];
+    const mnP = allPrices.length ? allPrices.reduce((mn, v) => (v < mn ? v : mn), allPrices[0]) : 0;
+    const mxP = allPrices.length ? allPrices.reduce((mx, v) => (v > mx ? v : mx), allPrices[0]) : 100;
+    const pp = (mxP - mnP) * 0.05;
 
-  // MACD range (for K-line chart)
-  const macdValues = chartData
-    .flatMap((d) => [d.dif, d.dea, d.macd])
-    .filter((v) => v != null) as number[];
-  const macdMin = macdValues.length ? Math.min(...macdValues) : -1;
-  const macdMax = macdValues.length ? Math.max(...macdValues) : 1;
-  const macdPadding = (macdMax - macdMin) * 0.1 || 0.1;
+    const macdVals = chartData
+      .flatMap((d) => [d.dif, d.dea, d.macd])
+      .filter((v): v is number => v != null);
+    const mMin = macdVals.length ? macdVals.reduce((mn, v) => (v < mn ? v : mn), macdVals[0]) : -1;
+    const mMax = macdVals.length ? macdVals.reduce((mx, v) => (v > mx ? v : mx), macdVals[0]) : 1;
+    const mPad = (mMax - mMin) * 0.1 || 0.1;
 
-  // Volume range (for K-line chart)
-  const volumes = chartData.map((d) => d.volume).filter(Boolean);
-  const maxVolume = volumes.length ? Math.max(...volumes) : 1;
+    const mv = chartData.reduce((mx, d) => (d.volume > mx ? d.volume : mx), 1);
+
+    return { minPrice: mnP, maxPrice: mxP, pricePadding: pp, macdMin: mMin, macdMax: mMax, macdPadding: mPad, maxVolume: mv };
+  }, [chartData]);
 
   // Calculate MACD from 1-minute timeline data directly (同花顺 style: 1-min MACD on 分时图)
   // 同花顺分时图MACD是直接用1分钟数据计算的，不用日K线预热
@@ -5591,6 +5610,31 @@ export default function StockTAssistant() {
       if (timelineSignals[i]) return timelineSignals[i];
     }
     return null;
+  }, [timelineSignals]);
+
+  // ── Memoized signal counts (avoids repeated filtering in JSX IIFEs) ──
+  const signalCounts = useMemo(() => {
+    let buyCount = 0, strongBuys = 0, sellCount = 0, strongSells = 0;
+    let totalSigs = 0, strongSigs = 0, mediumSigs = 0, weakSigs = 0;
+    let confluenceCount = 0, keyLevelCount = 0, vwapSlopeCount = 0, indexRegimeCount = 0;
+    for (const s of timelineSignals) {
+      if (!s) continue;
+      totalSigs++;
+      if (s.type === "buy") { buyCount++; if (s.strength === "strong") strongBuys++; }
+      else if (s.type === "sell") { sellCount++; if (s.strength === "strong") strongSells++; }
+      if (s.strength === "strong") strongSigs++;
+      else if (s.strength === "medium") mediumSigs++;
+      else if (s.strength === "weak") weakSigs++;
+      if (s.description?.includes("共振")) confluenceCount++;
+      if (s.description?.includes("阻力确认") || s.description?.includes("支撑确认")) keyLevelCount++;
+      if (s.description?.includes("均价线拐头")) vwapSlopeCount++;
+      if (s.description?.includes("大盘")) indexRegimeCount++;
+    }
+    return {
+      buyCount, strongBuys, sellCount, strongSells,
+      totalSigs, strongSigs, mediumSigs, weakSigs,
+      confluenceCount, keyLevelCount, vwapSlopeCount, indexRegimeCount,
+    };
   }, [timelineSignals]);
 
   // ── Signal Alert System State ──
@@ -6435,42 +6479,28 @@ export default function StockTAssistant() {
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              {chartMode === "timeline" && timelineSignals.filter(Boolean).length > 0 ? (
+              {chartMode === "timeline" && signalCounts.totalSigs > 0 ? (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {(() => {
-                      const buyCount = timelineSignals.filter((s) => s?.type === "buy").length;
-                      const strongBuys = timelineSignals.filter((s) => s?.type === "buy" && s?.strength === "strong").length;
-
-                      return (
-                        <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                          <div className="text-red-500"><TrendingUp className="h-4 w-4" /></div>
-                          <div>
-                            <div className="text-xs text-muted-foreground">买入信号</div>
-                            <div className="text-sm font-medium text-red-500">
-                              {buyCount}个 {strongBuys > 0 && `(强信号${strongBuys}个)`}
-                            </div>
-                          </div>
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                      <div className="text-red-500"><TrendingUp className="h-4 w-4" /></div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">买入信号</div>
+                        <div className="text-sm font-medium text-red-500">
+                          {signalCounts.buyCount}个 {signalCounts.strongBuys > 0 && `(强信号${signalCounts.strongBuys}个)`}
                         </div>
-                      );
-                    })()}
+                      </div>
+                    </div>
 
-                    {(() => {
-                      const sellCount = timelineSignals.filter((s) => s?.type === "sell").length;
-                      const strongSells = timelineSignals.filter((s) => s?.type === "sell" && s?.strength === "strong").length;
-
-                      return (
-                        <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                          <div className="text-green-500"><TrendingDown className="h-4 w-4" /></div>
-                          <div>
-                            <div className="text-xs text-muted-foreground">卖出信号</div>
-                            <div className="text-sm font-medium text-green-500">
-                              {sellCount}个 {strongSells > 0 && `(强信号${strongSells}个)`}
-                            </div>
-                          </div>
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                      <div className="text-green-500"><TrendingDown className="h-4 w-4" /></div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">卖出信号</div>
+                        <div className="text-sm font-medium text-green-500">
+                          {signalCounts.sellCount}个 {signalCounts.strongSells > 0 && `(强信号${signalCounts.strongSells}个)`}
                         </div>
-                      );
-                    })()}
+                      </div>
+                    </div>
 
                     {(() => {
                       const lastTL = timeline[timeline.length - 1];
@@ -6519,26 +6549,14 @@ export default function StockTAssistant() {
 
                   {/* v3.6 胜率增强提示 */}
                   {(() => {
-                    const totalSigs = timelineSignals.filter(Boolean).length;
-                    const strongSigs = timelineSignals.filter(s => s?.strength === "strong").length;
-                    const mediumSigs = timelineSignals.filter(s => s?.strength === "medium").length;
-                    const weakSigs = timelineSignals.filter(s => s?.strength === "weak").length;
+                    const { totalSigs, strongSigs, confluenceCount, keyLevelCount, vwapSlopeCount, indexRegimeCount } = signalCounts;
                     const strongRatio = totalSigs > 0 ? (strongSigs / totalSigs * 100).toFixed(0) : "0";
 
-                    // Detect confluence signals
-                    const confluenceSigs = timelineSignals.filter(s => s?.description?.includes("共振"));
-                    // Detect key level signals
-                    const keyLevelSigs = timelineSignals.filter(s => s?.description?.includes("阻力确认") || s?.description?.includes("支撑确认"));
-                    // Detect VWAP slope signals
-                    const vwapSlopeSigs = timelineSignals.filter(s => s?.description?.includes("均价线拐头"));
-                    // Detect index regime signals
-                    const indexRegimeSigs = timelineSignals.filter(s => s?.description?.includes("大盘"));
-
                     const enhancements: { icon: string; label: string; count: number; color: string }[] = [
-                      { icon: "🎯", label: "因子共振", count: confluenceSigs.length, color: "text-amber-600 dark:text-amber-400" },
-                      { icon: "📍", label: "关键价位", count: keyLevelSigs.length, color: "text-blue-600 dark:text-blue-400" },
-                      { icon: "📐", label: "均价拐头", count: vwapSlopeSigs.length, color: "text-purple-600 dark:text-purple-400" },
-                      { icon: "🌐", label: "大盘联动", count: indexRegimeSigs.length, color: "text-teal-600 dark:text-teal-400" },
+                      { icon: "🎯", label: "因子共振", count: confluenceCount, color: "text-amber-600 dark:text-amber-400" },
+                      { icon: "📍", label: "关键价位", count: keyLevelCount, color: "text-blue-600 dark:text-blue-400" },
+                      { icon: "📐", label: "均价拐头", count: vwapSlopeCount, color: "text-purple-600 dark:text-purple-400" },
+                      { icon: "🌐", label: "大盘联动", count: indexRegimeCount, color: "text-teal-600 dark:text-teal-400" },
                     ];
                     const activeEnhancements = enhancements.filter(e => e.count > 0);
 
@@ -6561,10 +6579,10 @@ export default function StockTAssistant() {
                           ))}
                         </div>
                         <div className="text-[9px] text-muted-foreground mt-1.5 leading-relaxed">
-                          {confluenceSigs.length > 0 && "多因子共振确认的信号胜率显著高于单因子。"}
-                          {keyLevelSigs.length > 0 && "关键价位附近的信号更可靠。"}
-                          {vwapSlopeSigs.length > 0 && "均价线拐头确认趋势反转。"}
-                          {indexRegimeSigs.length > 0 && "大盘方向与个股信号一致时增强。"}
+                          {confluenceCount > 0 && "多因子共振确认的信号胜率显著高于单因子。"}
+                          {keyLevelCount > 0 && "关键价位附近的信号更可靠。"}
+                          {vwapSlopeCount > 0 && "均价线拐头确认趋势反转。"}
+                          {indexRegimeCount > 0 && "大盘方向与个股信号一致时增强。"}
                         </div>
                       </div>
                     );
