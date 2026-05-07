@@ -1421,6 +1421,12 @@ function TimeSharingPanel({
     return { fullDayData: fullDay, timeTicks: ticks };
   }, [data, prevClose, signals, macdData]);
 
+  // ── Crosshair state: shared across all three panels ──
+  const [crosshairIdx, setCrosshairIdx] = useState<number | null>(null);
+  const crosshairItem = crosshairIdx != null && crosshairIdx >= 0 && crosshairIdx < zoomData.length
+    ? zoomData[crosshairIdx]
+    : null;
+
   // ── Drag-to-pan & scroll-to-pan state ──
   const dragRef = useRef<{ startX: number; startPanOffset: number; isDragging: boolean }>({ startX: 0, startPanOffset: 0, isDragging: false });
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -1831,7 +1837,31 @@ function TimeSharingPanel({
           }
           return null;
         })()}
-        {/* Zoom Controls */}
+        {/* Crosshair data display */}
+        {crosshairItem?.hasData && (() => {
+          const pct = crosshairItem.changePercent;
+          const isUp = pct >= 0;
+          return (
+            <span className="flex items-center gap-2 text-[10px] tabular-nums">
+              <span className="text-muted-foreground">{crosshairItem.time}</span>
+              <span className={isUp ? "text-red-600" : "text-green-600"}>{crosshairItem.price?.toFixed(2)}</span>
+              <span className={isUp ? "text-red-600" : "text-green-600"}>{isUp ? "+" : ""}{pct?.toFixed(2)}%</span>
+              {crosshairItem.volume > 0 && (
+                <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
+              )}
+              {crosshairItem.dif != null && (
+                <span className="text-blue-600">DIF {crosshairItem.dif.toFixed(3)}</span>
+              )}
+              {crosshairItem.dea != null && (
+                <span className="text-orange-600">DEA {crosshairItem.dea.toFixed(3)}</span>
+              )}
+              {crosshairItem.macd != null && (
+                <span className={crosshairItem.macd >= 0 ? "text-red-600" : "text-green-600"}>MACD {crosshairItem.macd.toFixed(3)}</span>
+              )}
+            </span>
+          );
+        })()}
+        {/* Zoom Controls - timeline panel */}
         <div className="ml-auto flex items-center gap-1">
           {isZoomed && (
             <Button
@@ -1904,7 +1934,16 @@ function TimeSharingPanel({
       {/* ─── Panel 1: Price Chart ─── */}
       <div className="relative">
         <ResponsiveContainer width="100%" height={isZoomed ? 420 : 360}>
-          <ComposedChart data={zoomData} margin={{ top: 36, right: 58, left: 2, bottom: 16 }}>
+          <ComposedChart
+            data={zoomData}
+            margin={{ top: 36, right: 58, left: 2, bottom: 16 }}
+            onMouseMove={(state: any) => {
+              if (state?.activeTooltipIndex != null) {
+                setCrosshairIdx(state.activeTooltipIndex);
+              }
+            }}
+            onMouseLeave={() => setCrosshairIdx(null)}
+          >
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="hsl(var(--border))"
@@ -2099,6 +2138,10 @@ function TimeSharingPanel({
               connectNulls
               isAnimationActive={false}
             />
+            {/* Crosshair vertical line - shared across panels */}
+            {crosshairIdx != null && crosshairItem?.hasData && (
+              <ReferenceLine yAxisId="price" x={crosshairIdx} stroke="#94a3b8" strokeWidth={0.8} strokeDasharray="3 3" />
+            )}
             <Customized component={TimelineSignalRenderer} />
           </ComposedChart>
         </ResponsiveContainer>
@@ -2113,7 +2156,16 @@ function TimeSharingPanel({
           <span className="text-muted-foreground font-medium">VOL</span>
         </div>
         <ResponsiveContainer width="100%" height={68}>
-          <ComposedChart data={zoomData} margin={{ top: 0, right: 9, left: 2, bottom: 0 }}>
+          <ComposedChart
+            data={zoomData}
+            margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
+            onMouseMove={(state: any) => {
+              if (state?.activeTooltipIndex != null) {
+                setCrosshairIdx(state.activeTooltipIndex);
+              }
+            }}
+            onMouseLeave={() => setCrosshairIdx(null)}
+          >
             <XAxis dataKey="idx" type="number" domain={xDomain} tick={false} tickLine={false} axisLine={false} />
             {/* Hidden left YAxis to align with price chart */}
             <YAxis
@@ -2151,6 +2203,10 @@ function TimeSharingPanel({
                 />
               ))}
             </Bar>
+            {/* Crosshair vertical line - shared across panels */}
+            {crosshairIdx != null && crosshairItem?.hasData && (
+              <ReferenceLine yAxisId="vol-right" x={crosshairIdx} stroke="#94a3b8" strokeWidth={0.8} strokeDasharray="3 3" />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -2172,7 +2228,16 @@ function TimeSharingPanel({
           </span>
         </div>
         <ResponsiveContainer width="100%" height={78}>
-          <ComposedChart data={zoomData} margin={{ top: 0, right: 9, left: 2, bottom: 0 }}>
+          <ComposedChart
+            data={zoomData}
+            margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
+            onMouseMove={(state: any) => {
+              if (state?.activeTooltipIndex != null) {
+                setCrosshairIdx(state.activeTooltipIndex);
+              }
+            }}
+            onMouseLeave={() => setCrosshairIdx(null)}
+          >
             <XAxis
               dataKey="idx"
               type="number"
@@ -2244,6 +2309,10 @@ function TimeSharingPanel({
               connectNulls
               isAnimationActive={false}
             />
+            {/* Crosshair vertical line - shared across panels */}
+            {crosshairIdx != null && crosshairItem?.hasData && (
+              <ReferenceLine yAxisId="macd-right" x={crosshairIdx} stroke="#94a3b8" strokeWidth={0.8} strokeDasharray="3 3" />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
