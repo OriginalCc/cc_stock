@@ -61,6 +61,9 @@ import {
   Bell,
   BellOff,
   Volume2,
+  Newspaper,
+  Loader2,
+  ExternalLink,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────
@@ -5110,6 +5113,16 @@ export default function StockTAssistant() {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // ── News Analysis State ──
+  const [showNewsAnalysis, setShowNewsAnalysis] = useState(false);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsData, setNewsData] = useState<{
+    market?: any;
+    sector?: any;
+    stock?: any;
+  }>({});
+  const [newsActiveTab, setNewsActiveTab] = useState<"market" | "sector" | "stock">("market");
+
   // ── Menu Bar Stocks (persisted to localStorage) ──
   // Initialize with default to avoid hydration mismatch (localStorage read after mount)
   const [menuStocks, setMenuStocks] = useState<{ symbol: string; name: string }[]>(DEFAULT_ASHARES);
@@ -5357,6 +5370,44 @@ export default function StockTAssistant() {
     setKlineVisibleBars(80);
     setTlZoomIdx(0);
   }, [selectStock]);
+
+  // ── News Analysis: fetch data from API ──
+  const fetchNewsAnalysis = useCallback(async () => {
+    setNewsLoading(true);
+    try {
+      const stockName = quote?.name || symbol;
+      const sectorName = sectorInfo?.name || "";
+      const params = new URLSearchParams();
+      params.set("symbol", symbol);
+      params.set("stockName", stockName);
+      params.set("sectorName", sectorName);
+
+      const [marketRes, sectorRes, stockRes] = await Promise.allSettled([
+        fetch(`/api/stock/news-analysis?${params}&type=market`),
+        sectorName ? fetch(`/api/stock/news-analysis?${params}&type=sector`) : Promise.resolve(null),
+        fetch(`/api/stock/news-analysis?${params}&type=stock`),
+      ]);
+
+      const newData: any = {};
+      if (marketRes.status === "fulfilled" && marketRes.value) {
+        const m = await marketRes.value.json();
+        if (m.success) newData.market = m;
+      }
+      if (sectorRes.status === "fulfilled" && sectorRes.value) {
+        const s = await sectorRes.value.json();
+        if (s.success) newData.sector = s;
+      }
+      if (stockRes.status === "fulfilled" && stockRes.value) {
+        const st = await stockRes.value.json();
+        if (st.success) newData.stock = st;
+      }
+      setNewsData(newData);
+    } catch (e) {
+      console.error("News analysis fetch error:", e);
+    } finally {
+      setNewsLoading(false);
+    }
+  }, [symbol, quote, sectorInfo]);
 
   // ── Timeline last data slot index (matches fullDayData indexing in TimeSharingPanel) ──
   const tlLastDataIdx = useMemo(() => {
@@ -6135,6 +6186,21 @@ export default function StockTAssistant() {
             </Tabs>
           )}
 
+          {/* News Analysis Button */}
+          <Button
+            variant={showNewsAnalysis ? "default" : "outline"}
+            size="sm"
+            className="h-8 text-xs px-3"
+            onClick={() => {
+              const next = !showNewsAnalysis;
+              setShowNewsAnalysis(next);
+              if (next && !newsData.market) fetchNewsAnalysis();
+            }}
+          >
+            <Newspaper className="h-3.5 w-3.5 mr-1" />
+            资讯分析
+          </Button>
+
           {chartMode === "kline" && (
             <div className="flex items-center gap-1">
               {INTERVALS.map((intv) => (
@@ -6738,6 +6804,187 @@ export default function StockTAssistant() {
                   )}
                 </>
               ) : null}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* News Analysis Panel */}
+        {showNewsAnalysis && (
+          <Card className="mb-4">
+            <CardHeader className="pb-2 pt-3 px-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Newspaper className="h-4 w-4" />
+                  资讯分析
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    onClick={fetchNewsAnalysis}
+                    disabled={newsLoading}
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1 ${newsLoading ? 'animate-spin' : ''}`} />
+                    刷新
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => setShowNewsAnalysis(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pb-3 px-4">
+              {/* Tabs: 大盘 / 板块 / 个股 */}
+              <div className="flex items-center gap-1 mb-4">
+                {(["market", "sector", "stock"] as const).map((tab) => {
+                  const labels = { market: "大盘分析", sector: "板块分析", stock: "个股分析" };
+                  const icons = { market: "📈", sector: "🏭", stock: "📊" };
+                  const disabled = tab === "sector" && !sectorInfo;
+                  return (
+                    <Button
+                      key={tab}
+                      variant={newsActiveTab === tab ? "default" : "ghost"}
+                      size="sm"
+                      className="h-7 text-xs px-3"
+                      onClick={() => setNewsActiveTab(tab)}
+                      disabled={disabled}
+                    >
+                      <span className="mr-1">{icons[tab]}</span>
+                      {labels[tab]}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              {/* Content */}
+              {newsLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    {newsActiveTab === "market" ? "正在搜索大盘资讯并分析..." :
+                     newsActiveTab === "sector" ? "正在搜索板块资讯并分析..." :
+                     "正在搜索个股资讯并分析..."}
+                  </span>
+                </div>
+              ) : newsData[newsActiveTab] ? (
+                <div className="space-y-4">
+                  {/* Analysis Result Card */}
+                  {(() => {
+                    const data = newsData[newsActiveTab];
+                    const analysis = data.analysis;
+                    if (!analysis) return null;
+                    const trendConfig: Record<string, { bg: string; text: string; icon: string; border: string }> = {
+                      "上升": { bg: "bg-red-500/10", text: "text-red-600 dark:text-red-400", icon: "📈", border: "border-red-500/30" },
+                      "下降": { bg: "bg-green-500/10", text: "text-green-600 dark:text-green-400", icon: "📉", border: "border-green-500/30" },
+                      "震荡": { bg: "bg-yellow-500/10", text: "text-yellow-600 dark:text-yellow-400", icon: "↔️", border: "border-yellow-500/30" },
+                    };
+                    const cfg = trendConfig[analysis.trend] || trendConfig["震荡"];
+                    const suggestionConfig: Record<string, { bg: string; text: string }> = {
+                      "正T": { bg: "bg-blue-500/10 border-blue-500/30", text: "text-blue-600 dark:text-blue-400" },
+                      "反T": { bg: "bg-orange-500/10 border-orange-500/30", text: "text-orange-600 dark:text-orange-400" },
+                      "观望": { bg: "bg-gray-500/10 border-gray-500/30", text: "text-gray-600 dark:text-gray-400" },
+                    };
+                    const sCfg = suggestionConfig[analysis.suggestion] || suggestionConfig["观望"];
+
+                    return (
+                      <div className={`rounded-lg border p-4 ${cfg.bg} ${cfg.border}`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl">{cfg.icon}</span>
+                            <div>
+                              <div className={`text-lg font-bold ${cfg.text}`}>
+                                今日预判：{analysis.trend}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {newsActiveTab === "market" ? "大盘" : newsActiveTab === "sector" ? `${data.sectorName}板块` : quote?.name || symbol} · 更新于 {data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "--"}
+                                {data.cached ? " (缓存)" : ""}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${sCfg.bg} ${sCfg.text}`}>
+                              建议：{analysis.suggestion}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              信心度 {analysis.confidence}%
+                            </span>
+                          </div>
+                        </div>
+                        {/* Confidence Bar */}
+                        <div className="mb-3">
+                          <div className="h-2 w-full bg-muted/30 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${Math.min(analysis.confidence || 0, 100)}%`,
+                                backgroundColor: analysis.confidence >= 70 ? '#22c55e' : analysis.confidence >= 40 ? '#f59e0b' : '#ef4444',
+                              }}
+                            />
+                          </div>
+                        </div>
+                        {/* Summary */}
+                        <p className="text-sm text-foreground/80 mb-3">{analysis.summary}</p>
+                        {/* Key Factors */}
+                        {analysis.keyFactors && analysis.keyFactors.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {analysis.keyFactors.map((factor: string, i: number) => (
+                              <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/50 text-xs text-muted-foreground">
+                                <Zap className="h-3 w-3" />
+                                {factor}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* News List */}
+                  {newsData[newsActiveTab]?.news && newsData[newsActiveTab].news.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-medium text-muted-foreground mb-2">相关资讯</h4>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {newsData[newsActiveTab].news.map((item: any, i: number) => (
+                          <a
+                            key={i}
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block p-2.5 rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors group"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-foreground/90 group-hover:text-foreground line-clamp-1">
+                                  {item.title}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                  {item.snippet}
+                                </div>
+                              </div>
+                              <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 mt-0.5" />
+                            </div>
+                            <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground/60">
+                              <span>{item.source}</span>
+                              {item.date && <span>· {item.date}</span>}
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 gap-2">
+                  <Newspaper className="h-8 w-8 text-muted-foreground/40" />
+                  <span className="text-sm text-muted-foreground">点击"刷新"获取资讯分析</span>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
