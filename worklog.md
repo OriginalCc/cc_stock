@@ -554,3 +554,24 @@ Stage Summary:
 - 分析结果从5字段扩展到12字段，支持多维度评估
 - UI全面升级：风险/情绪/四维分析/详细推理/渠道统计
 - Lint通过，dev server正常运行
+
+---
+Task ID: 1
+Agent: main
+Task: Fix MACD display issues - some parts disappearing
+
+Work Log:
+- Diagnosed MACD Y-axis domain issue in TimeSharingPanel: was computing MACD range from full `macdData` instead of zoomed `zd`, causing bars to become invisible when zoomed in
+- Fixed MACD Y-axis domain computation to use zoomed data (`zd`) instead of full data (`macdData`)
+- Added zero-line visibility guarantee: if mMin > 0, set mMin = 0; if mMax < 0, set mMax = 0
+- Increased padding from 2% to 5% for better visual clarity
+- Fixed K-line MACD bar color bug: `payload.macd && payload.macd >= 0` → `payload.macd != null && payload.macd >= 0` (was incorrectly rendering zero-value bars as green)
+- Fixed MACDTooltip color bug: same `&&` → `!= null &&` pattern
+- Fixed computeMiniMACD threshold: lowered from 10 to 2 minimum data points (was causing empty MACD in mini charts with <10 points)
+- All lint checks pass, dev server running normally
+
+Stage Summary:
+- MACD Y-axis now adapts to visible zoom range, making bars properly sized at all zoom levels
+- Zero line always visible in MACD chart
+- MACD color rendering fixed for zero-value bars (now correctly red when MACD = 0)
+- Mini charts now show MACD with as few as 2 data points

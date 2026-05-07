@@ -288,7 +288,7 @@ const KLineTooltip = ({ active, payload, label }: any) => {
           <span className="text-muted-foreground">DEA</span>
           <span className="text-right font-mono">{data.dea?.toFixed(4)}</span>
           <span className="text-muted-foreground">MACD</span>
-          <span className={`text-right font-mono ${data.macd && data.macd > 0 ? "text-red-500" : "text-green-500"}`}>
+          <span className={`text-right font-mono ${data.macd != null && data.macd > 0 ? "text-red-500" : "text-green-500"}`}>
             {data.macd?.toFixed(4)}
           </span>
         </div>
@@ -400,7 +400,7 @@ const MACDTooltip = ({ active, payload }: any) => {
         <span className="text-muted-foreground">DEA</span>
         <span className="text-right font-mono">{data.dea?.toFixed(4)}</span>
         <span className="text-muted-foreground">MACD</span>
-        <span className={`text-right font-mono ${data.macd && data.macd > 0 ? "text-red-500" : "text-green-500"}`}>
+        <span className={`text-right font-mono ${data.macd != null && data.macd > 0 ? "text-red-500" : "text-green-500"}`}>
           {data.macd?.toFixed(4)}
         </span>
       </div>
@@ -1075,7 +1075,7 @@ function MiniPercentYTick(props: { x?: number; y?: number; payload?: { value?: n
 // ── Compact Mini Timeline Panel (for index/sector overview) ───
 
 function computeMiniMACD(items: TimelineItem[]): { time: string; dif: number | null; dea: number | null; macd: number | null }[] {
-  if (items.length < 10) return items.map(d => ({ time: d.time, dif: null, dea: null, macd: null }));
+  if (items.length < 2) return items.map(d => ({ time: d.time, dif: null, dea: null, macd: null }));
 
   // 同花顺/通达信标准MACD (EMA first-value initialization)
   const prices = items.map(d => d.price);
@@ -1667,11 +1667,14 @@ function TimeSharingPanel({
     // Volume range (use reduce to avoid spread)
     const mv = data.reduce((mx, d) => (d.volume > mx ? d.volume : mx), 1);
 
-    // MACD range (use reduce)
-    const macdVals = macdData.flatMap((d) => [d.dif, d.dea, d.macd]).filter((v): v is number => v != null);
-    const mMin = macdVals.length ? macdVals.reduce((mn, v) => (v < mn ? v : mn), macdVals[0]) : -1;
-    const mMax = macdVals.length ? macdVals.reduce((mx, v) => (v > mx ? v : mx), macdVals[0]) : 1;
-    const mPad = (mMax - mMin) * 0.02 || 0.05;
+    // MACD range — use ZOOMED data (not full macdData) so Y-axis adapts when zoomed
+    const macdVals = zd.filter(d => d.dif != null).flatMap((d) => [d.dif, d.dea, d.macd as number]).filter((v): v is number => v != null);
+    let mMin = macdVals.length ? macdVals.reduce((mn, v) => (v < mn ? v : mn), macdVals[0]) : -1;
+    let mMax = macdVals.length ? macdVals.reduce((mx, v) => (v > mx ? v : mx), macdVals[0]) : 1;
+    // Ensure zero line is always visible in MACD chart
+    if (mMin > 0) mMin = 0;
+    if (mMax < 0) mMax = 0;
+    const mPad = (mMax - mMin) * 0.05 || 0.05;
 
     // Last item & last signal
     const li = data[data.length - 1];
@@ -6794,7 +6797,7 @@ export default function StockTAssistant() {
                     <Bar dataKey="macd" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}
                       shape={(props: any) => {
                         const { x, y, width, height, payload } = props;
-                        return <rect x={x} y={y} width={width} height={height} fill={payload.macd && payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+                        return <rect x={x} y={y} width={width} height={height} fill={payload.macd != null && payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
                       }}
                     />
                     <Line type="monotone" dataKey="dif" stroke="#3b82f6" dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
