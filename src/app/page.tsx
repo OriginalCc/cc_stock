@@ -407,17 +407,20 @@ const VolumeTooltip = ({ active, payload }: any) => {
 
 function formatNum(num: number, digits: number = 2) {
   if (!num && num !== 0) return "--";
-  return num.toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  // Use toFixed + regex for deterministic output (avoids hydration mismatch)
+  const fixed = num.toFixed(digits);
+  if (digits === 0) return fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const [intPart, decPart] = fixed.split(".");
+  const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${intFormatted}.${decPart}`;
 }
 
 function formatVolume(vol: number) {
   if (!vol) return "--";
   if (vol >= 1e8) return (vol / 1e8).toFixed(2) + "亿";
   if (vol >= 1e4) return (vol / 1e4).toFixed(2) + "万";
-  return vol.toLocaleString();
+  // Use fixed formatting to avoid hydration mismatch from toLocaleString
+  return vol.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 function formatMarketCap(val: number) {
@@ -425,7 +428,8 @@ function formatMarketCap(val: number) {
   if (val >= 1e12) return (val / 1e12).toFixed(2) + "万亿";
   if (val >= 1e8) return (val / 1e8).toFixed(2) + "亿";
   if (val >= 1e4) return (val / 1e4).toFixed(2) + "万";
-  return val.toLocaleString();
+  // Use fixed formatting to avoid hydration mismatch from toLocaleString
+  return val.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 // ── 做 T Signal Generation for Timeline ──────────────

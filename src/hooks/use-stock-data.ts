@@ -71,14 +71,9 @@ export type ChartMode = "timeline" | "kline";
 const LAST_STOCK_KEY = "lastSelectedStock";
 
 export function useStockData() {
-  const [symbol, setSymbol] = useState<string>(() => {
-    if (typeof window === "undefined") return "600519";
-    try {
-      const saved = localStorage.getItem(LAST_STOCK_KEY);
-      if (saved && /^[0-9]{6}$/.test(saved)) return saved;
-    } catch {}
-    return "600519";
-  });
+  // Initialize with default value to avoid hydration mismatch
+  // localStorage is read in useEffect after mount
+  const [symbol, setSymbol] = useState<string>("600519");
   const [quote, setQuote] = useState<StockQuote | null>(null);
   const [history, setHistory] = useState<KLineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
@@ -222,14 +217,27 @@ export function useStockData() {
     [fetchTimeline, fetchHistory, symbol, checkAShare]
   );
 
-  // Initial load
+  // Read saved stock from localStorage after mount (avoids hydration mismatch)
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LAST_STOCK_KEY);
+      if (saved && /^[0-9]{6}$/.test(saved) && saved !== symbol) {
+        setSymbol(saved);
+      }
+    } catch {}
+    setMounted(true);
+  }, []);
+
+  // Initial load (only after mount to use correct symbol from localStorage)
+  useEffect(() => {
+    if (!mounted) return;
     fetchQuote(symbol);
     fetchHistory(symbol, interval);
     if (checkAShare(symbol)) {
       fetchTimeline(symbol);
     }
-  }, []);
+  }, [mounted]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
