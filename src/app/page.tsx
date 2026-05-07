@@ -1696,6 +1696,12 @@ function TimeSharingPanel({
   // ── Memoize detectMarketRegimeDetail (was called inside IIFE on every render) ──
   const regimeDetail = useMemo(() => detectMarketRegimeDetail(data, prevClose), [data, prevClose]);
 
+  // ── Memoize tooltip components (stable references to avoid re-renders) ──
+  const timelineTooltipEl = useMemo(() => <TimelineTooltip />, []);
+  const volumeTooltipEl = useMemo(() => <TimelineVolumeTooltip />, []);
+  const macdTooltipEl = useMemo(() => <TimelineMACDTooltip />, []);
+  const tooltipWrapperStyle = useMemo(() => ({ background: 'transparent' as const, border: 'none' as const }), []);
+
   if (data.length === 0) return null;
 
   return (
