@@ -1938,12 +1938,57 @@ function TimeSharingPanel({
               yAxisId="percent"
               orientation="right"
               domain={[percentMin, percentMax]}
-              tick={<PercentYTick />}
+              tick={false}
               tickLine={false}
               axisLine={false}
-              width={56}
+              width={1}
             />
             <Tooltip content={<TimelineTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
+            {/* Percent labels on right edge of plot area - aligned with MA5 / reference line labels */}
+            <Customized component={(props: any) => {
+              const yAxisMap = props.yAxisMap;
+              if (!yAxisMap) return null;
+              const yAxis = yAxisMap.price;
+              if (!yAxis || !yAxis.scale) return null;
+              const yScale = yAxis.scale;
+              // Use chart width and right margin to find right edge of plot area
+              const chartWidth = props.width || 0;
+              const marginRight = 58;
+              const rightEdge = chartWidth - marginRight + 2;
+              // Generate percent labels at evenly spaced Y positions
+              const priceTicks: number[] = [];
+              const tickStep = (yMax - yMin) / 5;
+              for (let i = 0; i <= 5; i++) {
+                priceTicks.push(yMin + tickStep * i);
+              }
+              return (
+                <g>
+                  {priceTicks.map((price, i) => {
+                    const yPx = yScale(price);
+                    const pct = ((price - safePrevClose) / safePrevClose) * 100;
+                    const isZero = Math.abs(pct) < 0.01;
+                    const fill = isZero ? "#6b7280" : pct > 0 ? "#dc2626" : "#16a34a";
+                    const text = isZero ? "" : pct > 0 ? `+${pct.toFixed(2)}%` : `${pct.toFixed(2)}%`;
+                    if (!text) return null;
+                    return (
+                      <text
+                        key={`pct-${i}`}
+                        x={rightEdge}
+                        y={yPx}
+                        textAnchor="end"
+                        dominantBaseline="middle"
+                        fill={fill}
+                        fontSize={9}
+                        fontWeight="600"
+                        opacity={0.8}
+                      >
+                        {text}
+                      </text>
+                    );
+                  })}
+                </g>
+              );
+            }} />
             <ReferenceLine
               yAxisId="price"
               y={safePrevClose}
