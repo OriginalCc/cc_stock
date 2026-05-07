@@ -6166,9 +6166,9 @@ export default function StockTAssistant() {
                             "下降": "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
                             "震荡": "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20",
                           };
-                          const sentimentIcons: Record<string, string> = { "偏多": "😊", "偏空": "😟", "中性": "😐" };
+                          const sentimentIcons: Record<string, string> = { "偏多": "🔺", "偏空": "🔻", "中性": "↔️" };
                           const tc = trendColors[a.trend] || trendColors["震荡"];
-                          const si = sentimentIcons[a.newsSentiment] || "😐";
+                          const si = sentimentIcons[a.newsSentiment] || "↔️";
                           return (
                             <span key={tab} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border text-[10px] font-medium ${tc}`}>
                               {labels[tab]}: {a.trend} {si}
@@ -6943,9 +6943,9 @@ export default function StockTAssistant() {
                     };
                     const rCfg = riskConfig[analysis.riskLevel] || riskConfig["中"];
                     const sentimentConfig: Record<string, { icon: string; text: string; color: string }> = {
-                      "偏多": { icon: "😊", text: "偏多", color: "text-red-500" },
-                      "偏空": { icon: "😟", text: "偏空", color: "text-green-500" },
-                      "中性": { icon: "😐", text: "中性", color: "text-yellow-500" },
+                      "偏多": { icon: "🔺", text: "偏多", color: "text-red-500" },
+                      "偏空": { icon: "🔻", text: "偏空", color: "text-green-500" },
+                      "中性": { icon: "↔️", text: "中性", color: "text-yellow-500" },
                     };
                     const sentCfg = sentimentConfig[analysis.newsSentiment] || sentimentConfig["中性"];
 
