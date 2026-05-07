@@ -1303,7 +1303,10 @@ function MiniTimelinePanel({
             shape={(props: any) => {
               const { x, y, width, height, payload } = props;
               if (payload?.macd == null) return null;
-              return <rect x={x} y={y} width={width} height={height} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+              const h = Math.abs(height || 0);
+              if (h < 0.3) return null;
+              const ry = height < 0 ? y + height : y;
+              return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
             }}
           />
           <Line yAxisId="macd-r" type="monotone" dataKey="dif" stroke="#2563eb" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
@@ -2303,7 +2306,11 @@ function TimeSharingPanel({
               shape={(props: any) => {
                 const { x, y, width, height, payload } = props;
                 if (payload?.macd == null) return null;
-                return <rect x={x} y={y} width={width} height={height} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+                // SVG rect requires positive height; negative-MACD bars get negative height from Recharts
+                const h = Math.abs(height || 0);
+                if (h < 0.3) return null;
+                const ry = height < 0 ? y + height : y;
+                return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
               }}
             />
             <Line
@@ -6797,7 +6804,11 @@ export default function StockTAssistant() {
                     <Bar dataKey="macd" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}
                       shape={(props: any) => {
                         const { x, y, width, height, payload } = props;
-                        return <rect x={x} y={y} width={width} height={height} fill={payload.macd != null && payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+                        if (payload?.macd == null) return null;
+                        const h = Math.abs(height || 0);
+                        if (h < 0.3) return null;
+                        const ry = height < 0 ? y + height : y;
+                        return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
                       }}
                     />
                     <Line type="monotone" dataKey="dif" stroke="#3b82f6" dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
