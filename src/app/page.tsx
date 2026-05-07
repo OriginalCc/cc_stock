@@ -1238,7 +1238,7 @@ function MiniTimelinePanel({
           <YAxis yAxisId="vol-r" orientation="right" domain={[0, maxVolume * 1.1]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => formatVolume(v)} />
           <Bar yAxisId="vol-r" dataKey="volume" isAnimationActive={false} barSize={barSize}>
             {chartData.map((entry, index) => (
-              <Cell key={`mv-${index}`} fill={entry.hasData ? (entry.volUp ? "#dc2626" : "#16a34a") : "transparent"} fillOpacity={entry.hasData ? 1 : 0} />
+              <Cell key={`mv-${index}`} fill={entry.hasData ? (entry.volUp ? "#991b1b" : "#15803d") : "transparent"} fillOpacity={entry.hasData ? 1 : 0} />
             ))}
           </Bar>
         </ComposedChart>
@@ -1267,7 +1267,7 @@ function MiniTimelinePanel({
           <ReferenceLine yAxisId="macd-r" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.3} />
           <Bar yAxisId="macd-r" dataKey="macd" isAnimationActive={false} barSize={barSize}>
             {chartData.map((entry, index) => (
-              <Cell key={`mm-${index}`} fill={entry.macd != null && entry.macd >= 0 ? "#dc2626" : "#16a34a"} fillOpacity={entry.macd != null ? 1 : 0} />
+              <Cell key={`mm-${index}`} fill={entry.macd != null && entry.macd >= 0 ? "#991b1b" : "#15803d"} fillOpacity={entry.macd != null ? 1 : 0} />
             ))}
           </Bar>
           <Line yAxisId="macd-r" type="monotone" dataKey="dif" stroke="#2563eb" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
@@ -2146,7 +2146,7 @@ function TimeSharingPanel({
               {zoomData.map((entry, index) => (
                 <Cell
                   key={`tl-vol-${index}`}
-                  fill={entry.hasData ? (entry.volUp ? "#dc2626" : "#16a34a") : "transparent"}
+                  fill={entry.hasData ? (entry.volUp ? "#991b1b" : "#15803d") : "transparent"}
                   fillOpacity={entry.hasData ? 1 : 0}
                 />
               ))}
@@ -2219,7 +2219,7 @@ function TimeSharingPanel({
               {zoomData.map((entry, index) => (
                 <Cell
                   key={`tl-macd-${index}`}
-                  fill={entry.macd != null && entry.macd >= 0 ? "#dc2626" : "#16a34a"}
+                  fill={entry.macd != null && entry.macd >= 0 ? "#991b1b" : "#15803d"}
                   fillOpacity={entry.macd != null ? 1 : 0}
                 />
               ))}
