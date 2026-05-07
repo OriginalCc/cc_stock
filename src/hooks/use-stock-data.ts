@@ -233,21 +233,21 @@ export function useStockData() {
   // Initial load (only after mount to use correct symbol from localStorage)
   useEffect(() => {
     if (!mounted) return;
-    fetchQuote(symbol);
-    fetchHistory(symbol, interval);
-    if (checkAShare(symbol)) {
-      fetchTimeline(symbol);
-    }
+    Promise.allSettled([
+      fetchQuote(symbol),
+      fetchHistory(symbol, interval),
+      checkAShare(symbol) ? fetchTimeline(symbol) : Promise.resolve(),
+    ]);
   }, [mounted]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
     refreshTimerRef.current = setInterval(() => {
-      fetchQuote(symbol);
-      if (checkAShare(symbol)) {
-        fetchTimeline(symbol);
-      }
-      fetchHistory(symbol, interval);
+      Promise.allSettled([
+        fetchQuote(symbol),
+        checkAShare(symbol) ? fetchTimeline(symbol) : Promise.resolve(),
+        fetchHistory(symbol, interval),
+      ]);
     }, 30000);
 
     return () => {

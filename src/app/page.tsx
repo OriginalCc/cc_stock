@@ -12,7 +12,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  Cell,
   Customized,
 } from "recharts";
 import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem, type TimelineItem, type ChartMode } from "@/hooks/use-stock-data";
@@ -95,10 +94,29 @@ const INDEX_CONFIG: Record<IndexKey, { symbol: string; label: string; shortLabel
 };
 const INDEX_KEYS: IndexKey[] = ["sz", "sh", "cyb"];
 
+const REGIME_CONFIG: Record<string, { bg: string; text: string; icon: string }> = {
+  "上升通道": { bg: "bg-red-600/20 border-red-600/40", text: "text-red-700 dark:text-red-300", icon: "↑" },
+  "下跌趋势": { bg: "bg-green-600/20 border-green-600/40", text: "text-green-700 dark:text-green-300", icon: "↓" },
+  "震荡市":   { bg: "bg-emerald-600/20 border-emerald-600/40", text: "text-emerald-700 dark:text-emerald-300", icon: "↔" },
+  "横盘末期": { bg: "bg-yellow-600/20 border-yellow-600/40", text: "text-yellow-700 dark:text-yellow-300", icon: "→" },
+};
+
+const T_MODE_CONFIG: Record<string, { label: string; bg: string; text: string; tip: string }> = {
+  "上升通道": { label: "正T/反T", bg: "bg-orange-500/10 border-orange-500/25", text: "text-orange-600 dark:text-orange-400", tip: "偏强市场：正T为主（冲高卖出→回落买回），也可反T（低吸→冲高卖出），T仓≤20%，买回要快" },
+  "下跌趋势": { label: "仅正T", bg: "bg-red-500/10 border-red-500/25", text: "text-red-600 dark:text-red-400", tip: "偏弱市场：仅正T卖出（冲高卖出→回落买回），不做反T，T仓≤15%，严格止损" },
+  "震荡市":   { label: "正T", bg: "bg-blue-500/10 border-blue-500/25", text: "text-blue-600 dark:text-blue-400", tip: "震荡行情：最适合做正T（高抛低吸），T仓30-40%，差价≥1.5%再操作" },
+  "横盘末期": { label: "观望", bg: "bg-gray-500/10 border-gray-500/25", text: "text-gray-600 dark:text-gray-400", tip: "方向不明：减少做T频率，等待趋势突破再操作" },
+};
+
 // ── Signal Alert Sound (Web Audio API) ─────────────────
+let _audioCtx: AudioContext | null = null;
+const getAudioContext = () => {
+  if (!_audioCtx) _audioCtx = new AudioContext();
+  return _audioCtx;
+};
 const playAlertSound = (type: 'buy' | 'sell' | 'stoploss') => {
   try {
-    const ctx = new AudioContext();
+    const ctx = getAudioContext();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
@@ -1247,11 +1265,13 @@ function MiniTimelinePanel({
           <XAxis dataKey="idx" type="number" domain={[0, chartData.length - 1]} tick={false} tickLine={false} axisLine={false} />
           <YAxis yAxisId="vol" domain={[0, maxVolume * 1.1]} tick={false} tickLine={false} axisLine={false} width={42} />
           <YAxis yAxisId="vol-r" orientation="right" domain={[0, maxVolume * 1.1]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => formatVolume(v)} />
-          <Bar yAxisId="vol-r" dataKey="volume" isAnimationActive={false} barSize={barSize}>
-            {chartData.map((entry, index) => (
-              <Cell key={`mv-${index}`} fill={entry.hasData ? (entry.volUp ? "#ef4444" : "#16a34a") : "transparent"} fillOpacity={entry.hasData ? 1 : 0} />
-            ))}
-          </Bar>
+          <Bar yAxisId="vol-r" dataKey="volume" isAnimationActive={false} barSize={barSize}
+            shape={(props: any) => {
+              const { x, y, width, height, payload } = props;
+              if (!payload?.hasData) return null;
+              return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
+            }}
+          />
         </ComposedChart>
       </ResponsiveContainer>
 
@@ -1276,11 +1296,13 @@ function MiniTimelinePanel({
           <YAxis yAxisId="macd" domain={[macdMin - macdPad, macdMax + macdPad]} tick={false} tickLine={false} axisLine={false} width={42} />
           <YAxis yAxisId="macd-r" orientation="right" domain={[macdMin - macdPad, macdMax + macdPad]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => v.toFixed(3)} />
           <ReferenceLine yAxisId="macd-r" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.3} />
-          <Bar yAxisId="macd-r" dataKey="macd" isAnimationActive={false} barSize={barSize}>
-            {chartData.map((entry, index) => (
-              <Cell key={`mm-${index}`} fill={entry.macd != null && entry.macd >= 0 ? "#ef4444" : "#16a34a"} fillOpacity={entry.macd != null ? 1 : 0} />
-            ))}
-          </Bar>
+          <Bar yAxisId="macd-r" dataKey="macd" isAnimationActive={false} barSize={barSize}
+            shape={(props: any) => {
+              const { x, y, width, height, payload } = props;
+              if (payload?.macd == null) return null;
+              return <rect x={x} y={y} width={width} height={height} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+            }}
+          />
           <Line yAxisId="macd-r" type="monotone" dataKey="dif" stroke="#2563eb" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
           <Line yAxisId="macd-r" type="monotone" dataKey="dea" stroke="#ea580c" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
         </ComposedChart>
@@ -1745,22 +1767,10 @@ function TimeSharingPanel({
         {/* Market Regime Badge - prominent + T-mode recommendation */}
         {(() => {
           const detail = regimeDetail;
-          const regimeConfig: Record<string, { bg: string; text: string; icon: string }> = {
-            "上升通道": { bg: "bg-red-600/20 border-red-600/40", text: "text-red-700 dark:text-red-300", icon: "↑" },
-            "下跌趋势": { bg: "bg-green-600/20 border-green-600/40", text: "text-green-700 dark:text-green-300", icon: "↓" },
-            "震荡市":   { bg: "bg-emerald-600/20 border-emerald-600/40", text: "text-emerald-700 dark:text-emerald-300", icon: "↔" },
-            "横盘末期": { bg: "bg-yellow-600/20 border-yellow-600/40", text: "text-yellow-700 dark:text-yellow-300", icon: "→" },
-          };
-          const cfg = regimeConfig[detail.regime] || regimeConfig["震荡市"];
+          const cfg = REGIME_CONFIG[detail.regime] || REGIME_CONFIG["震荡市"];
 
           // T-mode recommendation based on regime
-          const tModeConfig: Record<string, { label: string; bg: string; text: string; tip: string }> = {
-            "上升通道": { label: "正T/反T", bg: "bg-orange-500/10 border-orange-500/25", text: "text-orange-600 dark:text-orange-400", tip: "偏强市场：正T为主（冲高卖出→回落买回），也可反T（低吸→冲高卖出），T仓≤20%，买回要快" },
-            "下跌趋势": { label: "仅正T", bg: "bg-red-500/10 border-red-500/25", text: "text-red-600 dark:text-red-400", tip: "偏弱市场：仅正T卖出（冲高卖出→回落买回），不做反T，T仓≤15%，严格止损" },
-            "震荡市":   { label: "正T", bg: "bg-blue-500/10 border-blue-500/25", text: "text-blue-600 dark:text-blue-400", tip: "震荡行情：最适合做正T（高抛低吸），T仓30-40%，差价≥1.5%再操作" },
-            "横盘末期": { label: "观望", bg: "bg-gray-500/10 border-gray-500/25", text: "text-gray-600 dark:text-gray-400", tip: "方向不明：减少做T频率，等待趋势突破再操作" },
-          };
-          const tCfg = tModeConfig[detail.regime] || tModeConfig["震荡市"];
+          const tCfg = T_MODE_CONFIG[detail.regime] || T_MODE_CONFIG["震荡市"];
 
           return (
             <>
@@ -1784,13 +1794,7 @@ function TimeSharingPanel({
         })()}
         {/* Market Index Regime Badge - click to cycle 深/沪/创 */}
         {szIndexRegime && (() => {
-          const regimeConfig: Record<string, { bg: string; text: string; icon: string }> = {
-            "上升通道": { bg: "bg-red-600/20 border-red-600/40", text: "text-red-700 dark:text-red-300", icon: "↑" },
-            "下跌趋势": { bg: "bg-green-600/20 border-green-600/40", text: "text-green-700 dark:text-green-300", icon: "↓" },
-            "震荡市":   { bg: "bg-emerald-600/20 border-emerald-600/40", text: "text-emerald-700 dark:text-emerald-300", icon: "↔" },
-            "横盘末期": { bg: "bg-yellow-600/20 border-yellow-600/40", text: "text-yellow-700 dark:text-yellow-300", icon: "→" },
-          };
-          const cfg = regimeConfig[szIndexRegime.regime] || regimeConfig["震荡市"];
+          const cfg = REGIME_CONFIG[szIndexRegime.regime] || REGIME_CONFIG["震荡市"];
           const idxInfo = indexConfig?.[activeIndexKey || "sz"];
           const shortLabel = idxInfo?.shortLabel || "深";
           const fullLabel = idxInfo?.label || "深证成指";
@@ -1809,13 +1813,7 @@ function TimeSharingPanel({
         })()}
         {/* Sector Regime Badge - shows industry sector trend */}
         {sectorRegime && sectorInfo && (() => {
-          const regimeConfig: Record<string, { bg: string; text: string; icon: string }> = {
-            "上升通道": { bg: "bg-red-600/20 border-red-600/40", text: "text-red-700 dark:text-red-300", icon: "↑" },
-            "下跌趋势": { bg: "bg-green-600/20 border-green-600/40", text: "text-green-700 dark:text-green-300", icon: "↓" },
-            "震荡市":   { bg: "bg-emerald-600/20 border-emerald-600/40", text: "text-emerald-700 dark:text-emerald-300", icon: "↔" },
-            "横盘末期": { bg: "bg-yellow-600/20 border-yellow-600/40", text: "text-yellow-700 dark:text-yellow-300", icon: "→" },
-          };
-          const cfg = regimeConfig[sectorRegime.regime] || regimeConfig["震荡市"];
+          const cfg = REGIME_CONFIG[sectorRegime.regime] || REGIME_CONFIG["震荡市"];
           // Truncate sector name for display (max 4 chars)
           const shortName = sectorInfo.name.length > 4 ? sectorInfo.name.slice(0, 4) : sectorInfo.name;
           return (
@@ -1995,7 +1993,7 @@ function TimeSharingPanel({
               axisLine={false}
               width={1}
             />
-            <Tooltip content={<TimelineTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
+            <Tooltip content={timelineTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
             {/* Percent labels on right edge of plot area - aligned with MA5 / reference line labels */}
             <Customized component={(props: any) => {
               const yAxisMap = props.yAxisMap;
@@ -2199,7 +2197,7 @@ function TimeSharingPanel({
               width={50}
               tickFormatter={(v: number) => formatVolume(v)}
             />
-            <Tooltip content={<TimelineVolumeTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
+            <Tooltip content={volumeTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="vol-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
             <Bar
@@ -2207,15 +2205,12 @@ function TimeSharingPanel({
               dataKey="volume"
               isAnimationActive={false}
               barSize={barSize}
-            >
-              {zoomData.map((entry, index) => (
-                <Cell
-                  key={`tl-vol-${index}`}
-                  fill={entry.hasData ? (entry.volUp ? "#ef4444" : "#16a34a") : "transparent"}
-                  fillOpacity={entry.hasData ? 1 : 0}
-                />
-              ))}
-            </Bar>
+              shape={(props: any) => {
+                const { x, y, width, height, payload } = props;
+                if (!payload?.hasData) return null;
+                return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
+              }}
+            />
             {/* Crosshair vertical line - shared across panels */}
             {crosshairIdx != null && crosshairItem?.hasData && (
               <ReferenceLine yAxisId="vol-right" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
@@ -2284,7 +2279,7 @@ function TimeSharingPanel({
               width={50}
               tickFormatter={(v: number) => v.toFixed(3)}
             />
-            <Tooltip content={<TimelineMACDTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
+            <Tooltip content={macdTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
             <ReferenceLine yAxisId="macd-right" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.5} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="macd-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
@@ -2293,15 +2288,12 @@ function TimeSharingPanel({
               dataKey="macd"
               isAnimationActive={false}
               barSize={barSize}
-            >
-              {zoomData.map((entry, index) => (
-                <Cell
-                  key={`tl-macd-${index}`}
-                  fill={entry.macd != null && entry.macd >= 0 ? "#ef4444" : "#16a34a"}
-                  fillOpacity={entry.macd != null ? 1 : 0}
-                />
-              ))}
-            </Bar>
+              shape={(props: any) => {
+                const { x, y, width, height, payload } = props;
+                if (payload?.macd == null) return null;
+                return <rect x={x} y={y} width={width} height={height} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+              }}
+            />
             <Line
               yAxisId="macd-right"
               type="monotone"
@@ -2601,6 +2593,7 @@ function CustomFactorsTab() {
   useEffect(() => {
     try {
       localStorage.setItem(CUSTOM_FACTORS_STORAGE_KEY, JSON.stringify(customFactors));
+      window.dispatchEvent(new CustomEvent('custom-factors-changed'));
     } catch {}
   }, [customFactors]);
 
@@ -5149,22 +5142,33 @@ export default function StockTAssistant() {
       );
       if (cancelled) return;
       setIndexRegimes(prev => {
+        let changed = false;
         const next = { ...prev };
         INDEX_KEYS.forEach((key, i) => {
           if (results[i].status === "fulfilled" && results[i].value) {
-            next[key] = results[i].value.regime;
+            const newRegime = results[i].value!.regime;
+            if (prev[key]?.regime !== newRegime.regime || prev[key]?.confidence !== newRegime.confidence) {
+              next[key] = newRegime;
+              changed = true;
+            }
           }
         });
-        return next;
+        return changed ? next : prev;
       });
       setIndexTimelineData(prev => {
+        let changed = false;
         const next = { ...prev };
         INDEX_KEYS.forEach((key, i) => {
           if (results[i].status === "fulfilled" && results[i].value) {
-            next[key] = { items: results[i].value.items, prevClose: results[i].value.prevClose };
+            const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose };
+            // Simple check: compare length and last item time
+            if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) {
+              next[key] = newVal;
+              changed = true;
+            }
           }
         });
-        return next;
+        return changed ? next : prev;
       });
     };
     fetchAllIndices();
@@ -5281,35 +5285,27 @@ export default function StockTAssistant() {
   // ── Custom Factors from localStorage (v3.8) ──
   const [customFactors, setCustomFactors] = useState<CustomFactorDefinition[]>([]);
 
-  // Load custom factors from localStorage on mount and periodically refresh
+  // Load custom factors from localStorage on mount and listen for changes
   useEffect(() => {
     const loadCustomFactors = () => {
       try {
         const saved = localStorage.getItem(CUSTOM_FACTORS_STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved) as CustomFactorDefinition[];
-          setCustomFactors(prev => {
-            if (JSON.stringify(prev) === JSON.stringify(parsed)) return prev;
-            return parsed;
-          });
+          setCustomFactors(parsed);
         } else {
           // Use built-in defaults if nothing saved
-          setCustomFactors(prev => {
-            if (JSON.stringify(prev) === JSON.stringify(BUILT_IN_CUSTOM_FACTORS)) return prev;
-            return BUILT_IN_CUSTOM_FACTORS;
-          });
+          setCustomFactors(BUILT_IN_CUSTOM_FACTORS);
         }
       } catch {
-        setCustomFactors(prev => {
-          if (JSON.stringify(prev) === JSON.stringify(BUILT_IN_CUSTOM_FACTORS)) return prev;
-          return BUILT_IN_CUSTOM_FACTORS;
-        });
+        setCustomFactors(BUILT_IN_CUSTOM_FACTORS);
       }
     };
     loadCustomFactors();
-    // Refresh every 5 seconds to catch changes from CustomFactorsTab
-    const timer = setInterval(loadCustomFactors, 5000);
-    return () => clearInterval(timer);
+    // Listen for changes from CustomFactorsTab instead of polling
+    const handler = () => loadCustomFactors();
+    window.addEventListener('custom-factors-changed', handler);
+    return () => window.removeEventListener('custom-factors-changed', handler);
   }, []);
 
   // Debounced search
@@ -5333,16 +5329,6 @@ export default function StockTAssistant() {
     [searchStocks]
   );
 
-  const handleSelectStock = (sym: string) => {
-    selectStock(sym);
-    setShowSearch(false);
-    setSearchQuery("");
-    setSearchResults([]);
-    // Reset zoom levels when switching stocks
-    setKlineVisibleBars(80);
-    setTlZoomIdx(0);
-  };
-
   // ── K-line zoom state ──
   const [klineVisibleBars, setKlineVisibleBars] = useState<number>(80); // default 80 bars visible
   const [klinePanOffset, setKlinePanOffset] = useState<number>(0); // pan offset for K-line (0 = rightmost/latest)
@@ -5355,6 +5341,16 @@ export default function StockTAssistant() {
   const [tlZoomIdx, setTlZoomIdx] = useState<number>(0); // default: full day (241 = full trading day)
   const [tlPanOffset, setTlPanOffset] = useState<number>(0); // pan offset for timeline (0 = rightmost/latest)
   const tlVisibleMinutes = TL_ZOOM_LEVELS[tlZoomIdx];
+
+  const handleSelectStock = useCallback((sym: string) => {
+    selectStock(sym);
+    setShowSearch(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    // Reset zoom levels when switching stocks
+    setKlineVisibleBars(80);
+    setTlZoomIdx(0);
+  }, [selectStock]);
 
   // ── Timeline last data slot index (matches fullDayData indexing in TimeSharingPanel) ──
   const tlLastDataIdx = useMemo(() => {
@@ -5823,6 +5819,15 @@ export default function StockTAssistant() {
     if (timeline.length < 5 || !timelinePrevClose || timelinePrevClose <= 0) return [];
     return computeKeyPriceLevels(timelinePrevClose, timeline);
   }, [timeline, timelinePrevClose]);
+
+  // Memoized tooltip components and wrapperStyle to avoid re-renders
+  const tooltipWrapperStyle = useMemo(() => ({ background: 'transparent' as const, border: 'none' as const }), []);
+  const timelineTooltipEl = useMemo(() => <TimelineTooltip />, []);
+  const volumeTooltipEl = useMemo(() => <TimelineVolumeTooltip />, []);
+  const macdTooltipEl = useMemo(() => <TimelineMACDTooltip />, []);
+  const klineTooltipEl = useMemo(() => <KLineTooltip />, []);
+  const klineVolumeTooltipEl = useMemo(() => <VolumeTooltip />, []);
+  const klineMacdTooltipEl = useMemo(() => <MACDTooltip />, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -6315,7 +6320,7 @@ export default function StockTAssistant() {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                     <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                     <YAxis domain={[minPrice - pricePadding, maxPrice + pricePadding]} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => v.toFixed(2)} />
-                    <Tooltip content={<KLineTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
+                    <Tooltip content={klineTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
                     <Bar dataKey="close" opacity={0} isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12} />
                     <Customized component={CandlestickRenderer} />
                     <Line type="monotone" dataKey="ma5" stroke="#eab308" dot={false} strokeWidth={1} connectNulls isAnimationActive={false} />
@@ -6339,12 +6344,13 @@ export default function StockTAssistant() {
                   <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                     <YAxis domain={[0, maxVolume * 1.01]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => formatVolume(v)} />
-                    <Tooltip content={<VolumeTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
-                    <Bar dataKey="volume" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}>
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.close >= entry.open ? "#ef4444" : "#16a34a"} fillOpacity={1} />
-                      ))}
-                    </Bar>
+                    <Tooltip content={klineVolumeTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
+                    <Bar dataKey="volume" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}
+                      shape={(props: any) => {
+                        const { x, y, width, height, payload } = props;
+                        return <rect x={x} y={y} width={width} height={height} fill={payload.close >= payload.open ? "#ef4444" : "#16a34a"} />;
+                      }}
+                    />
                   </ComposedChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -6376,13 +6382,14 @@ export default function StockTAssistant() {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                     <YAxis domain={[macdMin - macdPadding, macdMax + macdPadding]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => v.toFixed(3)} />
-                    <Tooltip content={<MACDTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
+                    <Tooltip content={klineMacdTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
                     <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
-                    <Bar dataKey="macd" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}>
-                      {chartData.map((entry, index) => (
-                        <Cell key={`macd-${index}`} fill={entry.macd && entry.macd >= 0 ? "#ef4444" : "#16a34a"} fillOpacity={1} />
-                      ))}
-                    </Bar>
+                    <Bar dataKey="macd" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}
+                      shape={(props: any) => {
+                        const { x, y, width, height, payload } = props;
+                        return <rect x={x} y={y} width={width} height={height} fill={payload.macd && payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+                      }}
+                    />
                     <Line type="monotone" dataKey="dif" stroke="#3b82f6" dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
                     <Line type="monotone" dataKey="dea" stroke="#f97316" dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
                   </ComposedChart>
@@ -6412,13 +6419,7 @@ export default function StockTAssistant() {
           // Regime badge helper
           const regimeBadge = (regime: RegimeDetail | null) => {
             if (!regime) return null;
-            const regimeConfig: Record<string, { bg: string; text: string; icon: string }> = {
-              "上升通道": { bg: "bg-red-500/10 border-red-500/20", text: "text-red-500", icon: "↑" },
-              "下跌趋势": { bg: "bg-green-500/10 border-green-500/20", text: "text-green-500", icon: "↓" },
-              "震荡市":   { bg: "bg-emerald-500/10 border-emerald-500/20", text: "text-emerald-500", icon: "↔" },
-              "横盘末期": { bg: "bg-yellow-500/10 border-yellow-500/20", text: "text-yellow-500", icon: "→" },
-            };
-            const cfg = regimeConfig[regime.regime] || regimeConfig["震荡市"];
+            const cfg = REGIME_CONFIG[regime.regime] || REGIME_CONFIG["震荡市"];
             return (
               <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}>
                 <span>{cfg.icon}</span>
@@ -6526,15 +6527,18 @@ export default function StockTAssistant() {
 
                   {/* Signal Timeline */}
                   <div className="mt-4 space-y-2 max-h-48 overflow-y-auto">
-                    {timelineSignals.map((sig, i) => {
+                    {(() => {
+                      const startIdx = Math.max(0, timelineSignals.length - 50);
+                      return timelineSignals.slice(startIdx).map((sig, i) => {
                       if (!sig) return null;
+                      const origIdx = startIdx + i;
                       const hasEnhance = sig.description?.includes("共振") || sig.description?.includes("确认→") || sig.description?.includes("大盘");
                       return (
-                        <div key={`sig-${i}`} className="flex items-center gap-2 text-xs p-2 rounded bg-muted/30">
+                        <div key={`sig-${origIdx}`} className="flex items-center gap-2 text-xs p-2 rounded bg-muted/30">
                           <Badge variant={sig.type === "buy" ? "default" : "destructive"} className="text-xs h-5 shrink-0">
                             {sig.type === "buy" ? "买" : "卖"}
                           </Badge>
-                          <span className="font-mono text-muted-foreground">{timeline[i]?.time}</span>
+                          <span className="font-mono text-muted-foreground">{timeline[origIdx]?.time}</span>
                           <span className={sig.type === "buy" ? "text-red-500" : "text-green-500"}>{sig.reason}</span>
                           <span className="text-muted-foreground ml-auto">
                             {sig.strength === "strong" ? "强" : sig.strength === "medium" ? "中" : "弱"}
@@ -6544,7 +6548,7 @@ export default function StockTAssistant() {
                           )}
                         </div>
                       );
-                    })}
+                    })})()}
                   </div>
 
                   {/* v3.6 胜率增强提示 */}
