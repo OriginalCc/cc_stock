@@ -1950,6 +1950,7 @@ function TimeSharingPanel({
               stroke="hsl(var(--muted-foreground))"
               strokeDasharray="4 2"
               strokeWidth={0.5}
+              label={{ value: "0%", position: "left", fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
             />
             {/* Today's MA lines as dashed references */}
             {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
