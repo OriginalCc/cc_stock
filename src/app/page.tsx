@@ -1427,9 +1427,6 @@ function TimeSharingPanel({
 
   // ── Crosshair state: shared across all three panels ──
   const [crosshairIdx, setCrosshairIdx] = useState<number | null>(null);
-  const crosshairItem = crosshairIdx != null && crosshairIdx >= 0 && crosshairIdx < zoomData.length
-    ? zoomData[crosshairIdx]
-    : null;
 
   // ── Drag-to-pan & scroll-to-pan state ──
   const dragRef = useRef<{ startX: number; startPanOffset: number; isDragging: boolean }>({ startX: 0, startPanOffset: 0, isDragging: false });
@@ -1603,6 +1600,11 @@ function TimeSharingPanel({
   }
 
   const isZoomed = visibleMinutes < totalSlots;
+
+  // ── Crosshair item (must be after zoomData is computed) ──
+  const crosshairItem = crosshairIdx != null && crosshairIdx >= 0 && crosshairIdx < zoomData.length
+    ? zoomData[crosshairIdx]
+    : null;
 
   // Smart Y-axis auto-scaling: adapt to actual data range instead of always centering on prevClose
   // This makes fluctuations more visible when price only moves in one direction
