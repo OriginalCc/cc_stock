@@ -5732,8 +5732,8 @@ export default function StockTAssistant() {
 
   // ── Timeline last data slot index (matches fullDayData indexing in TimeSharingPanel) ──
   const tlLastDataIdx = useMemo(() => {
-    if (timeline.length === 0) return -1;
-    const lastTime = timeline[timeline.length - 1].time;
+    if (liveTimeline.length === 0) return -1;
+    const lastTime = liveTimeline[liveTimeline.length - 1].time;
     const [h, m] = lastTime.split(':').map(Number);
     // Morning: 09:30-11:30 (slots 0-120, 121 minutes), Afternoon: 13:00-15:00 (slots 121-241, 121 minutes)
     if (h < 12) {
@@ -5741,7 +5741,7 @@ export default function StockTAssistant() {
     } else {
       return 121 + (h - 13) * 60 + m;
     }
-  }, [timeline]);
+  }, [liveTimeline]);
 
   const tlZoomIn = (cursorRatio?: number) => {
     if (cursorRatio !== undefined && cursorRatio >= 0) {
@@ -5945,24 +5945,73 @@ export default function StockTAssistant() {
     return { minPrice: mnP, maxPrice: mxP, pricePadding: pp, macdMin: mMin, macdMax: mMax, macdPadding: mPad, maxVolume: mv };
   }, [chartData]);
 
+  // ── Live Timeline: inject real-time quote price into the latest minute ──
+  // Tencent API returns 1-minute granularity; quote updates every ~3s during trading.
+  // By replacing the last timeline point with quote.price, the chart moves in near-real-time.
+  const liveTimeline = useMemo(() => {
+    if (timeline.length === 0) return timeline;
+    // Only inject if quote has a valid price that differs from the last timeline point
+    if (!quote || !quote.price || quote.price <= 0) return timeline;
+    const last = timeline[timeline.length - 1];
+    if (last.price === quote.price) return timeline; // no change, avoid new ref
+
+    // Determine the current minute time string (HH:MM)
+    const now = new Date();
+    const curMin = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    // If the last timeline point is the current minute, update it with live price
+    if (last.time === curMin) {
+      const updated = timeline.slice(0, -1);
+      const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : last.changePercent;
+      // Update avgPrice using weighted average of existing avg + new price
+      updated.push({
+        ...last,
+        price: quote.price,
+        changePercent: Number(changePercent.toFixed(2)),
+        // Keep avgPrice from API (VWAP) — it's cumulative and accurate
+      });
+      return updated;
+    }
+
+    // If we're in a new minute that the timeline hasn't captured yet,
+    // add a new point (e.g. timeline shows 10:30 but it's 10:31 now)
+    // Only add during trading hours (9:30-11:30, 13:00-15:00)
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
+    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
+    if (isMorningSession || isAfternoonSession) {
+      const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : 0;
+      return [...timeline, {
+        time: curMin,
+        price: quote.price,
+        avgPrice: quote.price, // approximate VWAP for the new minute
+        volume: 0, // unknown until API updates
+        changePercent: Number(changePercent.toFixed(2)),
+      }];
+    }
+
+    return timeline;
+  }, [timeline, quote]);
+
   // Calculate MACD from 1-minute timeline data directly (同花顺 style: 1-min MACD on 分时图)
   // 同花顺分时图MACD是直接用1分钟数据计算的，不用日K线预热
   // 因为日K线是日线级别，与1分钟数据时间尺度不同，混在一起会导致EMA完全收敛、DIF→0
   // 使用首值初始化(EMA[0]=X[0])，从第一分钟就有MACD值，无需预热
   const timelineMACDData = useMemo(() => {
-    if (timeline.length === 0) return [];
+    if (liveTimeline.length === 0) return [];
 
-    const prices = timeline.map((d) => d.price);
+    const prices = liveTimeline.map((d) => d.price);
     const macdResult = calculateMACD(prices);
 
     const result: { time: string; dif: number | null; dea: number | null; macd: number | null }[] = [];
-    for (let i = 0; i < timeline.length; i++) {
+    for (let i = 0; i < liveTimeline.length; i++) {
       const m = macdResult[i];
       if (isNaN(m.dif) || isNaN(m.dea) || isNaN(m.macd)) {
-        result.push({ time: timeline[i].time, dif: null, dea: null, macd: null });
+        result.push({ time: liveTimeline[i].time, dif: null, dea: null, macd: null });
       } else {
         result.push({
-          time: timeline[i].time,
+          time: liveTimeline[i].time,
           dif: m.dif,
           dea: m.dea,
           macd: m.macd,
@@ -5971,12 +6020,12 @@ export default function StockTAssistant() {
     }
 
     return result.filter((d) => d.dif != null);
-  }, [timeline]);
+  }, [liveTimeline]);
 
   // Generate T-trading signals for timeline (with DB factor overrides + index regime)
   const timelineSignals = useMemo(() => {
-    return generateTimelineSignals(timeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime);
-  }, [timeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime]);
+    return generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime);
+  }, [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime]);
 
   // Get latest timeline signal for the header badge
   const latestTimelineSignal = useMemo(() => {
@@ -6096,7 +6145,7 @@ export default function StockTAssistant() {
   // ── Smart Action Recommendation (智能操作建议) ──
   const smartAction = useMemo(() => {
     // Analyze latest signals, market regime, time window, and T-index
-    const lastTime = timeline[timeline.length - 1]?.time;
+    const lastTime = liveTimeline[liveTimeline.length - 1]?.time;
     const timeWindow = lastTime ? getTimeWindow(lastTime) : undefined;
 
     // Find the latest strong/medium signals
@@ -6194,9 +6243,9 @@ export default function StockTAssistant() {
 
   // ── Key Price Levels (support/resistance) for timeline chart ──
   const keyPriceLevels = useMemo(() => {
-    if (timeline.length < 5 || !timelinePrevClose || timelinePrevClose <= 0) return [];
-    return computeKeyPriceLevels(timelinePrevClose, timeline);
-  }, [timeline, timelinePrevClose]);
+    if (liveTimeline.length < 5 || !timelinePrevClose || timelinePrevClose <= 0) return [];
+    return computeKeyPriceLevels(timelinePrevClose, liveTimeline);
+  }, [liveTimeline, timelinePrevClose]);
 
   // Memoized tooltip components and wrapperStyle to avoid re-renders
   const tooltipWrapperStyle = useMemo(() => ({ background: 'transparent' as const, border: 'none' as const }), []);
@@ -6398,7 +6447,7 @@ export default function StockTAssistant() {
         </Card>
 
         {/* T-Index & Smart Action Panel */}
-        {quote && timeline.length > 0 && (
+        {quote && liveTimeline.length > 0 && (
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* T-Index Card */}
             <Card className="border overflow-hidden">
@@ -6455,7 +6504,7 @@ export default function StockTAssistant() {
                     <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{smartAction.reason}</div>
                     {/* Time window indicator */}
                     {(() => {
-                      const lastTime = timeline[timeline.length - 1]?.time;
+                      const lastTime = liveTimeline[liveTimeline.length - 1]?.time;
                       const tw = lastTime ? getTimeWindow(lastTime) : null;
                       if (!tw) return null;
                       const twColor = tw === '开盘观察' || tw === '尾盘不操作'
@@ -6565,7 +6614,7 @@ export default function StockTAssistant() {
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             {/* Price / AvgPrice deviation badge */}
             {(() => {
-              const lastTl = timeline[timeline.length - 1];
+              const lastTl = liveTimeline[liveTimeline.length - 1];
               if (lastTl && lastTl.avgPrice && lastTl.avgPrice > 0) {
                 const deviation = ((lastTl.price - lastTl.avgPrice) / lastTl.avgPrice) * 100;
                 const isAbove = deviation >= 0;
@@ -6596,7 +6645,7 @@ export default function StockTAssistant() {
               {soundEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />}
             </Button>
             <Clock className="h-3 w-3" />
-            自动刷新 30s
+            实时刷新 3s
           </div>
         </div>
 
@@ -6608,17 +6657,17 @@ export default function StockTAssistant() {
         )}
 
         {/* Charts */}
-        {loading && chartData.length === 0 && timeline.length === 0 ? (
+        {loading && chartData.length === 0 && liveTimeline.length === 0 ? (
           <div className="space-y-4">
             <Skeleton className="h-[400px] w-full" />
             <Skeleton className="h-[150px] w-full" />
             <Skeleton className="h-[100px] w-full" />
           </div>
-        ) : chartMode === "timeline" && timeline.length > 0 ? (
+        ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
             {/* ─── 同花顺风格 统一分时面板 ─── */}
             <TimeSharingPanel
-              data={timeline}
+              data={liveTimeline}
               prevClose={timelinePrevClose}
               symbol={symbol}
               signals={timelineSignals}
@@ -6831,7 +6880,7 @@ export default function StockTAssistant() {
         )}
 
         {/* ── Market Index & Sector Overview ── */}
-        {chartMode === "timeline" && timeline.length > 0 && (() => {
+        {chartMode === "timeline" && liveTimeline.length > 0 && (() => {
           const szData = indexTimelineData[activeIndexKey];
           const idxInfo = INDEX_CONFIG[activeIndexKey];
           const hasIdxData = szData && szData.items.length > 10;
@@ -6892,7 +6941,7 @@ export default function StockTAssistant() {
         })()}
 
         {/* T-Trading Signals Summary */}
-        {(chartData.length > 0 || (chartMode === "timeline" && timeline.length > 0)) && (
+        {(chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
           <Card className="mt-4">
             <CardHeader className="pb-2 pt-3 px-4">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -6925,7 +6974,7 @@ export default function StockTAssistant() {
                     </div>
 
                     {(() => {
-                      const lastTL = timeline[timeline.length - 1];
+                      const lastTL = liveTimeline[liveTimeline.length - 1];
                       if (!lastTL) return null;
                       const aboveVWAP = lastTL.price > lastTL.avgPrice;
                       const dev = ((lastTL.price - lastTL.avgPrice) / lastTL.avgPrice * 100).toFixed(2);

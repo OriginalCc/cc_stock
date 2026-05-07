@@ -575,3 +575,27 @@ Stage Summary:
 - Zero line always visible in MACD chart
 - MACD color rendering fixed for zero-value bars (now correctly red when MACD = 0)
 - Mini charts now show MACD with as few as 2 data points
+
+---
+Task ID: 1
+Agent: main
+Task: 实现分时图3秒级别实时刷新
+
+Work Log:
+- 分析分时数据源：腾讯API返回1分钟粒度数据，之前整体30秒刷新一次
+- 实现 liveTimeline 机制：将实时报价(quote)价格注入到分时数据的最新分钟
+  - 如果最新时间点是当前分钟：用quote.price替换该点价格
+  - 如果进入新分钟但API尚未更新：自动插入新的数据点
+  - 非交易时间不做注入
+- 修改 use-stock-data.ts：拆分刷新频率
+  - quote刷新：3秒（获取实时价格）
+  - timeline/history刷新：30秒（获取1分钟级数据）
+- 全部下游计算改用 liveTimeline：MACD、信号、关键价位、Y轴、UI展示
+- 更新UI标签："自动刷新 30s" → "实时刷新 3s"
+
+Stage Summary:
+- 分时图现在每3秒刷新一次（通过实时报价驱动）
+- 当前分钟内的价格变化可以实时看到
+- 进入新分钟时自动插入数据点（不等待30秒的timeline API刷新）
+- MACD和信号也会跟随实时价格变化
+- lint通过，dev server正常运行

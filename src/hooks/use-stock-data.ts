@@ -89,6 +89,7 @@ export function useStockData() {
   } | null>(null);
 
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const quoteTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const checkAShare = useCallback((sym: string) => isAShare(sym), []);
 
@@ -240,8 +241,14 @@ export function useStockData() {
     ]);
   }, [mounted]);
 
-  // Auto-refresh every 30 seconds
+  // Auto-refresh: quote every 3s (for live price), timeline/history every 30s
   useEffect(() => {
+    // Fast quote refresh (3s) — drives live price updates on timeline
+    quoteTimerRef.current = setInterval(() => {
+      fetchQuote(symbol);
+    }, 3000);
+
+    // Slow data refresh (30s) — timeline, history
     refreshTimerRef.current = setInterval(() => {
       Promise.allSettled([
         fetchQuote(symbol),
@@ -251,6 +258,9 @@ export function useStockData() {
     }, 30000);
 
     return () => {
+      if (quoteTimerRef.current) {
+        clearInterval(quoteTimerRef.current);
+      }
       if (refreshTimerRef.current) {
         clearInterval(refreshTimerRef.current);
       }
