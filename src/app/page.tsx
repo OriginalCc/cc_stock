@@ -1175,7 +1175,7 @@ function MiniTimelinePanel({
     const pMax = ((ymx - spc) / spc) * 100;
 
     const mv = data.reduce((mx, d) => (d.volume > mx ? d.volume : mx), 1);
-    const bs = chartData.length > 200 ? 1 : chartData.length > 100 ? 1.5 : 2;
+    const bs = chartData.length > 200 ? 2 : chartData.length > 100 ? 3 : 4;
 
     // MACD range
     const macdValues = macdData.flatMap(d => [d.dif, d.dea, d.macd]).filter((v): v is number => v != null);
@@ -1655,7 +1655,7 @@ function TimeSharingPanel({
       if (signals[i]) { ls = signals[i]; break; }
     }
 
-    const brs = zd.length > 200 ? 1 : zd.length > 100 ? 1.5 : zd.length > 60 ? 2 : 3;
+    const brs = zd.length > 200 ? 2 : zd.length > 100 ? 3 : zd.length > 60 ? 4 : 5;
 
     return {
       zoomData: zd, xDomain: xd, zoomTimeTicks: ztt, isZoomed: iz, safePrevClose: spc,
@@ -6316,7 +6316,7 @@ export default function StockTAssistant() {
                     <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                     <YAxis domain={[minPrice - pricePadding, maxPrice + pricePadding]} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => v.toFixed(2)} />
                     <Tooltip content={<KLineTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
-                    <Bar dataKey="close" opacity={0} isAnimationActive={false} barSize={chartData.length > 150 ? 3 : chartData.length > 80 ? 5 : chartData.length > 50 ? 7 : 10} />
+                    <Bar dataKey="close" opacity={0} isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12} />
                     <Customized component={CandlestickRenderer} />
                     <Line type="monotone" dataKey="ma5" stroke="#eab308" dot={false} strokeWidth={1} connectNulls isAnimationActive={false} />
                     <Line type="monotone" dataKey="ma10" stroke="#3b82f6" dot={false} strokeWidth={1} connectNulls isAnimationActive={false} />
@@ -6340,7 +6340,7 @@ export default function StockTAssistant() {
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                     <YAxis domain={[0, maxVolume * 1.01]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => formatVolume(v)} />
                     <Tooltip content={<VolumeTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
-                    <Bar dataKey="volume" isAnimationActive={false} barSize={chartData.length > 150 ? 3 : chartData.length > 80 ? 5 : chartData.length > 50 ? 7 : 10}>
+                    <Bar dataKey="volume" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}>
                       {chartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.close >= entry.open ? "#ef4444" : "#16a34a"} fillOpacity={1} />
                       ))}
@@ -6378,7 +6378,7 @@ export default function StockTAssistant() {
                     <YAxis domain={[macdMin - macdPadding, macdMax + macdPadding]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => v.toFixed(3)} />
                     <Tooltip content={<MACDTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
                     <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
-                    <Bar dataKey="macd" isAnimationActive={false} barSize={chartData.length > 150 ? 3 : chartData.length > 80 ? 5 : chartData.length > 50 ? 7 : 10}>
+                    <Bar dataKey="macd" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}>
                       {chartData.map((entry, index) => (
                         <Cell key={`macd-${index}`} fill={entry.macd && entry.macd >= 0 ? "#ef4444" : "#16a34a"} fillOpacity={1} />
                       ))}
