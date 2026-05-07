@@ -22,11 +22,11 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 
   const systemPrompts: Record<string, string> = {
     market:
-      "你是一位专业的A股大盘分析师。根据提供的资讯，分析今日大盘走势预判。你需要用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
+      "你是一位专业的A股大盘分析师。根据提供的资讯，综合分析大盘明日走势预判。你需要结合当日收盘情况、资金流向、政策消息、外盘影响等因素，判断明日大盘走势。用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（明日做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
     sector:
-      "你是一位专业的A股行业板块分析师。根据提供的资讯，分析该板块今日走势预判。你需要用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
+      "你是一位专业的A股行业板块分析师。根据提供的资讯，综合分析该板块明日走势预判。你需要结合板块当日表现、资金进出、龙头股走势、行业政策等因素，判断明日板块走势。用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（明日做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
     stock:
-      "你是一位专业的A股个股分析师。根据提供的资讯，分析该个股今日走势预判。你需要用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
+      "你是一位专业的A股个股分析师。根据提供的资讯，综合分析该个股明日走势预判。你需要结合个股当日走势、成交量变化、技术面形态、消息面利好利空等因素，判断明日个股走势。用JSON格式返回分析结果，包含：trend（上升/下降/震荡）、confidence（1-100的信心度）、summary（50字以内摘要）、keyFactors（2-3个关键因素数组）、suggestion（明日做T建议：正T/反T/观望）。只返回JSON，不要其他文字。",
   };
 
   const completion = await zai.chat.completions.create({
@@ -70,9 +70,9 @@ export async function GET(req: NextRequest) {
 
     // Step 1: Search for relevant news
     const queries: Record<string, string> = {
-      market: "A股 大盘 今日 走势 资讯",
-      sector: `A股 ${sectorName} 板块 今日 走势 资讯`,
-      stock: `A股 ${stockName} ${symbol} 今日 走势 资讯`,
+      market: "A股 大盘 明日 走势 预测 资讯",
+      sector: `A股 ${sectorName} 板块 明日 走势 预测 资讯`,
+      stock: `A股 ${stockName} ${symbol} 明日 走势 预测 资讯`,
     };
 
     const searchQuery = queries[type] || queries.market;
@@ -85,9 +85,9 @@ export async function GET(req: NextRequest) {
       .join("\n\n");
 
     const contextMap: Record<string, string> = {
-      market: `以下是今日A股大盘相关资讯：\n\n${newsContext}\n\n请分析大盘今日走势预判。`,
-      sector: `以下是${sectorName}板块今日相关资讯：\n\n${newsContext}\n\n请分析${sectorName}板块今日走势预判。`,
-      stock: `以下是${stockName}(${symbol})今日相关资讯：\n\n${newsContext}\n\n请分析${stockName}今日走势预判。`,
+      market: `以下是A股大盘最新资讯：\n\n${newsContext}\n\n请综合以上资讯，结合当日收盘数据、资金流向、外盘表现、政策消息等，分析大盘明日走势预判。`,
+      sector: `以下是${sectorName}板块最新资讯：\n\n${newsContext}\n\n请综合以上资讯，结合板块当日表现、资金进出、龙头股走势、行业政策等，分析${sectorName}板块明日走势预判。`,
+      stock: `以下是${stockName}(${symbol})最新资讯：\n\n${newsContext}\n\n请综合以上资讯，结合个股当日走势、成交量变化、技术面形态、消息面利好利空等，分析${stockName}明日走势预判。`,
     };
 
     // Step 3: LLM Analysis

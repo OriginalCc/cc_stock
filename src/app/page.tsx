@@ -6867,9 +6867,9 @@ export default function StockTAssistant() {
                 <div className="flex flex-col items-center justify-center py-12 gap-3">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">
-                    {newsActiveTab === "market" ? "正在搜索大盘资讯并分析..." :
-                     newsActiveTab === "sector" ? "正在搜索板块资讯并分析..." :
-                     "正在搜索个股资讯并分析..."}
+                    {newsActiveTab === "market" ? "正在搜索大盘资讯，分析明日走势..." :
+                     newsActiveTab === "sector" ? "正在搜索板块资讯，分析明日走势..." :
+                     "正在搜索个股资讯，分析明日走势..."}
                   </span>
                 </div>
               ) : newsData[newsActiveTab] ? (
@@ -6899,7 +6899,7 @@ export default function StockTAssistant() {
                             <span className="text-2xl">{cfg.icon}</span>
                             <div>
                               <div className={`text-lg font-bold ${cfg.text}`}>
-                                今日预判：{analysis.trend}
+                                明日预判：{analysis.trend}
                               </div>
                               <div className="text-xs text-muted-foreground">
                                 {newsActiveTab === "market" ? "大盘" : newsActiveTab === "sector" ? `${data.sectorName}板块` : quote?.name || symbol} · 更新于 {data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "--"}
@@ -6909,7 +6909,7 @@ export default function StockTAssistant() {
                           </div>
                           <div className="flex flex-col items-end gap-1">
                             <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${sCfg.bg} ${sCfg.text}`}>
-                              建议：{analysis.suggestion}
+                              明日建议：{analysis.suggestion}
                             </span>
                             <span className="text-xs text-muted-foreground">
                               信心度 {analysis.confidence}%

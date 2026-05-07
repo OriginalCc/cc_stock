@@ -500,3 +500,25 @@ Applied 7 performance optimizations to `/home/z/my-project/src/app/page.tsx` to 
 
 ### Lint Status
 All lint checks pass with 0 errors, 0 warnings.
+
+---
+Task ID: 1
+Agent: main
+Task: 资讯分析改为对明日涨跌进行分析
+
+Work Log:
+- 分析现有资讯分析功能：API route + UI已实现"今日预判"
+- 修改 API route (`/api/stock/news-analysis/route.ts`):
+  - 系统提示词：从"今日走势预判"改为"明日走势预判"，增加分析维度（收盘情况、资金流向、外盘影响、技术形态等）
+  - 搜索关键词：从"A股 大盘 今日 走势 资讯"改为"A股 大盘 明日 走势 预测 资讯"
+  - 上下文消息：从"分析今日走势预判"改为"综合以上资讯，分析明日走势预判"
+  - 做T建议：从"做T建议"改为"明日做T建议"
+- 修改前端UI (`page.tsx`):
+  - 加载文案：从"正在搜索大盘资讯并分析"改为"正在搜索大盘资讯，分析明日走势"
+  - 预判标题：从"今日预判"改为"明日预判"
+  - 建议标签：从"建议"改为"明日建议"
+
+Stage Summary:
+- 资讯分析从"今日预判"全面改为"明日涨跌分析"
+- API和UI文案同步更新
+- Lint通过，dev server正常运行
