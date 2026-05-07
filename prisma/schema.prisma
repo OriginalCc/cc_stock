@@ -1,0 +1,58 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── 做 T 策略因子 & 逻辑 ──────────────────────────────
+
+model StrategyFactor {
+  id          String   @id @default(cuid())
+  name        String                    // 因子名称 e.g. "MACD金叉", "量价背离"
+  category    String                    // 类别: "MACD", "VWAP", "VOLUME", "VOLUME_PATTERN", "MOMENTUM", "DIVERGENCE", "STOPLOSS", "RSI", "BOLL", "SUPPORT", "TIME_WINDOW", "SPREAD", "REGIME"
+  signalType  String                    // "buy" | "sell" | "stoploss"
+  description String                    // 因子描述
+  params      String   @default("{}")   // JSON 参数
+  enabled     Boolean  @default(true)   // 是否启用
+  priority    Int      @default(0)      // 优先级(越大越先判断)
+  strength    String   @default("medium") // 默认信号强度
+  tMode       String   @default("正T")   // 做T模式: "正T" | "反T"
+  timeWindow  String   @default("any")   // 适用时间窗口: "any" | "sell_window" | "buy_window"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model StrategyLogic {
+  id          String   @id @default(cuid())
+  name        String                    // 逻辑名称
+  description String                    // 逻辑描述
+  logicOrder  Int      @default(0)      // 执行顺序
+  isActive    Boolean  @default(true)   // 是否激活
+  category    String   @default("general") // 逻辑类别
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
