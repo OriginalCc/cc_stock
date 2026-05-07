@@ -5994,24 +5994,22 @@ export default function StockTAssistant() {
     return { minPrice: mnP, maxPrice: mxP, pricePadding: pp, macdMin: mMin, macdMax: mMax, macdPadding: mPad, maxVolume: mv };
   }, [chartData]);
 
-  // Calculate MACD from 1-minute timeline data directly (同花顺 style: 1-min MACD on 分时图)
-  // 同花顺分时图MACD是直接用1分钟数据计算的，不用日K线预热
-  // 因为日K线是日线级别，与1分钟数据时间尺度不同，混在一起会导致EMA完全收敛、DIF→0
-  // 使用首值初始化(EMA[0]=X[0])，从第一分钟就有MACD值，无需预热
+  // Calculate MACD from raw timeline data (10s refresh), NOT liveTimeline (3s refresh)
+  // This keeps MACD updating at 10s intervals, not 3s, avoiding jitter
   const timelineMACDData = useMemo(() => {
-    if (liveTimeline.length === 0) return [];
+    if (timeline.length === 0) return [];
 
-    const prices = liveTimeline.map((d) => d.price);
+    const prices = timeline.map((d) => d.price);
     const macdResult = calculateMACD(prices);
 
     const result: { time: string; dif: number | null; dea: number | null; macd: number | null }[] = [];
-    for (let i = 0; i < liveTimeline.length; i++) {
+    for (let i = 0; i < timeline.length; i++) {
       const m = macdResult[i];
       if (isNaN(m.dif) || isNaN(m.dea) || isNaN(m.macd)) {
-        result.push({ time: liveTimeline[i].time, dif: null, dea: null, macd: null });
+        result.push({ time: timeline[i].time, dif: null, dea: null, macd: null });
       } else {
         result.push({
-          time: liveTimeline[i].time,
+          time: timeline[i].time,
           dif: m.dif,
           dea: m.dea,
           macd: m.macd,
@@ -6020,7 +6018,7 @@ export default function StockTAssistant() {
     }
 
     return result.filter((d) => d.dif != null);
-  }, [liveTimeline]);
+  }, [timeline]);
 
   // Generate T-trading signals for timeline (with DB factor overrides + index regime)
   const timelineSignals = useMemo(() => {

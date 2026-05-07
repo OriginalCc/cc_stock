@@ -241,14 +241,19 @@ export function useStockData() {
     ]);
   }, [mounted]);
 
-  // Auto-refresh: quote every 3s (for live price), timeline/history every 30s
+  // Auto-refresh: quote every 3s (live price), timeline every 10s (VOL/MACD), history every 30s
   useEffect(() => {
     // Fast quote refresh (3s) — drives live price updates on timeline
     quoteTimerRef.current = setInterval(() => {
       fetchQuote(symbol);
     }, 3000);
 
-    // Slow data refresh (30s) — timeline, history
+    // Timeline refresh (10s) — drives VOL and MACD updates
+    const timelineTimer = setInterval(() => {
+      if (checkAShare(symbol)) fetchTimeline(symbol);
+    }, 10000);
+
+    // Slow data refresh (30s) — history K-line
     refreshTimerRef.current = setInterval(() => {
       Promise.allSettled([
         fetchQuote(symbol),
@@ -261,6 +266,7 @@ export function useStockData() {
       if (quoteTimerRef.current) {
         clearInterval(quoteTimerRef.current);
       }
+      clearInterval(timelineTimer);
       if (refreshTimerRef.current) {
         clearInterval(refreshTimerRef.current);
       }
