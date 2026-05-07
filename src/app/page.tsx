@@ -6153,6 +6153,30 @@ export default function StockTAssistant() {
                         </Badge>
                       );
                     })()}
+                    {/* News Analysis Tags */}
+                    {newsData && (newsData.market || newsData.sector || newsData.stock) && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                        {(["market", "sector", "stock"] as const).map((tab) => {
+                          const d = newsData[tab];
+                          if (!d?.analysis) return null;
+                          const a = d.analysis;
+                          const labels = { market: "大盘", sector: d.sectorName ? `${d.sectorName}` : "板块", stock: quote?.name || "个股" };
+                          const trendColors: Record<string, string> = {
+                            "上升": "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
+                            "下降": "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
+                            "震荡": "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20",
+                          };
+                          const sentimentIcons: Record<string, string> = { "偏多": "😊", "偏空": "😟", "中性": "😐" };
+                          const tc = trendColors[a.trend] || trendColors["震荡"];
+                          const si = sentimentIcons[a.newsSentiment] || "😐";
+                          return (
+                            <span key={tab} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border text-[10px] font-medium ${tc}`}>
+                              {labels[tab]}: {a.trend} {si}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   {/* Confidence bar */}
                   <div className="shrink-0 w-16 text-center">
