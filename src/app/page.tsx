@@ -1946,11 +1946,17 @@ function TimeSharingPanel({
             <Tooltip content={<TimelineTooltip />} cursor={false} wrapperStyle={{ background: 'transparent', border: 'none' }} />
             <ReferenceLine
               yAxisId="price"
-              y={prevClose}
-              stroke="hsl(var(--muted-foreground))"
-              strokeWidth={1}
-              strokeOpacity={0.7}
-              label={{ value: "  0%", position: "insideTopLeft", fill: "hsl(var(--foreground))", fontSize: 11, fontWeight: 600 }}
+              y={safePrevClose}
+              stroke="#6b7280"
+              strokeWidth={1.2}
+              strokeOpacity={0.8}
+              label={{
+                value: "0%",
+                position: "right" as const,
+                fill: "#6b7280",
+                fontSize: 11,
+                fontWeight: 700,
+              }}
             />
             {/* Today's MA lines as dashed references */}
             {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
