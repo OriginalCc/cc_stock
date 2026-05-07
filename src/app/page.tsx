@@ -2168,7 +2168,7 @@ function TimeSharingPanel({
         <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] select-none pointer-events-none">
           <span className="text-muted-foreground font-medium">VOL</span>
         </div>
-        <ResponsiveContainer width="100%" height={90}>
+        <ResponsiveContainer width="100%" height={110}>
           <ComposedChart
             data={zoomData}
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
@@ -2240,7 +2240,7 @@ function TimeSharingPanel({
             <span className="text-orange-600">DEA</span>
           </span>
         </div>
-        <ResponsiveContainer width="100%" height={100}>
+        <ResponsiveContainer width="100%" height={120}>
           <ComposedChart
             data={zoomData}
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
@@ -6335,7 +6335,7 @@ export default function StockTAssistant() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pb-2 px-2">
-                <ResponsiveContainer width="100%" height={130}>
+                <ResponsiveContainer width="100%" height={160}>
                   <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                     <YAxis domain={[0, maxVolume * 1.01]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => formatVolume(v)} />
@@ -6371,7 +6371,7 @@ export default function StockTAssistant() {
                 </div>
               </CardHeader>
               <CardContent className="pb-2 px-2">
-                <ResponsiveContainer width="100%" height={170}>
+                <ResponsiveContainer width="100%" height={200}>
                   <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
