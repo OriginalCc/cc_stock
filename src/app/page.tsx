@@ -1951,10 +1951,13 @@ function TimeSharingPanel({
               const yAxis = yAxisMap.price;
               if (!yAxis || !yAxis.scale) return null;
               const yScale = yAxis.scale;
-              // Use chart width and right margin to find right edge of plot area
-              const chartWidth = props.width || 0;
-              const marginRight = 58;
-              const rightEdge = chartWidth - marginRight + 2;
+              // Use offset to get exact plot area dimensions for label positioning
+              // This ensures percentage labels align with ReferenceLine labels (MA5, etc.)
+              const offset = props.offset;
+              if (!offset) return null;
+              // Position labels at the right edge of plot area + small padding
+              // recharts ReferenceLine with position="right" places labels at ~plotAreaRight + 5
+              const labelX = offset.left + offset.width + 5;
               // Generate percent labels at evenly spaced Y positions
               const priceTicks: number[] = [];
               const tickStep = (yMax - yMin) / 5;
@@ -1973,9 +1976,9 @@ function TimeSharingPanel({
                     return (
                       <text
                         key={`pct-${i}`}
-                        x={rightEdge}
+                        x={labelX}
                         y={yPx}
-                        textAnchor="end"
+                        textAnchor="start"
                         dominantBaseline="middle"
                         fill={fill}
                         fontSize={9}
@@ -2110,7 +2113,7 @@ function TimeSharingPanel({
           <span className="text-muted-foreground font-medium">VOL</span>
         </div>
         <ResponsiveContainer width="100%" height={68}>
-          <ComposedChart data={zoomData} margin={{ top: 0, right: 58, left: 2, bottom: 0 }}>
+          <ComposedChart data={zoomData} margin={{ top: 0, right: 9, left: 2, bottom: 0 }}>
             <XAxis dataKey="idx" type="number" domain={xDomain} tick={false} tickLine={false} axisLine={false} />
             {/* Hidden left YAxis to align with price chart */}
             <YAxis
@@ -2169,7 +2172,7 @@ function TimeSharingPanel({
           </span>
         </div>
         <ResponsiveContainer width="100%" height={78}>
-          <ComposedChart data={zoomData} margin={{ top: 0, right: 58, left: 2, bottom: 0 }}>
+          <ComposedChart data={zoomData} margin={{ top: 0, right: 9, left: 2, bottom: 0 }}>
             <XAxis
               dataKey="idx"
               type="number"
