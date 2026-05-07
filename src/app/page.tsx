@@ -1727,10 +1727,10 @@ function TimeSharingPanel({
         {(() => {
           const detail = detectMarketRegimeDetail(data, prevClose);
           const regimeConfig: Record<string, { bg: string; text: string; icon: string }> = {
-            "上升通道": { bg: "bg-red-500/15 border-red-500/30", text: "text-red-600 dark:text-red-400", icon: "↑" },
-            "下跌趋势": { bg: "bg-green-500/15 border-green-500/30", text: "text-green-600 dark:text-green-400", icon: "↓" },
-            "震荡市":   { bg: "bg-emerald-500/15 border-emerald-500/30", text: "text-emerald-600 dark:text-emerald-400", icon: "↔" },
-            "横盘末期": { bg: "bg-yellow-500/15 border-yellow-500/30", text: "text-yellow-600 dark:text-yellow-400", icon: "→" },
+            "上升通道": { bg: "bg-red-600/20 border-red-600/40", text: "text-red-700 dark:text-red-300", icon: "↑" },
+            "下跌趋势": { bg: "bg-green-600/20 border-green-600/40", text: "text-green-700 dark:text-green-300", icon: "↓" },
+            "震荡市":   { bg: "bg-emerald-600/20 border-emerald-600/40", text: "text-emerald-700 dark:text-emerald-300", icon: "↔" },
+            "横盘末期": { bg: "bg-yellow-600/20 border-yellow-600/40", text: "text-yellow-700 dark:text-yellow-300", icon: "→" },
           };
           const cfg = regimeConfig[detail.regime] || regimeConfig["震荡市"];
 
@@ -1766,10 +1766,10 @@ function TimeSharingPanel({
         {/* Market Index Regime Badge - click to cycle 深/沪/创 */}
         {szIndexRegime && (() => {
           const regimeConfig: Record<string, { bg: string; text: string; icon: string }> = {
-            "上升通道": { bg: "bg-red-500/10 border-red-500/20", text: "text-red-500 dark:text-red-400", icon: "↑" },
-            "下跌趋势": { bg: "bg-green-500/10 border-green-500/20", text: "text-green-500 dark:text-green-400", icon: "↓" },
-            "震荡市":   { bg: "bg-emerald-500/10 border-emerald-500/20", text: "text-emerald-500 dark:text-emerald-400", icon: "↔" },
-            "横盘末期": { bg: "bg-yellow-500/10 border-yellow-500/20", text: "text-yellow-500 dark:text-yellow-400", icon: "→" },
+            "上升通道": { bg: "bg-red-600/20 border-red-600/40", text: "text-red-700 dark:text-red-300", icon: "↑" },
+            "下跌趋势": { bg: "bg-green-600/20 border-green-600/40", text: "text-green-700 dark:text-green-300", icon: "↓" },
+            "震荡市":   { bg: "bg-emerald-600/20 border-emerald-600/40", text: "text-emerald-700 dark:text-emerald-300", icon: "↔" },
+            "横盘末期": { bg: "bg-yellow-600/20 border-yellow-600/40", text: "text-yellow-700 dark:text-yellow-300", icon: "→" },
           };
           const cfg = regimeConfig[szIndexRegime.regime] || regimeConfig["震荡市"];
           const idxInfo = indexConfig?.[activeIndexKey || "sz"];
@@ -1781,20 +1781,20 @@ function TimeSharingPanel({
               title={`${fullLabel}: ${szIndexRegime.description}\n点击切换指数`}
               onClick={onCycleIndex}
             >
-              <span className="opacity-70">{shortLabel}</span>
+              <span className="opacity-80">{shortLabel}</span>
               <span>{cfg.icon}</span>
               <span>{szIndexRegime.regime}</span>
-              <span className="opacity-50">{szIndexRegime.confidence}%</span>
+              <span className="opacity-60">{szIndexRegime.confidence}%</span>
             </span>
           );
         })()}
         {/* Sector Regime Badge - shows industry sector trend */}
         {sectorRegime && sectorInfo && (() => {
           const regimeConfig: Record<string, { bg: string; text: string; icon: string }> = {
-            "上升通道": { bg: "bg-red-500/10 border-red-500/20", text: "text-red-500 dark:text-red-400", icon: "↑" },
-            "下跌趋势": { bg: "bg-green-500/10 border-green-500/20", text: "text-green-500 dark:text-green-400", icon: "↓" },
-            "震荡市":   { bg: "bg-emerald-500/10 border-emerald-500/20", text: "text-emerald-500 dark:text-emerald-400", icon: "↔" },
-            "横盘末期": { bg: "bg-yellow-500/10 border-yellow-500/20", text: "text-yellow-500 dark:text-yellow-400", icon: "→" },
+            "上升通道": { bg: "bg-red-600/20 border-red-600/40", text: "text-red-700 dark:text-red-300", icon: "↑" },
+            "下跌趋势": { bg: "bg-green-600/20 border-green-600/40", text: "text-green-700 dark:text-green-300", icon: "↓" },
+            "震荡市":   { bg: "bg-emerald-600/20 border-emerald-600/40", text: "text-emerald-700 dark:text-emerald-300", icon: "↔" },
+            "横盘末期": { bg: "bg-yellow-600/20 border-yellow-600/40", text: "text-yellow-700 dark:text-yellow-300", icon: "→" },
           };
           const cfg = regimeConfig[sectorRegime.regime] || regimeConfig["震荡市"];
           // Truncate sector name for display (max 4 chars)
@@ -1804,10 +1804,10 @@ function TimeSharingPanel({
               className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}
               title={`${sectorInfo.name}板块: ${sectorRegime.description}\n板块走势与个股信号方向一致时增强，反向时降级`}
             >
-              <span className="opacity-70">{shortName}</span>
+              <span className="opacity-80">{shortName}</span>
               <span>{cfg.icon}</span>
               <span>{sectorRegime.regime}</span>
-              <span className="opacity-50">{sectorRegime.confidence}%</span>
+              <span className="opacity-60">{sectorRegime.confidence}%</span>
             </span>
           );
         })()}
