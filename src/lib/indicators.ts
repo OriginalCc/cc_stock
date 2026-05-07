@@ -1,8 +1,13 @@
 /**
  * Technical Indicators - MACD, EMA, SMA calculations
+ * 
+ * EMA/MACD algorithms follow 同花顺/通达信 standard:
+ *   EMA(X, N): Y = [2*X + (N-1)*Y'] / (N+1)
+ *   初始值: Y[0] = X[0]
  */
 
 // ── EMA (Exponential Moving Average) ──────────────────
+// 同花顺/通达信标准：EMA[0] = data[0]，从第一个数据点开始
 
 export function calculateEMA(data: number[], period: number): number[] {
   const ema: number[] = [];
@@ -10,15 +15,11 @@ export function calculateEMA(data: number[], period: number): number[] {
 
   const multiplier = 2 / (period + 1);
 
-  // First EMA is SMA
-  let sum = 0;
-  for (let i = 0; i < Math.min(period, data.length); i++) {
-    sum += data[i];
-  }
-  ema[period - 1] = sum / period;
+  // 同花顺/通达信初始化：EMA首个值 = 第一个数据点
+  ema[0] = data[0];
 
-  // Calculate EMA for rest
-  for (let i = period; i < data.length; i++) {
+  // Calculate EMA: EMA[i] = (data[i] - EMA[i-1]) * multiplier + EMA[i-1]
+  for (let i = 1; i < data.length; i++) {
     ema[i] = (data[i] - ema[i - 1]) * multiplier + ema[i - 1];
   }
 
@@ -44,6 +45,11 @@ export function calculateSMA(data: number[], period: number): number[] {
 }
 
 // ── MACD ──────────────────────────────────────────────
+// 同花顺/通达信标准算法:
+//   DIF: EMA(CLOSE,12) - EMA(CLOSE,26)
+//   DEA: EMA(DIF,9)
+//   MACD: (DIF - DEA) * 2
+// 所有值从第一个数据点开始（EMA[0]=X[0] 初始化）
 
 export interface MACDData {
   dif: number;    // DIF line (MACD line) = EMA12 - EMA26
@@ -58,45 +64,27 @@ export function calculateMACD(
   signalPeriod: number = 9
 ): MACDData[] {
   const result: MACDData[] = [];
+  if (closePrices.length === 0) return result;
+
   const emaFast = calculateEMA(closePrices, fastPeriod);
   const emaSlow = calculateEMA(closePrices, slowPeriod);
 
-  // Calculate DIF
+  // Calculate DIF (available from index 0, 同花顺标准)
   const dif: number[] = [];
   for (let i = 0; i < closePrices.length; i++) {
-    if (i < slowPeriod - 1 || isNaN(emaFast[i]) || isNaN(emaSlow[i])) {
-      dif.push(NaN);
-    } else {
-      dif.push(emaFast[i] - emaSlow[i]);
-    }
+    dif.push(emaFast[i] - emaSlow[i]);
   }
 
-  // Calculate DEA (EMA of DIF)
-  const validDif = dif.filter((v) => !isNaN(v));
-  const deaRaw = calculateEMA(validDif, signalPeriod);
-
-  const dea: number[] = [];
-  let validIdx = 0;
-  for (let i = 0; i < dif.length; i++) {
-    if (isNaN(dif[i])) {
-      dea.push(NaN);
-    } else {
-      dea.push(deaRaw[validIdx] ?? NaN);
-      validIdx++;
-    }
-  }
+  // Calculate DEA: EMA of DIF (同花顺标准，DEA[0] = DIF[0])
+  const dea = calculateEMA(dif, signalPeriod);
 
   // Calculate MACD histogram
   for (let i = 0; i < closePrices.length; i++) {
-    if (isNaN(dif[i]) || isNaN(dea[i])) {
-      result.push({ dif: NaN, dea: NaN, macd: NaN });
-    } else {
-      result.push({
-        dif: Number(dif[i].toFixed(4)),
-        dea: Number(dea[i].toFixed(4)),
-        macd: Number(((dif[i] - dea[i]) * 2).toFixed(4)),
-      });
-    }
+    result.push({
+      dif: Number(dif[i].toFixed(4)),
+      dea: Number(dea[i].toFixed(4)),
+      macd: Number(((dif[i] - dea[i]) * 2).toFixed(4)),
+    });
   }
 
   return result;

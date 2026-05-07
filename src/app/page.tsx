@@ -1050,9 +1050,9 @@ function MiniPercentYTick(props: { x?: number; y?: number; payload?: { value?: n
 // ── Compact Mini Timeline Panel (for index/sector overview) ───
 
 function computeMiniMACD(items: TimelineItem[]): { time: string; dif: number | null; dea: number | null; macd: number | null }[] {
-  if (items.length < 35) return items.map(d => ({ time: d.time, dif: null, dea: null, macd: null }));
+  if (items.length < 10) return items.map(d => ({ time: d.time, dif: null, dea: null, macd: null }));
 
-  // Use the standard MACD calculation with SMA-initialized EMA (matches 同花顺)
+  // 同花顺/通达信标准MACD (EMA first-value initialization)
   const prices = items.map(d => d.price);
   const macdResult = calculateMACD(prices);
 
@@ -5478,18 +5478,17 @@ export default function StockTAssistant() {
   const timelineMACDData = useMemo(() => {
     if (timeline.length === 0) return [];
 
-    // Use K-line history close prices as warm-up for MACD calculation
-    // This ensures MACD is available from the very first minute of the day
+    // Use ALL available K-line history close prices as warm-up for MACD calculation
+    // 同花顺 uses full historical data for EMA, so more warm-up = more accurate
     const klineCloses = history
       .filter((h) => h.close > 0)
-      .slice(-60) // Last 60 bars of K-line history as warm-up
       .map((h) => h.close);
     const timelinePrices = timeline.map((d) => d.price);
     const allPrices = [...klineCloses, ...timelinePrices];
 
     const klineLen = klineCloses.length;
 
-    // Use standard MACD with SMA-initialized EMA (matches 同花顺)
+    // 同花顺/通达信标准MACD: EMA[0]=X[0] first-value initialization
     const macdResult = calculateMACD(allPrices);
 
     // Only return entries for the timeline portion (skip warm-up K-line entries)
