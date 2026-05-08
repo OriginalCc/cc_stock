@@ -1157,8 +1157,8 @@ function MiniTimelinePanel({
       }
       return {
         idx, time,
-        price: undefined as number | undefined,
-        avgPrice: undefined as number | undefined,
+        price: null as unknown as number,
+        avgPrice: null as unknown as number,
         volume: 0,
         changePercent: 0,
         volUp: true,
@@ -1449,17 +1449,16 @@ function TimeSharingPanel({
       }
       // Empty slot (no data yet or future)
       return {
-        idx,
-        time,
-        price: undefined as number | undefined,
-        avgPrice: undefined as number | undefined,
+        idx, time,
+        price: null as unknown as number,
+        avgPrice: null as unknown as number,
         volume: 0,
         changePercent: 0,
         volUp: true,
         tSignal: undefined,
-        dif: undefined as number | undefined,
-        dea: undefined as number | undefined,
-        macd: undefined as number | undefined,
+        dif: null as unknown as number,
+        dea: null as unknown as number,
+        macd: null as unknown as number,
         hasData: false,
       };
     });
@@ -2159,7 +2158,6 @@ function TimeSharingPanel({
               stroke="none"
               fill="#3b82f6"
               fillOpacity={0.06}
-              connectNulls
               isAnimationActive={false}
             />
             <Line
@@ -2169,7 +2167,6 @@ function TimeSharingPanel({
               stroke="#3b82f6"
               dot={false}
               strokeWidth={isZoomed ? 1.5 : 1}
-              connectNulls
               isAnimationActive={false}
             />
             <Line
@@ -2180,7 +2177,6 @@ function TimeSharingPanel({
               dot={false}
               strokeWidth={isZoomed ? 1.2 : 0.8}
               strokeDasharray="3 2"
-              connectNulls
               isAnimationActive={false}
             />
             {/* Crosshair vertical line - shared across panels */}
