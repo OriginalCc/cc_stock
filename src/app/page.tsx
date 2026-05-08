@@ -1756,6 +1756,7 @@ function TimeSharingPanel({
   onPanOffsetChange,
   sectorRegime,
   sectorInfo,
+  pvMarkers,
 }: {
   data: TimelineItem[];
   prevClose: number;
