@@ -34,8 +34,10 @@ function buildCacheKey(params: {
   pulse: boolean;
   pulseTimeStart: string;
   pulseTimeEnd: string;
+  volumeSurge: boolean;
+  volumeSurgeThreshold: number;
 }): string {
-  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}|${params.pulseTimeStart}|${params.pulseTimeEnd}`;
+  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}|${params.pulseTimeStart}|${params.pulseTimeEnd}|${params.volumeSurge}|${params.volumeSurgeThreshold}`;
 }
 
 // ── Types ──────────────────────────────────────────────
@@ -61,6 +63,8 @@ interface ScreenerStock {
   mainNetInflow: number;    // 主力净流入
   pulseScore: number;       // 脉冲拉升评分 0-100
   pulseDetail: string;      // 脉冲拉升描述
+  volumeSurgeScore: number; // 放量拉升评分 0-100
+  volumeSurgeDetail: string;// 放量拉升描述
 }
 
 interface ScreenerResult {
@@ -392,6 +396,178 @@ function detectPulseSurge(
 }
 
 /**
+ * Detect volume surge pattern (放量拉升)
+ * Returns { score: 0-100, detail: string }
+ *
+ * A "volume surge" means the stock had significantly increased trading volume
+ * accompanied by a price increase. Unlike pulse (which is a rapid spike then pullback),
+ * volume surge focuses on sustained buying pressure with expanding volume.
+ *
+ * Detection logic:
+ * 1. Compare volume in the time window vs. earlier baseline volume
+ * 2. Check if volume expansion coincides with price rise
+ * 3. Look for continuous volume increase (递增放量)
+ * 4. Check if the volume surge is accompanied by sustained price gain (not just a spike)
+ *
+ * @param timeStart - Start time in HH:mm format (default "09:30")
+ * @param timeEnd - End time in HH:mm format (default "10:30")
+ */
+function detectVolumeSurge(
+  timeline: { time: string; price: number; volume: number }[],
+  prevClose: number,
+  open: number,
+  timeStart: string = "09:30",
+  timeEnd: string = "10:30",
+): { score: number; detail: string } {
+  if (!timeline || timeline.length < 10 || prevClose <= 0) {
+    return { score: 0, detail: "数据不足" };
+  }
+
+  // Parse time range
+  const startMin = parseTimeToMinutes(timeStart);
+  const endMin = parseTimeToMinutes(timeEnd);
+
+  // Filter to the specified time window
+  const session = timeline.filter(t => {
+    const hour = parseInt(t.time.split(":")[0]);
+    const minute = parseInt(t.time.split(":")[1]);
+    const totalMin = hour * 60 + minute;
+    return totalMin >= startMin && totalMin <= endMin;
+  });
+
+  if (session.length < 5) {
+    return { score: 0, detail: "时段数据不足" };
+  }
+
+  // Calculate incremental volumes (each minute's actual volume)
+  const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
+  for (let i = 0; i < session.length; i++) {
+    const prevVol = i > 0 ? session[i - 1].volume : 0;
+    const curVol = session[i].volume;
+    const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+    const prevPrice = i > 0 ? session[i - 1].price : prevClose;
+    const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
+    increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
+  }
+
+  // Strategy 1: Volume ratio - max single-minute volume vs average
+  const avgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
+  const maxVol = Math.max(...increments.map(t => t.vol));
+  const maxVolIdx = increments.findIndex(t => t.vol === maxVol);
+  const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
+
+  // Strategy 2: Check if volume surge coincides with price rise
+  const maxVolPriceChange = increments[maxVolIdx]?.priceChange || 0;
+  const volUpWithPrice = volumeRatio >= 1.5 && maxVolPriceChange > 0;
+
+  // Strategy 3: Progressive volume increase (递增放量)
+  // Check if there are 3+ consecutive minutes with increasing volume
+  let maxProgressiveLen = 1;
+  let curProgressiveLen = 1;
+  let progressiveStart = 0;
+  let bestProgressiveStart = 0;
+  for (let i = 1; i < increments.length; i++) {
+    if (increments[i].vol > increments[i - 1].vol && increments[i].vol > 0) {
+      curProgressiveLen++;
+      if (curProgressiveLen > maxProgressiveLen) {
+        maxProgressiveLen = curProgressiveLen;
+        bestProgressiveStart = progressiveStart;
+      }
+    } else {
+      curProgressiveLen = 1;
+      progressiveStart = i;
+    }
+  }
+
+  // Check if progressive volume is accompanied by price rise
+  const progressivePriceRise = maxProgressiveLen >= 3
+    ? (() => {
+        const startP = increments[bestProgressiveStart]?.price || 0;
+        const endP = increments[bestProgressiveStart + maxProgressiveLen - 1]?.price || 0;
+        return startP > 0 ? ((endP - startP) / startP) * 100 : 0;
+      })()
+    : 0;
+
+  // Strategy 4: Total volume in the window vs baseline (first 5 min)
+  const baselineVol = increments.slice(0, Math.min(5, increments.length))
+    .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
+  const totalWindowVol = increments.reduce((s, t) => s + t.vol, 0);
+  const windowAvgVol = totalWindowVol / increments.length;
+  const windowVolRatio = baselineVol > 0 ? windowAvgVol / baselineVol : 1;
+
+  // Strategy 5: Price gain in the window
+  const windowStartPrice = session[0].price;
+  const windowEndPrice = session[session.length - 1].price;
+  const windowPriceGain = windowStartPrice > 0
+    ? ((windowEndPrice - windowStartPrice) / windowStartPrice) * 100
+    : 0;
+
+  // Strategy 6: Number of up-minutes with above-average volume
+  const upWithHighVol = increments.filter(t => t.priceChange > 0 && t.vol > avgVol).length;
+  const upHighVolRatio = increments.length > 0 ? upWithHighVol / increments.length : 0;
+
+  // Calculate composite score
+  let score = 0;
+
+  // Single-minute volume spike with price rise (most important)
+  if (volumeRatio >= 3 && maxVolPriceChange > 0.3) score += 30;
+  else if (volumeRatio >= 2.5 && maxVolPriceChange > 0.2) score += 25;
+  else if (volumeRatio >= 2 && maxVolPriceChange > 0.1) score += 20;
+  else if (volumeRatio >= 1.5 && maxVolPriceChange > 0) score += 12;
+  else if (volumeRatio >= 1.5) score += 5;
+
+  // Progressive volume increase with price rise
+  if (maxProgressiveLen >= 5 && progressivePriceRise > 0.5) score += 25;
+  else if (maxProgressiveLen >= 4 && progressivePriceRise > 0.3) score += 20;
+  else if (maxProgressiveLen >= 3 && progressivePriceRise > 0.1) score += 15;
+  else if (maxProgressiveLen >= 3) score += 5;
+
+  // Window volume ratio vs baseline
+  if (windowVolRatio >= 2) score += 15;
+  else if (windowVolRatio >= 1.5) score += 10;
+  else if (windowVolRatio >= 1.2) score += 5;
+
+  // Sustained price gain with volume
+  if (windowPriceGain >= 2 && upHighVolRatio >= 0.3) score += 15;
+  else if (windowPriceGain >= 1 && upHighVolRatio >= 0.2) score += 10;
+  else if (windowPriceGain >= 0.5 && upHighVolRatio >= 0.15) score += 5;
+
+  // Up-minutes with high volume ratio
+  if (upHighVolRatio >= 0.4) score += 10;
+  else if (upHighVolRatio >= 0.3) score += 6;
+  else if (upHighVolRatio >= 0.2) score += 3;
+
+  // Volume up + price up together
+  if (volUpWithPrice && volumeRatio >= 2) score += 5;
+
+  // Cap at 100
+  score = Math.min(score, 100);
+
+  // Build detail string
+  const details: string[] = [];
+  if (volumeRatio >= 1.5) {
+    details.push(`${increments[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
+  }
+  if (maxProgressiveLen >= 3) {
+    details.push(`${maxProgressiveLen}分钟递增放量${progressivePriceRise > 0 ? `涨${progressivePriceRise.toFixed(1)}%` : ""}`);
+  }
+  if (windowVolRatio >= 1.2) {
+    details.push(`窗口均量${windowVolRatio.toFixed(1)}x基准`);
+  }
+  if (windowPriceGain >= 0.5) {
+    details.push(`时段涨幅${windowPriceGain.toFixed(1)}%`);
+  }
+  if (upHighVolRatio >= 0.2) {
+    details.push(`${(upHighVolRatio * 100).toFixed(0)}%放量上涨`);
+  }
+
+  return {
+    score,
+    detail: details.length > 0 ? details.join("，") : (score > 0 ? "轻微放量" : "无明显放量"),
+  };
+}
+
+/**
  * Check if a stock code belongs to main board
  * Main board: 600xxx, 601xxx, 603xxx, 605xxx (SH), 000xxx, 001xxx, 002xxx (SZ)
  */
@@ -452,6 +628,8 @@ export async function GET(request: NextRequest) {
   const enablePulseDetection = searchParams.get("pulse") !== "false";
   const pulseTimeStart = searchParams.get("pulseTimeStart") || "09:30";
   const pulseTimeEnd = searchParams.get("pulseTimeEnd") || "10:30";
+  const enableVolumeSurge = searchParams.get("volumeSurge") !== "false";
+  const volumeSurgeThreshold = parseInt(searchParams.get("volumeSurgeThreshold") || "20");
   const forceRefresh = searchParams.get("refresh") === "1";
 
   // Check server cache first
@@ -459,6 +637,7 @@ export async function GET(request: NextRequest) {
     minChange, maxChange, maxMarketCap, sector: sectorKeyword,
     pulseThreshold, pulse: enablePulseDetection,
     pulseTimeStart, pulseTimeEnd,
+    volumeSurge: enableVolumeSurge, volumeSurgeThreshold,
   });
   if (!forceRefresh) {
     const cached = screenerCache.get(cacheKey);
@@ -579,38 +758,56 @@ export async function GET(request: NextRequest) {
         mainNetInflow,
         pulseScore: 0,
         pulseDetail: "待检测",
+        volumeSurgeScore: 0,
+        volumeSurgeDetail: "待检测",
       });
     }
 
-    // Step 4: Pulse detection for candidates
-    if (enablePulseDetection && candidates.length > 0) {
+    // Step 4: Pulse & Volume surge detection for candidates
+    const needPulse = enablePulseDetection;
+    const needVolumeSurge = enableVolumeSurge;
+    if ((needPulse || needVolumeSurge) && candidates.length > 0) {
       // Fetch timeline data in batches (concurrent with limit)
       const batchSize = 5;
       for (let i = 0; i < candidates.length; i += batchSize) {
         const batch = candidates.slice(i, i + batchSize);
         const timelinePromises = batch.map(async (stock) => {
           const timeline = await getStockTimeline(stock.symbol);
-          const pulseResult = detectPulseSurge(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
-          stock.pulseScore = pulseResult.score;
-          stock.pulseDetail = pulseResult.detail;
+          if (needPulse) {
+            const pulseResult = detectPulseSurge(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
+            stock.pulseScore = pulseResult.score;
+            stock.pulseDetail = pulseResult.detail;
+          }
+          if (needVolumeSurge) {
+            const volResult = detectVolumeSurge(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
+            stock.volumeSurgeScore = volResult.score;
+            stock.volumeSurgeDetail = volResult.detail;
+          }
         });
         await Promise.allSettled(timelinePromises);
       }
 
-      // Filter by pulse threshold
-      const pulseFiltered = candidates.filter(s => s.pulseScore >= pulseThreshold);
+      // Filter: pulse OR volumeSurge (OR relationship)
+      // Stock passes if: (pulse enabled AND pulseScore >= threshold) OR (volumeSurge enabled AND volumeSurgeScore >= threshold)
+      const filtered = candidates.filter(s => {
+        const pulsePass = needPulse && s.pulseScore >= pulseThreshold;
+        const volPass = needVolumeSurge && s.volumeSurgeScore >= volumeSurgeThreshold;
+        return pulsePass || volPass;
+      });
 
-      // Sort by pulse score (desc), then change percent (desc)
-      pulseFiltered.sort((a, b) => {
-        if (b.pulseScore !== a.pulseScore) return b.pulseScore - a.pulseScore;
+      // Sort by max of the two scores (desc), then change percent (desc)
+      filtered.sort((a, b) => {
+        const aMax = Math.max(a.pulseScore, a.volumeSurgeScore);
+        const bMax = Math.max(b.pulseScore, b.volumeSurgeScore);
+        if (bMax !== aMax) return bMax - aMax;
         return b.changePercent - a.changePercent;
       });
 
       const result: ScreenerResult = {
         success: true,
-        stocks: pulseFiltered,
+        stocks: filtered,
         totalCount,
-        filteredCount: pulseFiltered.length,
+        filteredCount: filtered.length,
         sectorName,
         sectorCode,
         timestamp: new Date().toISOString(),

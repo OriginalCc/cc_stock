@@ -72,6 +72,8 @@ interface ScreenerStock {
   mainNetInflow: number;
   pulseScore: number;
   pulseDetail: string;
+  volumeSurgeScore: number;
+  volumeSurgeDetail: string;
 }
 
 interface ScreenerResult {
@@ -86,7 +88,7 @@ interface ScreenerResult {
   cached?: boolean;
 }
 
-type SortField = "pulseScore" | "changePercent" | "marketCap" | "turnover" | "amplitude" | "mainNetInflow";
+type SortField = "pulseScore" | "changePercent" | "marketCap" | "turnover" | "amplitude" | "mainNetInflow" | "volumeSurgeScore";
 type SortOrder = "asc" | "desc";
 
 // ── Helper Functions ───────────────────────────────────
@@ -132,6 +134,30 @@ function getPulseLabel(score: number): string {
   if (score >= 30) return "弱脉冲";
   if (score >= 20) return "轻微脉冲";
   return "无脉冲";
+}
+
+function getVolumeSurgeScoreColor(score: number): string {
+  if (score >= 70) return "text-red-500";
+  if (score >= 50) return "text-orange-500";
+  if (score >= 30) return "text-yellow-500";
+  if (score >= 20) return "text-lime-500";
+  return "text-gray-400";
+}
+
+function getVolumeSurgeScoreBg(score: number): string {
+  if (score >= 70) return "bg-red-500/10 border-red-500/30";
+  if (score >= 50) return "bg-orange-500/10 border-orange-500/30";
+  if (score >= 30) return "bg-yellow-500/10 border-yellow-500/30";
+  if (score >= 20) return "bg-lime-500/10 border-lime-500/30";
+  return "bg-gray-500/10 border-gray-500/30";
+}
+
+function getVolumeSurgeLabel(score: number): string {
+  if (score >= 70) return "强放量";
+  if (score >= 50) return "中放量";
+  if (score >= 30) return "弱放量";
+  if (score >= 20) return "轻微放量";
+  return "无放量";
 }
 
 // ── Popular sectors for quick selection ────────────────
@@ -207,6 +233,8 @@ interface ScreenerFilters {
   enablePulse: boolean;
   pulseTimeStart: string; // HH:mm format, e.g. "09:30"
   pulseTimeEnd: string;   // HH:mm format, e.g. "10:30"
+  enableVolumeSurge: boolean;
+  volumeSurgeThreshold: number;
 }
 
 const DEFAULT_FILTERS: ScreenerFilters = {
@@ -218,6 +246,8 @@ const DEFAULT_FILTERS: ScreenerFilters = {
   enablePulse: true,
   pulseTimeStart: "09:30",
   pulseTimeEnd: "10:30",
+  enableVolumeSurge: true,
+  volumeSurgeThreshold: 20,
 };
 
 // ── Component ──────────────────────────────────────────
@@ -278,8 +308,10 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
         sector: f.sector,
         pulseTimeStart: f.pulseTimeStart,
         pulseTimeEnd: f.pulseTimeEnd,
+        volumeSurgeThreshold: String(f.volumeSurgeThreshold),
       });
       if (!f.enablePulse) params.set("pulse", "false");
+      if (!f.enableVolumeSurge) params.set("volumeSurge", "false");
       if (forceRefresh) params.set("refresh", "1");
       const res = await fetch(`/api/stock/screener?${params}`);
       const data: ScreenerResult = await res.json();
@@ -489,10 +521,13 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               <AlertCircle className="w-3 h-3" />
               排除ST/创业板/科创板/北交
             </Badge>
-            {filters.enablePulse && (
+            {(filters.enablePulse || filters.enableVolumeSurge) && (
               <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300">
                 <Zap className="w-3 h-3" />
-                脉冲≥{filters.pulseThreshold} | {filters.pulseTimeStart}~{filters.pulseTimeEnd}
+                {filters.enablePulse && `脉冲≥${filters.pulseThreshold}`}
+                {filters.enablePulse && filters.enableVolumeSurge && " OR "}
+                {filters.enableVolumeSurge && `放量≥${filters.volumeSurgeThreshold}`}
+                {" | "}{filters.pulseTimeStart}~{filters.pulseTimeEnd}
               </Badge>
             )}
           </div>
@@ -650,8 +685,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                 </div>
               </div>
 
-              {/* Row 3: Pulse detection */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Row 3: Pulse & Volume surge detection */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
@@ -687,88 +722,134 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           最低脉冲评分 (0-100)
                         </span>
                       </div>
-                      {/* Pulse Time Range */}
-                      <div className="flex items-center gap-2 mt-2">
-                        <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                          脉冲时段
-                        </Label>
-                        <Input
-                          type="time"
-                          value={filters.pulseTimeStart}
-                          onChange={(e) => handleFilterChange("pulseTimeStart", e.target.value)}
-                          className="h-7 text-xs w-24"
-                          min="09:30"
-                          max="15:00"
-                          step="300"
+                    </>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3" />
+                      放量拉升检测
+                    </Label>
+                    <Switch
+                      checked={filters.enableVolumeSurge}
+                      onCheckedChange={(v) => handleFilterChange("enableVolumeSurge", v)}
+                    />
+                  </div>
+                  {filters.enableVolumeSurge && (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Slider
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={[filters.volumeSurgeThreshold]}
+                          onValueChange={([v]) => handleFilterChange("volumeSurgeThreshold", v)}
+                          className="flex-1"
                         />
-                        <span className="text-xs text-muted-foreground">~</span>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <Input
-                          type="time"
-                          value={filters.pulseTimeEnd}
-                          onChange={(e) => handleFilterChange("pulseTimeEnd", e.target.value)}
-                          className="h-7 text-xs w-24"
-                          min="09:30"
-                          max="15:00"
-                          step="300"
+                          type="number"
+                          value={filters.volumeSurgeThreshold}
+                          onChange={(e) => handleFilterChange("volumeSurgeThreshold", parseInt(e.target.value) || 20)}
+                          className="h-7 text-xs w-20"
+                          step={5}
                         />
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => {
-                              handleFilterChange("pulseTimeStart", "09:30");
-                              handleFilterChange("pulseTimeEnd", "10:30");
-                            }}
-                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
-                              filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "10:30"
-                                ? "bg-primary/10 border-primary/30 text-primary"
-                                : "bg-background border-border hover:bg-muted"
-                            }`}
-                          >
-                            开盘1h
-                          </button>
-                          <button
-                            onClick={() => {
-                              handleFilterChange("pulseTimeStart", "09:30");
-                              handleFilterChange("pulseTimeEnd", "10:00");
-                            }}
-                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
-                              filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "10:00"
-                                ? "bg-primary/10 border-primary/30 text-primary"
-                                : "bg-background border-border hover:bg-muted"
-                            }`}
-                          >
-                            开盘30m
-                          </button>
-                          <button
-                            onClick={() => {
-                              handleFilterChange("pulseTimeStart", "09:30");
-                              handleFilterChange("pulseTimeEnd", "11:30");
-                            }}
-                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
-                              filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "11:30"
-                                ? "bg-primary/10 border-primary/30 text-primary"
-                                : "bg-background border-border hover:bg-muted"
-                            }`}
-                          >
-                            早盘
-                          </button>
-                          <button
-                            onClick={() => {
-                              handleFilterChange("pulseTimeStart", "13:00");
-                              handleFilterChange("pulseTimeEnd", "14:00");
-                            }}
-                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
-                              filters.pulseTimeStart === "13:00" && filters.pulseTimeEnd === "14:00"
-                                ? "bg-primary/10 border-primary/30 text-primary"
-                                : "bg-background border-border hover:bg-muted"
-                            }`}
-                          >
-                            午盘1h
-                          </button>
-                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          最低放量评分 (0-100)
+                        </span>
                       </div>
                     </>
                   )}
                 </div>
+
+                {/* Shared time range for both detections */}
+                {(filters.enablePulse || filters.enableVolumeSurge) && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground">检测时段</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="time"
+                        value={filters.pulseTimeStart}
+                        onChange={(e) => handleFilterChange("pulseTimeStart", e.target.value)}
+                        className="h-7 text-xs w-24"
+                        min="09:30"
+                        max="15:00"
+                        step="300"
+                      />
+                      <span className="text-xs text-muted-foreground">~</span>
+                      <Input
+                        type="time"
+                        value={filters.pulseTimeEnd}
+                        onChange={(e) => handleFilterChange("pulseTimeEnd", e.target.value)}
+                        className="h-7 text-xs w-24"
+                        min="09:30"
+                        max="15:00"
+                        step="300"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        onClick={() => {
+                          handleFilterChange("pulseTimeStart", "09:30");
+                          handleFilterChange("pulseTimeEnd", "10:30");
+                        }}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                          filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "10:30"
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "bg-background border-border hover:bg-muted"
+                        }`}
+                      >
+                        开盘1h
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleFilterChange("pulseTimeStart", "09:30");
+                          handleFilterChange("pulseTimeEnd", "10:00");
+                        }}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                          filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "10:00"
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "bg-background border-border hover:bg-muted"
+                        }`}
+                      >
+                        开盘30m
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleFilterChange("pulseTimeStart", "09:30");
+                          handleFilterChange("pulseTimeEnd", "11:30");
+                        }}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                          filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "11:30"
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "bg-background border-border hover:bg-muted"
+                        }`}
+                      >
+                        早盘
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleFilterChange("pulseTimeStart", "13:00");
+                          handleFilterChange("pulseTimeEnd", "14:00");
+                        }}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                          filters.pulseTimeStart === "13:00" && filters.pulseTimeEnd === "14:00"
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "bg-background border-border hover:bg-muted"
+                        }`}
+                      >
+                        午盘1h
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      脉冲/放量共享此时段，关系为 <span className="text-amber-500 font-medium">OR</span>（满足其一即可）
+                    </div>
+                  </div>
+                )}
+              </div>
 
                 {/* Quick presets & Custom presets */}
                 <div className="space-y-3">
@@ -786,11 +867,11 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                             : "bg-background border-border hover:bg-muted"
                         }`}
                       >
-                        默认(通信+脉冲)
+                        默认(脉冲+放量)
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "半导体", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 15, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
+                          const f = { sector: "半导体", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 15, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 15 };
                           setFilters(f);
                           setSectorInput("半导体");
                         }}
@@ -800,7 +881,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "人工智能", minChange: 0, maxChange: 3, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
+                          const f = { sector: "人工智能", minChange: 0, maxChange: 3, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10 };
                           setFilters(f);
                           setSectorInput("人工智能");
                         }}
@@ -810,7 +891,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "新能源", minChange: -1, maxChange: 5, maxMarketCap: 300, pulseThreshold: 20, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
+                          const f = { sector: "新能源", minChange: -1, maxChange: 5, maxMarketCap: 300, pulseThreshold: 20, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 20 };
                           setFilters(f);
                           setSectorInput("新能源");
                         }}
@@ -820,7 +901,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "医药", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 0, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
+                          const f = { sector: "医药", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 0, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: false, volumeSurgeThreshold: 20 };
                           setFilters(f);
                           setSectorInput("医药");
                         }}
@@ -923,7 +1004,6 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     )}
                   </div>
                 </div>
-              </div>
 
               <Separator />
 
@@ -1027,6 +1107,14 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         脉冲 <SortIcon field="pulseScore" />
                       </div>
                     </TableHead>
+                    <TableHead
+                      className="w-[70px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
+                      onClick={() => handleSort("volumeSurgeScore")}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        放量 <SortIcon field="volumeSurgeScore" />
+                      </div>
+                    </TableHead>
                     <TableHead className="w-[65px] text-xs font-medium">最新价</TableHead>
                     <TableHead
                       className="w-[65px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
@@ -1063,7 +1151,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </div>
                     </TableHead>
                     <TableHead className="w-[60px] text-xs font-medium">PE</TableHead>
-                    <TableHead className="text-xs font-medium min-w-[120px]">脉冲详情</TableHead>
+                    <TableHead className="text-xs font-medium min-w-[120px]">信号详情</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1073,6 +1161,9 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     const pulseColor = getPulseScoreColor(stock.pulseScore);
                     const pulseBg = getPulseScoreBg(stock.pulseScore);
                     const pulseLabel = getPulseLabel(stock.pulseScore);
+                    const volSurgeColor = getVolumeSurgeScoreColor(stock.volumeSurgeScore);
+                    const volSurgeBg = getVolumeSurgeScoreBg(stock.volumeSurgeScore);
+                    const volSurgeLabel = getVolumeSurgeLabel(stock.volumeSurgeScore);
                     const mainFlowColor = stock.mainNetInflow >= 0 ? "text-red-500" : "text-green-500";
 
                     return (
@@ -1109,6 +1200,19 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                             </span>
                           </div>
                         </TableCell>
+                        <TableCell className="py-2">
+                          <div className="flex items-center gap-1">
+                            <Badge
+                              variant="outline"
+                              className={`text-xs py-0 px-1.5 font-mono ${volSurgeBg} ${volSurgeColor} border`}
+                            >
+                              {stock.volumeSurgeScore}
+                            </Badge>
+                            <span className={`text-[10px] ${volSurgeColor}`}>
+                              {volSurgeLabel}
+                            </span>
+                          </div>
+                        </TableCell>
                         <TableCell className={`text-xs font-mono py-2 ${changeColor}`}>
                           {stock.price.toFixed(2)}
                         </TableCell>
@@ -1141,14 +1245,20 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         <TableCell className="text-xs font-mono py-2 text-muted-foreground">
                           {stock.pe > 0 ? stock.pe.toFixed(1) : "--"}
                         </TableCell>
-                        <TableCell className="text-xs py-2 text-muted-foreground max-w-[120px] truncate">
+                        <TableCell className="text-xs py-2 text-muted-foreground max-w-[160px] truncate">
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="truncate block">{stock.pulseDetail}</span>
+                                <span className="truncate block">
+                                  {stock.pulseScore > 0 && <span className="text-amber-500">⚡{stock.pulseDetail}</span>}
+                                  {stock.pulseScore > 0 && stock.volumeSurgeScore > 0 && " | "}
+                                  {stock.volumeSurgeScore > 0 && <span className="text-blue-500">📊{stock.volumeSurgeDetail}</span>}
+                                  {stock.pulseScore === 0 && stock.volumeSurgeScore === 0 && "无信号"}
+                                </span>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs max-w-[240px]">
-                                {stock.pulseDetail}
+                              <TooltipContent side="top" className="text-xs max-w-[300px]">
+                                {stock.pulseScore > 0 && <div>⚡ 脉冲: {stock.pulseDetail}</div>}
+                                {stock.volumeSurgeScore > 0 && <div>📊 放量: {stock.volumeSurgeDetail}</div>}
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
