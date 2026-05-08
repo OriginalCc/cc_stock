@@ -59,6 +59,8 @@ const SEARCH_QUERIES: Record<string, (p: { sectorName: string; stockName: string
     { label: "美股行情", query: "美股 道琼斯 纳斯达克 标普500 隔夜 收盘 涨跌" },
     { label: "港股行情", query: "港股 恒生指数 恒生科技 收盘 涨跌 今日" },
     { label: "中概股", query: "中概股 隔夜 纳斯达克金龙指数 涨跌 ADR" },
+    { label: "美股板块", query: "美股 板块 涨幅 排名 领涨 行业 隔夜" },
+    { label: "港股板块", query: "港股 板块 涨幅 排名 领涨 行业 今日" },
     { label: "外盘资讯", query: "美股 港股 财报 经济数据 美联储 资讯" },
     { label: "A股影响", query: "隔夜外盘 美股 港股 A股 影响 开盘 预判" },
   ],
@@ -207,6 +209,7 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 - capitalView: 港股及资金面观点（30字以内，含恒生指数涨跌幅）
 - policyView: 政策/消息面观点（30字以内，含美联储、经济数据等）
 - sentimentView: 外盘情绪面观点（30字以内，中概股、A50期指等）
+- topSectors: 涨幅前五的美股/港股板块数组，每个元素包含 name(板块名称)、market(美股/港股)、change(涨跌幅如+2.35%)、driver(催动上涨的核心因素，15字以内)
 - detailedReasoning: 详细分析推理过程（200字以内）
 
 只返回JSON，不要其他文字。`,
@@ -238,6 +241,7 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
         capitalView: parsed.capitalView || "",
         policyView: parsed.policyView || "",
         sentimentView: parsed.sentimentView || "",
+        topSectors: Array.isArray(parsed.topSectors) ? parsed.topSectors : [],
         detailedReasoning: parsed.detailedReasoning || "",
       };
     }
@@ -254,6 +258,7 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
     capitalView: "",
     policyView: "",
     sentimentView: "",
+    topSectors: [],
     detailedReasoning: "",
   };
 }

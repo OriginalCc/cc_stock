@@ -74,6 +74,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   MinusCircle,
+  Trophy,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────
@@ -7759,6 +7760,51 @@ export default function StockTAssistant() {
                             </svg>
                           </div>
                         </div>
+
+                        {/* ── Top 5 Gaining Sectors (overseas only) ── */}
+                        {newsActiveTab === "overseas" && analysis.topSectors && analysis.topSectors.length > 0 && (
+                          <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+                            <div className="flex items-center gap-1.5 mb-3">
+                              <Trophy className="h-3.5 w-3.5 text-amber-500" />
+                              <span className="text-xs font-medium">涨幅前五板块</span>
+                              <span className="text-[10px] text-muted-foreground ml-1">美港股领涨行业及催动因素</span>
+                            </div>
+                            <div className="space-y-2">
+                              {analysis.topSectors.map((sector: { name: string; market: string; change: string; driver: string }, idx: number) => {
+                                const rankColors = [
+                                  "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+                                  "bg-gray-400/15 text-gray-600 dark:text-gray-300 border-gray-400/30",
+                                  "bg-orange-700/15 text-orange-700 dark:text-orange-400 border-orange-700/30",
+                                  "bg-muted/30 text-muted-foreground border-border/50",
+                                  "bg-muted/30 text-muted-foreground border-border/50",
+                                ];
+                                const isPositive = sector.change?.startsWith("+") || parseFloat(sector.change) > 0;
+                                return (
+                                  <div key={idx} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-muted/10 border border-border/30 hover:bg-muted/20 transition-colors">
+                                    <span className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border ${rankColors[idx] || rankColors[4]}`}>
+                                      {idx + 1}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-foreground/90 truncate">{sector.name}</span>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${sector.market === "美股" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "bg-red-500/10 text-red-600 dark:text-red-400"}`}>
+                                          {sector.market}
+                                        </span>
+                                      </div>
+                                      <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                                        <Zap className="h-2.5 w-2.5 inline mr-0.5" />
+                                        {sector.driver || "—"}
+                                      </div>
+                                    </div>
+                                    <span className={`shrink-0 text-sm font-bold ${isPositive ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                                      {sector.change?.startsWith("+") || sector.change?.startsWith("-") ? sector.change : isPositive ? `+${sector.change}` : sector.change}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
 
                         {/* ── AI Action Summary ── */}
                         <div className="rounded-lg border border-border/50 bg-gradient-to-r from-muted/10 to-muted/5 p-3">
