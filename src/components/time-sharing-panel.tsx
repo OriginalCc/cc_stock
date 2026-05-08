@@ -1008,16 +1008,20 @@ export function MiniTimelinePanel({
       <div className="flex items-center px-2 text-[7px] text-muted-foreground select-none pointer-events-none">
         <span className="font-medium">VOL</span>
       </div>
-      <ResponsiveContainer width="100%" height={32}>
-        <ComposedChart data={chartData} margin={{ top: 0, right: 45, left: 2, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={46}>
+        <ComposedChart data={chartData} margin={{ top: 0, right: 45, left: 2, bottom: 12 }}>
           <XAxis dataKey="idx" type="number" domain={[0, chartData.length - 1]} tick={false} tickLine={false} axisLine={false} />
           <YAxis yAxisId="vol" domain={[0, maxVolume * 1.1]} tick={false} tickLine={false} axisLine={false} width={42} />
           <YAxis yAxisId="vol-r" orientation="right" domain={[0, maxVolume * 1.1]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => formatVolume(v)} />
           <Bar yAxisId="vol-r" dataKey="volume" isAnimationActive={false} barSize={barSize}
             shape={(props: any) => {
               const { x, y, width, height, payload } = props;
-              if (!payload?.hasData) return null;
-              return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
+              if (!payload?.hasData || !payload?.price) return null;
+              const isUp = payload.volUp as boolean;
+              const priceColor = isUp ? "#ef4444" : "#16a34a";
+              return (
+                <rect x={x} y={y} width={width} height={height} fill={priceColor} />
+              );
             }}
           />
         </ComposedChart>
@@ -1638,7 +1642,10 @@ export function TimeSharingPanel({
               <span className={isUp ? "text-red-600" : "text-green-600"}>{crosshairItem.price?.toFixed(2)}</span>
               <span className={isUp ? "text-red-600" : "text-green-600"}>{isUp ? "+" : ""}{pct?.toFixed(2)}%</span>
               {crosshairItem.volume > 0 && (
-                <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
+                <span className="flex flex-col leading-tight">
+                  <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
+                  <span className={isUp ? "text-red-600" : "text-green-600"}>¥{crosshairItem.price?.toFixed(2)}</span>
+                </span>
               )}
               {crosshairItem.dif != null && (
                 <span className="text-blue-600">DIF {crosshairItem.dif.toFixed(3)}</span>
