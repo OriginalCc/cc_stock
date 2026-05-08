@@ -25,6 +25,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Search,
@@ -3642,6 +3644,9 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
   const [strategyData, setStrategyData] = useState<StrategyData | null>(null);
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(false);
+  const [editingFactorId, setEditingFactorId] = useState<string | null>(null);
+  const [editingParamKey, setEditingParamKey] = useState<string | null>(null);
+  const [editParamValue, setEditParamValue] = useState<string>("");
 
   const fetchStrategy = useCallback(async () => {
     setLoading(true);
@@ -3725,6 +3730,52 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
       console.error("Failed to delete factor:", e);
     }
   }, [strategyData, onFactorsChanged]);
+
+  // ── Update a single field of a DB factor ──
+  const handleUpdateFactor = useCallback(async (id: string, field: string, value: any) => {
+    try {
+      await fetch("/api/stock/strategy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "factor", id, data: { [field]: value } }),
+      });
+      if (strategyData) {
+        const updatedFactors = strategyData.dbFactors.map((f: any) =>
+          f.id === id ? { ...f, [field]: value } : f
+        );
+        setStrategyData({ ...strategyData, dbFactors: updatedFactors });
+        if (onFactorsChanged) onFactorsChanged(updatedFactors);
+      }
+    } catch (e) {
+      console.error("Failed to update factor:", e);
+    }
+  }, [strategyData, onFactorsChanged]);
+
+  // ── Update indicator param (saves to DB via a new config key) ──
+  const handleUpdateIndicatorParam = useCallback(async (indicatorKey: string, paramKey: string, newValue: number) => {
+    try {
+      await fetch("/api/stock/strategy-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ indicatorKey, paramKey, value: newValue }),
+      });
+      // Update local state
+      if (strategyData) {
+        const newIndicators = { ...strategyData.indicators };
+        if (newIndicators[indicatorKey]?.params) {
+          newIndicators[indicatorKey] = {
+            ...newIndicators[indicatorKey],
+            params: newIndicators[indicatorKey].params.map((p: any) =>
+              p.key === paramKey ? { ...p, value: newValue } : p
+            ),
+          };
+        }
+        setStrategyData({ ...strategyData, indicators: newIndicators });
+      }
+    } catch (e) {
+      console.error("Failed to update indicator param:", e);
+    }
+  }, [strategyData]);
 
   const getCategoryColor = (category: string) => {
     switch (category.toUpperCase()) {
@@ -4087,39 +4138,93 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
             {/* ── Tab: 因子参数 ── */}
             {activeTab === "factors" && strategyData && (
               <div className="space-y-4">
-                {/* Indicator Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {Object.entries(strategyData.indicators).map(([key, ind]: [string, any]) => (
-                    <div key={key} className="p-3 rounded-lg border border-border bg-muted/30">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="outline" className={`text-[10px] h-5 ${getCategoryColor(key.toUpperCase())}`}>
-                          {key.toUpperCase()}
-                        </Badge>
-                        <span className="text-xs font-medium">{ind.name}</span>
+                {/* Indicator Cards — with editable params */}
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                    <Settings className="h-3 w-3" />
+                    技术指标参数
+                    <span className="text-[9px] text-muted-foreground/60 ml-2">点击数值可编辑</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {Object.entries(strategyData.indicators).map(([key, ind]: [string, any]) => (
+                      <div key={key} className="p-3 rounded-lg border border-border bg-muted/30">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="outline" className={`text-[10px] h-5 ${getCategoryColor(key.toUpperCase())}`}>
+                            {key.toUpperCase()}
+                          </Badge>
+                          <span className="text-xs font-medium">{ind.name}</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mb-2">{ind.description}</p>
+                        {ind.params && (
+                          <div className="grid grid-cols-3 gap-1 text-[10px]">
+                            {ind.params.map((p: any) => {
+                              const paramId = `${key}-${p.key}`;
+                              const isEditingThis = editingParamKey === paramId;
+                              const isNumericParam = typeof p.value === "number" || !isNaN(Number(p.value));
+                              return (
+                                <div key={p.key} className="bg-background rounded px-1.5 py-1 text-center group relative">
+                                  <div className="text-muted-foreground">{p.label}</div>
+                                  {isNumericParam && p.key !== "source" ? (
+                                    isEditingThis ? (
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        autoFocus
+                                        value={editParamValue}
+                                        onChange={e => setEditParamValue(e.target.value)}
+                                        onBlur={() => {
+                                          const numVal = parseFloat(editParamValue);
+                                          if (!isNaN(numVal)) {
+                                            handleUpdateIndicatorParam(key, p.key, numVal);
+                                          }
+                                          setEditingParamKey(null);
+                                        }}
+                                        onKeyDown={e => {
+                                          if (e.key === "Enter") {
+                                            const numVal = parseFloat(editParamValue);
+                                            if (!isNaN(numVal)) {
+                                              handleUpdateIndicatorParam(key, p.key, numVal);
+                                            }
+                                            setEditingParamKey(null);
+                                          } else if (e.key === "Escape") {
+                                            setEditingParamKey(null);
+                                          }
+                                        }}
+                                        className="w-full text-center font-mono font-medium text-[10px] bg-primary/10 border border-primary/30 rounded px-1 py-0.5 outline-none"
+                                      />
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          setEditingParamKey(paramId);
+                                          setEditParamValue(String(p.value));
+                                        }}
+                                        className="font-mono font-medium hover:bg-primary/10 hover:text-primary rounded px-1 py-0.5 transition-colors cursor-pointer w-full"
+                                        title="点击编辑"
+                                      >
+                                        {p.value}{p.unit && <span className="text-muted-foreground">{p.unit}</span>}
+                                      </button>
+                                    )
+                                  ) : (
+                                    <div className="font-mono font-medium">{p.value}{p.unit && <span className="text-muted-foreground">{p.unit}</span>}</div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {ind.formulas && (
+                          <div className="space-y-1 mt-2">
+                            {ind.formulas.map((f: any) => (
+                              <div key={f.name} className="text-[10px]">
+                                <span className="font-medium text-foreground">{f.name}: </span>
+                                <span className="font-mono text-muted-foreground">{f.formula}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <p className="text-[10px] text-muted-foreground mb-2">{ind.description}</p>
-                      {ind.params && (
-                        <div className="grid grid-cols-3 gap-1 text-[10px]">
-                          {ind.params.map((p: any) => (
-                            <div key={p.key} className="bg-background rounded px-1.5 py-1 text-center">
-                              <div className="text-muted-foreground">{p.label}</div>
-                              <div className="font-mono font-medium">{p.value}{p.unit && <span className="text-muted-foreground">{p.unit}</span>}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {ind.formulas && (
-                        <div className="space-y-1 mt-2">
-                          {ind.formulas.map((f: any) => (
-                            <div key={f.name} className="text-[10px]">
-                              <span className="font-medium text-foreground">{f.name}: </span>
-                              <span className="font-mono text-muted-foreground">{f.formula}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
 
                 {/* Signal Rules Table */}
@@ -4139,10 +4244,13 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
                       <span>启用</span>
                     </div>
                     <div className="max-h-80 overflow-y-auto">
-                      {strategyData.timelineSignals.rules.map((rule: any) => (
-                        <div key={rule.id} className="grid grid-cols-[40px_80px_60px_50px_1fr_100px_80px_40px] gap-0 text-[10px] px-2 py-1.5 border-t border-border/50 hover:bg-muted/20 items-center">
-                          <span className="font-mono text-muted-foreground">{rule.priority}</span>
-                          <span className="font-medium">{rule.name}</span>
+                      {strategyData.timelineSignals.rules.map((rule: any) => {
+                        // Find matching DB factor for override display
+                        const dbFactor = strategyData.dbFactors?.find((f: any) => f.name === rule.name);
+                        return (
+                          <div key={rule.id} className="grid grid-cols-[40px_80px_60px_50px_1fr_100px_80px_40px] gap-0 text-[10px] px-2 py-1.5 border-t border-border/50 hover:bg-muted/20 items-center">
+                            <span className="font-mono text-muted-foreground">{rule.priority}</span>
+                            <span className="font-medium">{rule.name}</span>
                           <span>
                             <Badge variant="outline" className={`text-[9px] h-4 px-1 ${getCategoryColor(
                               rule.name.includes("MACD") || rule.name.includes("DIF") ? "MACD" :
@@ -4183,6 +4291,11 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
                                 </span>
                               </span>
                             ))}
+                            {dbFactor && dbFactor.strength && (
+                              <span className="ml-1 text-primary font-medium" title={`DB覆盖: ${dbFactor.strength}`}>
+                                →{dbFactor.strength === "strong" ? "强" : dbFactor.strength === "medium" ? "中" : "弱"}
+                              </span>
+                            )}
                           </span>
                           <span className="font-mono text-muted-foreground">
                             {rule.threshold
@@ -4193,7 +4306,8 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
                           </span>
                           <span className="text-center text-green-500">✓</span>
                         </div>
-                      ))}
+                      );
+                      })}
                     </div>
                   </div>
                   {/* Post-process note */}
@@ -4203,61 +4317,148 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
                   </div>
                 </div>
 
-                {/* DB Factors Table */}
+                {/* DB Factors Table — with inline editing */}
                 {strategyData.dbFactors && strategyData.dbFactors.length > 0 && (
                   <div>
                     <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
                       <Database className="h-3 w-3" />
                       数据库因子配置
+                      <span className="text-[9px] text-muted-foreground/60 ml-2">点击 强度/模式/窗口/优先级 可直接编辑</span>
                     </div>
                     <div className="rounded-lg border border-border overflow-hidden">
-                      <div className="grid grid-cols-[40px_70px_55px_45px_1fr_70px_35px_35px] gap-0 text-[10px] bg-muted/50 px-2 py-1.5 font-medium text-muted-foreground">
+                      <div className="grid grid-cols-[40px_80px_50px_40px_55px_60px_60px_1fr_32px_32px] gap-0 text-[10px] bg-muted/50 px-2 py-1.5 font-medium text-muted-foreground">
                         <span>优先</span>
                         <span>名称</span>
                         <span>类别</span>
                         <span>方向</span>
-                        <span>描述</span>
+                        <span>强度</span>
                         <span>模式</span>
+                        <span>窗口</span>
+                        <span>描述</span>
                         <span>启用</span>
                         <span>操作</span>
                       </div>
-                      <div className="max-h-60 overflow-y-auto">
-                        {strategyData.dbFactors.map((factor: any) => (
-                          <div key={factor.id} className="grid grid-cols-[40px_70px_55px_45px_1fr_70px_35px_35px] gap-0 text-[10px] px-2 py-1.5 border-t border-border/50 hover:bg-muted/20 items-center">
-                            <span className="font-mono text-muted-foreground">{factor.priority}</span>
-                            <span className="font-medium">{factor.name}</span>
-                            <span>
-                              <Badge variant="outline" className={`text-[9px] h-4 px-1 ${getCategoryColor(factor.category)}`}>
-                                {factor.category}
-                              </Badge>
-                            </span>
-                            <span>
-                              <Badge variant="outline" className={`text-[9px] h-4 px-1 ${factor.signalType === "stoploss" ? "bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800" : getSignalBadge(factor.signalType)}`}>
-                                {factor.signalType === "buy" ? "买" : factor.signalType === "stoploss" ? "止损" : "卖"}
-                              </Badge>
-                            </span>
-                            <span className="text-muted-foreground truncate" title={factor.description}>{factor.description}</span>
-                            <span className="font-mono text-muted-foreground truncate" title={factor.tMode}>{factor.tMode || "--"}</span>
-                            <span>
-                              <button
-                                onClick={() => handleToggleFactor(factor.id, factor.enabled)}
-                                className={`${factor.enabled ? "text-green-500" : "text-muted-foreground"}`}
-                                title={factor.enabled ? "点击禁用" : "点击启用"}
-                              >
-                                {factor.enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                              </button>
-                            </span>
-                            <span>
-                              <button
-                                onClick={() => handleDeleteFactor(factor.id)}
-                                className="text-muted-foreground hover:text-destructive"
-                                title="删除"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </span>
-                          </div>
-                        ))}
+                      <div className="max-h-96 overflow-y-auto">
+                        {strategyData.dbFactors.map((factor: any) => {
+                          const isEditing = editingFactorId === factor.id;
+                          return (
+                            <div key={factor.id} className={`grid grid-cols-[40px_80px_50px_40px_55px_60px_60px_1fr_32px_32px] gap-0 text-[10px] px-2 py-1.5 border-t border-border/50 items-center ${isEditing ? "bg-primary/5 ring-1 ring-primary/20" : "hover:bg-muted/20"}`}>
+                              {/* Priority — editable */}
+                              <span>
+                                <input
+                                  type="number"
+                                  value={factor.priority}
+                                  onChange={e => handleUpdateFactor(factor.id, "priority", parseInt(e.target.value) || 0)}
+                                  className="w-8 text-center font-mono text-[10px] bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none text-muted-foreground"
+                                />
+                              </span>
+                              {/* Name */}
+                              <span className="font-medium truncate" title={factor.name}>{factor.name}</span>
+                              {/* Category */}
+                              <span>
+                                <Badge variant="outline" className={`text-[8px] h-4 px-1 ${getCategoryColor(factor.category)}`}>
+                                  {factor.category.length > 5 ? factor.category.substring(0, 5) : factor.category}
+                                </Badge>
+                              </span>
+                              {/* Signal type */}
+                              <span>
+                                <Badge variant="outline" className={`text-[8px] h-4 px-1 ${factor.signalType === "stoploss" ? "bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800" : getSignalBadge(factor.signalType)}`}>
+                                  {factor.signalType === "buy" ? "买" : factor.signalType === "stoploss" ? "止损" : "卖"}
+                                </Badge>
+                              </span>
+                              {/* Strength — editable select */}
+                              <span>
+                                <Select
+                                  value={factor.strength || "medium"}
+                                  onValueChange={v => handleUpdateFactor(factor.id, "strength", v)}
+                                >
+                                  <SelectTrigger className="h-5 text-[9px] px-1 border-0 bg-transparent shadow-none gap-0.5 focus:ring-0 w-[52px]">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="strong">
+                                      <span className="text-red-500 font-medium text-[10px]">强</span>
+                                    </SelectItem>
+                                    <SelectItem value="medium">
+                                      <span className="text-orange-500 font-medium text-[10px]">中</span>
+                                    </SelectItem>
+                                    <SelectItem value="weak">
+                                      <span className="text-yellow-600 font-medium text-[10px]">弱</span>
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </span>
+                              {/* T Mode — editable select */}
+                              <span>
+                                <Select
+                                  value={factor.tMode || "正T"}
+                                  onValueChange={v => handleUpdateFactor(factor.id, "tMode", v)}
+                                >
+                                  <SelectTrigger className="h-5 text-[9px] px-1 border-0 bg-transparent shadow-none gap-0.5 focus:ring-0 w-[56px]">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="正T"><span className="text-[10px]">正T</span></SelectItem>
+                                    <SelectItem value="反T"><span className="text-[10px]">反T</span></SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </span>
+                              {/* Time Window — editable select */}
+                              <span>
+                                <Select
+                                  value={factor.timeWindow || "any"}
+                                  onValueChange={v => handleUpdateFactor(factor.id, "timeWindow", v)}
+                                >
+                                  <SelectTrigger className="h-5 text-[9px] px-1 border-0 bg-transparent shadow-none gap-0.5 focus:ring-0 w-[56px]">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="any"><span className="text-[10px]">任意</span></SelectItem>
+                                    <SelectItem value="sell_window"><span className="text-[10px]">卖窗</span></SelectItem>
+                                    <SelectItem value="buy_window"><span className="text-[10px]">买窗</span></SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </span>
+                              {/* Description */}
+                              <span className="text-muted-foreground truncate" title={factor.description}>{factor.description}</span>
+                              {/* Enabled toggle */}
+                              <span>
+                                <button
+                                  onClick={() => handleToggleFactor(factor.id, factor.enabled)}
+                                  className={`${factor.enabled ? "text-green-500" : "text-muted-foreground"}`}
+                                  title={factor.enabled ? "点击禁用" : "点击启用"}
+                                >
+                                  {factor.enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                                </button>
+                              </span>
+                              {/* Actions */}
+                              <span className="flex items-center gap-0.5">
+                                <TooltipProvider delayDuration={300}>
+                                  <UITooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        onClick={() => setEditingFactorId(isEditing ? null : factor.id)}
+                                        className={`${isEditing ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="text-[10px]">
+                                      {isEditing ? "关闭编辑" : "编辑因子"}
+                                    </TooltipContent>
+                                  </UITooltip>
+                                </TooltipProvider>
+                                <button
+                                  onClick={() => handleDeleteFactor(factor.id)}
+                                  className="text-muted-foreground hover:text-destructive"
+                                  title="删除"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>

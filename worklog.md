@@ -864,3 +864,35 @@ Stage Summary:
 - Markers update in real-time as quote data refreshes every 3 seconds
 - Signal analysis section shows a summary of detected markers
 - Lint passes, dev server running normally
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix pvMarkers is not defined error + Add factor parameter editing functionality
+
+Work Log:
+- Fixed `pvMarkers is not defined` error: added `pvMarkers` to destructuring in TimeSharingPanel component
+- Added factor editing functionality to StrategyAdminPanel:
+  - Added `editingFactorId`, `editingParamKey`, `editParamValue` state variables
+  - Added `handleUpdateFactor` function for updating DB factor fields (strength, tMode, timeWindow, priority)
+  - Added `handleUpdateIndicatorParam` function for updating indicator params
+  - Replaced DB Factors table with inline-editable version:
+    - Priority: editable number input
+    - Strength: Select dropdown (强/中/弱)
+    - T Mode: Select dropdown (正T/反T)
+    - Time Window: Select dropdown (任意/卖窗/买窗)
+    - Enabled: toggle button (existing)
+    - Edit indicator: pencil button with highlight
+  - Made indicator cards params editable (click-to-edit with Enter/Escape/blur)
+  - Signal rules table now shows DB factor strength overrides (→强/中/弱)
+- Added StrategyConfig Prisma model for storing indicator param overrides
+- Created /api/stock/strategy-config API route (GET/PUT) for indicator param persistence
+- Updated strategy GET API to load config overrides from DB
+- Added Select and Tooltip UI component imports (with Tooltip alias to avoid recharts conflict)
+
+Stage Summary:
+- All DB factor fields (strength, tMode, timeWindow, priority) are now inline-editable
+- Indicator parameters (MACD/VWAP/RSI/Boll/Volume) are click-to-edit with persistence
+- New StrategyConfig table stores indicator param overrides
+- Signal rules table shows strength overrides from DB
+- Lint passes, dev server running normally

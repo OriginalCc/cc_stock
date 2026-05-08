@@ -15,6 +15,18 @@ export async function GET() {
     orderBy: { logicOrder: "asc" },
   });
 
+  // Fetch indicator config overrides from database
+  const configOverrides = await db.strategyConfig.findMany();
+  const overrideMap = new Map<string, number>();
+  for (const c of configOverrides) {
+    overrideMap.set(`${c.indicatorKey}.${c.paramKey}`, parseFloat(c.value));
+  }
+
+  // Helper to get param value (override or default)
+  const getParam = (indKey: string, paramKey: string, defaultVal: number): number => {
+    return overrideMap.get(`${indKey}.${paramKey}`) ?? defaultVal;
+  };
+
   const strategy = {
     version: STRATEGY_OVERVIEW.version,
     name: STRATEGY_OVERVIEW.name,
@@ -34,9 +46,9 @@ export async function GET() {
         name: "MACD (Moving Average Convergence Divergence)",
         description: "指数平滑异同移动平均线，用于判断趋势方向和强弱",
         params: [
-          { key: "fastPeriod", label: "快线EMA周期", value: DEFAULT_STRATEGY_CONFIG.macdFast, unit: "根K线", description: "短期指数移动平均线周期" },
-          { key: "slowPeriod", label: "慢线EMA周期", value: DEFAULT_STRATEGY_CONFIG.macdSlow, unit: "根K线", description: "长期指数移动平均线周期" },
-          { key: "signalPeriod", label: "信号线EMA周期", value: DEFAULT_STRATEGY_CONFIG.macdSignal, unit: "根K线", description: "DIF的信号线周期" },
+          { key: "fastPeriod", label: "快线EMA周期", value: getParam("macd", "fastPeriod", DEFAULT_STRATEGY_CONFIG.macdFast), unit: "根K线", description: "短期指数移动平均线周期" },
+          { key: "slowPeriod", label: "慢线EMA周期", value: getParam("macd", "slowPeriod", DEFAULT_STRATEGY_CONFIG.macdSlow), unit: "根K线", description: "长期指数移动平均线周期" },
+          { key: "signalPeriod", label: "信号线EMA周期", value: getParam("macd", "signalPeriod", DEFAULT_STRATEGY_CONFIG.macdSignal), unit: "根K线", description: "DIF的信号线周期" },
         ],
         formulas: [
           { name: "DIF", formula: "DIF = EMA(12) - EMA(26)", description: "快慢线差值" },
@@ -48,8 +60,8 @@ export async function GET() {
         name: "VWAP (Volume Weighted Average Price)",
         description: "成交量加权平均价（均价线），分时图核心参考线",
         params: [
-          { key: "deviationSell", label: "卖出偏离阈值", value: DEFAULT_STRATEGY_CONFIG.vwapDeviationSell, unit: "%", description: "偏离均价线超过此值考虑卖出（PDF=2%）" },
-          { key: "deviationBuy", label: "买回偏离阈值", value: DEFAULT_STRATEGY_CONFIG.vwapDeviationBuy, unit: "%", description: "回到均价线附近此值内买回" },
+          { key: "deviationSell", label: "卖出偏离阈值", value: getParam("vwap", "deviationSell", DEFAULT_STRATEGY_CONFIG.vwapDeviationSell), unit: "%", description: "偏离均价线超过此值考虑卖出（PDF=2%）" },
+          { key: "deviationBuy", label: "买回偏离阈值", value: getParam("vwap", "deviationBuy", DEFAULT_STRATEGY_CONFIG.vwapDeviationBuy), unit: "%", description: "回到均价线附近此值内买回" },
           { key: "source", label: "数据源", value: "Tencent实时1分钟线", description: "使用实时1分钟数据计算VWAP" },
         ],
       },
@@ -57,9 +69,9 @@ export async function GET() {
         name: "RSI (Relative Strength Index)",
         description: "相对强弱指标，衡量价格超买超卖程度（v3.2新增）",
         params: [
-          { key: "rsiPeriod", label: "RSI周期", value: DEFAULT_STRATEGY_CONFIG.rsiPeriod, unit: "根K线", description: "RSI计算周期，通常14" },
-          { key: "oversold", label: "超卖阈值", value: DEFAULT_STRATEGY_CONFIG.rsiOversold, unit: "", description: "RSI低于此值为超卖区" },
-          { key: "overbought", label: "超买阈值", value: DEFAULT_STRATEGY_CONFIG.rsiOverbought, unit: "", description: "RSI高于此值为超买区" },
+          { key: "rsiPeriod", label: "RSI周期", value: getParam("rsi", "rsiPeriod", DEFAULT_STRATEGY_CONFIG.rsiPeriod), unit: "根K线", description: "RSI计算周期，通常14" },
+          { key: "oversold", label: "超卖阈值", value: getParam("rsi", "oversold", DEFAULT_STRATEGY_CONFIG.rsiOversold), unit: "", description: "RSI低于此值为超卖区" },
+          { key: "overbought", label: "超买阈值", value: getParam("rsi", "overbought", DEFAULT_STRATEGY_CONFIG.rsiOverbought), unit: "", description: "RSI高于此值为超买区" },
         ],
         formulas: [
           { name: "RSI", formula: "RSI = 100 - 100/(1+RS), RS = avgGain/avgLoss", description: "相对强弱值" },
@@ -69,8 +81,8 @@ export async function GET() {
         name: "Bollinger Bands (布林带)",
         description: "布林带指标，衡量价格波动区间和突破信号（v3.2新增）",
         params: [
-          { key: "bollPeriod", label: "布林带周期", value: DEFAULT_STRATEGY_CONFIG.bollPeriod, unit: "根K线", description: "SMA计算周期，通常20" },
-          { key: "bollMultiplier", label: "标准差倍数", value: DEFAULT_STRATEGY_CONFIG.bollMultiplier, unit: "倍", description: "上下轨偏离中轨的标准差倍数，通常2" },
+          { key: "bollPeriod", label: "布林带周期", value: getParam("boll", "bollPeriod", DEFAULT_STRATEGY_CONFIG.bollPeriod), unit: "根K线", description: "SMA计算周期，通常20" },
+          { key: "bollMultiplier", label: "标准差倍数", value: getParam("boll", "bollMultiplier", DEFAULT_STRATEGY_CONFIG.bollMultiplier), unit: "倍", description: "上下轨偏离中轨的标准差倍数，通常2" },
         ],
         formulas: [
           { name: "中轨", formula: "MID = SMA(close, 20)", description: "中轨=SMA" },
@@ -82,11 +94,11 @@ export async function GET() {
         name: "成交量分析",
         description: "量价关系判断，包括放量、缩量、量价背离、脉冲放量",
         params: [
-          { key: "volumeMultiplier", label: "放量倍数阈值", value: DEFAULT_STRATEGY_CONFIG.volumeMultiplier, unit: "倍", description: "成交量超过均量此倍数视为放量" },
-          { key: "volumeMultiplierStrong", label: "强放量倍数", value: DEFAULT_STRATEGY_CONFIG.volumeMultiplierStrong, unit: "倍", description: "超过此倍数为强放量" },
-          { key: "volumeShrinkRatio", label: "缩量比例", value: DEFAULT_STRATEGY_CONFIG.volumeShrinkRatio, unit: "", description: "成交量低于均量此比例为缩量" },
-          { key: "volumePulseMultiplier", label: "脉冲放量倍数", value: DEFAULT_STRATEGY_CONFIG.volumePulseMultiplier, unit: "倍", description: "成交量突增超过均量此倍数为脉冲放量（v3.2新增）" },
-          { key: "consecutiveShrinkBars", label: "连续缩量根数", value: DEFAULT_STRATEGY_CONFIG.consecutiveShrinkBars, unit: "根", description: "连续成交量递减的K线根数（v3.2新增）" },
+          { key: "volumeMultiplier", label: "放量倍数阈值", value: getParam("volume", "volumeMultiplier", DEFAULT_STRATEGY_CONFIG.volumeMultiplier), unit: "倍", description: "成交量超过均量此倍数视为放量" },
+          { key: "volumeMultiplierStrong", label: "强放量倍数", value: getParam("volume", "volumeMultiplierStrong", DEFAULT_STRATEGY_CONFIG.volumeMultiplierStrong), unit: "倍", description: "超过此倍数为强放量" },
+          { key: "volumeShrinkRatio", label: "缩量比例", value: getParam("volume", "volumeShrinkRatio", DEFAULT_STRATEGY_CONFIG.volumeShrinkRatio), unit: "", description: "成交量低于均量此比例为缩量" },
+          { key: "volumePulseMultiplier", label: "脉冲放量倍数", value: getParam("volume", "volumePulseMultiplier", DEFAULT_STRATEGY_CONFIG.volumePulseMultiplier), unit: "倍", description: "成交量突增超过均量此倍数为脉冲放量（v3.2新增）" },
+          { key: "consecutiveShrinkBars", label: "连续缩量根数", value: getParam("volume", "consecutiveShrinkBars", DEFAULT_STRATEGY_CONFIG.consecutiveShrinkBars), unit: "根", description: "连续成交量递减的K线根数（v3.2新增）" },
         ],
       },
     },
