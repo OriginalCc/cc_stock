@@ -560,6 +560,370 @@ interface MergedSignal {
   customReasons?: Set<string>; // set of reason names that come from custom factors
 }
 
+// ── Pulse & Volume Surge Detection for Timeline Chart ──────
+// Detects "脉冲拉升" (pulse surge) and "放量拉升" (volume surge) patterns
+// from the 1-minute timeline data and returns markers for chart annotation.
+
+interface PulseVolumeMarker {
+  time: string;           // HH:mm — the key minute of the event
+  type: "pulse" | "volume_surge";
+  score: number;          // 0-100 composite score
+  label: string;          // short description for tooltip
+  detail: string;         // full detail string
+}
+
+/**
+ * Parse "HH:mm" string to total minutes since midnight
+ */
+function pvParseTime(timeStr: string): number {
+  const parts = timeStr.split(":");
+  if (parts.length !== 2) return 570;
+  return (parseInt(parts[0]) || 9) * 60 + (parseInt(parts[1]) || 30);
+}
+
+/**
+ * Detect pulse surge and volume surge events from timeline data.
+ * Reuses the same logic as the backend screener's detectPulseSurge/detectVolumeSurge,
+ * but returns specific time-based markers for chart annotation.
+ *
+ * @param timeline - 1-minute timeline data (price, avgPrice, volume, changePercent)
+ * @param prevClose - previous close price
+ * @param timeStart - detection window start (HH:mm), default "09:30"
+ * @param timeEnd - detection window end (HH:mm), default "10:30"
+ */
+function detectPulseVolumeMarkers(
+  timeline: TimelineItem[],
+  prevClose: number,
+  timeStart: string = "09:30",
+  timeEnd: string = "10:30",
+): PulseVolumeMarker[] {
+  if (!timeline || timeline.length < 10 || prevClose <= 0) return [];
+
+  const markers: PulseVolumeMarker[] = [];
+  const startMin = pvParseTime(timeStart);
+  const endMin = pvParseTime(timeEnd);
+
+  // Filter to the specified time window
+  const session = timeline.filter(t => {
+    const totalMin = pvParseTime(t.time);
+    return totalMin >= startMin && totalMin <= endMin;
+  });
+
+  if (session.length < 5) return [];
+
+  // ── Pulse Surge Detection ──
+  {
+    let maxSurgeRate = 0;
+    let surgeStartIdx = 0;
+    let surgeEndIdx = 0;
+    const windowSize = 5;
+
+    for (let i = 0; i <= session.length - windowSize; i++) {
+      const startPrice = session[i].price;
+      const endPrice = session[i + windowSize - 1].price;
+      if (startPrice <= 0) continue;
+      const surgeRate = ((endPrice - startPrice) / startPrice) * 100;
+      if (surgeRate > maxSurgeRate) {
+        maxSurgeRate = surgeRate;
+        surgeStartIdx = i;
+        surgeEndIdx = i + windowSize - 1;
+      }
+    }
+
+    // Open-to-high in window
+    const openPrice = session[0].price;
+    const sessionHigh = Math.max(...session.map(t => t.price));
+    const openToHighRate = openPrice > 0 ? ((sessionHigh - openPrice) / openPrice) * 100 : 0;
+
+    // Peak then pullback
+    let peakIdx = 0;
+    let peakPrice = 0;
+    for (let i = 0; i < session.length; i++) {
+      if (session[i].price > peakPrice) {
+        peakPrice = session[i].price;
+        peakIdx = i;
+      }
+    }
+    const lastPrice = session[session.length - 1].price;
+    const pullbackRate = peakPrice > 0 ? ((peakPrice - lastPrice) / peakPrice) * 100 : 0;
+
+    // Volume spike at peak
+    const avgVol = session.reduce((sum, t) => sum + t.volume, 0) / session.length;
+    const peakVol = session[peakIdx]?.volume || 0;
+    const volRatio = avgVol > 0 ? peakVol / avgVol : 1;
+
+    // Gap up
+    const gapUpRate = openPrice > 0 && prevClose > 0 ? ((openPrice - prevClose) / prevClose) * 100 : 0;
+
+    // Composite pulse score (same logic as backend)
+    let pulseScore = 0;
+    if (maxSurgeRate >= 3) pulseScore += 35;
+    else if (maxSurgeRate >= 2) pulseScore += 25;
+    else if (maxSurgeRate >= 1.5) pulseScore += 20;
+    else if (maxSurgeRate >= 1) pulseScore += 12;
+    else if (maxSurgeRate >= 0.5) pulseScore += 5;
+
+    if (openToHighRate >= 3) pulseScore += 25;
+    else if (openToHighRate >= 2) pulseScore += 18;
+    else if (openToHighRate >= 1.5) pulseScore += 12;
+    else if (openToHighRate >= 1) pulseScore += 8;
+    else if (openToHighRate >= 0.5) pulseScore += 3;
+
+    if (pullbackRate >= 0.5 && pullbackRate <= 5 && peakIdx < session.length - 2) pulseScore += 15;
+    else if (pullbackRate > 0 && peakIdx < session.length / 2) pulseScore += 8;
+
+    if (volRatio >= 2) pulseScore += 10;
+    else if (volRatio >= 1.5) pulseScore += 6;
+    else if (volRatio >= 1.2) pulseScore += 3;
+
+    if (gapUpRate >= 1) pulseScore += 10;
+    else if (gapUpRate >= 0.5) pulseScore += 5;
+    else if (gapUpRate > 0) pulseScore += 2;
+
+    pulseScore = Math.min(pulseScore, 100);
+
+    if (pulseScore >= 10) {
+      // Mark at the peak time (most dramatic point of the pulse)
+      const peakTime = session[peakIdx].time;
+      const details: string[] = [];
+      if (maxSurgeRate >= 1) details.push(`${session[surgeStartIdx].time}-${session[surgeEndIdx].time}飙升${maxSurgeRate.toFixed(1)}%`);
+      if (openToHighRate >= 1) details.push(`冲高${openToHighRate.toFixed(1)}%`);
+      if (gapUpRate >= 0.5) details.push(`跳空${gapUpRate.toFixed(1)}%`);
+      if (pullbackRate >= 0.3 && peakIdx < session.length - 2) details.push(`回落${pullbackRate.toFixed(1)}%`);
+      if (volRatio >= 1.5) details.push(`放量${volRatio.toFixed(1)}x`);
+
+      markers.push({
+        time: peakTime,
+        type: "pulse",
+        score: pulseScore,
+        label: pulseScore >= 50 ? `强脉冲 ${pulseScore}分` : pulseScore >= 30 ? `脉冲 ${pulseScore}分` : `微脉冲 ${pulseScore}分`,
+        detail: details.length > 0 ? details.join("，") : "轻微脉冲",
+      });
+    }
+  }
+
+  // ── Volume Surge Detection ──
+  {
+    // Calculate incremental volumes
+    const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
+    for (let i = 0; i < session.length; i++) {
+      const prevVol = i > 0 ? session[i - 1].volume : 0;
+      const curVol = session[i].volume;
+      const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+      const prevPrice = i > 0 ? session[i - 1].price : prevClose;
+      const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
+      increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
+    }
+
+    const avgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
+    const maxVol = Math.max(...increments.map(t => t.vol));
+    const maxVolIdx = increments.findIndex(t => t.vol === maxVol);
+    const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
+    const maxVolPriceChange = increments[maxVolIdx]?.priceChange || 0;
+
+    // Progressive volume increase (递增放量)
+    let maxProgressiveLen = 1;
+    let curProgressiveLen = 1;
+    let progressiveStart = 0;
+    let bestProgressiveStart = 0;
+    for (let i = 1; i < increments.length; i++) {
+      if (increments[i].vol > increments[i - 1].vol && increments[i].vol > 0) {
+        curProgressiveLen++;
+        if (curProgressiveLen > maxProgressiveLen) {
+          maxProgressiveLen = curProgressiveLen;
+          bestProgressiveStart = progressiveStart;
+        }
+      } else {
+        curProgressiveLen = 1;
+        progressiveStart = i;
+      }
+    }
+
+    const progressivePriceRise = maxProgressiveLen >= 3
+      ? (() => {
+          const startP = increments[bestProgressiveStart]?.price || 0;
+          const endP = increments[bestProgressiveStart + maxProgressiveLen - 1]?.price || 0;
+          return startP > 0 ? ((endP - startP) / startP) * 100 : 0;
+        })()
+      : 0;
+
+    // Window volume vs baseline
+    const baselineVol = increments.slice(0, Math.min(5, increments.length))
+      .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
+    const windowAvgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
+    const windowVolRatio = baselineVol > 0 ? windowAvgVol / baselineVol : 1;
+
+    // Window price gain
+    const windowStartPrice = session[0].price;
+    const windowEndPrice = session[session.length - 1].price;
+    const windowPriceGain = windowStartPrice > 0 ? ((windowEndPrice - windowStartPrice) / windowStartPrice) * 100 : 0;
+
+    // Up-minutes with above-average volume
+    const upWithHighVol = increments.filter(t => t.priceChange > 0 && t.vol > avgVol).length;
+    const upHighVolRatio = increments.length > 0 ? upWithHighVol / increments.length : 0;
+
+    // Composite volume surge score (same logic as backend)
+    let volSurgeScore = 0;
+    if (volumeRatio >= 3 && maxVolPriceChange > 0.3) volSurgeScore += 30;
+    else if (volumeRatio >= 2.5 && maxVolPriceChange > 0.2) volSurgeScore += 25;
+    else if (volumeRatio >= 2 && maxVolPriceChange > 0.1) volSurgeScore += 20;
+    else if (volumeRatio >= 1.5 && maxVolPriceChange > 0) volSurgeScore += 12;
+    else if (volumeRatio >= 1.5) volSurgeScore += 5;
+
+    if (maxProgressiveLen >= 5 && progressivePriceRise > 0.5) volSurgeScore += 25;
+    else if (maxProgressiveLen >= 4 && progressivePriceRise > 0.3) volSurgeScore += 20;
+    else if (maxProgressiveLen >= 3 && progressivePriceRise > 0.1) volSurgeScore += 15;
+    else if (maxProgressiveLen >= 3) volSurgeScore += 5;
+
+    if (windowVolRatio >= 2) volSurgeScore += 15;
+    else if (windowVolRatio >= 1.5) volSurgeScore += 10;
+    else if (windowVolRatio >= 1.2) volSurgeScore += 5;
+
+    if (windowPriceGain >= 2 && upHighVolRatio >= 0.3) volSurgeScore += 15;
+    else if (windowPriceGain >= 1 && upHighVolRatio >= 0.2) volSurgeScore += 10;
+    else if (windowPriceGain >= 0.5 && upHighVolRatio >= 0.15) volSurgeScore += 5;
+
+    if (upHighVolRatio >= 0.4) volSurgeScore += 10;
+    else if (upHighVolRatio >= 0.3) volSurgeScore += 6;
+    else if (upHighVolRatio >= 0.2) volSurgeScore += 3;
+
+    if (volumeRatio >= 2 && maxVolPriceChange > 0) volSurgeScore += 5;
+
+    volSurgeScore = Math.min(volSurgeScore, 100);
+
+    if (volSurgeScore >= 10) {
+      // Mark at the peak volume time
+      const markTime = increments[maxVolIdx]?.time || session[0].time;
+      const details: string[] = [];
+      if (volumeRatio >= 1.5) details.push(`${increments[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
+      if (maxProgressiveLen >= 3) details.push(`${maxProgressiveLen}分钟递增放量${progressivePriceRise > 0 ? `涨${progressivePriceRise.toFixed(1)}%` : ""}`);
+      if (windowPriceGain >= 0.5) details.push(`时段涨${windowPriceGain.toFixed(1)}%`);
+      if (upHighVolRatio >= 0.2) details.push(`${(upHighVolRatio * 100).toFixed(0)}%放量上涨`);
+
+      markers.push({
+        time: markTime,
+        type: "volume_surge",
+        score: volSurgeScore,
+        label: volSurgeScore >= 50 ? `强放量 ${volSurgeScore}分` : volSurgeScore >= 30 ? `放量 ${volSurgeScore}分` : `微放量 ${volSurgeScore}分`,
+        detail: details.length > 0 ? details.join("，") : "轻微放量",
+      });
+    }
+  }
+
+  return markers;
+}
+
+// ── Pulse/Volume Surge Renderer for Timeline Chart ──────
+// Renders colored markers on the timeline chart for pulse and volume surge events.
+// Pulse = lightning bolt icon (⚡) in orange/amber
+// Volume surge = rising arrow icon (📈) in cyan/teal
+
+function PulseVolumeRenderer(props: any) {
+  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+
+  const xAxis = Object.values(xAxisMap)[0] as any;
+  const yAxis = Object.values(yAxisMap)[0] as any;
+  if (!xAxis || !yAxis) return null;
+
+  // Get data points from the price line
+  let priceLineData: any[] = [];
+  for (const item of formattedGraphicalItems) {
+    if (item?.props?.points && Array.isArray(item.props.points)) {
+      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+      if (stroke === "#eab308") continue; // Skip avgPrice line
+      if (priceLineData.length === 0) {
+        priceLineData = item.props.points;
+      }
+    }
+  }
+  if (priceLineData.length === 0) return null;
+
+  // Get markers from the data payload
+  const markers: PulseVolumeMarker[] = [];
+  const seen = new Set<string>();
+  for (const point of priceLineData) {
+    const pvMarker = point?.payload?.pvMarker as PulseVolumeMarker[] | undefined;
+    if (pvMarker && Array.isArray(pvMarker)) {
+      for (const m of pvMarker) {
+        const key = `${m.time}-${m.type}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          markers.push(m);
+        }
+      }
+    }
+  }
+
+  if (markers.length === 0) return null;
+
+  // Convert marker times to chart coordinates
+  const markerPoints: { x: number; y: number; marker: PulseVolumeMarker }[] = [];
+  for (const marker of markers) {
+    // Find the chart point matching this marker's time
+    const matchPoint = priceLineData.find((p: any) => p?.payload?.time === marker.time);
+    if (!matchPoint) continue;
+    markerPoints.push({ x: matchPoint.x, y: matchPoint.y, marker });
+  }
+
+  if (markerPoints.length === 0) return null;
+
+  // Render markers
+  return (
+    <g className="pulse-volume-markers">
+      {markerPoints.map(({ x, y, marker }, idx) => {
+        const isPulse = marker.type === "pulse";
+        // Pulse: orange/amber theme, Volume surge: cyan/teal theme
+        const bgColor = isPulse ? "rgba(245, 158, 11, 0.15)" : "rgba(6, 182, 212, 0.15)";
+        const borderColor = isPulse ? "rgba(245, 158, 11, 0.6)" : "rgba(6, 182, 212, 0.6)";
+        const textColor = isPulse ? "#d97706" : "#0891b2";
+        const iconColor = isPulse ? "#f59e0b" : "#06b6d4";
+
+        // Position: above the price point for pulse, below for volume surge
+        const labelY = isPulse ? y - 22 : y + 12;
+
+        return (
+          <g key={`pv-${marker.type}-${idx}`}>
+            {/* Connecting line from marker to price point */}
+            <line
+              x1={x} y1={y} x2={x} y2={labelY}
+              stroke={borderColor} strokeWidth={0.8} strokeDasharray="2 2"
+            />
+            {/* Marker dot on price line */}
+            <circle
+              cx={x} cy={y} r={4}
+              fill={bgColor} stroke={iconColor} strokeWidth={1.5}
+            />
+            {/* Icon inside dot */}
+            <text
+              x={x} y={y + 1}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize={5} fill={iconColor}
+            >
+              {isPulse ? "⚡" : "▲"}
+            </text>
+            {/* Label background pill */}
+            <rect
+              x={x - 38} y={isPulse ? labelY - 10 : labelY - 2}
+              width={76} height={14}
+              rx={3} ry={3}
+              fill={bgColor} stroke={borderColor} strokeWidth={0.5}
+            />
+            {/* Label text */}
+            <text
+              x={x} y={isPulse ? labelY - 3 : labelY + 5}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize={8} fontWeight={600} fill={textColor}
+            >
+              {marker.label}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 function TimelineSignalRenderer(props: any) {
   const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -1414,6 +1778,7 @@ function TimeSharingPanel({
   onPanOffsetChange?: (offset: number) => void;
   sectorRegime?: RegimeDetail | null;
   sectorInfo?: { code: string; name: string } | null;
+  pvMarkers?: PulseVolumeMarker[];
 }) {
   // ── Build full-day timeline template (240 minutes total) ──
   // A-share trading day: 09:30-11:30 (120min) + 13:00-15:00 (120min)
@@ -1452,6 +1817,16 @@ function TimeSharingPanel({
       }
     }
 
+    // Build pulse/volume marker map by time
+    const pvMarkerByTime = new Map<string, PulseVolumeMarker[]>();
+    if (pvMarkers && pvMarkers.length > 0) {
+      for (const m of pvMarkers) {
+        const existing = pvMarkerByTime.get(m.time) || [];
+        existing.push(m);
+        pvMarkerByTime.set(m.time, existing);
+      }
+    }
+
     // Build actual data map by time
     const dataByTime = new Map<string, TimelineItem>();
     data.forEach((d) => dataByTime.set(d.time, d));
@@ -1481,6 +1856,7 @@ function TimeSharingPanel({
           changePercent: actual.changePercent,
           volUp: prevActual ? actual.price >= prevActual.price : actual.price >= safePrevClose,
           tSignal: signalByTime.get(time) || undefined,
+          pvMarker: pvMarkerByTime.get(time) || undefined,
           dif: macdByTime.get(time)?.dif ?? undefined,
           dea: macdByTime.get(time)?.dea ?? undefined,
           macd: macdByTime.get(time)?.macd ?? undefined,
@@ -1508,7 +1884,7 @@ function TimeSharingPanel({
     const ticks = keyTimes.map((t) => allTimes.indexOf(t)).filter((i) => i >= 0);
 
     return { fullDayData: fullDay, timeTicks: ticks };
-  }, [data, prevClose, signals, macdData]);
+  }, [data, prevClose, signals, macdData, pvMarkers]);
 
   // ── Crosshair state: shared across all three panels ──
   const [crosshairIdx, setCrosshairIdx] = useState<number | null>(null);
@@ -2224,6 +2600,7 @@ function TimeSharingPanel({
               <ReferenceLine yAxisId="price" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
             )}
             <Customized component={TimelineSignalRenderer} />
+            <Customized component={PulseVolumeRenderer} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -6444,6 +6821,14 @@ export default function StockTAssistant() {
     return generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime);
   }, [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime]);
 
+  // ── Pulse & Volume Surge markers for timeline chart ──
+  // Detect pulse surge and volume surge events from the same timeline data
+  // that the screener uses, and mark them on the chart.
+  const pvMarkers = useMemo(() => {
+    if (liveTimeline.length < 10 || timelinePrevClose <= 0) return [];
+    return detectPulseVolumeMarkers(liveTimeline, timelinePrevClose);
+  }, [liveTimeline, timelinePrevClose]);
+
   // Get latest timeline signal for the header badge
   const latestTimelineSignal = useMemo(() => {
     for (let i = timelineSignals.length - 1; i >= 0; i--) {
@@ -7159,6 +7544,7 @@ export default function StockTAssistant() {
               onPanOffsetChange={setTlPanOffset}
               sectorRegime={sectorRegime}
               sectorInfo={sectorInfo}
+              pvMarkers={pvMarkers}
             />
           </div>
         ) : chartData.length > 0 ? (
@@ -7465,6 +7851,24 @@ export default function StockTAssistant() {
                       );
                     })()}
                   </div>
+
+                  {/* Pulse & Volume Surge Markers Summary */}
+                  {pvMarkers.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {pvMarkers.map((m, i) => (
+                        <div key={`pvm-${i}`} className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border ${
+                          m.type === "pulse"
+                            ? "bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300"
+                            : "bg-cyan-500/5 border-cyan-500/20 text-cyan-700 dark:text-cyan-300"
+                        }`}>
+                          {m.type === "pulse" ? <Zap className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+                          <span className="font-mono">{m.time}</span>
+                          <span className="font-medium">{m.label}</span>
+                          <span className="text-muted-foreground">{m.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Signal Timeline */}
                   <div className="mt-4 space-y-2 max-h-48 overflow-y-auto">

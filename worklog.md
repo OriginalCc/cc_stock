@@ -830,3 +830,37 @@ Stage Summary:
 - Today's candle is built from live quote data (updated every 3 seconds)
 - MA5/MA10/MA20 lines stop at yesterday (null values on today's candle are skipped via connectNulls)
 - Lint passes, dev server running normally
+
+---
+Task ID: 1
+Agent: main
+Task: Add pulse surge and volume surge markers to the timeline chart
+
+Work Log:
+- Added `PulseVolumeMarker` interface (time, type, score, label, detail)
+- Added `pvParseTime()` helper to parse HH:mm to minutes
+- Added `detectPulseVolumeMarkers()` function - frontend version of the backend screener's pulse/volume surge detection
+  - Pulse detection: 5-minute window surge, open-to-high, peak+pullback, volume spike, gap-up (same scoring logic as backend)
+  - Volume surge detection: incremental volumes, max volume ratio, progressive increase, window volume vs baseline, up-with-high-vol ratio
+  - Returns markers with exact time points for chart annotation
+- Added `PulseVolumeRenderer` component - custom SVG renderer for Recharts ComposedChart
+  - Pulse markers: orange/amber theme with ⚡ icon, positioned above price line
+  - Volume surge markers: cyan/teal theme with ▲ icon, positioned below price line
+  - Both have connecting dashed line from marker to price point, background pill label with score
+- Integrated into data flow:
+  - Added `pvMarkers` useMemo in main component, computed from `liveTimeline` and `timelinePrevClose`
+  - Added `pvMarkerByTime` map in TimeSharingPanel's fullDayData computation
+  - Injected `pvMarker` field into each timeline data point (like existing `tSignal`)
+  - Added `PulseVolumeRenderer` as `<Customized>` component in price chart
+  - Added `pvMarkers` prop to TimeSharingPanel
+  - Added pvMarkers dependency to fullDayData useMemo
+- Added pulse/volume surge summary in the signal analysis section below the chart
+  - Amber badges for pulse markers, cyan badges for volume surge markers
+  - Shows time, label (score), and detail description
+
+Stage Summary:
+- Timeline chart now shows pulse surge (⚡ orange) and volume surge (▲ cyan) markers
+- Detection runs automatically on any stock using the timeline data
+- Markers update in real-time as quote data refreshes every 3 seconds
+- Signal analysis section shows a summary of detected markers
+- Lint passes, dev server running normally
