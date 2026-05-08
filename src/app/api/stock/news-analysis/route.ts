@@ -13,6 +13,18 @@ function getTodayKey(): string {
   return `${china.getFullYear()}-${String(china.getMonth() + 1).padStart(2, '0')}-${String(china.getDate()).padStart(2, '0')}`;
 }
 
+// Before 11:30 → predict today (今日预判), after 11:30 → predict tomorrow (明日预判)
+function getPredictionDay(): { day: string; dayLabel: string } {
+  const now = new Date();
+  const china = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  const hour = china.getHours();
+  const minute = china.getMinutes();
+  if (hour < 11 || (hour === 11 && minute < 30)) {
+    return { day: "今日", dayLabel: "今日预判" };
+  }
+  return { day: "明日", dayLabel: "明日预判" };
+}
+
 // Shared ZAI instance
 let zaiInstance: any = null;
 async function getZAI() {
@@ -24,23 +36,23 @@ async function getZAI() {
 }
 
 // ── Step 1: Multi-angle search queries ──
-const SEARCH_QUERIES: Record<string, (p: { sectorName: string; stockName: string; symbol: string }) => { label: string; query: string }[]> = {
-  market: () => [
+const SEARCH_QUERIES: Record<string, (p: { sectorName: string; stockName: string; symbol: string; day: string }) => { label: string; query: string }[]> = {
+  market: ({ day }) => [
     { label: "宏观政策", query: "A股 大盘 宏观政策 央行 财政 资讯" },
     { label: "资金流向", query: "A股 北向资金 融资融券 资金流向 今日" },
     { label: "外盘影响", query: "美股 纳斯达克 A股 影响 隔夜 外盘" },
-    { label: "技术分析", query: "A股 大盘 技术分析 支撑 压力 明日 走势" },
+    { label: "技术分析", query: `A股 大盘 技术分析 支撑 压力 ${day} 走势` },
   ],
-  sector: ({ sectorName }) => [
+  sector: ({ sectorName, day }) => [
     { label: "行业政策", query: `${sectorName} 板块 行业政策 利好 利空 资讯` },
     { label: "板块资金", query: `${sectorName} 板块 主力资金 龙头股 今日` },
-    { label: "技术形态", query: `${sectorName} 板块 技术分析 走势 明日 预测` },
+    { label: "技术形态", query: `${sectorName} 板块 技术分析 走势 ${day} 预测` },
     { label: "关联市场", query: `${sectorName} 产业链 上下游 商品 价格` },
   ],
-  stock: ({ stockName, symbol }) => [
+  stock: ({ stockName, symbol, day }) => [
     { label: "公司资讯", query: `${stockName} ${symbol} 公司公告 新闻 资讯` },
     { label: "研报评级", query: `${stockName} 研报 券商 评级 目标价` },
-    { label: "技术分析", query: `${stockName} 技术分析 支撑 压力 明日 走势` },
+    { label: "技术分析", query: `${stockName} 技术分析 支撑 压力 ${day} 走势` },
     { label: "资金动向", query: `${stockName} 主力资金 北向 大宗交易 龙虎榜` },
   ],
 };
@@ -108,20 +120,20 @@ function classifySource(hostName: string): string {
 }
 
 // ── Step 4: Enhanced LLM analysis with multi-dimensional output ──
-async function analyzeWithLLM(context: string, type: "market" | "sector" | "stock") {
+async function analyzeWithLLM(context: string, type: "market" | "sector" | "stock", day: string) {
   const zai = await getZAI();
 
   const systemPrompts: Record<string, string> = {
     market:
-      `你是一位资深的A股大盘分析师，拥有20年实战经验。请根据提供的多源资讯，综合分析大盘明日走势。
+      `你是一位资深的A股大盘分析师，拥有20年实战经验。请根据提供的多源资讯，综合分析大盘${day}走势。
 你需要从技术面、资金面、政策面、情绪面四个维度进行全方位评估。
 
 返回JSON格式，包含以下字段：
-- trend: 明日走势预判（上升/下降/震荡）
+- trend: ${day}走势预判（上升/下降/震荡）
 - confidence: 信心度1-100
 - summary: 100字以内的综合摘要
 - keyFactors: 3-5个关键影响因素数组
-- suggestion: 明日做T建议（正T/反T/观望）
+- suggestion: ${day}做T建议（正T/反T/观望）
 - riskLevel: 风险等级（高/中/低）
 - newsSentiment: 整体资讯情绪（偏多/偏空/中性）
 - technicalView: 技术面观点（30字以内）
@@ -133,15 +145,15 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 只返回JSON，不要其他文字。`,
 
     sector:
-      `你是一位资深的A股行业板块分析师，拥有15年行业研究经验。请根据提供的多源资讯，综合分析该板块明日走势。
+      `你是一位资深的A股行业板块分析师，拥有15年行业研究经验。请根据提供的多源资讯，综合分析该板块${day}走势。
 你需要从技术面、资金面、政策面、行业基本面四个维度进行全方位评估。
 
 返回JSON格式，包含以下字段：
-- trend: 明日走势预判（上升/下降/震荡）
+- trend: ${day}走势预判（上升/下降/震荡）
 - confidence: 信心度1-100
 - summary: 100字以内的综合摘要
 - keyFactors: 3-5个关键影响因素数组
-- suggestion: 明日做T建议（正T/反T/观望）
+- suggestion: ${day}做T建议（正T/反T/观望）
 - riskLevel: 风险等级（高/中/低）
 - newsSentiment: 整体资讯情绪（偏多/偏空/中性）
 - technicalView: 技术面观点（30字以内）
@@ -153,15 +165,15 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 只返回JSON，不要其他文字。`,
 
     stock:
-      `你是一位资深的A股个股分析师，拥有15年个股投研经验。请根据提供的多源资讯，综合分析该个股明日走势。
+      `你是一位资深的A股个股分析师，拥有15年个股投研经验。请根据提供的多源资讯，综合分析该个股${day}走势。
 你需要从技术面、资金面、消息面、估值面四个维度进行全方位评估。
 
 返回JSON格式，包含以下字段：
-- trend: 明日走势预判（上升/下降/震荡）
+- trend: ${day}走势预判（上升/下降/震荡）
 - confidence: 信心度1-100
 - summary: 100字以内的综合摘要
 - keyFactors: 3-5个关键影响因素数组
-- suggestion: 明日做T建议（正T/反T/观望）
+- suggestion: ${day}做T建议（正T/反T/观望）
 - riskLevel: 风险等级（高/中/低）
 - newsSentiment: 整体资讯情绪（偏多/偏空/中性）
 - technicalView: 技术面观点（30字以内）
@@ -252,7 +264,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const params = { sectorName, stockName, symbol };
+    const { day } = getPredictionDay();
+    const params = { sectorName, stockName, symbol, day };
     const queryGroups = SEARCH_QUERIES[type]?.(params) || SEARCH_QUERIES.market(params);
 
     // Step 1: Parallel multi-angle search
@@ -330,13 +343,13 @@ export async function GET(req: NextRequest) {
       .join("\n\n");
 
     const contextMap: Record<string, string> = {
-      market: `以下是A股大盘多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、政策面、情绪面四个维度，分析大盘明日走势预判。`,
-      sector: `以下是${sectorName}板块多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、政策面、行业基本面四个维度，分析${sectorName}板块明日走势预判。`,
-      stock: `以下是${stockName}(${symbol})多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、消息面、估值面四个维度，分析${stockName}明日走势预判。`,
+      market: `以下是A股大盘多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、政策面、情绪面四个维度，分析大盘${day}走势预判。`,
+      sector: `以下是${sectorName}板块多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、政策面、行业基本面四个维度，分析${sectorName}板块${day}走势预判。`,
+      stock: `以下是${stockName}(${symbol})多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、消息面、估值面四个维度，分析${stockName}${day}走势预判。`,
     };
 
     // Step 4: LLM Analysis
-    const analysis = await analyzeWithLLM(contextMap[type], type);
+    const analysis = await analyzeWithLLM(contextMap[type], type, day);
 
     // Step 5: Compile result with source diversity stats
     const sourceTypes = new Map<string, number>();
@@ -348,6 +361,7 @@ export async function GET(req: NextRequest) {
       type,
       symbol,
       sectorName,
+      predictionDay: day,
       news: finalNews.map(({ fullContent, ...rest }) => rest),
       analysis,
       sourceDiversity: Object.fromEntries(sourceTypes),

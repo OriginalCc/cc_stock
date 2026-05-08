@@ -5104,7 +5104,7 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
                     <Badge variant="outline" className="text-[10px] h-5">v1.0</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    资讯分析模块通过多渠道、多维度搜索与AI深度分析，为做T操作提供消息面参考。系统自动聚合宏观政策、资金流向、外盘影响、技术分析等多个维度的资讯，结合全文深度阅读和LLM推理，输出明日走势预判。
+                    资讯分析模块通过多渠道、多维度搜索与AI深度分析，为做T操作提供消息面参考。系统自动聚合宏观政策、资金流向、外盘影响、技术分析等多个维度的资讯，结合全文深度阅读和LLM推理，输出走势预判（11:30前为今日预判，11:30后为明日预判）。
                   </p>
                 </div>
 
@@ -5307,12 +5307,12 @@ function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors:
                   </div>
                   <div className="space-y-2">
                     {[
-                      { field: "trend", label: "明日走势预判", values: "上升 / 下降 / 震荡", desc: "综合四维分析得出的明日方向性判断" },
+                      { field: "trend", label: "走势预判", values: "上升 / 下降 / 震荡", desc: "综合四维分析得出的方向性判断（11:30前为今日预判，11:30后为明日预判）" },
                       { field: "confidence", label: "信心度", values: "1-100", desc: "对趋势判断的信心程度，≥70高信心，40-70中等，<40低信心" },
-                      { field: "riskLevel", label: "风险等级", values: "高 / 中 / 低", desc: "明日操作风险评级，高=建议谨慎，低=相对安全" },
+                      { field: "riskLevel", label: "风险等级", values: "高 / 中 / 低", desc: "操作风险评级，高=建议谨慎，低=相对安全" },
                       { field: "newsSentiment", label: "资讯情绪", values: "偏多🔺 / 偏空🔻 / 中性↔️", desc: "整体资讯面偏向看涨还是看跌" },
                       { field: "suggestion", label: "做T建议", values: "正T / 反T / 观望", desc: "基于趋势预判给出的具体做T方向建议" },
-                      { field: "keyFactors", label: "关键因素", values: "3-5个", desc: "影响明日走势的核心驱动因素列表" },
+                      { field: "keyFactors", label: "关键因素", values: "3-5个", desc: "影响走势的核心驱动因素列表" },
                       { field: "technicalView", label: "技术面观点", values: "30字以内", desc: "技术面维度的独立判断摘要" },
                       { field: "capitalView", label: "资金面观点", values: "30字以内", desc: "资金面维度的独立判断摘要" },
                       { field: "policyView", label: "政策/消息面观点", values: "30字以内", desc: "政策消息面维度的独立判断摘要" },
@@ -5446,6 +5446,16 @@ export default function StockTAssistant() {
     stock?: any;
   }>({});
   const [newsActiveTab, setNewsActiveTab] = useState<"market" | "sector" | "stock">("market");
+
+  // ── Prediction day: before 11:30 → 今日预判, after 11:30 → 明日预判 ──
+  const predictionDay = useMemo(() => {
+    const now = new Date();
+    const china = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+    const h = china.getHours(), m = china.getMinutes();
+    return (h < 11 || (h === 11 && m < 30)) ? "今日" : "明日";
+  }, []);
+  // Also consider the server-provided predictionDay from API data
+  const currentPredictionDay = newsData[newsActiveTab]?.predictionDay || predictionDay;
 
   // ── News filter state ──
   const [newsFilterSource, setNewsFilterSource] = useState<string>("all"); // all / source type
@@ -7462,7 +7472,10 @@ export default function StockTAssistant() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <Newspaper className="h-4 w-4" />
-                  资讯分析 · 明日预判
+                  资讯分析 · {currentPredictionDay}预判
+                  <span className="text-[10px] text-muted-foreground font-normal">
+                    {currentPredictionDay === "今日" ? "(11:30前)" : "(11:30后)"}
+                  </span>
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   {/* Cache freshness timer */}
@@ -7548,7 +7561,7 @@ export default function StockTAssistant() {
                     'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
                   }`}>
                     <Target className="h-3 w-3" />
-                    今日预判准确率 {predictionStats.accuracy}%
+                    {currentPredictionDay}预判准确率 {predictionStats.accuracy}%
                   </span>
                 )}
               </div>
@@ -7558,9 +7571,9 @@ export default function StockTAssistant() {
                 <div className="flex flex-col items-center justify-center py-12 gap-3">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">
-                    {newsActiveTab === "market" ? "正在多渠道搜索大盘资讯，深度分析明日走势..." :
-                     newsActiveTab === "sector" ? "正在多渠道搜索板块资讯，深度分析明日走势..." :
-                     "正在多渠道搜索个股资讯，深度分析明日走势..."}
+                    {newsActiveTab === "market" ? `正在多渠道搜索大盘资讯，深度分析${currentPredictionDay}走势...` :
+                     newsActiveTab === "sector" ? `正在多渠道搜索板块资讯，深度分析${currentPredictionDay}走势...` :
+                     `正在多渠道搜索个股资讯，深度分析${currentPredictionDay}走势...`}
                   </span>
                   <span className="text-xs text-muted-foreground/60">搜索维度：宏观政策 · 资金流向 · 外盘影响 · 技术分析</span>
                 </div>
@@ -7607,7 +7620,7 @@ export default function StockTAssistant() {
                                 <span className="text-2xl">{cfg.icon}</span>
                                 <div>
                                   <div className={`text-lg font-bold ${cfg.text}`}>
-                                    明日预判：{analysis.trend}
+                                    {currentPredictionDay}预判：{analysis.trend}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {newsActiveTab === "market" ? "大盘" : newsActiveTab === "sector" ? `${data.sectorName}板块` : quote?.name || symbol} · {data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "--"}
@@ -7616,7 +7629,7 @@ export default function StockTAssistant() {
                               </div>
                               <div className="flex flex-col items-end gap-1.5">
                                 <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${sCfg.bg} ${sCfg.text}`}>
-                                  明日建议：{analysis.suggestion}
+                                  {currentPredictionDay}建议：{analysis.suggestion}
                                 </span>
                                 <div className="flex items-center gap-1.5">
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-medium ${rCfg.bg} ${rCfg.text}`}>
@@ -7863,7 +7876,7 @@ export default function StockTAssistant() {
                                       {currentPrediction.actualResult}
                                     </span>
                                   ) : (
-                                    <span className="text-[10px] text-muted-foreground/50">明日验证后反馈</span>
+                                    <span className="text-[10px] text-muted-foreground/50">{currentPredictionDay}验证后反馈</span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1">
