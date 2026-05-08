@@ -257,15 +257,23 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     }
   }, [filters]);
 
-  // Auto-fetch on mount: use cache if fresh, otherwise fetch
+  // Auto-fetch on mount: always restore cache immediately,
+  // then silently refresh in background if cache is stale
   useEffect(() => {
-    if (clientCache && Date.now() - clientCache.timestamp < CLIENT_CACHE_TTL) {
+    if (clientCache) {
+      // Always restore from cache first (instant display)
       setResult(clientCache.result);
       setLastFetchTime(clientCache.lastFetchTime);
       setFilters(clientCache.filters);
       setSectorInput(clientCache.filters.sector);
       setIsFromCache(true);
+
+      // If cache is stale, silently refresh in background
+      if (Date.now() - clientCache.timestamp >= CLIENT_CACHE_TTL) {
+        fetchScreenerData(false, clientCache.filters);
+      }
     } else {
+      // No cache at all, fetch fresh data
       fetchScreenerData();
     }
   }, []);
