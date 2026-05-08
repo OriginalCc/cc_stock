@@ -172,6 +172,8 @@ interface ScreenerFilters {
   maxMarketCap: number;
   pulseThreshold: number;
   enablePulse: boolean;
+  pulseTimeStart: string; // HH:mm format, e.g. "09:30"
+  pulseTimeEnd: string;   // HH:mm format, e.g. "10:30"
 }
 
 const DEFAULT_FILTERS: ScreenerFilters = {
@@ -181,6 +183,8 @@ const DEFAULT_FILTERS: ScreenerFilters = {
   maxMarketCap: 200,
   pulseThreshold: 20,
   enablePulse: true,
+  pulseTimeStart: "09:30",
+  pulseTimeEnd: "10:30",
 };
 
 // ── Component ──────────────────────────────────────────
@@ -228,6 +232,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
         maxMarketCap: String(f.maxMarketCap),
         pulseThreshold: String(f.pulseThreshold),
         sector: f.sector,
+        pulseTimeStart: f.pulseTimeStart,
+        pulseTimeEnd: f.pulseTimeEnd,
       });
       if (!f.enablePulse) params.set("pulse", "false");
       if (forceRefresh) params.set("refresh", "1");
@@ -404,7 +410,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
             {filters.enablePulse && (
               <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300">
                 <Zap className="w-3 h-3" />
-                脉冲评分≥{filters.pulseThreshold}
+                脉冲≥{filters.pulseThreshold} | {filters.pulseTimeStart}~{filters.pulseTimeEnd}
               </Badge>
             )}
           </div>
@@ -599,6 +605,85 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           最低脉冲评分 (0-100)
                         </span>
                       </div>
+                      {/* Pulse Time Range */}
+                      <div className="flex items-center gap-2 mt-2">
+                        <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                          脉冲时段
+                        </Label>
+                        <Input
+                          type="time"
+                          value={filters.pulseTimeStart}
+                          onChange={(e) => handleFilterChange("pulseTimeStart", e.target.value)}
+                          className="h-7 text-xs w-24"
+                          min="09:30"
+                          max="15:00"
+                          step="300"
+                        />
+                        <span className="text-xs text-muted-foreground">~</span>
+                        <Input
+                          type="time"
+                          value={filters.pulseTimeEnd}
+                          onChange={(e) => handleFilterChange("pulseTimeEnd", e.target.value)}
+                          className="h-7 text-xs w-24"
+                          min="09:30"
+                          max="15:00"
+                          step="300"
+                        />
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              handleFilterChange("pulseTimeStart", "09:30");
+                              handleFilterChange("pulseTimeEnd", "10:30");
+                            }}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                              filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "10:30"
+                                ? "bg-primary/10 border-primary/30 text-primary"
+                                : "bg-background border-border hover:bg-muted"
+                            }`}
+                          >
+                            开盘1h
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleFilterChange("pulseTimeStart", "09:30");
+                              handleFilterChange("pulseTimeEnd", "10:00");
+                            }}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                              filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "10:00"
+                                ? "bg-primary/10 border-primary/30 text-primary"
+                                : "bg-background border-border hover:bg-muted"
+                            }`}
+                          >
+                            开盘30m
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleFilterChange("pulseTimeStart", "09:30");
+                              handleFilterChange("pulseTimeEnd", "11:30");
+                            }}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                              filters.pulseTimeStart === "09:30" && filters.pulseTimeEnd === "11:30"
+                                ? "bg-primary/10 border-primary/30 text-primary"
+                                : "bg-background border-border hover:bg-muted"
+                            }`}
+                          >
+                            早盘
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleFilterChange("pulseTimeStart", "13:00");
+                              handleFilterChange("pulseTimeEnd", "14:00");
+                            }}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                              filters.pulseTimeStart === "13:00" && filters.pulseTimeEnd === "14:00"
+                                ? "bg-primary/10 border-primary/30 text-primary"
+                                : "bg-background border-border hover:bg-muted"
+                            }`}
+                          >
+                            午盘1h
+                          </button>
+                        </div>
+                      </div>
                     </>
                   )}
                 </div>
@@ -622,7 +707,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     </button>
                     <button
                       onClick={() => {
-                        const f = { sector: "半导体", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 15, enablePulse: true };
+                        const f = { sector: "半导体", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 15, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
                         setFilters(f);
                         setSectorInput("半导体");
                       }}
@@ -632,7 +717,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     </button>
                     <button
                       onClick={() => {
-                        const f = { sector: "人工智能", minChange: 0, maxChange: 3, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true };
+                        const f = { sector: "人工智能", minChange: 0, maxChange: 3, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
                         setFilters(f);
                         setSectorInput("人工智能");
                       }}
@@ -642,7 +727,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     </button>
                     <button
                       onClick={() => {
-                        const f = { sector: "新能源", minChange: -1, maxChange: 5, maxMarketCap: 300, pulseThreshold: 20, enablePulse: true };
+                        const f = { sector: "新能源", minChange: -1, maxChange: 5, maxMarketCap: 300, pulseThreshold: 20, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
                         setFilters(f);
                         setSectorInput("新能源");
                       }}
@@ -652,7 +737,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     </button>
                     <button
                       onClick={() => {
-                        const f = { sector: "医药", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 0, enablePulse: false };
+                        const f = { sector: "医药", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 0, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
                         setFilters(f);
                         setSectorInput("医药");
                       }}

@@ -32,8 +32,10 @@ function buildCacheKey(params: {
   sector: string;
   pulseThreshold: number;
   pulse: boolean;
+  pulseTimeStart: string;
+  pulseTimeEnd: string;
 }): string {
-  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}`;
+  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}|${params.pulseTimeStart}|${params.pulseTimeEnd}`;
 }
 
 // ── Types ──────────────────────────────────────────────
@@ -235,32 +237,48 @@ async function getStockTimeline(symbol: string): Promise<{ time: string; price: 
   }
 }
 
+function parseTimeToMinutes(timeStr: string): number {
+  const parts = timeStr.split(":");
+  if (parts.length !== 2) return 570; // default 09:30 = 9*60+30
+  const h = parseInt(parts[0]) || 9;
+  const m = parseInt(parts[1]) || 30;
+  return h * 60 + m;
+}
+
 /**
  * Detect opening pulse surge pattern
  * Returns { score: 0-100, detail: string }
  *
  * A "pulse" means the stock had a rapid price increase shortly after market open.
  * Detection logic:
- * 1. Check if price rose rapidly in the first 15 minutes (09:30-09:45)
+ * 1. Check if price rose rapidly in the specified time window
  * 2. Look for a quick surge where price increases >1.5% within 3-5 minutes
  * 3. The surge should be followed by a pullback (typical pulse pattern)
+ *
+ * @param timeStart - Start time in HH:mm format (default "09:30")
+ * @param timeEnd - End time in HH:mm format (default "10:30")
  */
 function detectPulseSurge(
   timeline: { time: string; price: number; volume: number }[],
   prevClose: number,
-  open: number
+  open: number,
+  timeStart: string = "09:30",
+  timeEnd: string = "10:30",
 ): { score: number; detail: string } {
   if (!timeline || timeline.length < 5 || prevClose <= 0) {
     return { score: 0, detail: "数据不足" };
   }
 
-  // Filter to first 30 minutes of trading (09:30-10:00)
+  // Parse time range to minutes for comparison
+  const startMin = parseTimeToMinutes(timeStart);
+  const endMin = parseTimeToMinutes(timeEnd);
+
+  // Filter to the specified time window
   const earlySession = timeline.filter(t => {
     const hour = parseInt(t.time.split(":")[0]);
     const minute = parseInt(t.time.split(":")[1]);
-    if (hour === 9 && minute >= 30) return true;
-    if (hour === 10 && minute === 0) return true;
-    return false;
+    const totalMin = hour * 60 + minute;
+    return totalMin >= startMin && totalMin <= endMin;
   });
 
   if (earlySession.length < 3) {
@@ -432,12 +450,15 @@ export async function GET(request: NextRequest) {
   const sectorKeyword = searchParams.get("sector") || "通信";
   const pulseThreshold = parseInt(searchParams.get("pulseThreshold") || "20"); // 脉冲评分阈值
   const enablePulseDetection = searchParams.get("pulse") !== "false";
+  const pulseTimeStart = searchParams.get("pulseTimeStart") || "09:30";
+  const pulseTimeEnd = searchParams.get("pulseTimeEnd") || "10:30";
   const forceRefresh = searchParams.get("refresh") === "1";
 
   // Check server cache first
   const cacheKey = buildCacheKey({
     minChange, maxChange, maxMarketCap, sector: sectorKeyword,
     pulseThreshold, pulse: enablePulseDetection,
+    pulseTimeStart, pulseTimeEnd,
   });
   if (!forceRefresh) {
     const cached = screenerCache.get(cacheKey);
@@ -569,7 +590,7 @@ export async function GET(request: NextRequest) {
         const batch = candidates.slice(i, i + batchSize);
         const timelinePromises = batch.map(async (stock) => {
           const timeline = await getStockTimeline(stock.symbol);
-          const pulseResult = detectPulseSurge(timeline, stock.prevClose, stock.open);
+          const pulseResult = detectPulseSurge(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
           stock.pulseScore = pulseResult.score;
           stock.pulseDetail = pulseResult.detail;
         });
