@@ -4,6 +4,7 @@
 import type { TimelineItem } from "@/hooks/use-stock-data";
 import type { FactorOverride, RegimeDetail, Strength, CustomFactorDefinition as EngineCustomFactorDefinition } from "@/lib/t-strategy";
 import { generateTimelineSignals as generateOptimizedSignals } from "@/lib/t-strategy";
+export { formatAShareAmount } from "@/lib/ashare-api";
 import { calculateMACD } from "@/lib/indicators";
 
 // ── Types ──────────────────────────────────────────────

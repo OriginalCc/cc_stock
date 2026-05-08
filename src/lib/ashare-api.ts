@@ -47,6 +47,7 @@ export interface AShareTimelineItem {
   price: number;
   avgPrice: number;    // VWAP
   volume: number;
+  amount: number;      // 成交额 (元)
   changePercent: number; // vs prev close
 }
 
@@ -552,11 +553,15 @@ async function getTencentMinuteData(
 
     const changePercent = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
 
+    // Per-minute amount = current cumulative - previous cumulative
+    const minuteAmt = cumAmt - prevCumAmt;
+
     items.push({
       time: timeFormatted,
       price: Number(price.toFixed(2)),
       avgPrice: Number(avgPrice.toFixed(2)),
       volume: Math.max(minuteVol, 0), // per-minute volume
+      amount: Math.max(minuteAmt, 0), // per-minute amount (元)
       changePercent: Number(changePercent.toFixed(2)),
     });
 
@@ -661,11 +666,15 @@ function buildTimelineDataFromKLine(
 
     const changePercent = prevClose > 0 ? ((close - prevClose) / prevClose) * 100 : 0;
 
+    // Estimate amount from volume * average price
+    const estAmount = vol * avgP;
+
     return {
       time: timeShort,
       price: close,
       avgPrice: Number(vwap.toFixed(2)),
       volume: vol,
+      amount: Math.round(estAmount),
       changePercent: Number(changePercent.toFixed(2)),
     };
   });
@@ -687,6 +696,7 @@ export interface SectorTimelineItem {
   price: number;      // 板块指数价格
   avgPrice: number;   // 均价
   volume: number;     // 成交量
+  amount: number;     // 成交额 (元)
   changePercent: number;  // 涨跌幅%
 }
 
@@ -847,6 +857,7 @@ export async function getSectorTimeline(sectorCode: string): Promise<{ items: Se
       const timeStr = parts[0]; // "2026-05-06 09:30"
       const price = parseFloat(parts[2]);
       const volume = parseInt(parts[5]);
+      const amount = parseFloat(parts[6]) || 0;
       const avgPrice = parseFloat(parts[7]);
 
       if (isNaN(price) || price <= 0) continue;
@@ -862,6 +873,7 @@ export async function getSectorTimeline(sectorCode: string): Promise<{ items: Se
         price: Number(price.toFixed(2)),
         avgPrice: Number(avgPrice.toFixed(2)),
         volume,
+        amount: Math.round(amount),
         changePercent: Number(changePercent.toFixed(2)),
       });
     }

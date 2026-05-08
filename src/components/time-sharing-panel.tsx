@@ -26,6 +26,7 @@ import {
   generateTimelineSignals,
   getStrengthLabel,
   getStrengthColor,
+  formatAShareAmount,
 } from "@/lib/chart-shared";
 import {
   detectMarketRegimeDetail,
@@ -65,6 +66,8 @@ const TimelineTooltip = ({ active, payload }: any) => {
         <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.changePercent?.toFixed(2) ?? "--"}%</span>
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+        <span className="text-muted-foreground">成交额</span>
+        <span className="text-right font-mono text-yellow-600">{formatAShareAmount(data.amount || 0)}</span>
       </div>
       {signal && (
         <div className="mt-2 pt-2 border-t border-border">
@@ -98,6 +101,8 @@ const TimelineVolumeTooltip = ({ active, payload }: any) => {
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+        <span className="text-muted-foreground">成交额</span>
+        <span className="text-right font-mono text-yellow-600">{formatAShareAmount(data.amount || 0)}</span>
         <span className="text-muted-foreground">价格</span>
         <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price.toFixed(2)}</span>
       </div>
@@ -1644,7 +1649,7 @@ export function TimeSharingPanel({
               {crosshairItem.volume > 0 && (
                 <span className="flex flex-col leading-tight">
                   <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
-                  <span className={isUp ? "text-red-600" : "text-green-600"}>¥{crosshairItem.price?.toFixed(2)}</span>
+                  <span className="text-yellow-600">额 {formatAShareAmount(crosshairItem.amount || 0)}</span>
                 </span>
               )}
               {crosshairItem.dif != null && (

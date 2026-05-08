@@ -60,6 +60,7 @@ export interface TimelineItem {
   price: number;
   avgPrice: number;
   volume: number;
+  amount: number;      // 成交额 (元)
   changePercent: number;
 }
 
