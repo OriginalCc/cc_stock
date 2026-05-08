@@ -182,52 +182,60 @@ function PulseVolumeRenderer(props: any) {
 
   if (markerPoints.length === 0) return null;
 
-  // Render markers
+  // Render markers — enhanced visibility
   return (
     <g className="pulse-volume-markers">
       {markerPoints.map(({ x, y, marker }, idx) => {
         const isPulse = marker.type === "pulse";
         // Pulse: orange/amber theme, Volume surge: cyan/teal theme
-        const bgColor = isPulse ? "rgba(245, 158, 11, 0.15)" : "rgba(6, 182, 212, 0.15)";
-        const borderColor = isPulse ? "rgba(245, 158, 11, 0.6)" : "rgba(6, 182, 212, 0.6)";
-        const textColor = isPulse ? "#d97706" : "#0891b2";
+        const bgColor = isPulse ? "rgba(245, 158, 11, 0.25)" : "rgba(6, 182, 212, 0.25)";
+        const borderColor = isPulse ? "#f59e0b" : "#06b6d4";
+        const textColor = isPulse ? "#b45309" : "#0e7490";
         const iconColor = isPulse ? "#f59e0b" : "#06b6d4";
+        const glowColor = isPulse ? "rgba(245, 158, 11, 0.35)" : "rgba(6, 182, 212, 0.35)";
 
         // Position: above the price point for pulse, below for volume surge
-        const labelY = isPulse ? y - 22 : y + 12;
+        const labelY = isPulse ? y - 28 : y + 16;
 
         return (
           <g key={`pv-${marker.type}-${idx}`}>
+            {/* Glow ring behind marker dot */}
+            <circle
+              cx={x} cy={y} r={10}
+              fill={glowColor} stroke="none"
+            />
             {/* Connecting line from marker to price point */}
             <line
               x1={x} y1={y} x2={x} y2={labelY}
-              stroke={borderColor} strokeWidth={0.8} strokeDasharray="2 2"
+              stroke={borderColor} strokeWidth={1.2} strokeDasharray="3 2"
+              opacity={0.8}
             />
             {/* Marker dot on price line */}
             <circle
-              cx={x} cy={y} r={4}
-              fill={bgColor} stroke={iconColor} strokeWidth={1.5}
+              cx={x} cy={y} r={5.5}
+              fill={bgColor} stroke={borderColor} strokeWidth={1.8}
             />
             {/* Icon inside dot */}
             <text
               x={x} y={y + 1}
               textAnchor="middle" dominantBaseline="middle"
-              fontSize={5} fill={iconColor}
+              fontSize={6.5} fill={iconColor}
+              fontWeight={700}
             >
               {isPulse ? "⚡" : "▲"}
             </text>
             {/* Label background pill */}
             <rect
-              x={x - 38} y={isPulse ? labelY - 10 : labelY - 2}
-              width={76} height={14}
-              rx={3} ry={3}
-              fill={bgColor} stroke={borderColor} strokeWidth={0.5}
+              x={x - 40} y={isPulse ? labelY - 11 : labelY - 3}
+              width={80} height={16}
+              rx={4} ry={4}
+              fill={bgColor} stroke={borderColor} strokeWidth={0.8}
             />
             {/* Label text */}
             <text
               x={x} y={isPulse ? labelY - 3 : labelY + 5}
               textAnchor="middle" dominantBaseline="middle"
-              fontSize={8} fontWeight={600} fill={textColor}
+              fontSize={9} fontWeight={700} fill={textColor}
             >
               {marker.label}
             </text>
