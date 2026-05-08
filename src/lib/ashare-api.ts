@@ -122,6 +122,21 @@ function isETFCode(code: string): boolean {
          clean.startsWith("15") || clean.startsWith("16") || clean.startsWith("18");
 }
 
+/**
+ * Check if a code is a market index (上证/深证/创业板 etc.)
+ * Index codes: 000001, 399001, 399006, 399005, 399300, 000300, 000016, 000905 etc.
+ */
+function isIndexCode(code: string): boolean {
+  const clean = code.replace(/\.(SS|SZ|ss|sz)$/, "");
+  // Shanghai indices: 000xxx (with .SS suffix or starts with 9)
+  if (/^0000\d\d$/.test(clean) && code.toUpperCase().includes(".SS")) return true;
+  // Shenzhen indices: 399xxx
+  if (/^399\d{3}$/.test(clean)) return true;
+  // CSI indices: 000300, 000905, 000016
+  if (/^000(300|905|016|852|903|904)$/.test(clean)) return true;
+  return false;
+}
+
 // ── Sina Finance API ───────────────────────────────────
 
 /**
@@ -441,7 +456,7 @@ export async function getAShareTimeline(
 
   // Try Tencent minute API first (provides real 1-minute data)
   try {
-    const tencentResult = await getTencentMinuteData(sinaSymbol, prevClose);
+    const tencentResult = await getTencentMinuteData(sinaSymbol, prevClose, symbol);
     if (tencentResult.items.length > 0) {
       return tencentResult;
     }
@@ -468,9 +483,13 @@ export async function getAShareTimeline(
  */
 async function getTencentMinuteData(
   sinaSymbol: string,
-  prevClose: number
+  prevClose: number,
+  originalSymbol?: string
 ): Promise<{ items: AShareTimelineItem[]; prevClose: number }> {
   const url = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?_var=min_data&code=${sinaSymbol}`;
+
+  // Detect if this is a market index (VWAP formula differs from stocks)
+  const isIndex = originalSymbol ? isIndexCode(originalSymbol) : false;
 
   const response = await fetch(url, {
     next: { revalidate: 0 },
@@ -495,6 +514,9 @@ async function getTencentMinuteData(
   const items: AShareTimelineItem[] = [];
   let prevCumVol = 0;
   let prevCumAmt = 0;
+  // For indices: running sum of prices for simple moving average
+  let indexPriceSum = 0;
+  let indexPriceCount = 0;
 
   for (const entry of stockData) {
     if (typeof entry !== "string") continue;
@@ -503,19 +525,27 @@ async function getTencentMinuteData(
 
     const timeRaw = parts[0]; // "0930", "0931", etc.
     const price = parseFloat(parts[1]);
-    const cumVol = parseInt(parts[2]); // cumulative volume (手)
+    const cumVol = parseInt(parts[2]); // cumulative volume (手 for stocks, different for indices)
     const cumAmt = parseFloat(parts[3]); // cumulative amount
 
     if (isNaN(price) || price <= 0) continue;
 
     // Per-minute volume = current cumulative - previous cumulative
     const minuteVol = cumVol - prevCumVol;
-    const minuteAmt = cumAmt - prevCumAmt;
 
-    // VWAP = cumulative amount / cumulative volume (in 元/手 → need to adjust)
-    // cumAmt is in 元, cumVol is in 手, so VWAP = cumAmt / (cumVol * 100) per share
-    // But we can also calculate VWAP directly from cumulative totals
-    const vwap = cumVol > 0 ? cumAmt / (cumVol * 100) : price;
+    // Calculate avgPrice (VWAP for stocks, SMA for indices)
+    let avgPrice: number;
+    if (isIndex) {
+      // For indices, cumAmt/cumVol units don't map to a meaningful per-share VWAP.
+      // Use a simple running average of prices instead.
+      indexPriceSum += price;
+      indexPriceCount++;
+      avgPrice = indexPriceCount > 0 ? indexPriceSum / indexPriceCount : price;
+    } else {
+      // VWAP = cumulative amount / cumulative volume (in 元/手 → need to adjust)
+      // cumAmt is in 元, cumVol is in 手, so VWAP = cumAmt / (cumVol * 100) per share
+      avgPrice = cumVol > 0 ? cumAmt / (cumVol * 100) : price;
+    }
 
     // Format time: "0930" → "09:30"
     const timeFormatted = `${timeRaw.substring(0, 2)}:${timeRaw.substring(2, 4)}`;
@@ -525,7 +555,7 @@ async function getTencentMinuteData(
     items.push({
       time: timeFormatted,
       price: Number(price.toFixed(2)),
-      avgPrice: Number(vwap.toFixed(2)),
+      avgPrice: Number(avgPrice.toFixed(2)),
       volume: Math.max(minuteVol, 0), // per-minute volume
       changePercent: Number(changePercent.toFixed(2)),
     });
