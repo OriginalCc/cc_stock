@@ -1,0 +1,2072 @@
+"use client";
+
+import React, { useState, useRef, useMemo, useEffect } from "react";
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+  Customized,
+} from "recharts";
+import type { TimelineItem } from "@/hooks/use-stock-data";
+import {
+  type TSignal,
+  type MergedSignal,
+  type PulseVolumeMarker,
+  REGIME_CONFIG,
+  T_MODE_CONFIG,
+  formatVolume,
+  computeMiniMACD,
+  generateTimelineSignals,
+  getStrengthLabel,
+  getStrengthColor,
+} from "@/lib/chart-shared";
+import {
+  detectMarketRegimeDetail,
+  getTimeWindow,
+  type Strength,
+  type RegimeDetail,
+} from "@/lib/t-strategy";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+
+// ── Tooltip Components ─────────────────────────────────
+
+const TimelineTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const data = payload[0]?.payload;
+  if (!data || !data.hasData) return null;
+
+  const isUp = data.changePercent >= 0;
+  const signal = data.tSignal as TSignal | undefined;
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-3 shadow-xl text-xs min-w-[160px]">
+      <div className="font-medium mb-2 text-foreground">{data.time}</div>
+      <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+        <span className="text-muted-foreground">价格</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2) ?? "--"}</span>
+        <span className="text-muted-foreground">均价</span>
+        <span className="text-right font-mono text-yellow-500">{data.avgPrice?.toFixed(2) ?? "--"}</span>
+        <span className="text-muted-foreground">涨跌</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.changePercent?.toFixed(2) ?? "--"}%</span>
+        <span className="text-muted-foreground">成交量</span>
+        <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+      </div>
+      {signal && (
+        <div className="mt-2 pt-2 border-t border-border">
+          <Badge variant={signal.type === "buy" ? "default" : signal.type === "stoploss" ? "outline" : "destructive"} className="text-xs">
+            {signal.type === "buy" ? "买入" : signal.type === "stoploss" ? "止损" : "卖出"} · {signal.reason}
+            {signal.strength === "strong" ? " (强)" : signal.strength === "medium" ? " (中)" : " (弱)"}
+          </Badge>
+          {signal.tMode && (
+            <div className="text-[10px] text-muted-foreground mt-1">
+              模式: {signal.tMode} {signal.timeWindow && `· ${signal.timeWindow}`}
+            </div>
+          )}
+          {signal.description && (
+            <div className="text-[10px] text-muted-foreground">{signal.description}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const TimelineVolumeTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const data = payload[0]?.payload as TimelineItem & { volColor?: string; hasData?: boolean };
+  if (!data || !data.hasData) return null;
+  const isUp = data.changePercent >= 0;
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-3 shadow-xl text-xs min-w-[140px]">
+      <div className="font-medium mb-1 text-foreground">{data.time}</div>
+      <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+        <span className="text-muted-foreground">成交量</span>
+        <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+        <span className="text-muted-foreground">价格</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+};
+
+const TimelineMACDTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const data = payload[0]?.payload;
+  if (!data || !data.hasData) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-3 shadow-xl text-xs min-w-[160px]">
+      <div className="font-medium mb-2 text-foreground">{data.time || data.date || ""}</div>
+      <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+        <span className="text-muted-foreground">DIF</span>
+        <span className="text-right font-mono">{data.dif != null ? data.dif.toFixed(4) : "--"}</span>
+        <span className="text-muted-foreground">DEA</span>
+        <span className="text-right font-mono">{data.dea != null ? data.dea.toFixed(4) : "--"}</span>
+        <span className="text-muted-foreground">MACD</span>
+        <span className={`text-right font-mono ${data.macd != null && data.macd > 0 ? "text-red-500" : "text-green-500"}`}>
+          {data.macd != null ? data.macd.toFixed(4) : "--"}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// ── Pulse/Volume Surge Renderer for Timeline Chart ──────
+// Renders colored markers on the timeline chart for pulse and volume surge events.
+// Pulse = lightning bolt icon (⚡) in orange/amber
+// Volume surge = rising arrow icon (📈) in cyan/teal
+
+function PulseVolumeRenderer(props: any) {
+  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+
+  const xAxis = Object.values(xAxisMap)[0] as any;
+  const yAxis = Object.values(yAxisMap)[0] as any;
+  if (!xAxis || !yAxis) return null;
+
+  // Get data points from the price line
+  let priceLineData: any[] = [];
+  for (const item of formattedGraphicalItems) {
+    if (item?.props?.points && Array.isArray(item.props.points)) {
+      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+      if (stroke === "#eab308") continue; // Skip avgPrice line
+      if (priceLineData.length === 0) {
+        priceLineData = item.props.points;
+      }
+    }
+  }
+  if (priceLineData.length === 0) return null;
+
+  // Get markers from the data payload
+  const markers: PulseVolumeMarker[] = [];
+  const seen = new Set<string>();
+  for (const point of priceLineData) {
+    const pvMarker = point?.payload?.pvMarker as PulseVolumeMarker[] | undefined;
+    if (pvMarker && Array.isArray(pvMarker)) {
+      for (const m of pvMarker) {
+        const key = `${m.time}-${m.type}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          markers.push(m);
+        }
+      }
+    }
+  }
+
+  if (markers.length === 0) return null;
+
+  // Convert marker times to chart coordinates
+  const markerPoints: { x: number; y: number; marker: PulseVolumeMarker }[] = [];
+  for (const marker of markers) {
+    // Find the chart point matching this marker's time
+    const matchPoint = priceLineData.find((p: any) => p?.payload?.time === marker.time);
+    if (!matchPoint) continue;
+    markerPoints.push({ x: matchPoint.x, y: matchPoint.y, marker });
+  }
+
+  if (markerPoints.length === 0) return null;
+
+  // Render markers
+  return (
+    <g className="pulse-volume-markers">
+      {markerPoints.map(({ x, y, marker }, idx) => {
+        const isPulse = marker.type === "pulse";
+        // Pulse: orange/amber theme, Volume surge: cyan/teal theme
+        const bgColor = isPulse ? "rgba(245, 158, 11, 0.15)" : "rgba(6, 182, 212, 0.15)";
+        const borderColor = isPulse ? "rgba(245, 158, 11, 0.6)" : "rgba(6, 182, 212, 0.6)";
+        const textColor = isPulse ? "#d97706" : "#0891b2";
+        const iconColor = isPulse ? "#f59e0b" : "#06b6d4";
+
+        // Position: above the price point for pulse, below for volume surge
+        const labelY = isPulse ? y - 22 : y + 12;
+
+        return (
+          <g key={`pv-${marker.type}-${idx}`}>
+            {/* Connecting line from marker to price point */}
+            <line
+              x1={x} y1={y} x2={x} y2={labelY}
+              stroke={borderColor} strokeWidth={0.8} strokeDasharray="2 2"
+            />
+            {/* Marker dot on price line */}
+            <circle
+              cx={x} cy={y} r={4}
+              fill={bgColor} stroke={iconColor} strokeWidth={1.5}
+            />
+            {/* Icon inside dot */}
+            <text
+              x={x} y={y + 1}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize={5} fill={iconColor}
+            >
+              {isPulse ? "⚡" : "▲"}
+            </text>
+            {/* Label background pill */}
+            <rect
+              x={x - 38} y={isPulse ? labelY - 10 : labelY - 2}
+              width={76} height={14}
+              rx={3} ry={3}
+              fill={bgColor} stroke={borderColor} strokeWidth={0.5}
+            />
+            {/* Label text */}
+            <text
+              x={x} y={isPulse ? labelY - 3 : labelY + 5}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize={8} fontWeight={600} fill={textColor}
+            >
+              {marker.label}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+// ── Timeline Signal Renderer (custom SVG on chart) ────
+// v6: Strong=label+triangle, Medium=amber dot+badge, Weak=gray dot only
+
+function TimelineSignalRenderer(props: any) {
+  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+
+  const xAxis = Object.values(xAxisMap)[0] as any;
+  const yAxis = Object.values(yAxisMap)[0] as any;
+  if (!xAxis || !yAxis) return null;
+
+  // Get data points from the price line
+  let priceLineData: any[] = [];
+  for (const item of formattedGraphicalItems) {
+    if (item?.props?.points && Array.isArray(item.props.points)) {
+      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+      // Skip avgPrice (yellow dashed) line
+      if (stroke === "#eab308") continue;
+      if (priceLineData.length === 0) {
+        priceLineData = item.props.points;
+      }
+    }
+  }
+  if (priceLineData.length === 0) return null;
+
+  // ── Step 1: Collect all signal points ──
+  const allSignals: { x: number; y: number; signal: TSignal; index: number }[] = [];
+  priceLineData.forEach((point: any, i: number) => {
+    const signal = point?.payload?.tSignal as TSignal | undefined | null;
+    if (!signal) return;
+    allSignals.push({ x: point.x, y: point.y, signal, index: i });
+  });
+
+  if (allSignals.length === 0) return null;
+
+  // ── Step 2: Smart merge - same direction (buy/sell), wider distance ──
+  const MERGE_DISTANCE_X = 30;
+  const strengthOrder: Record<string, number> = { strong: 3, medium: 2, weak: 1 };
+  const merged: MergedSignal[] = [];
+  const used = new Set<number>();
+
+  for (let i = 0; i < allSignals.length; i++) {
+    if (used.has(i)) continue;
+    const s = allSignals[i];
+    const direction: "up" | "down" = s.signal.type === "buy" ? "up" : "down";
+    const group: typeof allSignals = [s];
+    used.add(i);
+
+    for (let j = i + 1; j < allSignals.length; j++) {
+      if (used.has(j)) continue;
+      const next = allSignals[j];
+      const nextDir: "up" | "down" = next.signal.type === "buy" ? "up" : "down";
+      if (nextDir === direction && (next.x - s.x) <= MERGE_DISTANCE_X) {
+        group.push(next);
+        used.add(j);
+      } else if ((next.x - s.x) > MERGE_DISTANCE_X) {
+        break;
+      }
+    }
+
+    let bestStrength: Strength = "weak";
+    let bestIdx = 0;
+    let hasCustomFactor = false;
+    const uniqueReasons = new Set<string>();
+    const customReasonSet = new Set<string>();
+    for (let k = 0; k < group.length; k++) {
+      const g = group[k];
+      uniqueReasons.add(g.signal.reason);
+      if (strengthOrder[g.signal.strength] > strengthOrder[bestStrength]) {
+        bestStrength = g.signal.strength;
+        bestIdx = k;
+      }
+      if (g.signal.description?.startsWith("自定义因子[")) {
+        hasCustomFactor = true;
+        customReasonSet.add(g.signal.reason);
+      }
+    }
+
+    const representative = group[bestIdx];
+
+    merged.push({
+      id: `sig-${s.index}-${direction}`,
+      x: representative.x,
+      y: representative.y,
+      type: s.signal.type,
+      reasons: Array.from(uniqueReasons),
+      strength: bestStrength,
+      count: group.length,
+      originalIndex: s.index,
+      direction,
+      isCustom: hasCustomFactor,
+      customReasons: customReasonSet,
+    });
+  }
+
+  // ── Step 3: Only strong signals get text labels ──
+  const labelRects: { x: number; y: number; width: number; height: number }[] = [];
+
+  // Helper: detect if a signal comes from a user-created custom factor
+  const isCustomFactor = (sig: TSignal): boolean => {
+    if (!sig.description) return false;
+    return sig.description.startsWith("自定义因子[");
+  };
+
+  function overlapsAny(rect: { x: number; y: number; width: number; height: number }, rects: typeof labelRects): boolean {
+    for (const r of rects) {
+      if (rect.x < r.x + r.width && rect.x + rect.width > r.x &&
+          rect.y < r.y + r.height && rect.y + rect.height > r.y) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  interface LabelPlan {
+    merged: MergedSignal;
+    labelRect: { x: number; y: number; width: number; height: number } | null;
+    labelText: string;
+    showLabel: boolean;
+  }
+
+  const labelPlans: LabelPlan[] = [];
+  const assignedLabels = new Map<number, LabelPlan>();
+
+  // Process strong signals first (priority for label placement)
+  const strongIndices = merged
+    .map((_, i) => i)
+    .filter((i) => merged[i].strength === "strong")
+    .sort((a, b) => merged[a].x - merged[b].x);
+
+  for (const idx of strongIndices) {
+    const m = merged[idx];
+    const isBuy = m.direction === "up";
+
+    // Build compact label text
+    let labelText: string;
+    const fmtCustom = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
+    if (m.count >= 3) {
+      labelText = fmtCustom(`${m.reasons[0]} ×${m.count}`);
+    } else if (m.count === 2) {
+      const combined = m.reasons.slice(0, 2).join("/");
+      labelText = fmtCustom(combined.length > 6 ? `${m.reasons[0]}+1` : combined);
+    } else {
+      labelText = fmtCustom(m.reasons[0]);
+    }
+
+    // Estimate text width
+    const labelFontSize = 8;
+    let textWidth = 0;
+    for (const ch of labelText) {
+      textWidth += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
+    }
+    const padX = 4;
+    const labelW = textWidth + padX * 2;
+    const labelH = 14;
+
+    const markerOffset = 14;
+    const labelGap = 4;
+    let labelY: number;
+    if (isBuy) {
+      labelY = m.y + markerOffset + labelGap;
+    } else {
+      labelY = m.y - markerOffset - labelGap - labelH;
+    }
+
+    let labelRect = { x: m.x - labelW / 2, y: labelY, width: labelW, height: labelH };
+
+    let placed = false;
+    if (!overlapsAny(labelRect, labelRects)) {
+      placed = true;
+    } else {
+      const shifted = { ...labelRect, x: labelRect.x + labelRect.width * 0.6 };
+      if (!overlapsAny(shifted, labelRects)) {
+        labelRect = shifted;
+        placed = true;
+      } else {
+        const shiftedL = { ...labelRect, x: labelRect.x - labelRect.width * 0.6 };
+        if (!overlapsAny(shiftedL, labelRects)) {
+          labelRect = shiftedL;
+          placed = true;
+        }
+      }
+    }
+
+    // Try shorter label if still not placed
+    if (!placed) {
+      const sfmt = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
+      const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
+      let sw = 0;
+      for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
+      const shortW = sw + padX * 2;
+      const shortRect = { x: m.x - shortW / 2, y: labelY, width: shortW, height: labelH };
+      if (!overlapsAny(shortRect, labelRects)) {
+        labelRect = shortRect;
+        labelText = shortText;
+        placed = true;
+      }
+    }
+
+    if (placed) {
+      labelRects.push(labelRect);
+    }
+
+    assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed });
+  }
+
+  // Medium and weak signals: dot only, no labels
+  for (let i = 0; i < merged.length; i++) {
+    if (assignedLabels.has(i)) continue;
+    assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false });
+  }
+
+  // Build final label plans in original order
+  for (let i = 0; i < merged.length; i++) {
+    labelPlans.push(assignedLabels.get(i)!);
+  }
+
+  // ── Step 4: Render ──
+  // Color schemes by strength:
+  //   strong: direction color (red=buy, green=sell, amber=stoploss) — triangle + label
+  //   medium: amber/orange tones — dot + count badge
+  //   weak: gray — dot only
+
+  // Helper: toggle expand state for a badge
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Helper: render expandable count badge (shared by strong & medium)
+  // Returns { badgeSvg, bubbleSvg } — badgeSvg is the circle, bubbleSvg is the expanded popup (rendered on top layer)
+  const renderCountBadge = (m: MergedSignal, badgeCx: number, badgeCy: number, badgeColor: string, badgeTextColor: string): { badgeSvg: React.ReactNode; bubbleSvg: React.ReactNode } => {
+    if (m.count <= 1) return { badgeSvg: null, bubbleSvg: null };
+    const isExpanded = expandedIds.has(m.id);
+    const badgeR = 6;
+
+    // Collapsed badge
+    const badgeSvg = (
+      <g style={{ cursor: "pointer" }} onClick={() => toggleExpand(m.id)}>
+        <circle cx={badgeCx} cy={badgeCy} r={badgeR} fill={badgeColor} stroke="white" strokeWidth={0.6} />
+        <text x={badgeCx} y={badgeCy} textAnchor="middle" dominantBaseline="middle" fill={badgeTextColor} fontSize={7} fontWeight="bold">
+          {m.count}
+        </text>
+      </g>
+    );
+
+    // Expanded bubble — rendered separately on top layer
+    if (!isExpanded) return { badgeSvg, bubbleSvg: null };
+
+    const lineHeight = 12;
+    const fontSize = 8;
+    const padX = 5;
+    const padY = 4;
+    const lines = m.reasons.map(r => m.customReasons?.has(r) ? `自定义[${r}]` : r);
+    const maxTextWidth = Math.max(...lines.map(line => {
+      let w = 0;
+      for (const ch of line) w += ch.charCodeAt(0) > 127 ? fontSize : fontSize * 0.55;
+      return w;
+    }));
+    const bubbleW = maxTextWidth + padX * 2 + 6; // +6 for bullet
+    const bubbleH = lines.length * lineHeight + padY * 2;
+    const bubbleX = badgeCx + badgeR + 4;
+    const bubbleY = badgeCy - bubbleH / 2;
+
+    const bubbleSvg = (
+      <g key={`bubble-${m.id}`} style={{ cursor: "pointer" }} onClick={() => toggleExpand(m.id)}>
+        {/* Connector line */}
+        <line x1={badgeCx + badgeR} y1={badgeCy} x2={bubbleX} y2={badgeCy} stroke={badgeColor} strokeWidth={0.5} strokeDasharray="2 1" opacity={0.5} />
+        {/* Bubble background */}
+        <rect x={bubbleX} y={bubbleY} width={bubbleW} height={bubbleH} rx={4} fill="white" fillOpacity={0.97} stroke={badgeColor} strokeWidth={0.8} />
+        {/* Reason lines */}
+        {lines.map((reason, ri) => (
+          <text
+            key={ri}
+            x={bubbleX + padX + 4}
+            y={bubbleY + padY + ri * lineHeight + lineHeight / 2}
+            dominantBaseline="middle"
+            fill="#1f2937"
+            fontSize={fontSize}
+            fontWeight={ri === 0 ? "600" : "400"}
+          >
+            <tspan fill={badgeColor} fontSize={6}>● </tspan>
+            {reason}
+          </text>
+        ))}
+      </g>
+    );
+
+    return { badgeSvg, bubbleSvg };
+  };
+
+  // ── Step 4: Render ──
+  // Split into two layers: signal markers (bottom) and expanded bubbles (top)
+  // This ensures expanded bubbles are never obscured by subsequent signal elements
+  const bubbleElements: React.ReactNode[] = [];
+
+  const signalElements = labelPlans.map((plan, i) => {
+    const m = plan.merged;
+    const isBuy = m.direction === "up";
+    const isStoploss = m.type === "stoploss";
+
+    // ── Strength-based color scheme ──
+    // Custom factors use purple/violet theme to distinguish from built-in signals
+    let markerColor: string;
+    let labelBgColor: string;
+    let badgeColor: string;
+    let badgeTextColor: string;
+
+    if (m.isCustom) {
+      // Custom factor: purple/violet theme regardless of strength
+      if (m.strength === "strong") {
+        markerColor = isBuy ? "#8b5cf6" : "#a78bfa";     // violet-500 / violet-400
+        labelBgColor = isBuy ? "#5b21b6" : "#6d28d9";    // violet-800 / violet-700
+        badgeColor = markerColor;
+        badgeTextColor = "white";
+      } else if (m.strength === "medium") {
+        markerColor = "#c084fc";                          // violet-400
+        badgeColor = markerColor;
+        badgeTextColor = "white";
+      } else {
+        markerColor = "#a78bfa";                          // violet-400 lighter
+        badgeColor = "#a78bfa";
+        badgeTextColor = "white";
+      }
+    } else if (m.strength === "strong") {
+      markerColor = isStoploss ? "#f59e0b" : isBuy ? "#ef4444" : "#22c55e";
+      labelBgColor = isStoploss ? "#92400e" : isBuy ? "#991b1b" : "#166534";
+      badgeColor = markerColor;
+      badgeTextColor = "white";
+    } else if (m.strength === "medium") {
+      markerColor = isStoploss ? "#d97706" : isBuy ? "#f97316" : "#06b6d4";
+      badgeColor = markerColor;
+      badgeTextColor = "white";
+    } else {
+      markerColor = "#9ca3af";
+      badgeColor = "#9ca3af";
+      badgeTextColor = "white";
+    }
+
+    // ── Render by strength level ──
+    if (m.strength === "strong") {
+      const markerSize = 6;
+      const badgeCx = m.x + markerSize + 4;
+      const badgeCy = isBuy ? m.y - markerSize * 0.3 : m.y + markerSize * 0.3;
+      const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
+      if (bubbleSvg) bubbleElements.push(bubbleSvg);
+      return (
+        <g key={`tl-sig-${m.originalIndex}-${i}`}>
+          {/* Triangle marker */}
+          {isStoploss ? (
+            <polygon
+              points={`${m.x},${m.y - markerSize} ${m.x + markerSize},${m.y} ${m.x},${m.y + markerSize} ${m.x - markerSize},${m.y}`}
+              fill={markerColor}
+              stroke="white"
+              strokeWidth={0.8}
+            />
+          ) : isBuy ? (
+            <polygon
+              points={`${m.x},${m.y - markerSize} ${m.x - markerSize * 0.9},${m.y + markerSize * 0.6} ${m.x + markerSize * 0.9},${m.y + markerSize * 0.6}`}
+              fill={markerColor}
+              stroke="white"
+              strokeWidth={0.8}
+            />
+          ) : (
+            <polygon
+              points={`${m.x},${m.y + markerSize} ${m.x - markerSize * 0.9},${m.y - markerSize * 0.6} ${m.x + markerSize * 0.9},${m.y - markerSize * 0.6}`}
+              fill={markerColor}
+              stroke="white"
+              strokeWidth={0.8}
+            />
+          )}
+
+          {/* Expandable count badge (collapsed only) */}
+          {badgeSvg}
+
+          {/* Text label */}
+          {plan.showLabel && plan.labelRect && (
+            <>
+              <line
+                x1={m.x}
+                y1={isBuy ? m.y + markerSize : m.y - markerSize}
+                x2={plan.labelRect.x + plan.labelRect.width / 2}
+                y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
+                stroke={markerColor}
+                strokeWidth={1}
+                strokeDasharray="3 2"
+                opacity={0.8}
+              />
+              <rect
+                x={plan.labelRect.x - 1}
+                y={plan.labelRect.y - 1}
+                width={plan.labelRect.width + 2}
+                height={plan.labelRect.height + 2}
+                rx={4}
+                fill="none"
+                stroke="white"
+                strokeWidth={1.5}
+                strokeOpacity={0.3}
+              />
+              <rect
+                x={plan.labelRect.x}
+                y={plan.labelRect.y}
+                width={plan.labelRect.width}
+                height={plan.labelRect.height}
+                rx={3}
+                fill={labelBgColor}
+                fillOpacity={0.92}
+                stroke={m.isCustom ? "#c084fc" : markerColor}
+                strokeWidth={m.isCustom ? 0.8 : 0.5}
+                strokeDasharray={m.isCustom ? "2 1" : "none"}
+                strokeOpacity={m.isCustom ? 1 : 0.4}
+              />
+              <text
+                x={plan.labelRect.x + plan.labelRect.width / 2}
+                y={plan.labelRect.y + plan.labelRect.height / 2}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="white"
+                fontSize={8}
+                fontWeight="600"
+              >
+                {plan.labelText}
+              </text>
+            </>
+          )}
+        </g>
+      );
+    } else if (m.strength === "medium") {
+      const dotRadius = 6;
+      const badgeCx = m.x + dotRadius + 4;
+      const badgeCy = m.y - dotRadius + 1;
+      const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
+      if (bubbleSvg) bubbleElements.push(bubbleSvg);
+      return (
+        <g key={`tl-sig-${m.originalIndex}-${i}`}>
+          <circle
+            cx={m.x}
+            cy={m.y}
+            r={dotRadius}
+            fill={markerColor}
+            fillOpacity={0.85}
+            stroke="white"
+            strokeWidth={0.7}
+          />
+          {/* Direction indicator: tiny arrow inside dot */}
+          {isBuy ? (
+            <polygon
+              points={`${m.x},${m.y - 2.5} ${m.x - 2},${m.y + 1} ${m.x + 2},${m.y + 1}`}
+              fill="white"
+              fillOpacity={0.9}
+            />
+          ) : (
+            <polygon
+              points={`${m.x},${m.y + 2.5} ${m.x - 2},${m.y - 1} ${m.x + 2},${m.y - 1}`}
+              fill="white"
+              fillOpacity={0.9}
+            />
+          )}
+          {/* Expandable count badge (collapsed only) */}
+          {badgeSvg}
+        </g>
+      );
+    } else {
+      // Weak: small gray dot, no badge, no label
+      const dotRadius = 4;
+      return (
+        <g key={`tl-sig-${m.originalIndex}-${i}`}>
+          <circle
+            cx={m.x}
+            cy={m.y}
+            r={dotRadius}
+            fill={markerColor}
+            fillOpacity={0.65}
+            stroke="white"
+            strokeWidth={0.5}
+          />
+        </g>
+      );
+    }
+  });
+
+  return (
+    <g>
+      {/* Layer 1: All signal markers and labels */}
+      {signalElements}
+      {/* Layer 2: Expanded bubbles on top of everything */}
+      {bubbleElements}
+    </g>
+  );
+}
+
+// ── Custom Percentage Y-Axis Tick (deep red/green color coding) ───
+
+function PercentYTick(props: { x?: number; y?: number; payload?: { value?: number }; index?: number; visibleTicksCount?: number }) {
+  const { x = 0, y = 0, payload } = props;
+  const val = payload?.value ?? 0;
+  const isPositive = val > 0.001;
+  const isZero = Math.abs(val) <= 0.001;
+  // Deep colors: red-600 for positive, green-600 for negative, muted for zero
+  const fill = isZero ? "#6b7280" : isPositive ? "#dc2626" : "#16a34a";
+  const text = isZero ? "0.00%" : val > 0 ? `+${val.toFixed(2)}%` : `${val.toFixed(2)}%`;
+  return (
+    <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fill={fill} fontSize={10} fontWeight="600">
+      {text}
+    </text>
+  );
+}
+
+// Mini panel uses a smaller version
+function MiniPercentYTick(props: { x?: number; y?: number; payload?: { value?: number }; index?: number; visibleTicksCount?: number }) {
+  const { x = 0, y = 0, payload } = props;
+  const val = payload?.value ?? 0;
+  const isPositive = val > 0.001;
+  const isZero = Math.abs(val) <= 0.001;
+  const fill = isZero ? "#6b7280" : isPositive ? "#dc2626" : "#16a34a";
+  const text = isZero ? "0.00%" : val > 0 ? `+${val.toFixed(2)}%` : `${val.toFixed(2)}%`;
+  return (
+    <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fill={fill} fontSize={8} fontWeight="600">
+      {text}
+    </text>
+  );
+}
+
+// ── Compact Mini Timeline Panel (for index/sector overview) ───
+
+export function MiniTimelinePanel({
+  title,
+  data,
+  prevClose,
+  badge,
+}: {
+  title: string;
+  data: TimelineItem[];
+  prevClose: number;
+  badge?: React.ReactNode;
+}) {
+  // Build full-day template
+  const { fullDayData, timeTicks } = useMemo(() => {
+    if (data.length === 0) return { fullDayData: [], timeTicks: [] };
+
+    // ── Truncate API-pre-populated future minutes ──
+    // Tencent API returns full session data with flat (last known) prices for future minutes.
+    // Cut these off so the price line doesn't extend as a horizontal line into the future.
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
+    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
+    let truncated = data;
+    if (isMorningSession || isAfternoonSession) {
+      const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const lastValidIdx = data.reduce((lastIdx: number, d: TimelineItem, i: number) => {
+        if (d.time <= curMin) return i;
+        return lastIdx;
+      }, -1);
+      if (lastValidIdx >= 0 && lastValidIdx < data.length - 1) {
+        truncated = data.slice(0, lastValidIdx + 1);
+      }
+    }
+
+    const allTimes: string[] = [];
+    for (let h = 9; h <= 11; h++) {
+      const startM = h === 9 ? 30 : 0;
+      const endM = h === 11 ? 30 : 59;
+      for (let m = startM; m <= endM; m++) allTimes.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+    for (let h = 13; h <= 15; h++) {
+      const endM = h === 15 ? 0 : 59;
+      for (let m = 0; m <= endM; m++) allTimes.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+
+    const dataByTime = new Map<string, TimelineItem>();
+    truncated.forEach(d => dataByTime.set(d.time, d));
+    const lastActualIdx = truncated.length > 0 ? allTimes.indexOf(truncated[truncated.length - 1].time) : -1;
+
+    const fullDay = allTimes.map((time, idx) => {
+      const actual = dataByTime.get(time);
+      const hasData = actual != null && idx <= lastActualIdx;
+      if (hasData) {
+        const safePrevClose = prevClose > 0 ? prevClose : truncated[0].price;
+        const prevActual = (() => {
+          for (let j = truncated.length - 1; j >= 0; j--) { if (truncated[j].time < time) return truncated[j]; }
+          return null;
+        })();
+        return {
+          idx, time,
+          price: actual.price,
+          avgPrice: actual.avgPrice,
+          volume: actual.volume,
+          changePercent: actual.changePercent,
+          volUp: prevActual ? actual.price >= prevActual.price : actual.price >= safePrevClose,
+          hasData: true,
+        };
+      }
+      return {
+        idx, time,
+        price: null as unknown as number,
+        avgPrice: null as unknown as number,
+        volume: 0,
+        changePercent: 0,
+        volUp: true,
+        hasData: false,
+      };
+    });
+
+    const keyTimes = ["09:30", "10:30", "11:30", "13:00", "14:00", "15:00"];
+    const ticks = keyTimes.map(t => allTimes.indexOf(t)).filter(i => i >= 0);
+
+    return { fullDayData: fullDay, timeTicks: ticks };
+  }, [data, prevClose]);
+
+  // Compute MACD (use same truncation logic as fullDayData)
+  const macdData = useMemo(() => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
+    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
+    let macdInput = data;
+    if (isMorningSession || isAfternoonSession) {
+      const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const lastValidIdx = data.reduce((lastIdx: number, d: TimelineItem, i: number) => {
+        if (d.time <= curMin) return i;
+        return lastIdx;
+      }, -1);
+      if (lastValidIdx >= 0 && lastValidIdx < data.length - 1) {
+        macdInput = data.slice(0, lastValidIdx + 1);
+      }
+    }
+    return computeMiniMACD(macdInput);
+  }, [data]);
+  const macdByTime = new Map(macdData.map(m => [m.time, m]));
+
+  // Merge MACD into fullDayData
+  const chartData = useMemo(() => fullDayData.map(d => ({
+    ...d,
+    dif: macdByTime.get(d.time)?.dif ?? undefined,
+    dea: macdByTime.get(d.time)?.dea ?? undefined,
+    macd: macdByTime.get(d.time)?.macd ?? undefined,
+  })), [fullDayData, macdByTime]);
+
+  const { safePrevClose, yMin, yMax, percentMin, percentMax, maxVolume, barSize, macdMin, macdMax, macdPad, lastItem, isUp } = useMemo(() => {
+    if (data.length === 0) return { safePrevClose: 0, yMin: 0, yMax: 1, percentMin: 0, percentMax: 0, maxVolume: 1, barSize: 2, macdMin: -1, macdMax: 1, macdPad: 0.1, lastItem: null as never, isUp: true };
+    const spc = prevClose > 0 ? prevClose : data[0].price;
+
+    // Smart Y-axis (same as main chart)
+    const allPrices = data.map(d => d.price);
+    const allAvgPrices = data.filter(d => d.avgPrice != null).map(d => d.avgPrice!);
+    // Use reduce for min/max to avoid call stack issues with spread on large arrays
+    const combined = [...allPrices, ...allAvgPrices];
+    const dataMin = combined.reduce((mn, v) => (v < mn ? v : mn), combined[0] ?? 0);
+    const dataMax = combined.reduce((mx, v) => (v > mx ? v : mx), combined[0] ?? 0);
+    const dataRange = dataMax - dataMin || spc * 0.001;
+    const padding = Math.max(dataRange * 0.2, spc * 0.002);
+    let ymn = dataMin - padding;
+    let ymx = dataMax + padding;
+    const prevCloseMargin = spc * 0.002;
+    if (spc < ymn) ymn = spc - prevCloseMargin;
+    else if (spc > ymx) ymx = spc + prevCloseMargin;
+
+    const pMin = ((ymn - spc) / spc) * 100;
+    const pMax = ((ymx - spc) / spc) * 100;
+
+    const mv = data.reduce((mx, d) => (d.volume > mx ? d.volume : mx), 1);
+    const bs = chartData.length > 200 ? 2 : chartData.length > 100 ? 3 : 4;
+
+    // MACD range
+    const macdValues = macdData.flatMap(d => [d.dif, d.dea, d.macd]).filter((v): v is number => v != null);
+    const mMin = macdValues.length ? macdValues.reduce((mn, v) => (v < mn ? v : mn), macdValues[0]) : -1;
+    const mMax = macdValues.length ? macdValues.reduce((mx, v) => (v > mx ? v : mx), macdValues[0]) : 1;
+    const mPad = (mMax - mMin) * 0.02 || 0.05;
+
+    // Last data info
+    const li = data[data.length - 1];
+    const iu = li.changePercent >= 0;
+
+    return { safePrevClose: spc, yMin: ymn, yMax: ymx, percentMin: pMin, percentMax: pMax, maxVolume: mv, barSize: bs, macdMin: mMin, macdMax: mMax, macdPad: mPad, lastItem: li, isUp: iu };
+  }, [data, prevClose, chartData, macdData]);
+
+  if (data.length === 0) return null;
+
+  return (
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
+      {/* Header */}
+      <div className="px-3 py-1.5 border-b border-border/50 flex items-center gap-2 text-xs">
+        <span className="font-medium text-foreground">{title}</span>
+        <span className={`font-bold tabular-nums text-xs ${isUp ? "text-red-500" : "text-green-500"}`}>
+          {lastItem.price.toFixed(2)}
+        </span>
+        <span className={`tabular-nums text-[10px] ${isUp ? "text-red-500" : "text-green-500"}`}>
+          {isUp ? "+" : ""}{lastItem.changePercent.toFixed(2)}%
+        </span>
+        {badge}
+      </div>
+
+      {/* Price Chart */}
+      <ResponsiveContainer width="100%" height={120}>
+        <ComposedChart data={chartData} margin={{ top: 8, right: 45, left: 2, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.12} vertical={false} />
+          <XAxis
+            dataKey="idx" type="number" domain={[0, chartData.length - 1]}
+            tick={{ fontSize: 7, fill: "hsl(var(--muted-foreground))" }}
+            tickLine={false} axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 0.3 }}
+            interval={0} ticks={timeTicks}
+            tickFormatter={(idx: number) => chartData[idx]?.time || ""}
+          />
+          <YAxis
+            yAxisId="price" domain={[yMin, yMax]}
+            tick={{ fontSize: 7, fill: "hsl(var(--muted-foreground))" }}
+            tickLine={false} axisLine={false} width={42}
+            tickFormatter={(v: number) => v.toFixed(2)}
+          />
+          <YAxis
+            yAxisId="percent" orientation="right" domain={[percentMin, percentMax]}
+            tick={<MiniPercentYTick />}
+            tickLine={false} axisLine={false} width={44}
+          />
+          <ReferenceLine yAxisId="price" y={prevClose} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 2" strokeWidth={0.4} />
+          <Area yAxisId="price" type="monotone" dataKey="price" stroke="none" fill="#3b82f6" fillOpacity={0.06} connectNulls isAnimationActive={false} />
+          <Line yAxisId="price" type="monotone" dataKey="price" stroke="#3b82f6" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
+          <Line yAxisId="price" type="monotone" dataKey="avgPrice" stroke="#eab308" dot={false} strokeWidth={0.6} strokeDasharray="3 2" connectNulls isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+
+      {/* Divider */}
+      <div className="h-px bg-border/30" />
+
+      {/* Volume */}
+      <div className="flex items-center px-2 text-[7px] text-muted-foreground select-none pointer-events-none">
+        <span className="font-medium">VOL</span>
+      </div>
+      <ResponsiveContainer width="100%" height={32}>
+        <ComposedChart data={chartData} margin={{ top: 0, right: 45, left: 2, bottom: 0 }}>
+          <XAxis dataKey="idx" type="number" domain={[0, chartData.length - 1]} tick={false} tickLine={false} axisLine={false} />
+          <YAxis yAxisId="vol" domain={[0, maxVolume * 1.1]} tick={false} tickLine={false} axisLine={false} width={42} />
+          <YAxis yAxisId="vol-r" orientation="right" domain={[0, maxVolume * 1.1]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => formatVolume(v)} />
+          <Bar yAxisId="vol-r" dataKey="volume" isAnimationActive={false} barSize={barSize}
+            shape={(props: any) => {
+              const { x, y, width, height, payload } = props;
+              if (!payload?.hasData) return null;
+              return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
+            }}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+
+      {/* Divider */}
+      <div className="h-px bg-border/30" />
+
+      {/* MACD */}
+      <div className="flex items-center gap-2 px-2 text-[7px] select-none pointer-events-none">
+        <span className="font-medium text-muted-foreground">MACD</span>
+        <span className="flex items-center gap-0.5">
+          <span className="inline-block w-1.5 h-0.5 bg-blue-600 rounded" />
+          <span className="text-blue-600">DIF</span>
+        </span>
+        <span className="flex items-center gap-0.5">
+          <span className="inline-block w-1.5 h-0.5 bg-orange-600 rounded" />
+          <span className="text-orange-600">DEA</span>
+        </span>
+      </div>
+      <ResponsiveContainer width="100%" height={36}>
+        <ComposedChart data={chartData} margin={{ top: 0, right: 45, left: 2, bottom: 0 }}>
+          <XAxis dataKey="idx" type="number" domain={[0, chartData.length - 1]} tick={false} tickLine={false} axisLine={false} />
+          <YAxis yAxisId="macd" domain={[macdMin - macdPad, macdMax + macdPad]} tick={false} tickLine={false} axisLine={false} width={42} />
+          <YAxis yAxisId="macd-r" orientation="right" domain={[macdMin - macdPad, macdMax + macdPad]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => v.toFixed(3)} />
+          <ReferenceLine yAxisId="macd-r" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.3} />
+          <Bar yAxisId="macd-r" dataKey="macd" isAnimationActive={false} barSize={barSize}
+            shape={(props: any) => {
+              const { x, y, width, height, payload } = props;
+              if (payload?.macd == null) return null;
+              const h = Math.abs(height || 0);
+              if (h < 0.3) return null;
+              const ry = height < 0 ? y + height : y;
+              return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+            }}
+          />
+          <Line yAxisId="macd-r" type="monotone" dataKey="dif" stroke="#2563eb" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
+          <Line yAxisId="macd-r" type="monotone" dataKey="dea" stroke="#ea580c" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ── 同花顺风格 分时图 (Unified Three-Panel) ──────────
+
+export function TimeSharingPanel({
+  data,
+  prevClose,
+  symbol,
+  signals,
+  macdData,
+  visibleMinutes = 241,
+  onZoomIn,
+  onZoomOut,
+  onZoomReset,
+  zoomIdx = 0,
+  maxZoomIdx = 4,
+  prevDayMA5,
+  szIndexRegime,
+  activeIndexKey,
+  indexConfig,
+  onCycleIndex,
+  keyPriceLevels,
+  panOffset = 0,
+  onPanOffsetChange,
+  sectorRegime,
+  sectorInfo,
+  pvMarkers,
+}: {
+  data: TimelineItem[];
+  prevClose: number;
+  symbol: string;
+  signals: (TSignal | null)[];
+  macdData: { time: string; dif: number | null; dea: number | null; macd: number | null }[];
+  visibleMinutes?: number;
+  onZoomIn?: (cursorRatio?: number) => void;
+  onZoomOut?: (cursorRatio?: number) => void;
+  onZoomReset?: () => void;
+  zoomIdx?: number;
+  maxZoomIdx?: number;
+  prevDayMA5?: number | null;
+  szIndexRegime?: RegimeDetail | null;
+  activeIndexKey?: string;
+  indexConfig?: Record<string, { symbol: string; label: string; shortLabel: string }>;
+  onCycleIndex?: () => void;
+  keyPriceLevels?: { price: number; name: string; type: "support" | "resistance" }[];
+  panOffset?: number;
+  onPanOffsetChange?: (offset: number) => void;
+  sectorRegime?: RegimeDetail | null;
+  sectorInfo?: { code: string; name: string } | null;
+  pvMarkers?: PulseVolumeMarker[];
+}) {
+  // ── Build full-day timeline template (240 minutes total) ──
+  // A-share trading day: 09:30-11:30 (120min) + 13:00-15:00 (120min)
+  const { fullDayData, timeTicks } = useMemo(() => {
+    if (data.length === 0) return { fullDayData: [], timeTicks: [] };
+
+    // Generate all minute times for the full trading day
+    const allTimes: string[] = [];
+    // Morning session: 09:30 ~ 11:30
+    for (let h = 9; h <= 11; h++) {
+      const startM = h === 9 ? 30 : 0;
+      const endM = h === 11 ? 30 : 59;
+      for (let m = startM; m <= endM; m++) {
+        allTimes.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+      }
+    }
+    // Afternoon session: 13:00 ~ 15:00
+    for (let h = 13; h <= 15; h++) {
+      const endM = h === 15 ? 0 : 59;
+      for (let m = 0; m <= endM; m++) {
+        allTimes.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+      }
+    }
+
+    // Build signal map by time
+    const signalByTime = new Map<string, TSignal>();
+    signals.forEach((s, i) => {
+      if (s && data[i]) signalByTime.set(data[i].time, s);
+    });
+
+    // Build MACD map by time
+    const macdByTime = new Map<string, { dif: number; dea: number; macd: number }>();
+    for (const m of macdData) {
+      if (m.dif != null && m.dea != null && m.macd != null) {
+        macdByTime.set(m.time, { dif: m.dif, dea: m.dea, macd: m.macd });
+      }
+    }
+
+    // Build pulse/volume marker map by time
+    const pvMarkerByTime = new Map<string, PulseVolumeMarker[]>();
+    if (pvMarkers && pvMarkers.length > 0) {
+      for (const m of pvMarkers) {
+        const existing = pvMarkerByTime.get(m.time) || [];
+        existing.push(m);
+        pvMarkerByTime.set(m.time, existing);
+      }
+    }
+
+    // Build actual data map by time
+    const dataByTime = new Map<string, TimelineItem>();
+    data.forEach((d) => dataByTime.set(d.time, d));
+
+    // Merge: fill full day, actual data where available, null placeholders elsewhere
+    const lastActualIdx = data.length > 0 ? allTimes.indexOf(data[data.length - 1].time) : -1;
+    const fullDay = allTimes.map((time, idx) => {
+      const actual = dataByTime.get(time);
+      const hasData = actual != null;
+      // Only show data up to the last actual time (no future data)
+      const isFuture = idx > lastActualIdx && lastActualIdx >= 0;
+      if (hasData && !isFuture) {
+        const prevActual = (() => {
+          // Find the previous data point for volUp calc
+          for (let j = data.length - 1; j >= 0; j--) {
+            if (data[j].time < time) return data[j];
+          }
+          return null;
+        })();
+        const safePrevClose = prevClose > 0 ? prevClose : data[0].price;
+        return {
+          idx,
+          time,
+          price: actual.price,
+          avgPrice: actual.avgPrice,
+          volume: actual.volume,
+          changePercent: actual.changePercent,
+          volUp: prevActual ? actual.price >= prevActual.price : actual.price >= safePrevClose,
+          tSignal: signalByTime.get(time) || undefined,
+          pvMarker: pvMarkerByTime.get(time) || undefined,
+          dif: macdByTime.get(time)?.dif ?? undefined,
+          dea: macdByTime.get(time)?.dea ?? undefined,
+          macd: macdByTime.get(time)?.macd ?? undefined,
+          hasData: true,
+        };
+      }
+      // Empty slot (no data yet or future)
+      return {
+        idx, time,
+        price: null as unknown as number,
+        avgPrice: null as unknown as number,
+        volume: 0,
+        changePercent: 0,
+        volUp: true,
+        tSignal: undefined,
+        dif: null as unknown as number,
+        dea: null as unknown as number,
+        macd: null as unknown as number,
+        hasData: false,
+      };
+    });
+
+    // Key time ticks for X-axis labels
+    const keyTimes = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
+    const ticks = keyTimes.map((t) => allTimes.indexOf(t)).filter((i) => i >= 0);
+
+    return { fullDayData: fullDay, timeTicks: ticks };
+  }, [data, prevClose, signals, macdData, pvMarkers]);
+
+  // ── Crosshair state: shared across all three panels ──
+  const [crosshairIdx, setCrosshairIdx] = useState<number | null>(null);
+
+  // ── Drag-to-pan & scroll-to-pan state ──
+  const dragRef = useRef<{ startX: number; startPanOffset: number; isDragging: boolean }>({ startX: 0, startPanOffset: 0, isDragging: false });
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  // Refs for stable event handlers
+  const panOffsetRef = useRef(panOffset);
+  const visibleMinutesRef = useRef(visibleMinutes);
+  const fullDayDataRef = useRef(fullDayData);
+  const onPanOffsetChangeRef = useRef(onPanOffsetChange);
+  const onZoomInRef = useRef(onZoomIn);
+  const onZoomOutRef = useRef(onZoomOut);
+  const zoomIdxRef = useRef(zoomIdx);
+  const maxZoomIdxRef = useRef(maxZoomIdx);
+  useEffect(() => {
+    panOffsetRef.current = panOffset;
+    visibleMinutesRef.current = visibleMinutes;
+    fullDayDataRef.current = fullDayData;
+    onPanOffsetChangeRef.current = onPanOffsetChange;
+    onZoomInRef.current = onZoomIn;
+    onZoomOutRef.current = onZoomOut;
+    zoomIdxRef.current = zoomIdx;
+    maxZoomIdxRef.current = maxZoomIdx;
+  }, [panOffset, visibleMinutes, fullDayData, onPanOffsetChange, onZoomIn, onZoomOut, zoomIdx, maxZoomIdx]);
+
+  // ── Drag-to-pan & scroll-to-pan (stable native events via ref pattern) ──
+  useEffect(() => {
+    // Pan helper — defined inside effect to avoid memoization issues
+    const applyPanOffset = (rawOffset: number) => {
+      const fdd = fullDayDataRef.current;
+      const vm = visibleMinutesRef.current;
+      const lastIdx = fdd.reduce((last: number, item: { hasData: boolean }, idx: number) => (item.hasData ? idx : last), -1);
+      const maxOffset = Math.max(0, lastIdx - vm + 1);
+      onPanOffsetChangeRef.current?.(Math.max(0, Math.min(rawOffset, maxOffset)));
+    };
+
+    const container = chartContainerRef.current;
+    if (!container) return;
+
+    const isZoomed = () => visibleMinutesRef.current < fullDayDataRef.current.length;
+
+    const onMouseDown = (e: MouseEvent) => {
+      // Left-click drag when zoomed, any click drag when not
+      if (e.button !== 0) return; // only left-click
+      if (!isZoomed()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragRef.current = { startX: e.clientX, startPanOffset: panOffsetRef.current, isDragging: true };
+      document.body.style.cursor = 'grabbing';
+      document.body.style.userSelect = 'none';
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current.isDragging) return;
+      e.preventDefault();
+      const dx = e.clientX - dragRef.current.startX;
+      const containerWidth = container.clientWidth || 600;
+      const vm = visibleMinutesRef.current;
+      const estimatedPoints = Math.min(vm, fullDayDataRef.current.length);
+      const pixelsPerPoint = containerWidth / estimatedPoints;
+      const pointDelta = Math.round(dx / pixelsPerPoint);
+      // Drag right → see newer data → decrease offset; Drag left → see older data → increase offset
+      const newOffset = dragRef.current.startPanOffset - pointDelta;
+      applyPanOffset(newOffset);
+    };
+
+    const onMouseUp = () => {
+      if (dragRef.current.isDragging) {
+        dragRef.current.isDragging = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    const onContextMenu = (e: Event) => {
+      if (dragRef.current.isDragging) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    // Scroll wheel: zoom in/out; Shift+scroll or horizontal scroll: pan
+    const onWheel = (e: WheelEvent) => {
+      // Only allow zoom on the price chart — skip if cursor is over VOL or MACD panels
+      const target = e.target as HTMLElement;
+      const panel = target.closest('[data-chart-panel]');
+      if (panel && (panel.getAttribute('data-chart-panel') === 'vol' || panel.getAttribute('data-chart-panel') === 'macd')) {
+        // Don't intercept — let the page scroll naturally
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Shift+scroll or horizontal scroll → pan (when zoomed)
+      if (e.shiftKey || e.deltaX !== 0) {
+        if (!isZoomed()) return;
+        const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+        const scrollStep = Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta) / 40));
+        const newOffset = panOffsetRef.current + scrollStep;
+        applyPanOffset(newOffset);
+        return;
+      }
+
+      // Normal vertical scroll → zoom in/out centered on cursor position
+      const rect = container.getBoundingClientRect();
+      const cursorRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+      // deltaY < 0 (scroll up) → zoom in, deltaY > 0 (scroll down) → zoom out
+      if (e.deltaY < 0) {
+        // Zoom in
+        if (zoomIdxRef.current < (maxZoomIdxRef.current ?? 4)) {
+          onZoomInRef.current?.(cursorRatio);
+        }
+      } else if (e.deltaY > 0) {
+        // Zoom out
+        if (zoomIdxRef.current > 0) {
+          onZoomOutRef.current?.(cursorRatio);
+        }
+      }
+    };
+
+    container.addEventListener('mousedown', onMouseDown, true);
+    container.addEventListener('contextmenu', onContextMenu, true);
+    container.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('contextmenu', onContextMenu, true);
+
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown, true);
+      container.removeEventListener('contextmenu', onContextMenu, true);
+      container.removeEventListener('wheel', onWheel, true);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('contextmenu', onContextMenu, true);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []); // empty deps — stable listeners via refs
+
+  // ── Memoized: zoom slicing + all derived calculations ──
+  const {
+    zoomData, xDomain, zoomTimeTicks, isZoomed, safePrevClose,
+    yMin, yMax, percentMin, percentMax,
+    buySignals, sellSignals, stoplossSignals,
+    maxVolume, macdMin, macdMax, macdPad,
+    lastItem, lastSignal, barSize, lastDataIdx,
+  } = useMemo(() => {
+    // ── Zoom: slice fullDayData to show only visibleMinutes ──
+    const lastDataIdx = fullDayData.reduce((last, item, idx) => (item.hasData ? idx : last), -1);
+    const totalSlots = fullDayData.length;
+
+    // Calculate the visible range
+    let zd: typeof fullDayData;
+    let xd: [number, number];
+    let ztt: number[];
+
+    if (visibleMinutes >= totalSlots || lastDataIdx < 0) {
+      zd = fullDayData;
+      xd = [0, totalSlots - 1];
+      ztt = timeTicks;
+    } else {
+      const baseEndIdx = lastDataIdx;
+      const endIdx = Math.min(baseEndIdx, Math.max(visibleMinutes - 1, baseEndIdx - panOffset));
+      const startIdx = Math.max(0, endIdx - visibleMinutes + 1);
+      zd = fullDayData.slice(startIdx, endIdx + 1);
+      zd = zd.map((item, i) => ({ ...item, idx: i }));
+      xd = [0, zd.length - 1];
+
+      const tickInterval = zd.length <= 60 ? 10 : zd.length <= 120 ? 20 : 30;
+      ztt = [];
+      for (let i = 0; i < zd.length; i += tickInterval) {
+        ztt.push(i);
+      }
+      if (ztt[ztt.length - 1] !== zd.length - 1) {
+        ztt.push(zd.length - 1);
+      }
+    }
+
+    const iz = visibleMinutes < totalSlots;
+
+    // Smart Y-axis auto-scaling
+    const spc = prevClose > 0 ? prevClose : data[0]?.price ?? 0;
+    const visiblePrices = zd.filter(d => d.hasData && d.price != null).map(d => d.price!);
+    const visibleAvgPrices = zd.filter(d => d.hasData && d.avgPrice != null).map(d => d.avgPrice!);
+    const ap = visiblePrices.length > 0 ? visiblePrices : data.map((d) => d.price);
+    const aap = visibleAvgPrices.length > 0 ? visibleAvgPrices : data.filter(d => d.avgPrice != null).map(d => d.avgPrice!);
+
+    // Use reduce for min/max to avoid call stack issues with spread on large arrays
+    const allVals = [...ap, ...aap];
+    const dMin = allVals.reduce((mn, v) => (v < mn ? v : mn), allVals[0] ?? 0);
+    const dMax = allVals.reduce((mx, v) => (v > mx ? v : mx), allVals[0] ?? 0);
+    const dRange = dMax - dMin || spc * 0.001;
+    const pad = Math.max(dRange * 0.2, spc * 0.002);
+
+    let ymn = dMin - pad;
+    let ymx = dMax + pad;
+    const pcm = spc * 0.002;
+    if (spc < ymn) ymn = spc - pcm;
+    else if (spc > ymx) ymx = spc + pcm;
+
+    const pMin = ((ymn - spc) / spc) * 100;
+    const pMax = ((ymx - spc) / spc) * 100;
+
+    // Count signals
+    let bs = 0, ss = 0, sls = 0;
+    for (const s of signals) {
+      if (s?.type === "buy") bs++;
+      else if (s?.type === "sell") ss++;
+      else if (s?.type === "stoploss") sls++;
+    }
+
+    // Volume range (use reduce to avoid spread)
+    const mv = data.reduce((mx, d) => (d.volume > mx ? d.volume : mx), 1);
+
+    // MACD range — use ZOOMED data (not full macdData) so Y-axis adapts when zoomed
+    const macdVals = zd.filter(d => d.dif != null).flatMap((d) => [d.dif, d.dea, d.macd as number]).filter((v): v is number => v != null);
+    let mMin = macdVals.length ? macdVals.reduce((mn, v) => (v < mn ? v : mn), macdVals[0]) : -1;
+    let mMax = macdVals.length ? macdVals.reduce((mx, v) => (v > mx ? v : mx), macdVals[0]) : 1;
+    // Ensure zero line is always visible in MACD chart
+    if (mMin > 0) mMin = 0;
+    if (mMax < 0) mMax = 0;
+    const mPad = (mMax - mMin) * 0.05 || 0.05;
+
+    // Last item & last signal
+    const li = data[data.length - 1];
+    let ls: typeof signals[number] = null;
+    for (let i = signals.length - 1; i >= 0; i--) {
+      if (signals[i]) { ls = signals[i]; break; }
+    }
+
+    const brs = zd.length > 200 ? 2 : zd.length > 100 ? 3 : zd.length > 60 ? 4 : 5;
+
+    return {
+      zoomData: zd, xDomain: xd, zoomTimeTicks: ztt, isZoomed: iz, safePrevClose: spc,
+      yMin: ymn, yMax: ymx, percentMin: pMin, percentMax: pMax,
+      buySignals: bs, sellSignals: ss, stoplossSignals: sls,
+      maxVolume: mv, macdMin: mMin, macdMax: mMax, macdPad: mPad,
+      lastItem: li, lastSignal: ls, barSize: brs, lastDataIdx,
+    };
+  }, [fullDayData, data, visibleMinutes, panOffset, timeTicks, prevClose, signals, macdData]);
+
+  // ── Crosshair item (must be after zoomData is computed) ──
+  const crosshairItem = crosshairIdx != null && crosshairIdx >= 0 && crosshairIdx < zoomData.length
+    ? zoomData[crosshairIdx]
+    : null;
+
+  // ── Memoize detectMarketRegimeDetail (was called inside IIFE on every render) ──
+  const regimeDetail = useMemo(() => detectMarketRegimeDetail(data, prevClose), [data, prevClose]);
+
+  // ── Memoize tooltip components (stable references to avoid re-renders) ──
+  const timelineTooltipEl = useMemo(() => <TimelineTooltip />, []);
+  const volumeTooltipEl = useMemo(() => <TimelineVolumeTooltip />, []);
+  const macdTooltipEl = useMemo(() => <TimelineMACDTooltip />, []);
+  const tooltipWrapperStyle = useMemo(() => ({ background: 'transparent' as const, border: 'none' as const }), []);
+
+  if (data.length === 0) return null;
+
+  return (
+    <div
+      ref={chartContainerRef}
+      className="bg-card rounded-lg border border-border overflow-hidden"
+    >
+      {/* Header - 同花顺 style info bar */}
+      <div className="px-3 py-2 border-b border-border/50 flex items-center gap-3 text-xs flex-wrap">
+        <span className="font-medium text-sm text-foreground">{symbol}</span>
+        <span className={`font-bold tabular-nums ${lastItem.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
+          {lastItem.price.toFixed(2)}
+        </span>
+        <span className={`tabular-nums ${lastItem.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
+          {lastItem.changePercent >= 0 ? "+" : ""}{lastItem.changePercent.toFixed(2)}%
+        </span>
+        <div className="h-3 w-px bg-border" />
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-0.5 bg-blue-500 rounded" />
+          <span className="text-muted-foreground">价格</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-0.5 bg-yellow-500 rounded" style={{ borderBottom: "1px dashed #eab308" }} />
+          <span className="text-muted-foreground">均价</span>
+        </span>
+        {prevDayMA5 != null && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-[2px] bg-yellow-500 rounded" style={{ borderBottom: "2px dashed #eab308", opacity: 0.9 }} />
+            <span className="text-[10px] text-yellow-500 font-medium">MA5</span>
+          </span>
+        )}
+
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-l-transparent border-r-transparent border-b-red-500" />
+          <span className="text-[9px] text-red-500">强</span>
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500" />
+          <span className="text-[9px] text-orange-500">中</span>
+          <span className="inline-block w-1 h-1 rounded-full bg-gray-400" />
+          <span className="text-[9px] text-gray-400">弱</span>
+        </span>
+        {/* Support/Resistance legend */}
+        {keyPriceLevels && keyPriceLevels.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-0.5">
+              <span className="inline-block w-4 h-0 border-t-[2px] border-dashed border-green-600" />
+              <span className="text-[10px] text-green-600 font-medium">支撑</span>
+            </span>
+            <span className="flex items-center gap-0.5">
+              <span className="inline-block w-4 h-0 border-t-[2px] border-dashed border-red-600" />
+              <span className="text-[10px] text-red-600 font-medium">压力</span>
+            </span>
+          </span>
+        )}
+        {buySignals > 0 && (
+          <span className="flex items-center gap-1 text-red-500">
+            ▲ 买{buySignals}
+          </span>
+        )}
+        {sellSignals > 0 && (
+          <span className="flex items-center gap-1 text-green-500">
+            ▼ 卖{sellSignals}
+          </span>
+        )}
+        {stoplossSignals > 0 && (
+          <span className="flex items-center gap-1 text-yellow-500">
+            ◆ 止损{stoplossSignals}
+          </span>
+        )}
+        {/* Market Regime Badge - prominent + T-mode recommendation */}
+        {(() => {
+          const detail = regimeDetail;
+          const cfg = REGIME_CONFIG[detail.regime] || REGIME_CONFIG["震荡市"];
+
+          // T-mode recommendation based on regime
+          const tCfg = T_MODE_CONFIG[detail.regime] || T_MODE_CONFIG["震荡市"];
+
+          return (
+            <>
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cfg.bg} ${cfg.text}`}
+                title={detail.description}
+              >
+                <span>{cfg.icon}</span>
+                <span>{detail.regime}</span>
+                <span className="opacity-60">{detail.confidence}%</span>
+              </span>
+              <span
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${tCfg.bg} ${tCfg.text}`}
+                title={tCfg.tip}
+              >
+                <span>▸</span>
+                <span>{tCfg.label}</span>
+              </span>
+            </>
+          );
+        })()}
+        {/* Market Index Regime Badge - click to cycle 深/沪/创 */}
+        {szIndexRegime && (() => {
+          const cfg = REGIME_CONFIG[szIndexRegime.regime] || REGIME_CONFIG["震荡市"];
+          const idxInfo = indexConfig?.[activeIndexKey || "sz"];
+          const shortLabel = idxInfo?.shortLabel || "深";
+          const fullLabel = idxInfo?.label || "深证成指";
+          return (
+            <span
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold cursor-pointer select-none hover:opacity-80 active:scale-95 transition-all ${cfg.bg} ${cfg.text}`}
+              title={`${fullLabel}: ${szIndexRegime.description}\n点击切换指数`}
+              onClick={onCycleIndex}
+            >
+              <span className="opacity-80">{shortLabel}</span>
+              <span>{cfg.icon}</span>
+              <span>{szIndexRegime.regime}</span>
+              <span className="opacity-60">{szIndexRegime.confidence}%</span>
+            </span>
+          );
+        })()}
+        {/* Sector Regime Badge - shows industry sector trend */}
+        {sectorRegime && sectorInfo && (() => {
+          const cfg = REGIME_CONFIG[sectorRegime.regime] || REGIME_CONFIG["震荡市"];
+          // Truncate sector name for display (max 4 chars)
+          const shortName = sectorInfo.name.length > 4 ? sectorInfo.name.slice(0, 4) : sectorInfo.name;
+          return (
+            <span
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}
+              title={`${sectorInfo.name}板块: ${sectorRegime.description}\n板块走势与个股信号方向一致时增强，反向时降级`}
+            >
+              <span className="opacity-80">{shortName}</span>
+              <span>{cfg.icon}</span>
+              <span>{sectorRegime.regime}</span>
+              <span className="opacity-60">{sectorRegime.confidence}%</span>
+            </span>
+          );
+        })()}
+        {lastSignal && (
+          <Badge variant={lastSignal.type === "buy" ? "default" : lastSignal.type === "stoploss" ? "outline" : "destructive"} className="text-[10px] h-5">
+            {lastSignal.type === "buy" ? "买入" : lastSignal.type === "stoploss" ? "止损" : "卖出"} · {lastSignal.reason}
+          </Badge>
+        )}
+        {/* Time Window Indicator */}
+        {(() => {
+          const lastTime = data[data.length - 1]?.time;
+          if (lastTime) {
+            const tw = getTimeWindow(lastTime);
+            const twColor = tw === "开盘观察" || tw === "尾盘不操作" ? "text-muted-foreground" :
+                            tw.includes("卖出") ? "text-green-500" : "text-red-500";
+            return (
+              <span className={`text-[10px] ${twColor}`}>
+                {tw}
+              </span>
+            );
+          }
+          return null;
+        })()}
+        {/* Crosshair data display */}
+        {crosshairItem?.hasData && (() => {
+          const pct = crosshairItem.changePercent;
+          const isUp = pct >= 0;
+          return (
+            <span className="flex items-center gap-2 text-[10px] tabular-nums">
+              <span className="text-muted-foreground">{crosshairItem.time}</span>
+              <span className={isUp ? "text-red-600" : "text-green-600"}>{crosshairItem.price?.toFixed(2)}</span>
+              <span className={isUp ? "text-red-600" : "text-green-600"}>{isUp ? "+" : ""}{pct?.toFixed(2)}%</span>
+              {crosshairItem.volume > 0 && (
+                <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
+              )}
+              {crosshairItem.dif != null && (
+                <span className="text-blue-600">DIF {crosshairItem.dif.toFixed(3)}</span>
+              )}
+              {crosshairItem.dea != null && (
+                <span className="text-orange-600">DEA {crosshairItem.dea.toFixed(3)}</span>
+              )}
+              {crosshairItem.macd != null && (
+                <span className={crosshairItem.macd >= 0 ? "text-red-600" : "text-green-600"}>MACD {crosshairItem.macd.toFixed(3)}</span>
+              )}
+            </span>
+          );
+        })()}
+        {/* Zoom Controls - timeline panel */}
+        <div className="ml-auto flex items-center gap-1">
+          {isZoomed && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => {
+                const maxOffset = Math.max(0, lastDataIdx - visibleMinutes + 1);
+                const step = Math.max(1, Math.round(visibleMinutes * 0.3));
+                onPanOffsetChange?.(Math.min((panOffset || 0) + step, maxOffset));
+              }}
+              disabled={(panOffset || 0) >= Math.max(0, lastDataIdx - visibleMinutes + 1)}
+              title="向左平移（查看更早数据）"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={onZoomIn}
+            disabled={zoomIdx >= maxZoomIdx}
+            title="放大（减少时间范围）"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </Button>
+          <span className="text-[10px] text-muted-foreground tabular-nums min-w-[40px] text-center">
+            {isZoomed ? `${visibleMinutes}分` : "全天"}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={onZoomOut}
+            disabled={zoomIdx <= 0}
+            title="缩小（增加时间范围）"
+          >
+            <ZoomOut className="h-3.5 w-3.5" />
+          </Button>
+          {isZoomed && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => {
+                const step = Math.max(1, Math.round(visibleMinutes * 0.3));
+                onPanOffsetChange?.(Math.max(0, (panOffset || 0) - step));
+              }}
+              disabled={(panOffset || 0) <= 0}
+              title="向右平移（查看最新数据）"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {isZoomed && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-muted-foreground"
+              onClick={onZoomReset}
+              title="重置为全天视图"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Panel 1: Price Chart ─── */}
+      <div className="relative">
+        <ResponsiveContainer width="100%" height={isZoomed ? 420 : 360}>
+          <ComposedChart
+            data={zoomData}
+            margin={{ top: 36, right: 58, left: 2, bottom: 16 }}
+            onMouseMove={(state: any) => {
+              if (state?.activeTooltipIndex != null) {
+                setCrosshairIdx(state.activeTooltipIndex);
+              }
+            }}
+            onMouseLeave={() => setCrosshairIdx(null)}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="hsl(var(--border))"
+              opacity={0.15}
+              vertical={false}
+            />
+            <XAxis
+              dataKey="idx"
+              type="number"
+              domain={xDomain}
+              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 0.5 }}
+              interval={0}
+              ticks={zoomTimeTicks}
+              tickFormatter={(idx: number) => {
+                const item = zoomData[idx];
+                return item?.time || "";
+              }}
+            />
+            <YAxis
+              yAxisId="price"
+              domain={[yMin, yMax]}
+              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={false}
+              width={55}
+              tickFormatter={(v: number) => v.toFixed(2)}
+            />
+            <YAxis
+              yAxisId="percent"
+              orientation="right"
+              domain={[percentMin, percentMax]}
+              tick={false}
+              tickLine={false}
+              axisLine={false}
+              width={1}
+            />
+            <Tooltip content={timelineTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
+            {/* Percent labels on right edge of plot area - aligned with MA5 / reference line labels */}
+            <Customized component={(props: any) => {
+              const yAxisMap = props.yAxisMap;
+              if (!yAxisMap) return null;
+              const yAxis = yAxisMap.price;
+              if (!yAxis || !yAxis.scale) return null;
+              const yScale = yAxis.scale;
+              // Use offset to get exact plot area dimensions for label positioning
+              // This ensures percentage labels align with ReferenceLine labels (MA5, etc.)
+              const offset = props.offset;
+              if (!offset) return null;
+              // Position labels at the right edge of plot area + small padding
+              // recharts ReferenceLine with position="right" places labels at ~plotAreaRight + 5
+              const labelX = offset.left + offset.width + 5;
+              // Generate percent labels at evenly spaced Y positions
+              const priceTicks: number[] = [];
+              const tickStep = (yMax - yMin) / 5;
+              for (let i = 0; i <= 5; i++) {
+                priceTicks.push(yMin + tickStep * i);
+              }
+              return (
+                <g>
+                  {priceTicks.map((price, i) => {
+                    const yPx = yScale(price);
+                    const pct = ((price - safePrevClose) / safePrevClose) * 100;
+                    const isZero = Math.abs(pct) < 0.01;
+                    const fill = isZero ? "#6b7280" : pct > 0 ? "#dc2626" : "#16a34a";
+                    const text = isZero ? "" : pct > 0 ? `+${pct.toFixed(2)}%` : `${pct.toFixed(2)}%`;
+                    if (!text) return null;
+                    return (
+                      <text
+                        key={`pct-${i}`}
+                        x={labelX}
+                        y={yPx}
+                        textAnchor="start"
+                        dominantBaseline="middle"
+                        fill={fill}
+                        fontSize={9}
+                        fontWeight="600"
+                        opacity={0.8}
+                      >
+                        {text}
+                      </text>
+                    );
+                  })}
+                </g>
+              );
+            }} />
+            <ReferenceLine
+              yAxisId="price"
+              y={safePrevClose}
+              stroke="#6b7280"
+              strokeWidth={1.2}
+              strokeOpacity={0.8}
+              label={{
+                value: "0%",
+                position: "right" as const,
+                fill: "#6b7280",
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            />
+            {/* Today's MA lines as dashed references */}
+            {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
+              <ReferenceLine
+                yAxisId="price"
+                y={prevDayMA5}
+                stroke="#eab308"
+                strokeDasharray="8 4"
+                strokeWidth={1.2}
+                strokeOpacity={0.9}
+                label={{ value: `MA5 ${prevDayMA5.toFixed(2)}`, position: "right", fill: "#eab308", fontSize: 10, fillOpacity: 1 }}
+              />
+            )}
+
+            {/* Support & Resistance Levels as dashed lines */}
+            {keyPriceLevels?.filter(l => l.price >= yMin && l.price <= yMax).map((level, li) => {
+              // Support = green tones, Resistance = red/orange tones
+              // Skip 昨收价 (already drawn as the main reference line above)
+              if (level.name === "昨收价") return null;
+              // Skip 涨停/跌停 (usually far out of visible range, too distracting)
+              if (level.name.startsWith("涨停") || level.name.startsWith("跌停")) return null;
+              // Skip 整数关口 (user requested to hide)
+              if (level.name.includes("整数关")) return null;
+              // Skip Fibonacci回撤位 (user requested to hide)
+              if (level.name.startsWith("Fib")) return null;
+              const isSupport = level.type === "support";
+              const lineColor = isSupport ? "#16a34a" : "#dc2626";  // green-600 / red-600 (stronger)
+              return (
+                <ReferenceLine
+                  key={`keylevel-${li}`}
+                  yAxisId="price"
+                  y={level.price}
+                  stroke={lineColor}
+                  strokeDasharray="6 4"
+                  strokeWidth={1.4}
+                  strokeOpacity={0.85}
+                  label={{
+                    value: `${isSupport ? "▲" : "▼"}${level.name}`,
+                    position: "right" as const,
+                    fill: lineColor,
+                    fontSize: 8,
+                    fillOpacity: 0.9,
+                  }}
+                />
+              );
+            })}
+            {/* Lunch break vertical divider between 11:30 and 13:00 */}
+            {!isZoomed && (() => {
+              const lunchIdx = Math.floor(zoomData.length / 2);
+              if (lunchIdx > 0) {
+                return (
+                  <ReferenceLine
+                    yAxisId="price"
+                    x={lunchIdx}
+                    stroke="hsl(var(--border))"
+                    strokeWidth={0.5}
+                    strokeDasharray="2 4"
+                  />
+                );
+              }
+              return null;
+            })()}
+            {/* Area fill below price line - 同花顺 style */}
+            <Area
+              yAxisId="price"
+              type="monotone"
+              dataKey="price"
+              stroke="none"
+              fill="#3b82f6"
+              fillOpacity={0.06}
+              isAnimationActive={false}
+            />
+            <Line
+              yAxisId="price"
+              type="monotone"
+              dataKey="price"
+              stroke="#3b82f6"
+              dot={false}
+              strokeWidth={isZoomed ? 1.5 : 1}
+              isAnimationActive={false}
+            />
+            <Line
+              yAxisId="price"
+              type="monotone"
+              dataKey="avgPrice"
+              stroke="#eab308"
+              dot={false}
+              strokeWidth={isZoomed ? 1.2 : 0.8}
+              strokeDasharray="3 2"
+              isAnimationActive={false}
+            />
+            {/* Crosshair vertical line - shared across panels */}
+            {crosshairIdx != null && crosshairItem?.hasData && (
+              <ReferenceLine yAxisId="price" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
+            )}
+            <Customized component={TimelineSignalRenderer} />
+            <Customized component={PulseVolumeRenderer} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ─── Divider ─── */}
+      <div className="h-px bg-border/50" />
+
+      {/* ─── Panel 2: Volume Chart ─── */}
+      <div data-chart-panel="vol">
+        <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] select-none pointer-events-none">
+          <span className="text-muted-foreground font-medium">VOL</span>
+        </div>
+        <ResponsiveContainer width="100%" height={110}>
+          <ComposedChart
+            data={zoomData}
+            margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
+            onMouseMove={(state: any) => {
+              if (state?.activeTooltipIndex != null) {
+                setCrosshairIdx(state.activeTooltipIndex);
+              }
+            }}
+            onMouseLeave={() => setCrosshairIdx(null)}
+          >
+            <XAxis dataKey="idx" type="number" domain={xDomain} tick={false} tickLine={false} axisLine={false} />
+            {/* Hidden left YAxis to align with price chart */}
+            <YAxis
+              yAxisId="vol-left"
+              domain={[0, maxVolume * 1.01]}
+              tick={false}
+              tickLine={false}
+              axisLine={false}
+              width={55}
+            />
+            <YAxis
+              yAxisId="vol-right"
+              orientation="right"
+              domain={[0, maxVolume * 1.01]}
+              tick={{ fontSize: 8, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={false}
+              width={50}
+              tickFormatter={(v: number) => formatVolume(v)}
+            />
+            <Tooltip content={volumeTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
+            {/* Lunch break vertical divider */}
+            {!isZoomed && <ReferenceLine yAxisId="vol-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
+            <Bar
+              yAxisId="vol-right"
+              dataKey="volume"
+              isAnimationActive={false}
+              barSize={barSize}
+              shape={(props: any) => {
+                const { x, y, width, height, payload } = props;
+                if (!payload?.hasData) return null;
+                return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
+              }}
+            />
+            {/* Crosshair vertical line - shared across panels */}
+            {crosshairIdx != null && crosshairItem?.hasData && (
+              <ReferenceLine yAxisId="vol-right" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ─── Divider ─── */}
+      <div className="h-px bg-border/50" />
+
+      {/* ─── Panel 3: MACD Chart ─── */}
+      <div data-chart-panel="macd">
+        <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] select-none pointer-events-none">
+          <span className="text-muted-foreground font-medium">MACD</span>
+          <span className="flex items-center gap-0.5">
+            <span className="inline-block w-2 h-0.5 bg-blue-600 rounded" />
+            <span className="text-blue-600">DIF</span>
+          </span>
+          <span className="flex items-center gap-0.5">
+            <span className="inline-block w-2 h-0.5 bg-orange-600 rounded" />
+            <span className="text-orange-600">DEA</span>
+          </span>
+        </div>
+        <ResponsiveContainer width="100%" height={120}>
+          <ComposedChart
+            data={zoomData}
+            margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
+            onMouseMove={(state: any) => {
+              if (state?.activeTooltipIndex != null) {
+                setCrosshairIdx(state.activeTooltipIndex);
+              }
+            }}
+            onMouseLeave={() => setCrosshairIdx(null)}
+          >
+            <XAxis
+              dataKey="idx"
+              type="number"
+              domain={xDomain}
+              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 0.5 }}
+              interval={0}
+              ticks={zoomTimeTicks}
+              tickFormatter={(idx: number) => {
+                const item = zoomData[idx];
+                return item?.time || "";
+              }}
+            />
+            {/* Hidden left YAxis to align with price chart */}
+            <YAxis
+              yAxisId="macd-left"
+              domain={[macdMin - macdPad, macdMax + macdPad]}
+              tick={false}
+              tickLine={false}
+              axisLine={false}
+              width={55}
+            />
+            <YAxis
+              yAxisId="macd-right"
+              orientation="right"
+              domain={[macdMin - macdPad, macdMax + macdPad]}
+              tick={{ fontSize: 8, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={false}
+              width={50}
+              tickFormatter={(v: number) => v.toFixed(3)}
+            />
+            <Tooltip content={macdTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
+            <ReferenceLine yAxisId="macd-right" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.5} />
+            {/* Lunch break vertical divider */}
+            {!isZoomed && <ReferenceLine yAxisId="macd-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
+            <Bar
+              yAxisId="macd-right"
+              dataKey="macd"
+              isAnimationActive={false}
+              barSize={barSize}
+              shape={(props: any) => {
+                const { x, y, width, height, payload } = props;
+                if (payload?.macd == null) return null;
+                // SVG rect requires positive height; negative-MACD bars get negative height from Recharts
+                const h = Math.abs(height || 0);
+                if (h < 0.3) return null;
+                const ry = height < 0 ? y + height : y;
+                return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+              }}
+            />
+            <Line
+              yAxisId="macd-right"
+              type="monotone"
+              dataKey="dif"
+              stroke="#2563eb"
+              dot={false}
+              strokeWidth={1.2}
+              isAnimationActive={false}
+            />
+            <Line
+              yAxisId="macd-right"
+              type="monotone"
+              dataKey="dea"
+              stroke="#ea580c"
+              dot={false}
+              strokeWidth={1.2}
+              isAnimationActive={false}
+            />
+            {/* Crosshair vertical line - shared across panels */}
+            {crosshairIdx != null && crosshairItem?.hasData && (
+              <ReferenceLine yAxisId="macd-right" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}

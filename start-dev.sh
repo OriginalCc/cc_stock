@@ -1,7 +1,9 @@
 #!/bin/bash
+# Auto-restart dev server wrapper
 while true; do
-  cd /home/z/my-project
-  node node_modules/.bin/next dev -p 3000 > /home/z/my-project/dev.log 2>&1
-  echo "[$(date)] Server crashed, restarting in 2s..." >> /home/z/my-project/dev.log
-  sleep 2
+  echo "[$(date)] Starting dev server..."
+  npx next dev -p 3000 2>&1 | tee /home/z/my-project/dev.log
+  EXIT_CODE=$?
+  echo "[$(date)] Dev server exited with code $EXIT_CODE, restarting in 3s..."
+  sleep 3
 done
