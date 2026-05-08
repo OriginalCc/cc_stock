@@ -74,6 +74,8 @@ interface ScreenerStock {
   pulseDetail: string;
   volumeSurgeScore: number;
   volumeSurgeDetail: string;
+  evaluation: string;
+  evaluationDetail: string;
 }
 
 interface ScreenerResult {
@@ -164,6 +166,25 @@ function getVolumeSurgeLabel(score: number): string {
   if (score >= 20) return "轻微放量";
   if (score >= 10) return "微弱放量";
   return "无放量";
+}
+
+function getEvaluationStyle(label: string): { color: string; bg: string; icon: string } {
+  switch (label) {
+    case "强势续涨":
+      return { color: "text-red-500", bg: "bg-red-500/10 border-red-500/30", icon: "🔥" };
+    case "温和看多":
+      return { color: "text-orange-500", bg: "bg-orange-500/10 border-orange-500/30", icon: "📈" };
+    case "震荡整理":
+      return { color: "text-yellow-500", bg: "bg-yellow-500/10 border-yellow-500/30", icon: "🔄" };
+    case "拉高出货":
+      return { color: "text-green-600", bg: "bg-green-500/10 border-green-500/30", icon: "⚠️" };
+    case "弱势回调":
+      return { color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/30", icon: "📉" };
+    case "观望等待":
+      return { color: "text-gray-400", bg: "bg-gray-500/10 border-gray-500/30", icon: "⏳" };
+    default:
+      return { color: "text-gray-400", bg: "bg-gray-500/10 border-gray-500/30", icon: "❓" };
+  }
 }
 
 // ── Popular sectors for quick selection ────────────────
@@ -1157,6 +1178,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </div>
                     </TableHead>
                     <TableHead className="w-[60px] text-xs font-medium">PE</TableHead>
+                    <TableHead className="text-xs font-medium min-w-[100px]">股票评估</TableHead>
                     <TableHead className="text-xs font-medium min-w-[120px]">信号详情</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1250,6 +1272,33 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2 text-muted-foreground">
                           {stock.pe > 0 ? stock.pe.toFixed(1) : "--"}
+                        </TableCell>
+                        <TableCell className="text-xs py-2">
+                          {(() => {
+                            const evStyle = getEvaluationStyle(stock.evaluation || "观望等待");
+                            return (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="flex items-center gap-1 cursor-default">
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs py-0 px-1.5 font-medium ${evStyle.bg} ${evStyle.color} border`}
+                                      >
+                                        {evStyle.icon} {stock.evaluation || "待评估"}
+                                      </Badge>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="text-xs max-w-[280px]">
+                                    <div className="font-medium mb-1">{evStyle.icon} {stock.evaluation}</div>
+                                    {stock.evaluationDetail && (
+                                      <div className="text-muted-foreground">{stock.evaluationDetail}</div>
+                                    )}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="text-xs py-2 text-muted-foreground max-w-[160px] truncate">
                           <TooltipProvider>

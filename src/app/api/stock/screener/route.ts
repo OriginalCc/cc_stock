@@ -65,6 +65,8 @@ interface ScreenerStock {
   pulseDetail: string;      // 脉冲拉升描述
   volumeSurgeScore: number; // 放量拉升评分 0-100
   volumeSurgeDetail: string;// 放量拉升描述
+  evaluation: string;       // 股票评估标签
+  evaluationDetail: string; // 股票评估详情
 }
 
 interface ScreenerResult {
@@ -567,6 +569,222 @@ function detectVolumeSurge(
   };
 }
 
+// ── Stock Evaluation ──────────────────────────────────────
+
+/**
+ * Evaluate a stock based on multi-factor analysis
+ * Returns { label: string, detail: string }
+ *
+ * Evaluation categories:
+ *  - "强势续涨"  : Strong continuation - best case, multiple positive signals
+ *  - "温和看多"  : Moderately bullish - positive but some caution signals
+ *  - "震荡整理"  : Consolidation - mixed signals, direction uncertain
+ *  - "拉高出货"  : Pump and dump - strong negative signals
+ *  - "弱势回调"  : Weak pullback - fading momentum
+ *  - "观望等待"  : Wait and see - insufficient signals
+ */
+function evaluateStock(stock: ScreenerStock): { label: string; detail: string } {
+  const {
+    price, open, high, low, prevClose,
+    changePercent, turnover, marketCap,
+    mainNetInflow, amplitude, pe,
+    pulseScore, pulseDetail, volumeSurgeScore, volumeSurgeDetail,
+  } = stock;
+
+  const marketCapYi = marketCap / 1e8; // 市值(亿)
+  const reasons: string[] = [];
+
+  // ── Key indicators ──
+  // 1. Price position relative to day's range
+  const dayRange = high - low;
+  const pricePosition = dayRange > 0 ? (price - low) / dayRange : 0.5; // 0=low, 1=high
+
+  // 2. Price vs open (intraday trend)
+  const priceVsOpen = open > 0 ? ((price - open) / open) * 100 : 0;
+
+  // 3. Price vs prevClose (gap + intraday move)
+  const gapRate = prevClose > 0 ? ((open - prevClose) / prevClose) * 100 : 0;
+
+  // 4. Upper shadow ratio (上影线) - indicates selling pressure
+  const upperShadow = high - price;
+  const upperShadowRatio = dayRange > 0 ? upperShadow / dayRange : 0;
+
+  // 5. Lower shadow ratio (下影线) - indicates buying support
+  const lowerShadow = price - low;
+  const lowerShadowRatio = dayRange > 0 ? lowerShadow / dayRange : 0;
+
+  // 6. Main net inflow strength
+  const inflowStrength = marketCap > 0 ? (mainNetInflow / marketCap) * 10000 : 0; // 万分比
+
+  // ── Scoring system ──
+  let bullishScore = 0;  // 正面分数
+  let bearishScore = 0;  // 负面分数
+
+  // === Bullish signals ===
+
+  // B1: Strong pulse/volume surge score
+  const combinedSignalScore = Math.max(pulseScore, volumeSurgeScore);
+  if (combinedSignalScore >= 70) {
+    bullishScore += 3;
+    reasons.push(`强信号(${combinedSignalScore}分)`);
+  } else if (combinedSignalScore >= 40) {
+    bullishScore += 2;
+    reasons.push(`中信号(${combinedSignalScore}分)`);
+  } else if (combinedSignalScore >= 20) {
+    bullishScore += 1;
+  }
+
+  // B2: Price holding near high (strong intraday)
+  if (pricePosition >= 0.7 && changePercent > 0) {
+    bullishScore += 2;
+    reasons.push("价格坚挺");
+  } else if (pricePosition >= 0.5 && changePercent > 0) {
+    bullishScore += 1;
+  }
+
+  // B3: Main net inflow positive
+  if (mainNetInflow > 0 && amount > 0) {
+    const inflowRatio = mainNetInflow / amount;
+    if (inflowRatio >= 0.05) {
+      bullishScore += 3;
+      reasons.push(`主力强流入${(mainNetInflow / 1e8).toFixed(2)}亿`);
+    } else if (inflowRatio >= 0.02) {
+      bullishScore += 2;
+      reasons.push("主力正流入");
+    } else if (mainNetInflow > 0) {
+      bullishScore += 1;
+    }
+  }
+
+  // B4: Moderate turnover (2%~8%)
+  if (turnover >= 2 && turnover <= 8) {
+    bullishScore += 2;
+    reasons.push("换手适中");
+  } else if (turnover >= 1 && turnover < 2) {
+    bullishScore += 1;
+  }
+
+  // B5: Price above open (intraday uptrend)
+  if (priceVsOpen >= 1.5) {
+    bullishScore += 2;
+    reasons.push("盘中走强");
+  } else if (priceVsOpen >= 0.5) {
+    bullishScore += 1;
+  }
+
+  // B6: Market cap in sweet spot (30~200亿)
+  if (marketCapYi >= 30 && marketCapYi <= 200) {
+    bullishScore += 1;
+    reasons.push("市值适中");
+  }
+
+  // B7: Both pulse AND volume surge (dual confirmation)
+  if (pulseScore >= 30 && volumeSurgeScore >= 30) {
+    bullishScore += 2;
+    reasons.push("脉冲+放量共振");
+  }
+
+  // === Bearish signals ===
+
+  // S1: Large upper shadow (selling pressure at highs)
+  if (upperShadowRatio >= 0.5 && changePercent > 0) {
+    bearishScore += 3;
+    reasons.push("长上影线");
+  } else if (upperShadowRatio >= 0.35 && changePercent > 0) {
+    bearishScore += 2;
+    reasons.push("上影线较长");
+  } else if (upperShadowRatio >= 0.25 && changePercent > 0) {
+    bearishScore += 1;
+  }
+
+  // S2: Main net outflow (selling)
+  if (mainNetInflow < 0 && amount > 0) {
+    const outflowRatio = Math.abs(mainNetInflow) / amount;
+    if (outflowRatio >= 0.05) {
+      bearishScore += 3;
+      reasons.push(`主力强流出${(Math.abs(mainNetInflow) / 1e8).toFixed(2)}亿`);
+    } else if (outflowRatio >= 0.02) {
+      bearishScore += 2;
+      reasons.push("主力净流出");
+    } else {
+      bearishScore += 1;
+    }
+  }
+
+  // S3: Excessive turnover (出货特征)
+  if (turnover > 15) {
+    bearishScore += 3;
+    reasons.push("换手过高(>15%)");
+  } else if (turnover > 10) {
+    bearishScore += 2;
+    reasons.push("换手偏高");
+  }
+
+  // S4: Price below open (冲高回落)
+  if (priceVsOpen <= -1) {
+    bearishScore += 2;
+    reasons.push("冲高回落");
+  } else if (priceVsOpen <= -0.3) {
+    bearishScore += 1;
+  }
+
+  // S5: Price near low of day
+  if (pricePosition <= 0.2) {
+    bearishScore += 2;
+    reasons.push("价格弱势");
+  } else if (pricePosition <= 0.35) {
+    bearishScore += 1;
+  }
+
+  // S6: High amplitude with negative close (剧烈波动收跌)
+  if (amplitude >= 5 && changePercent < 0) {
+    bearishScore += 2;
+    reasons.push("大幅震荡收跌");
+  }
+
+  // S7: Pulse with pullback pattern (脉冲后回落)
+  if (pulseDetail.includes("回落") && priceVsOpen < 0) {
+    bearishScore += 2;
+    reasons.push("脉冲后回落");
+  }
+
+  // S8: Tiny market cap (easily manipulated)
+  if (marketCapYi < 30 && marketCapYi > 0) {
+    bearishScore += 1;
+  }
+
+  // ── Determine evaluation label ──
+  const netScore = bullishScore - bearishScore;
+  let label: string;
+
+  if (netScore >= 5) {
+    label = "强势续涨";
+  } else if (netScore >= 2) {
+    label = "温和看多";
+  } else if (netScore >= -1) {
+    label = "震荡整理";
+  } else if (netScore >= -3) {
+    if (bearishScore >= 4 && (mainNetInflow < 0 || upperShadowRatio > 0.35)) {
+      label = "拉高出货";
+    } else {
+      label = "弱势回调";
+    }
+  } else {
+    label = "拉高出货";
+  }
+
+  // Fallback for stocks with no signals at all
+  if (combinedSignalScore === 0 && Math.abs(changePercent) < 0.5) {
+    label = "观望等待";
+    reasons.length = 0;
+    reasons.push("信号不足");
+  }
+
+  const detail = reasons.length > 0 ? reasons.join("；") : "综合评估";
+
+  return { label, detail };
+}
+
 /**
  * Check if a stock code belongs to main board
  * Main board: 600xxx, 601xxx, 603xxx, 605xxx (SH), 000xxx, 001xxx, 002xxx (SZ)
@@ -760,6 +978,8 @@ export async function GET(request: NextRequest) {
         pulseDetail: "待检测",
         volumeSurgeScore: 0,
         volumeSurgeDetail: "待检测",
+        evaluation: "待评估",
+        evaluationDetail: "",
       });
     }
 
@@ -795,6 +1015,13 @@ export async function GET(request: NextRequest) {
         return pulsePass || volPass;
       });
 
+      // Evaluate each filtered stock
+      for (const s of filtered) {
+        const ev = evaluateStock(s);
+        s.evaluation = ev.label;
+        s.evaluationDetail = ev.detail;
+      }
+
       // Sort by max of the two scores (desc), then change percent (desc)
       filtered.sort((a, b) => {
         const aMax = Math.max(a.pulseScore, a.volumeSurgeScore);
@@ -821,6 +1048,13 @@ export async function GET(request: NextRequest) {
 
     // No pulse detection: sort by change percent desc
     candidates.sort((a, b) => b.changePercent - a.changePercent);
+
+    // Evaluate each candidate
+    for (const s of candidates) {
+      const ev = evaluateStock(s);
+      s.evaluation = ev.label;
+      s.evaluationDetail = ev.detail;
+    }
 
     const result: ScreenerResult = {
       success: true,
