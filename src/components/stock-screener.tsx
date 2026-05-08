@@ -197,7 +197,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   const [result, setResult] = useState<ScreenerResult | null>(clientCache?.result ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<SortField>("pulseScore");
+  const [sortField, setSortField] = useState<SortField>("changePercent");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [lastFetchTime, setLastFetchTime] = useState<string>(clientCache?.lastFetchTime ?? "");
   const [isFromCache, setIsFromCache] = useState(!!clientCache);
