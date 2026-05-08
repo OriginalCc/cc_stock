@@ -43,6 +43,10 @@ import {
   ChevronUp as ChevronUpIcon,
   X,
   SlidersHorizontal,
+  Bookmark,
+  BookmarkPlus,
+  Trash2,
+  Check,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────
@@ -151,6 +155,35 @@ const POPULAR_SECTORS = [
   { label: "锂电池", emoji: "🔋" },
 ];
 
+// ── Custom Presets (localStorage) ─────────────────────────
+
+interface CustomPreset {
+  id: string;
+  name: string;
+  filters: ScreenerFilters;
+  createdAt: number;
+}
+
+const CUSTOM_PRESETS_KEY = "screener-custom-presets";
+
+function loadCustomPresets(): CustomPreset[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_PRESETS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomPresets(presets: CustomPreset[]): void {
+  try {
+    localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(presets));
+  } catch {
+    // ignore quota errors
+  }
+}
+
 // ── Module-level client cache (persists across tab switches) ────────
 
 interface ClientCacheEntry {
@@ -208,6 +241,17 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   const [sectorInput, setSectorInput] = useState(clientCache?.filters.sector ?? "通信");
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const sectorDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Custom presets
+  const [customPresets, setCustomPresets] = useState<CustomPreset[]>([]);
+  const [presetNameInput, setPresetNameInput] = useState("");
+  const [showSavePreset, setShowSavePreset] = useState(false);
+  const [deletingPresetId, setDeletingPresetId] = useState<string | null>(null);
+
+  // Load custom presets from localStorage on mount
+  useEffect(() => {
+    setCustomPresets(loadCustomPresets());
+  }, []);
 
   // Close sector dropdown on outside click
   useEffect(() => {
@@ -341,6 +385,36 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   const handleResetFilters = () => {
     setFilters(DEFAULT_FILTERS);
     setSectorInput(DEFAULT_FILTERS.sector);
+  };
+
+  // Save current filters as a custom preset
+  const handleSavePreset = () => {
+    const name = presetNameInput.trim() || `${filters.sector} ${filters.minChange}%~${filters.maxChange}%`;
+    const newPreset: CustomPreset = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name,
+      filters: { ...filters },
+      createdAt: Date.now(),
+    };
+    const updated = [newPreset, ...customPresets];
+    setCustomPresets(updated);
+    saveCustomPresets(updated);
+    setPresetNameInput("");
+    setShowSavePreset(false);
+  };
+
+  // Delete a custom preset
+  const handleDeletePreset = (id: string) => {
+    const updated = customPresets.filter(p => p.id !== id);
+    setCustomPresets(updated);
+    saveCustomPresets(updated);
+    setDeletingPresetId(null);
+  };
+
+  // Apply a custom preset
+  const handleApplyPreset = (preset: CustomPreset) => {
+    setFilters(preset.filters);
+    setSectorInput(preset.filters.sector);
   };
 
   // Check if filters have changed from defaults
@@ -696,63 +770,157 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                   )}
                 </div>
 
-                {/* Quick presets */}
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground">快捷预设</Label>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => {
-                        setFilters(DEFAULT_FILTERS);
-                        setSectorInput(DEFAULT_FILTERS.sector);
-                      }}
-                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
-                        !filtersChanged
-                          ? "bg-primary/10 border-primary/30 text-primary"
-                          : "bg-background border-border hover:bg-muted"
-                      }`}
-                    >
-                      默认(通信+脉冲)
-                    </button>
-                    <button
-                      onClick={() => {
-                        const f = { sector: "半导体", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 15, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
-                        setFilters(f);
-                        setSectorInput("半导体");
-                      }}
-                      className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
-                    >
-                      💎 半导体宽幅
-                    </button>
-                    <button
-                      onClick={() => {
-                        const f = { sector: "人工智能", minChange: 0, maxChange: 3, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
-                        setFilters(f);
-                        setSectorInput("人工智能");
-                      }}
-                      className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
-                    >
-                      🤖 AI大市值
-                    </button>
-                    <button
-                      onClick={() => {
-                        const f = { sector: "新能源", minChange: -1, maxChange: 5, maxMarketCap: 300, pulseThreshold: 20, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
-                        setFilters(f);
-                        setSectorInput("新能源");
-                      }}
-                      className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
-                    >
-                      ☀️ 新能源波动
-                    </button>
-                    <button
-                      onClick={() => {
-                        const f = { sector: "医药", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 0, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
-                        setFilters(f);
-                        setSectorInput("医药");
-                      }}
-                      className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
-                    >
-                      💊 医药纯筛选
-                    </button>
+                {/* Quick presets & Custom presets */}
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground">快捷预设</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => {
+                          setFilters(DEFAULT_FILTERS);
+                          setSectorInput(DEFAULT_FILTERS.sector);
+                        }}
+                        className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                          !filtersChanged
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "bg-background border-border hover:bg-muted"
+                        }`}
+                      >
+                        默认(通信+脉冲)
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f = { sector: "半导体", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 15, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
+                          setFilters(f);
+                          setSectorInput("半导体");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        💎 半导体宽幅
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f = { sector: "人工智能", minChange: 0, maxChange: 3, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
+                          setFilters(f);
+                          setSectorInput("人工智能");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        🤖 AI大市值
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f = { sector: "新能源", minChange: -1, maxChange: 5, maxMarketCap: 300, pulseThreshold: 20, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
+                          setFilters(f);
+                          setSectorInput("新能源");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        ☀️ 新能源波动
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f = { sector: "医药", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 0, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30" };
+                          setFilters(f);
+                          setSectorInput("医药");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        💊 医药纯筛选
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Custom presets */}
+                  {customPresets.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                        <Bookmark className="w-3 h-3" />
+                        我的预设
+                      </Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {customPresets.map((preset) => (
+                          <div key={preset.id} className="group relative">
+                            <button
+                              onClick={() => handleApplyPreset(preset)}
+                              className={`text-xs px-2.5 py-1 rounded-md border transition-colors pr-7 ${
+                                JSON.stringify(filters) === JSON.stringify(preset.filters)
+                                  ? "bg-primary/10 border-primary/30 text-primary"
+                                  : "bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                              }`}
+                            >
+                              📌 {preset.name}
+                            </button>
+                            {deletingPresetId === preset.id ? (
+                              <div className="absolute -top-0.5 -right-0.5 flex items-center gap-0.5">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeletePreset(preset.id); }}
+                                  className="w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white"
+                                >
+                                  <Check className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setDeletingPresetId(null); }}
+                                  className="w-4 h-4 flex items-center justify-center rounded-full bg-muted text-muted-foreground"
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setDeletingPresetId(preset.id); }}
+                                className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-muted/80 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20 hover:text-red-500"
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Save current as preset */}
+                  <div className="space-y-2">
+                    {showSavePreset ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={presetNameInput}
+                          onChange={(e) => setPresetNameInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSavePreset();
+                            if (e.key === "Escape") setShowSavePreset(false);
+                          }}
+                          placeholder={`预设名称 (默认: ${filters.sector} ${filters.minChange}%~${filters.maxChange}%)`}
+                          className="h-7 text-xs flex-1"
+                          autoFocus
+                        />
+                        <Button
+                          size="sm"
+                          onClick={handleSavePreset}
+                          className="h-7 text-xs gap-1"
+                        >
+                          <Check className="w-3 h-3" />
+                          保存
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => { setShowSavePreset(false); setPresetNameInput(""); }}
+                          className="h-7 text-xs"
+                        >
+                          取消
+                        </Button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowSavePreset(true)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <BookmarkPlus className="w-3 h-3" />
+                        保存当前条件为预设
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
