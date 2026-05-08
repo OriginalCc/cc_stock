@@ -15,6 +15,7 @@ import {
   Customized,
 } from "recharts";
 import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem, type TimelineItem, type ChartMode } from "@/hooks/use-stock-data";
+import { StockScreener } from "@/components/stock-screener";
 import { calculateMACD } from "@/lib/indicators";
 import { generateTimelineSignals as generateOptimizedSignals, getTimeWindow, detectMarketRegime, detectMarketRegimeDetail, buildFactorOverridesFromDB, computeKeyPriceLevels, type TSignal as OptimizedTSignal, type TimeWindow, type MarketRegime, type FactorOverride, type RegimeDetail, type Strength, type CustomFactorDefinition as EngineCustomFactorDefinition, STRATEGY_OVERVIEW } from "@/lib/t-strategy";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5472,6 +5473,9 @@ export default function StockTAssistant() {
     isAShare: isAShareStock,
   } = useStockData();
 
+  // ── Page Mode: "t-assistant" or "screener" ──
+  const [pageMode, setPageMode] = useState<"t-assistant" | "screener">("t-assistant");
+
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
   const [showSearch, setShowSearch] = useState(false);
@@ -6622,6 +6626,30 @@ export default function StockTAssistant() {
               <Zap className="h-6 w-6 text-primary" />
               <h1 className="text-lg font-bold hidden sm:block">做T助手</h1>
               <Badge variant="outline" className="text-xs hidden sm:flex">A股</Badge>
+              {/* Mode Toggle */}
+              <div className="flex items-center border border-border rounded-md overflow-hidden ml-1">
+                <button
+                  onClick={() => setPageMode("t-assistant")}
+                  className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+                    pageMode === "t-assistant"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  做T
+                </button>
+                <button
+                  onClick={() => setPageMode("screener")}
+                  className={`px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
+                    pageMode === "screener"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Filter className="w-3 h-3" />
+                  选股
+                </button>
+              </div>
             </div>
 
             {/* Search */}
@@ -6704,6 +6732,15 @@ export default function StockTAssistant() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-[1400px] mx-auto w-full px-4 py-4">
+        {pageMode === "screener" ? (
+          <StockScreener
+            onSelectStock={(sym) => {
+              selectStock(sym);
+              setPageMode("t-assistant");
+            }}
+          />
+        ) : (
+        <>
         {/* Stock Info Bar */}
         <Card className={`mb-4 transition-all ${flashSignal === 'buy' ? 'animate-flash-green' : flashSignal ? 'animate-flash-red' : ''}`}>
           <CardContent className="p-4">
@@ -8248,6 +8285,8 @@ export default function StockTAssistant() {
 
         {/* Strategy Admin Panel */}
         <StrategyAdminPanel onFactorsChanged={(factors) => setFactorOverrides(buildFactorOverridesFromDB(factors))} />
+        </>
+        )}
       </main>
 
       {/* Footer */}
