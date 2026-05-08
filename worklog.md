@@ -757,3 +757,35 @@ Stage Summary:
 - Backend: full pipeline from sector discovery → limit-up filtering → technical + news analysis
 - Frontend: polished UI with caching, responsive design, proper loading/error states
 - All lint checks pass cleanly
+
+---
+Task ID: 3
+Agent: main
+Task: Make screener filter conditions editable for manual input
+
+Work Log:
+- Updated backend API (screener/route.ts):
+  - Renamed `findCommunicationSectors()` to `findSectorsByKeyword(keyword)` 
+  - Now accepts dynamic sector keyword parameter instead of hardcoded "通信"
+  - Added alias mappings for common sectors (通信→通讯, 半导体→芯片, etc.)
+  - Error message now shows the actual keyword searched
+- Rewrote frontend component (stock-screener.tsx):
+  - Added expandable filter panel with "编辑筛选条件" toggle
+  - Sector input: text input with dropdown showing 16 popular sectors (通信, 半导体, AI, 新能源, etc.)
+  - Change % range: dual-thumb slider + number inputs (min~max)
+  - Max market cap: slider + number input (10~2000亿)
+  - Pulse detection: on/off switch + threshold slider (0~100)
+  - Quick presets: 5 predefined filter combinations (默认, 半导体宽幅, AI大市值, 新能源波动, 医药纯筛选)
+  - "开始选股" button to apply filters and fetch data
+  - "重置条件" button to reset to defaults
+  - Active criteria tags always visible at top showing current filters
+  - Changed indicator (yellow dot) when filters differ from defaults
+  - Cache entry now includes filters state for consistency
+
+Stage Summary:
+- All 6 filter parameters are now user-editable: sector, minChange, maxChange, maxMarketCap, pulseThreshold, enablePulse
+- Popular sectors quick-select dropdown with emoji icons
+- Slider + number input combo for precise control
+- Quick presets for common screening strategies
+- Backend supports dynamic sector keyword search with alias expansion
+- Lint passes cleanly

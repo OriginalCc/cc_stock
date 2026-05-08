@@ -72,21 +72,44 @@ interface ScreenerResult {
   error?: string;
 }
 
-// ── Communication sector codes in EastMoney ─────────────
-// 通信设备 BK0899, 通信服务 BK0489
-// We'll search for the right sector dynamically
-const COMMUNICATION_SECTOR_KEYWORDS = ["通信", "通讯"];
+// ── Sector Search via EastMoney ─────────────────────────
+// Dynamically search for sector codes based on keyword
 
 /**
- * Search for communication sector codes via EastMoney suggest API
+ * Search for sector codes via EastMoney suggest API
+ * @param keyword - The sector keyword to search (e.g. "通信", "半导体", "新能源")
  */
-async function findCommunicationSectors(): Promise<{ code: string; name: string }[]> {
+async function findSectorsByKeyword(keyword: string): Promise<{ code: string; name: string }[]> {
   const results: { code: string; name: string }[] = [];
   const seen = new Set<string>();
 
-  for (const keyword of COMMUNICATION_SECTOR_KEYWORDS) {
+  // Also search for common aliases
+  const keywords = [keyword];
+  // Add common alias mappings
+  const aliases: Record<string, string[]> = {
+    "通信": ["通讯"],
+    "通讯": ["通信"],
+    "半导体": ["芯片"],
+    "芯片": ["半导体"],
+    "新能源": ["光伏", "风电"],
+    "医药": ["医疗", "生物"],
+    "军工": ["国防"],
+    "消费": ["食品", "白酒"],
+    "银行": ["金融"],
+    "证券": ["券商"],
+    "汽车": ["新能源车"],
+    "地产": ["房地产"],
+    "煤炭": ["能源"],
+    "钢铁": ["有色"],
+    "人工智能": ["AI", "大模型"],
+  };
+  if (aliases[keyword]) {
+    keywords.push(...aliases[keyword]);
+  }
+
+  for (const kw of keywords) {
     try {
-      const url = `http://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(keyword)}&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=10`;
+      const url = `http://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(kw)}&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=10`;
       const resp = await fetch(url, {
         next: { revalidate: 0 },
         signal: AbortSignal.timeout(8000),
@@ -101,13 +124,9 @@ async function findCommunicationSectors(): Promise<{ code: string; name: string 
         if (entry.Classify !== "BK") continue;
         const code: string = entry.Code || "";
         const name: string = entry.Name || "";
-        // Only include communication-related sectors
-        if (
-          name.includes("通信") ||
-          name.includes("通讯") ||
-          name.includes("通信设备") ||
-          name.includes("通信服务")
-        ) {
+        // Include sectors whose name contains the keyword or any alias
+        const matchesKeyword = keywords.some(k => name.includes(k));
+        if (matchesKeyword) {
           if (!seen.has(code)) {
             seen.add(code);
             results.push({ code, name });
@@ -428,8 +447,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Step 1: Find communication sectors
-    const sectors = await findCommunicationSectors();
+    // Step 1: Find sectors by keyword
+    const sectors = await findSectorsByKeyword(sectorKeyword);
     if (sectors.length === 0) {
       return NextResponse.json({
         success: false,
@@ -439,11 +458,11 @@ export async function GET(request: NextRequest) {
         sectorName: "",
         sectorCode: "",
         timestamp: new Date().toISOString(),
-        error: "未找到通讯板块",
+        error: `未找到"${sectorKeyword}"相关板块`,
       } as ScreenerResult);
     }
 
-    // Step 2: Fetch stocks from all communication sectors
+    // Step 2: Fetch stocks from all matching sectors
     const allRawStocks: any[] = [];
     let sectorName = "";
     let sectorCode = "";

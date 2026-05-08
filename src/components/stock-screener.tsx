@@ -4,7 +4,12 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -26,16 +31,18 @@ import {
   Zap,
   ArrowUpRight,
   ArrowDownRight,
-  Minus,
   Search,
   ChevronUp,
   ChevronDown,
   AlertCircle,
-  CheckCircle2,
   Loader2,
   BarChart3,
   Target,
   Database,
+  ChevronDown as ChevronDownIcon,
+  ChevronUp as ChevronUpIcon,
+  X,
+  SlidersHorizontal,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────
@@ -99,13 +106,6 @@ function formatAmount(val: number): string {
   return val.toFixed(0);
 }
 
-function formatVolume(val: number): string {
-  if (!val) return "--";
-  if (val >= 1e8) return (val / 1e8).toFixed(2) + "亿";
-  if (val >= 1e4) return (val / 1e4).toFixed(2) + "万";
-  return val.toFixed(0);
-}
-
 function getPulseScoreColor(score: number): string {
   if (score >= 70) return "text-red-500";
   if (score >= 50) return "text-orange-500";
@@ -130,16 +130,58 @@ function getPulseLabel(score: number): string {
   return "无脉冲";
 }
 
+// ── Popular sectors for quick selection ────────────────
+
+const POPULAR_SECTORS = [
+  { label: "通信", emoji: "📡" },
+  { label: "半导体", emoji: "💎" },
+  { label: "人工智能", emoji: "🤖" },
+  { label: "新能源", emoji: "☀️" },
+  { label: "医药", emoji: "💊" },
+  { label: "军工", emoji: "🛡️" },
+  { label: "汽车", emoji: "🚗" },
+  { label: "消费", emoji: "🛒" },
+  { label: "银行", emoji: "🏦" },
+  { label: "证券", emoji: "📈" },
+  { label: "地产", emoji: "🏠" },
+  { label: "煤炭", emoji: "⛏️" },
+  { label: "钢铁", emoji: "🔩" },
+  { label: "电力", emoji: "⚡" },
+  { label: "光伏", emoji: "🌞" },
+  { label: "锂电池", emoji: "🔋" },
+];
+
 // ── Module-level client cache (persists across tab switches) ────────
-// This cache survives component unmount/remount when switching between
-// "做T" and "选股" tabs, so the user doesn't need to re-fetch every time.
+
 interface ClientCacheEntry {
   result: ScreenerResult;
   lastFetchTime: string;
   timestamp: number;
+  filters: ScreenerFilters;
 }
-const CLIENT_CACHE_TTL = 3 * 60 * 1000; // 3 minutes – same as server cache
+const CLIENT_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
 let clientCache: ClientCacheEntry | null = null;
+
+// ── Filter State Type ──────────────────────────────────
+
+interface ScreenerFilters {
+  sector: string;
+  minChange: number;
+  maxChange: number;
+  maxMarketCap: number;
+  pulseThreshold: number;
+  enablePulse: boolean;
+}
+
+const DEFAULT_FILTERS: ScreenerFilters = {
+  sector: "通信",
+  minChange: 0,
+  maxChange: 3,
+  maxMarketCap: 200,
+  pulseThreshold: 20,
+  enablePulse: true,
+};
 
 // ── Component ──────────────────────────────────────────
 
@@ -157,23 +199,37 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   const [isFromCache, setIsFromCache] = useState(!!clientCache);
 
   // Filter states
-  const [minChange, setMinChange] = useState(0);
-  const [maxChange, setMaxChange] = useState(3);
-  const [maxMarketCap, setMaxMarketCap] = useState(200);
-  const [pulseThreshold, setPulseThreshold] = useState(20);
+  const [filters, setFilters] = useState<ScreenerFilters>(clientCache?.filters ?? DEFAULT_FILTERS);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [sectorInput, setSectorInput] = useState(clientCache?.filters.sector ?? "通信");
+  const [showSectorDropdown, setShowSectorDropdown] = useState(false);
+  const sectorDropdownRef = useRef<HTMLDivElement>(null);
 
-  const fetchScreenerData = useCallback(async (forceRefresh = false) => {
+  // Close sector dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (sectorDropdownRef.current && !sectorDropdownRef.current.contains(e.target as Node)) {
+        setShowSectorDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const fetchScreenerData = useCallback(async (forceRefresh = false, customFilters?: ScreenerFilters) => {
+    const f = customFilters || filters;
     setLoading(true);
     setError(null);
     setIsFromCache(false);
     try {
       const params = new URLSearchParams({
-        minChange: String(minChange),
-        maxChange: String(maxChange),
-        maxMarketCap: String(maxMarketCap),
-        pulseThreshold: String(pulseThreshold),
-        sector: "通信",
+        minChange: String(f.minChange),
+        maxChange: String(f.maxChange),
+        maxMarketCap: String(f.maxMarketCap),
+        pulseThreshold: String(f.pulseThreshold),
+        sector: f.sector,
       });
+      if (!f.enablePulse) params.set("pulse", "false");
       if (forceRefresh) params.set("refresh", "1");
       const res = await fetch(`/api/stock/screener?${params}`);
       const data: ScreenerResult = await res.json();
@@ -184,7 +240,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
         setLastFetchTime(fetchTime);
         setIsFromCache(!!data.cached);
         // Update client cache
-        clientCache = { result: data, lastFetchTime: fetchTime, timestamp: Date.now() };
+        clientCache = { result: data, lastFetchTime: fetchTime, timestamp: Date.now(), filters: f };
       } else {
         setError(data.error || "选股失败");
       }
@@ -193,14 +249,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     } finally {
       setLoading(false);
     }
-  }, [minChange, maxChange, maxMarketCap, pulseThreshold]);
+  }, [filters]);
 
   // Auto-fetch on mount: use cache if fresh, otherwise fetch
   useEffect(() => {
     if (clientCache && Date.now() - clientCache.timestamp < CLIENT_CACHE_TTL) {
-      // Cache is still fresh – use it, no need to fetch
       setResult(clientCache.result);
       setLastFetchTime(clientCache.lastFetchTime);
+      setFilters(clientCache.filters);
+      setSectorInput(clientCache.filters.sector);
       setIsFromCache(true);
     } else {
       fetchScreenerData();
@@ -236,18 +293,44 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
       : <ChevronUp className="w-3 h-3 opacity-80" />;
   };
 
-  // Criteria tags
-  const criteria = [
-    { label: "通讯板块", active: true, icon: <BarChart3 className="w-3 h-3" /> },
-    { label: "主板", active: true, icon: <Target className="w-3 h-3" /> },
-    { label: `涨幅${minChange}%~${maxChange}%`, active: true, icon: <TrendingUp className="w-3 h-3" /> },
-    { label: `市值<${maxMarketCap}亿`, active: true, icon: <BarChart3 className="w-3 h-3" /> },
-    { label: "排除ST", active: true, icon: <AlertCircle className="w-3 h-3" /> },
-    { label: "排除创业板", active: true, icon: <AlertCircle className="w-3 h-3" /> },
-    { label: "排除科创板", active: true, icon: <AlertCircle className="w-3 h-3" /> },
-    { label: "排除北交", active: true, icon: <AlertCircle className="w-3 h-3" /> },
-    { label: "开盘脉冲拉升", active: true, icon: <Zap className="w-3 h-3" /> },
-  ];
+  // Handle filter changes
+  const handleFilterChange = (key: keyof ScreenerFilters, value: any) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSectorSelect = (sector: string) => {
+    setSectorInput(sector);
+    handleFilterChange("sector", sector);
+    setShowSectorDropdown(false);
+  };
+
+  const handleSectorInputConfirm = () => {
+    if (sectorInput.trim()) {
+      handleFilterChange("sector", sectorInput.trim());
+    }
+    setShowSectorDropdown(false);
+  };
+
+  // Apply filters and fetch
+  const handleApplyFilters = () => {
+    // Update sector from input
+    if (sectorInput.trim() && sectorInput.trim() !== filters.sector) {
+      const newFilters = { ...filters, sector: sectorInput.trim() };
+      setFilters(newFilters);
+      fetchScreenerData(true, newFilters);
+    } else {
+      fetchScreenerData(true);
+    }
+  };
+
+  // Reset to defaults
+  const handleResetFilters = () => {
+    setFilters(DEFAULT_FILTERS);
+    setSectorInput(DEFAULT_FILTERS.sector);
+  };
+
+  // Check if filters have changed from defaults
+  const filtersChanged = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
 
   // Compute cache remaining time for display
   const cacheRemaining = React.useMemo(() => {
@@ -296,23 +379,323 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
           </div>
         </CardHeader>
         <CardContent className="pt-0">
-          {/* Criteria Tags */}
+          {/* Active Criteria Tags */}
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {criteria.map((c, i) => (
-              <Badge
-                key={i}
-                variant="outline"
-                className="text-xs py-0.5 px-2 gap-1 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300"
-              >
-                {c.icon}
-                {c.label}
+            <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+              <BarChart3 className="w-3 h-3" />
+              {filters.sector}板块
+            </Badge>
+            <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+              <Target className="w-3 h-3" />
+              主板
+            </Badge>
+            <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+              <TrendingUp className="w-3 h-3" />
+              涨幅{filters.minChange}%~{filters.maxChange}%
+            </Badge>
+            <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+              <BarChart3 className="w-3 h-3" />
+              市值&lt;{filters.maxMarketCap}亿
+            </Badge>
+            <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+              <AlertCircle className="w-3 h-3" />
+              排除ST/创业板/科创板/北交
+            </Badge>
+            {filters.enablePulse && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300">
+                <Zap className="w-3 h-3" />
+                脉冲评分≥{filters.pulseThreshold}
               </Badge>
-            ))}
+            )}
           </div>
+
+          {/* Expand/Collapse Filter Panel */}
+          <button
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+            {filtersExpanded ? "收起筛选条件" : "编辑筛选条件"}
+            {filtersExpanded ? (
+              <ChevronUpIcon className="w-3 h-3" />
+            ) : (
+              <ChevronDownIcon className="w-3 h-3" />
+            )}
+            {filtersChanged && !filtersExpanded && (
+              <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+            )}
+          </button>
+
+          {/* Editable Filter Panel */}
+          {filtersExpanded && (
+            <div className="mt-3 p-4 rounded-lg border border-border/50 bg-muted/30 space-y-4">
+              {/* Row 1: Sector */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">板块关键词</Label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 max-w-xs" ref={sectorDropdownRef}>
+                    <div className="relative">
+                      <Input
+                        value={sectorInput}
+                        onChange={(e) => {
+                          setSectorInput(e.target.value);
+                          setShowSectorDropdown(true);
+                        }}
+                        onFocus={() => setShowSectorDropdown(true)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSectorInputConfirm();
+                        }}
+                        placeholder="输入板块名称..."
+                        className="h-8 text-xs pr-8"
+                      />
+                      {sectorInput && (
+                        <button
+                          onClick={() => {
+                            setSectorInput("");
+                            handleFilterChange("sector", "");
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                    {/* Quick select dropdown */}
+                    {showSectorDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-lg p-2 max-h-48 overflow-y-auto">
+                        <div className="text-xs text-muted-foreground mb-1.5 px-1">热门板块</div>
+                        <div className="flex flex-wrap gap-1">
+                          {POPULAR_SECTORS.filter(s =>
+                            !sectorInput || s.label.includes(sectorInput)
+                          ).map((s) => (
+                            <button
+                              key={s.label}
+                              onClick={() => handleSectorSelect(s.label)}
+                              className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                                filters.sector === s.label
+                                  ? "bg-primary/10 border-primary/30 text-primary"
+                                  : "bg-background border-border hover:bg-muted"
+                              }`}
+                            >
+                              {s.emoji} {s.label}
+                            </button>
+                          ))}
+                          {sectorInput && !POPULAR_SECTORS.some(s => s.label === sectorInput) && (
+                            <button
+                              onClick={() => handleSectorSelect(sectorInput.trim())}
+                              className="text-xs px-2 py-1 rounded-md border border-dashed border-primary/30 text-primary hover:bg-primary/10"
+                            >
+                              🔍 搜索 &quot;{sectorInput}&quot;
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 2: Change % range */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    涨幅范围 ({filters.minChange}% ~ {filters.maxChange}%)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Slider
+                      min={-5}
+                      max={10}
+                      step={0.5}
+                      value={[filters.minChange, filters.maxChange]}
+                      onValueChange={([min, max]) => {
+                        handleFilterChange("minChange", min);
+                        handleFilterChange("maxChange", max);
+                      }}
+                      className="flex-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={filters.minChange}
+                      onChange={(e) => handleFilterChange("minChange", parseFloat(e.target.value) || 0)}
+                      className="h-7 text-xs w-20"
+                      step={0.5}
+                    />
+                    <span className="text-xs text-muted-foreground">~</span>
+                    <Input
+                      type="number"
+                      value={filters.maxChange}
+                      onChange={(e) => handleFilterChange("maxChange", parseFloat(e.target.value) || 0)}
+                      className="h-7 text-xs w-20"
+                      step={0.5}
+                    />
+                    <span className="text-xs text-muted-foreground">%</span>
+                  </div>
+                </div>
+
+                {/* Market Cap */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    最大市值 ({filters.maxMarketCap}亿)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Slider
+                      min={10}
+                      max={2000}
+                      step={10}
+                      value={[filters.maxMarketCap]}
+                      onValueChange={([v]) => handleFilterChange("maxMarketCap", v)}
+                      className="flex-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={filters.maxMarketCap}
+                      onChange={(e) => handleFilterChange("maxMarketCap", parseFloat(e.target.value) || 200)}
+                      className="h-7 text-xs w-20"
+                      step={10}
+                    />
+                    <span className="text-xs text-muted-foreground">亿元</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 3: Pulse detection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                      <Zap className="w-3 h-3" />
+                      脉冲拉升检测
+                    </Label>
+                    <Switch
+                      checked={filters.enablePulse}
+                      onCheckedChange={(v) => handleFilterChange("enablePulse", v)}
+                    />
+                  </div>
+                  {filters.enablePulse && (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Slider
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={[filters.pulseThreshold]}
+                          onValueChange={([v]) => handleFilterChange("pulseThreshold", v)}
+                          className="flex-1"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={filters.pulseThreshold}
+                          onChange={(e) => handleFilterChange("pulseThreshold", parseInt(e.target.value) || 20)}
+                          className="h-7 text-xs w-20"
+                          step={5}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          最低脉冲评分 (0-100)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Quick presets */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">快捷预设</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      onClick={() => {
+                        setFilters(DEFAULT_FILTERS);
+                        setSectorInput(DEFAULT_FILTERS.sector);
+                      }}
+                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                        !filtersChanged
+                          ? "bg-primary/10 border-primary/30 text-primary"
+                          : "bg-background border-border hover:bg-muted"
+                      }`}
+                    >
+                      默认(通信+脉冲)
+                    </button>
+                    <button
+                      onClick={() => {
+                        const f = { sector: "半导体", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 15, enablePulse: true };
+                        setFilters(f);
+                        setSectorInput("半导体");
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                    >
+                      💎 半导体宽幅
+                    </button>
+                    <button
+                      onClick={() => {
+                        const f = { sector: "人工智能", minChange: 0, maxChange: 3, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true };
+                        setFilters(f);
+                        setSectorInput("人工智能");
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                    >
+                      🤖 AI大市值
+                    </button>
+                    <button
+                      onClick={() => {
+                        const f = { sector: "新能源", minChange: -1, maxChange: 5, maxMarketCap: 300, pulseThreshold: 20, enablePulse: true };
+                        setFilters(f);
+                        setSectorInput("新能源");
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                    >
+                      ☀️ 新能源波动
+                    </button>
+                    <button
+                      onClick={() => {
+                        const f = { sector: "医药", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 0, enablePulse: false };
+                        setFilters(f);
+                        setSectorInput("医药");
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                    >
+                      💊 医药纯筛选
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Action buttons */}
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResetFilters}
+                  className="h-7 text-xs gap-1"
+                >
+                  重置条件
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleApplyFilters}
+                  disabled={loading}
+                  className="h-7 text-xs gap-1"
+                >
+                  {loading ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Search className="w-3 h-3" />
+                  )}
+                  开始选股
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Stats */}
           {result && (
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground mt-3">
               <span>板块: <strong className="text-foreground">{result.sectorName}</strong></span>
               <span>板块总数: <strong className="text-foreground">{result.totalCount}</strong></span>
               <span>筛选结果: <strong className="text-emerald-500">{result.filteredCount}</strong>只</span>
