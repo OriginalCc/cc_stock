@@ -264,11 +264,13 @@ function TimelineSignalRenderer(props: any) {
   }
   if (priceLineData.length === 0) return null;
 
-  // ── Step 1: Collect all signal points ──
+  // ── Step 1: Collect signal points (filter out weak signals — they are too noisy for chart) ──
   const allSignals: { x: number; y: number; signal: TSignal; index: number }[] = [];
   priceLineData.forEach((point: any, i: number) => {
     const signal = point?.payload?.tSignal as TSignal | undefined | null;
     if (!signal) return;
+    // 弱信号不在分时图上显示，避免噪音干扰
+    if (signal.strength === "weak") return;
     allSignals.push({ x: point.x, y: point.y, signal, index: i });
   });
 

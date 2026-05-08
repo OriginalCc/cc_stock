@@ -258,7 +258,7 @@ export default function StockTAssistant() {
 
   const timelineSignals = useMemo(() => generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime), [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime]);
   const pvMarkers = useMemo(() => { if (liveTimeline.length < 10 || timelinePrevClose <= 0) return []; return detectPulseVolumeMarkers(liveTimeline, timelinePrevClose); }, [liveTimeline, timelinePrevClose]);
-  const latestTimelineSignal = useMemo(() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { if (timelineSignals[i]) return timelineSignals[i]; } return null; }, [timelineSignals]);
+  const latestTimelineSignal = useMemo(() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { const s = timelineSignals[i]; if (s && s.strength !== "weak") return s; } return null; }, [timelineSignals]);
 
   // ── Signal counts ──
   const signalCounts = useMemo(() => {
