@@ -6016,20 +6016,42 @@ export default function StockTAssistant() {
   // By replacing the last timeline point with quote.price, the chart moves in near-real-time.
   const liveTimeline = useMemo(() => {
     if (timeline.length === 0) return timeline;
-    // Only inject if quote has a valid price that differs from the last timeline point
-    if (!quote || !quote.price || quote.price <= 0) return timeline;
-    const last = timeline[timeline.length - 1];
-    if (last.price === quote.price) return timeline; // no change, avoid new ref
 
-    // Determine the current minute time string (HH:MM)
     const now = new Date();
-    const curMin = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
+    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
+    const isTradingHours = isMorningSession || isAfternoonSession;
 
-    // If the last timeline point is the current minute, update it with live price
+    // ── Step 1: Truncate API-pre-populated future minutes ──
+    // Tencent API returns full session data with flat (last known) prices for future minutes.
+    // We must cut these off so signals/labels don't appear at 11:30/15:00.
+    let truncated = timeline;
+    if (isTradingHours) {
+      const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      // Find the last data point whose time is <= current minute
+      const lastValidIdx = timeline.reduce((lastIdx: number, d: TimelineItem, i: number) => {
+        if (d.time <= curMin) return i;
+        return lastIdx;
+      }, -1);
+      if (lastValidIdx >= 0 && lastValidIdx < timeline.length - 1) {
+        truncated = timeline.slice(0, lastValidIdx + 1);
+      }
+    }
+
+    // ── Step 2: Inject live price if available ──
+    if (!quote || !quote.price || quote.price <= 0) return truncated;
+    const last = truncated[truncated.length - 1];
+    if (!last) return truncated;
+
+    const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+
+    // If the last truncated point is the current minute, update it with live price
     if (last.time === curMin) {
-      const updated = timeline.slice(0, -1);
+      if (last.price === quote.price) return truncated; // no change, avoid new ref
+      const updated = truncated.slice(0, -1);
       const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : last.changePercent;
-      // Update avgPrice using weighted average of existing avg + new price
       updated.push({
         ...last,
         price: quote.price,
@@ -6039,16 +6061,11 @@ export default function StockTAssistant() {
       return updated;
     }
 
-    // If we're in a new minute that the timeline hasn't captured yet,
+    // If we're in a new minute that the truncated timeline hasn't captured yet,
     // add a new point (e.g. timeline shows 10:30 but it's 10:31 now)
-    // Only add during trading hours (9:30-11:30, 13:00-15:00)
-    const h = now.getHours();
-    const m = now.getMinutes();
-    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
-    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
-    if (isMorningSession || isAfternoonSession) {
+    if (isTradingHours) {
       const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : 0;
-      return [...timeline, {
+      return [...truncated, {
         time: curMin,
         price: quote.price,
         avgPrice: quote.price, // approximate VWAP for the new minute
@@ -6057,7 +6074,7 @@ export default function StockTAssistant() {
       }];
     }
 
-    return timeline;
+    return truncated;
   }, [timeline, quote]);
 
   // ── Timeline last data slot index (matches fullDayData indexing in TimeSharingPanel) ──
@@ -6280,17 +6297,37 @@ export default function StockTAssistant() {
   const timelineMACDData = useMemo(() => {
     if (timeline.length === 0) return [];
 
-    const prices = timeline.map((d) => d.price);
+    // ── Truncate future flat-line minutes before MACD calculation ──
+    // Tencent API returns full session data with flat prices for future minutes.
+    // Calculating MACD on these produces misleading convergence values.
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
+    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
+    let macdTimeline = timeline;
+    if (isMorningSession || isAfternoonSession) {
+      const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const lastValidIdx = timeline.reduce((lastIdx: number, d: TimelineItem, i: number) => {
+        if (d.time <= curMin) return i;
+        return lastIdx;
+      }, -1);
+      if (lastValidIdx >= 0 && lastValidIdx < timeline.length - 1) {
+        macdTimeline = timeline.slice(0, lastValidIdx + 1);
+      }
+    }
+
+    const prices = macdTimeline.map((d) => d.price);
     const macdResult = calculateMACD(prices);
 
     const result: { time: string; dif: number | null; dea: number | null; macd: number | null }[] = [];
-    for (let i = 0; i < timeline.length; i++) {
+    for (let i = 0; i < macdTimeline.length; i++) {
       const m = macdResult[i];
       if (isNaN(m.dif) || isNaN(m.dea) || isNaN(m.macd)) {
-        result.push({ time: timeline[i].time, dif: null, dea: null, macd: null });
+        result.push({ time: macdTimeline[i].time, dif: null, dea: null, macd: null });
       } else {
         result.push({
-          time: timeline[i].time,
+          time: macdTimeline[i].time,
           dif: m.dif,
           dea: m.dea,
           macd: m.macd,
