@@ -1555,6 +1555,14 @@ function TimeSharingPanel({
 
     // Scroll wheel: zoom in/out; Shift+scroll or horizontal scroll: pan
     const onWheel = (e: WheelEvent) => {
+      // Only allow zoom on the price chart — skip if cursor is over VOL or MACD panels
+      const target = e.target as HTMLElement;
+      const panel = target.closest('[data-chart-panel]');
+      if (panel && (panel.getAttribute('data-chart-panel') === 'vol' || panel.getAttribute('data-chart-panel') === 'macd')) {
+        // Don't intercept — let the page scroll naturally
+        return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
 
@@ -2187,7 +2195,7 @@ function TimeSharingPanel({
       <div className="h-px bg-border/50" />
 
       {/* ─── Panel 2: Volume Chart ─── */}
-      <div>
+      <div data-chart-panel="vol">
         <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] select-none pointer-events-none">
           <span className="text-muted-foreground font-medium">VOL</span>
         </div>
@@ -2248,7 +2256,7 @@ function TimeSharingPanel({
       <div className="h-px bg-border/50" />
 
       {/* ─── Panel 3: MACD Chart ─── */}
-      <div>
+      <div data-chart-panel="macd">
         <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] select-none pointer-events-none">
           <span className="text-muted-foreground font-medium">MACD</span>
           <span className="flex items-center gap-0.5">
