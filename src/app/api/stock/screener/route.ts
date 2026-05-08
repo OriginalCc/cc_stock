@@ -16,6 +16,26 @@ import { NextRequest, NextResponse } from "next/server";
  * 9. 市值<200亿
  */
 
+// ── Server-side Cache ───────────────────────────────────
+// Cache screener results to avoid re-running the full pipeline on every request.
+// Key: query params string, Value: { data: ScreenerResult, timestamp }
+const screenerCache = new Map<string, { data: ScreenerResult; timestamp: number }>();
+const CACHE_TTL = 3 * 60 * 1000; // 3 minutes – balance freshness vs cost
+
+/**
+ * Build a cache key from query parameters
+ */
+function buildCacheKey(params: {
+  minChange: number;
+  maxChange: number;
+  maxMarketCap: number;
+  sector: string;
+  pulseThreshold: number;
+  pulse: boolean;
+}): string {
+  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}`;
+}
+
 // ── Types ──────────────────────────────────────────────
 
 interface ScreenerStock {
@@ -393,6 +413,19 @@ export async function GET(request: NextRequest) {
   const sectorKeyword = searchParams.get("sector") || "通信";
   const pulseThreshold = parseInt(searchParams.get("pulseThreshold") || "20"); // 脉冲评分阈值
   const enablePulseDetection = searchParams.get("pulse") !== "false";
+  const forceRefresh = searchParams.get("refresh") === "1";
+
+  // Check server cache first
+  const cacheKey = buildCacheKey({
+    minChange, maxChange, maxMarketCap, sector: sectorKeyword,
+    pulseThreshold, pulse: enablePulseDetection,
+  });
+  if (!forceRefresh) {
+    const cached = screenerCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return NextResponse.json({ ...cached.data, cached: true });
+    }
+  }
 
   try {
     // Step 1: Find communication sectors
@@ -533,7 +566,7 @@ export async function GET(request: NextRequest) {
         return b.changePercent - a.changePercent;
       });
 
-      return NextResponse.json({
+      const result: ScreenerResult = {
         success: true,
         stocks: pulseFiltered,
         totalCount,
@@ -541,13 +574,18 @@ export async function GET(request: NextRequest) {
         sectorName,
         sectorCode,
         timestamp: new Date().toISOString(),
-      } as ScreenerResult);
+      };
+
+      // Store in server cache
+      screenerCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+      return NextResponse.json(result);
     }
 
     // No pulse detection: sort by change percent desc
     candidates.sort((a, b) => b.changePercent - a.changePercent);
 
-    return NextResponse.json({
+    const result: ScreenerResult = {
       success: true,
       stocks: candidates,
       totalCount,
@@ -555,7 +593,12 @@ export async function GET(request: NextRequest) {
       sectorName,
       sectorCode,
       timestamp: new Date().toISOString(),
-    } as ScreenerResult);
+    };
+
+    // Store in server cache
+    screenerCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+    return NextResponse.json(result);
 
   } catch (error: any) {
     console.error("Screener API error:", error);

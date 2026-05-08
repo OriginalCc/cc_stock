@@ -701,3 +701,27 @@ Stage Summary:
 - 脉冲检测算法综合5个维度评分，提供详细描述（如"09:31-09:35飙升2.9%，开盘冲高5.6%，冲高回落2.0%"）
 - 前端UI响应式设计，支持排序和跳转
 - lint通过，dev server正常运行
+
+---
+Task ID: 1
+Agent: main
+Task: Add caching for screener results to avoid re-fetching every time user enters the page
+
+Work Log:
+- Added server-side cache (Map<string, {data, timestamp}>) with 3-minute TTL to /api/stock/screener route
+- Cache key built from all query parameters (sector, minChange, maxChange, maxMarketCap, pulseThreshold, pulse)
+- Server returns `cached: true` flag when serving from cache
+- Added `refresh=1` query parameter to bypass server cache (force refresh)
+- Added module-level client cache (`clientCache`) in stock-screener.tsx that persists across component mounts/unmounts
+- Client cache also uses 3-minute TTL, matching server cache
+- When component mounts, checks client cache first; if fresh, uses cached data without API call
+- Refresh button now sends `refresh=1` to force bypass both caches
+- Added "缓存 Xs" badge in header showing remaining cache TTL when data is from cache
+- Added `Database` icon import for cache indicator
+- Lint check passes cleanly
+
+Stage Summary:
+- Server-side: screenerCache Map with 3-min TTL, cache key from params, force refresh support
+- Client-side: module-level clientCache survives tab switches, 3-min TTL
+- Both caches work together: client cache avoids even making the API request, server cache avoids re-running the expensive pipeline
+- User sees "缓存 Xs" badge when viewing cached data, can force refresh with button

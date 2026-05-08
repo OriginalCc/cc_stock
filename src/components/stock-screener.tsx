@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import {
   Loader2,
   BarChart3,
   Target,
+  Database,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────
@@ -71,6 +72,7 @@ interface ScreenerResult {
   sectorCode: string;
   timestamp: string;
   error?: string;
+  cached?: boolean;
 }
 
 type SortField = "pulseScore" | "changePercent" | "marketCap" | "turnover" | "amplitude" | "mainNetInflow";
@@ -128,6 +130,17 @@ function getPulseLabel(score: number): string {
   return "无脉冲";
 }
 
+// ── Module-level client cache (persists across tab switches) ────────
+// This cache survives component unmount/remount when switching between
+// "做T" and "选股" tabs, so the user doesn't need to re-fetch every time.
+interface ClientCacheEntry {
+  result: ScreenerResult;
+  lastFetchTime: string;
+  timestamp: number;
+}
+const CLIENT_CACHE_TTL = 3 * 60 * 1000; // 3 minutes – same as server cache
+let clientCache: ClientCacheEntry | null = null;
+
 // ── Component ──────────────────────────────────────────
 
 interface StockScreenerProps {
@@ -135,12 +148,13 @@ interface StockScreenerProps {
 }
 
 export function StockScreener({ onSelectStock }: StockScreenerProps) {
-  const [result, setResult] = useState<ScreenerResult | null>(null);
+  const [result, setResult] = useState<ScreenerResult | null>(clientCache?.result ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("pulseScore");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
-  const [lastFetchTime, setLastFetchTime] = useState<string>("");
+  const [lastFetchTime, setLastFetchTime] = useState<string>(clientCache?.lastFetchTime ?? "");
+  const [isFromCache, setIsFromCache] = useState(!!clientCache);
 
   // Filter states
   const [minChange, setMinChange] = useState(0);
@@ -148,9 +162,10 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   const [maxMarketCap, setMaxMarketCap] = useState(200);
   const [pulseThreshold, setPulseThreshold] = useState(20);
 
-  const fetchScreenerData = useCallback(async () => {
+  const fetchScreenerData = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
+    setIsFromCache(false);
     try {
       const params = new URLSearchParams({
         minChange: String(minChange),
@@ -159,12 +174,17 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
         pulseThreshold: String(pulseThreshold),
         sector: "通信",
       });
+      if (forceRefresh) params.set("refresh", "1");
       const res = await fetch(`/api/stock/screener?${params}`);
       const data: ScreenerResult = await res.json();
 
       if (data.success) {
+        const fetchTime = new Date().toLocaleTimeString("zh-CN");
         setResult(data);
-        setLastFetchTime(new Date().toLocaleTimeString("zh-CN"));
+        setLastFetchTime(fetchTime);
+        setIsFromCache(!!data.cached);
+        // Update client cache
+        clientCache = { result: data, lastFetchTime: fetchTime, timestamp: Date.now() };
       } else {
         setError(data.error || "选股失败");
       }
@@ -175,9 +195,16 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     }
   }, [minChange, maxChange, maxMarketCap, pulseThreshold]);
 
-  // Auto-fetch on mount
+  // Auto-fetch on mount: use cache if fresh, otherwise fetch
   useEffect(() => {
-    fetchScreenerData();
+    if (clientCache && Date.now() - clientCache.timestamp < CLIENT_CACHE_TTL) {
+      // Cache is still fresh – use it, no need to fetch
+      setResult(clientCache.result);
+      setLastFetchTime(clientCache.lastFetchTime);
+      setIsFromCache(true);
+    } else {
+      fetchScreenerData();
+    }
   }, []);
 
   // Sort stocks
@@ -222,6 +249,13 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     { label: "开盘脉冲拉升", active: true, icon: <Zap className="w-3 h-3" /> },
   ];
 
+  // Compute cache remaining time for display
+  const cacheRemaining = React.useMemo(() => {
+    if (!clientCache) return 0;
+    const elapsed = Date.now() - clientCache.timestamp;
+    return Math.max(0, Math.ceil((CLIENT_CACHE_TTL - elapsed) / 1000));
+  }, [lastFetchTime, isFromCache]);
+
   return (
     <div className="flex flex-col gap-4 h-full">
       {/* Header: Criteria Tags */}
@@ -233,6 +267,12 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               智能选股
             </CardTitle>
             <div className="flex items-center gap-2">
+              {isFromCache && cacheRemaining > 0 && (
+                <Badge variant="outline" className="text-xs py-0 px-1.5 gap-1 bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-300">
+                  <Database className="w-3 h-3" />
+                  缓存 {cacheRemaining}s
+                </Badge>
+              )}
               {lastFetchTime && (
                 <span className="text-xs text-muted-foreground">
                   更新于 {lastFetchTime}
@@ -241,7 +281,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={fetchScreenerData}
+                onClick={() => fetchScreenerData(true)}
                 disabled={loading}
                 className="h-7 text-xs gap-1"
               >
@@ -316,7 +356,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={fetchScreenerData}
+                onClick={() => fetchScreenerData(true)}
                 className="mt-3"
               >
                 重试
