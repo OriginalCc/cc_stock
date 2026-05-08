@@ -1619,7 +1619,7 @@ function TimeSharingPanel({
     yMin, yMax, percentMin, percentMax,
     buySignals, sellSignals, stoplossSignals,
     maxVolume, macdMin, macdMax, macdPad,
-    lastItem, lastSignal, barSize,
+    lastItem, lastSignal, barSize, lastDataIdx,
   } = useMemo(() => {
     // ── Zoom: slice fullDayData to show only visibleMinutes ──
     const lastDataIdx = fullDayData.reduce((last, item, idx) => (item.hasData ? idx : last), -1);
@@ -1711,7 +1711,7 @@ function TimeSharingPanel({
       yMin: ymn, yMax: ymx, percentMin: pMin, percentMax: pMax,
       buySignals: bs, sellSignals: ss, stoplossSignals: sls,
       maxVolume: mv, macdMin: mMin, macdMax: mMax, macdPad: mPad,
-      lastItem: li, lastSignal: ls, barSize: brs,
+      lastItem: li, lastSignal: ls, barSize: brs, lastDataIdx,
     };
   }, [fullDayData, data, visibleMinutes, panOffset, timeTicks, prevClose, signals, macdData]);
 
