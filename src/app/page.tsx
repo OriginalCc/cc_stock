@@ -2335,7 +2335,6 @@ function TimeSharingPanel({
               stroke="#2563eb"
               dot={false}
               strokeWidth={1.2}
-              connectNulls
               isAnimationActive={false}
             />
             <Line
@@ -2345,7 +2344,6 @@ function TimeSharingPanel({
               stroke="#ea580c"
               dot={false}
               strokeWidth={1.2}
-              connectNulls
               isAnimationActive={false}
             />
             {/* Crosshair vertical line - shared across panels */}
