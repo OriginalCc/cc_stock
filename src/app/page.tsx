@@ -5848,7 +5848,65 @@ export default function StockTAssistant() {
   const [klinePanOffset, setKlinePanOffset] = useState<number>(0); // pan offset for K-line (0 = rightmost/latest)
   const klineDragRef = useRef<{ startX: number; startPanOffset: number; isDragging: boolean }>({ startX: 0, startPanOffset: 0, isDragging: false });
   const klineChartContainerRef = useRef<HTMLDivElement>(null);
-  const allChartData = useMemo(() => history.filter((h) => h.close > 0), [history]);
+  // Merge today's real-time quote into K-line history for daily/weekly intervals.
+  // The Sina daily K-line API does NOT return the current (incomplete) trading day,
+  // so we need to append/update today's candle from the live quote data.
+  const allChartData = useMemo(() => {
+    const data = history.filter((h) => h.close > 0);
+
+    // Only merge for daily/weekly K-line (intraday K-lines already include current session)
+    if (quote && quote.price > 0 && (interval === "1d" || interval === "1wk")) {
+      // Get today's date in China timezone
+      const now = new Date();
+      const chinaOffset = 8 * 60; // UTC+8 in minutes
+      const chinaTime = new Date(now.getTime() + (chinaOffset + now.getTimezoneOffset()) * 60000);
+      const todayStr = chinaTime.toISOString().split("T")[0]; // "YYYY-MM-DD"
+
+      // For weekly interval, use Monday's date as the week key
+      let todayKey = todayStr;
+      if (interval === "1wk") {
+        const dayOfWeek = chinaTime.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const monday = new Date(chinaTime.getTime() + mondayOffset * 86400000);
+        todayKey = monday.toISOString().split("T")[0];
+      }
+
+      const lastDate = data.length > 0 ? data[data.length - 1].date : "";
+      const todayQuote = {
+        open: quote.open || quote.price,
+        high: quote.high || quote.price,
+        low: quote.low || quote.price,
+        close: quote.price,
+        volume: quote.volume || 0,
+      };
+
+      if (lastDate < todayKey) {
+        // Today's candle is completely missing from API — append it
+        data.push({
+          date: todayKey,
+          ...todayQuote,
+          ma5: null,
+          ma10: null,
+          ma20: null,
+          dif: null,
+          dea: null,
+          macd: null,
+        });
+      } else if (lastDate === todayKey) {
+        // Today's candle exists (rare, or after market close) — update with latest quote
+        const last = data[data.length - 1];
+        data[data.length - 1] = {
+          ...last,
+          high: Math.max(last.high, todayQuote.high),
+          low: Math.min(last.low, todayQuote.low),
+          close: todayQuote.close,
+          volume: todayQuote.volume,
+        };
+      }
+    }
+
+    return data;
+  }, [history, quote, interval]);
 
   // ── Timeline zoom state ──
   const TL_ZOOM_LEVELS = [250, 180, 120, 90, 60]; // minutes visible: full day(250>242 ensures full view), ~3h, ~2h, 1.5h, 1h
@@ -6597,7 +6655,10 @@ export default function StockTAssistant() {
     // Use the latest K-line MA5 value (same as K-line chart)
     if (allChartData.length < 1) return null;
     const lastBar = allChartData[allChartData.length - 1];
-    return lastBar.ma5 ?? null;
+    // If today's candle was appended with null MA (real-time merge), fall back to previous bar
+    if (lastBar.ma5 != null) return lastBar.ma5;
+    if (allChartData.length >= 2) return allChartData[allChartData.length - 2].ma5 ?? null;
+    return null;
   }, [allChartData]);
 
   // ── Key Price Levels (support/resistance) for timeline chart ──

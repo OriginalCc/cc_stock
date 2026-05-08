@@ -807,3 +807,26 @@ Stage Summary:
 - Default screener filters now: 涨幅-5%~10%, 脉冲≥10, 放量≥10
 - Score label system now has 6 levels (≥70/≥50/≥30/≥20/≥10/<10)
 - Lint passes, dev server running normally
+
+---
+Task ID: 1
+Agent: main
+Task: Fix K-line chart not showing today's candle
+
+Work Log:
+- Root cause identified: Sina Finance daily K-line API (scale=240) does NOT return the current incomplete trading day. Only historical completed days are returned.
+- Verified via live API test: scale=5 (intraday) includes today, scale=240 (daily) last bar is yesterday.
+- Modified `allChartData` useMemo in page.tsx to merge today's real-time quote into K-line history:
+  - Only applies for daily (1d) and weekly (1wk) intervals — intraday K-lines already include current session
+  - Computes today's date in China timezone (UTC+8) for accurate date comparison
+  - For weekly intervals, uses Monday's date as the week key
+  - If today's candle is missing (lastDate < todayKey): appends new candle with quote data (open/high/low/close/volume), MA and MACD set to null
+  - If today's candle already exists (lastDate === todayKey, e.g. after market close): updates with latest quote data
+- Fixed `prevDayMA5` computation to fall back to previous bar when today's appended candle has null MA values
+- MA lines in K-line chart already use `connectNulls`, so they gracefully skip null values on today's candle
+
+Stage Summary:
+- K-line chart now shows today's real-time candle for daily/weekly intervals
+- Today's candle is built from live quote data (updated every 3 seconds)
+- MA5/MA10/MA20 lines stop at yesterday (null values on today's candle are skipped via connectNulls)
+- Lint passes, dev server running normally
