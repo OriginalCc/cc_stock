@@ -55,6 +55,13 @@ const SEARCH_QUERIES: Record<string, (p: { sectorName: string; stockName: string
     { label: "技术分析", query: `${stockName} 技术分析 支撑 压力 ${day} 走势` },
     { label: "资金动向", query: `${stockName} 主力资金 北向 大宗交易 龙虎榜` },
   ],
+  overseas: () => [
+    { label: "美股行情", query: "美股 道琼斯 纳斯达克 标普500 隔夜 收盘 涨跌" },
+    { label: "港股行情", query: "港股 恒生指数 恒生科技 收盘 涨跌 今日" },
+    { label: "中概股", query: "中概股 隔夜 纳斯达克金龙指数 涨跌 ADR" },
+    { label: "外盘资讯", query: "美股 港股 财报 经济数据 美联储 资讯" },
+    { label: "A股影响", query: "隔夜外盘 美股 港股 A股 影响 开盘 预判" },
+  ],
 };
 
 async function searchWeb(query: string, num = 6) {
@@ -120,7 +127,7 @@ function classifySource(hostName: string): string {
 }
 
 // ── Step 4: Enhanced LLM analysis with multi-dimensional output ──
-async function analyzeWithLLM(context: string, type: "market" | "sector" | "stock", day: string) {
+async function analyzeWithLLM(context: string, type: "market" | "sector" | "stock" | "overseas", day: string) {
   const zai = await getZAI();
 
   const systemPrompts: Record<string, string> = {
@@ -183,6 +190,26 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 - detailedReasoning: 详细分析推理过程（200字以内）
 
 只返回JSON，不要其他文字。`,
+
+    overseas:
+      `你是一位资深的全球市场分析师，精通美股、港股与A股联动分析。请根据提供的多源资讯，综合分析隔夜美港股表现对A股${day}走势的影响。
+你需要从美股走势、港股走势、资金流向、政策消息四个维度进行全方位评估。
+
+返回JSON格式，包含以下字段：
+- trend: A股${day}走势预判（上升/下降/震荡）
+- confidence: 信心度1-100
+- summary: 100字以内的综合摘要（需包含美股港股关键指数涨跌数据）
+- keyFactors: 3-5个关键影响因素数组
+- suggestion: ${day}做T建议（正T/反T/观望）
+- riskLevel: 风险等级（高/中/低）
+- newsSentiment: 整体资讯情绪（偏多/偏空/中性）
+- technicalView: 美股技术面观点（30字以内，含主要指数涨跌幅）
+- capitalView: 港股及资金面观点（30字以内，含恒生指数涨跌幅）
+- policyView: 政策/消息面观点（30字以内，含美联储、经济数据等）
+- sentimentView: 外盘情绪面观点（30字以内，中概股、A50期指等）
+- detailedReasoning: 详细分析推理过程（200字以内）
+
+只返回JSON，不要其他文字。`,
   };
 
   const completion = await zai.chat.completions.create({
@@ -235,7 +262,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const symbol = searchParams.get("symbol") || "";
-    const type = (searchParams.get("type") || "market") as "market" | "sector" | "stock";
+    const type = (searchParams.get("type") || "market") as "market" | "sector" | "stock" | "overseas";
     const sectorName = searchParams.get("sectorName") || "";
     const stockName = searchParams.get("stockName") || "";
     const mode = searchParams.get("mode") || ""; // "incremental" for smart refresh
@@ -346,6 +373,7 @@ export async function GET(req: NextRequest) {
       market: `以下是A股大盘多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、政策面、情绪面四个维度，分析大盘${day}走势预判。`,
       sector: `以下是${sectorName}板块多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、政策面、行业基本面四个维度，分析${sectorName}板块${day}走势预判。`,
       stock: `以下是${stockName}(${symbol})多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从技术面、资金面、消息面、估值面四个维度，分析${stockName}${day}走势预判。`,
+      overseas: `以下是隔夜美港股及外盘多渠道最新资讯：\n\n${groupedContext}\n\n请综合以上多源资讯，从美股走势、港股走势、资金流向、政策消息四个维度，分析隔夜外盘对A股${day}走势的影响预判。`,
     };
 
     // Step 4: LLM Analysis

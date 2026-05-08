@@ -5452,8 +5452,9 @@ export default function StockTAssistant() {
     market?: any;
     sector?: any;
     stock?: any;
+    overseas?: any;
   }>({});
-  const [newsActiveTab, setNewsActiveTab] = useState<"market" | "sector" | "stock">("market");
+  const [newsActiveTab, setNewsActiveTab] = useState<"market" | "sector" | "stock" | "overseas">("market");
 
   // ── Prediction day: before 11:30 → 今日预判, after 11:30 → 明日预判 ──
   const predictionDay = useMemo(() => {
@@ -5464,6 +5465,15 @@ export default function StockTAssistant() {
   }, []);
   // Also consider the server-provided predictionDay from API data
   const currentPredictionDay = newsData[newsActiveTab]?.predictionDay || predictionDay;
+
+  // Radar dimension labels vary by tab
+  const radarLabelsByTab: Record<string, string[]> = {
+    market: ["技术面", "资金面", "政策面", "情绪面"],
+    sector: ["技术面", "资金面", "政策面", "情绪面"],
+    stock: ["技术面", "资金面", "消息面", "情绪面"],
+    overseas: ["美股走势", "港股走势", "资金流向", "政策消息"],
+  };
+  const radarLabels = radarLabelsByTab[newsActiveTab] || radarLabelsByTab.market;
 
   // ── News filter state ──
   const [newsFilterSource, setNewsFilterSource] = useState<string>("all"); // all / source type
@@ -5888,7 +5898,7 @@ export default function StockTAssistant() {
       // In incremental mode, send lastTimestamp for each tab so server can skip if data unchanged
       if (isIncremental) {
         params.set("mode", "incremental");
-        const lastTs = [currentNewsData.market, currentNewsData.sector, currentNewsData.stock]
+        const lastTs = [currentNewsData.market, currentNewsData.sector, currentNewsData.stock, currentNewsData.overseas]
           .filter(Boolean)
           .map((d: any) => d.timestamp)
           .filter(Boolean)
@@ -5897,10 +5907,11 @@ export default function StockTAssistant() {
         if (lastTs) params.set("lastTimestamp", lastTs);
       }
 
-      const [marketRes, sectorRes, stockRes] = await Promise.allSettled([
+      const [marketRes, sectorRes, stockRes, overseasRes] = await Promise.allSettled([
         fetch(`/api/stock/news-analysis?${params}&type=market`),
         sectorName ? fetch(`/api/stock/news-analysis?${params}&type=sector`) : Promise.resolve(null),
         fetch(`/api/stock/news-analysis?${params}&type=stock`),
+        fetch(`/api/stock/news-analysis?${params}&type=overseas`),
       ]);
 
       const newData: any = {};
@@ -5917,6 +5928,10 @@ export default function StockTAssistant() {
         const st = await stockRes.value.json();
         if (st.success && !st.noUpdate) { newData.stock = st; anyUpdate = true; }
       }
+      if (overseasRes.status === "fulfilled" && overseasRes.value) {
+        const o = await overseasRes.value.json();
+        if (o.success && !o.noUpdate) { newData.overseas = o; anyUpdate = true; }
+      }
 
       if (anyUpdate) {
         // Use functional update to merge with latest state (avoids stale closure)
@@ -5925,6 +5940,7 @@ export default function StockTAssistant() {
           if (newData.market) merged.market = newData.market;
           if (newData.sector) merged.sector = newData.sector;
           if (newData.stock) merged.stock = newData.stock;
+          if (newData.overseas) merged.overseas = newData.overseas;
           saveNewsCache(symbol, merged);
           return merged;
         });
@@ -5943,7 +5959,7 @@ export default function StockTAssistant() {
       prevNewsSymbolRef.current = symbol;
       // Try loading cached data for the new symbol
       const cached = loadNewsCache(symbol);
-      if (cached && (cached.market || cached.sector || cached.stock)) {
+      if (cached && (cached.market || cached.sector || cached.stock || cached.overseas)) {
         setNewsData(cached);
         setNewsLoading(false);
         // Background incremental refresh for the new symbol
@@ -5960,7 +5976,7 @@ export default function StockTAssistant() {
     // 1. Try loading from localStorage cache (instant display)
     if (!newsData.market && !newsLoading) {
       const cached = loadNewsCache(symbol);
-      if (cached && (cached.market || cached.sector || cached.stock)) {
+      if (cached && (cached.market || cached.sector || cached.stock || cached.overseas)) {
         setNewsData(cached);
         // Then do an incremental check in the background (no loading spinner)
         fetchNewsAnalysis({ incremental: true });
@@ -5996,8 +6012,9 @@ export default function StockTAssistant() {
       if (newsData.market?.analysis) savePrediction("market", newsData.market);
       if (newsData.sector?.analysis) savePrediction("sector", newsData.sector);
       if (newsData.stock?.analysis) savePrediction("stock", newsData.stock);
+      if (newsData.overseas?.analysis) savePrediction("overseas", newsData.overseas);
     }
-  }, [newsData.market?.timestamp, newsData.sector?.timestamp, newsData.stock?.timestamp]);
+  }, [newsData.market?.timestamp, newsData.sector?.timestamp, newsData.stock?.timestamp, newsData.overseas?.timestamp]);
 
   // ── Live Timeline: inject real-time quote price into the latest minute ──
   // Tencent API returns 1-minute granularity; quote updates every ~3s during trading.
@@ -7480,10 +7497,12 @@ export default function StockTAssistant() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <Newspaper className="h-4 w-4" />
-                  资讯分析 · {currentPredictionDay}预判
-                  <span className="text-[10px] text-muted-foreground font-normal">
-                    {currentPredictionDay === "今日" ? "(11:30前)" : "(11:30后)"}
-                  </span>
+                  资讯分析 · {newsActiveTab === "overseas" ? "美港股分析" : `${currentPredictionDay}预判`}
+                  {newsActiveTab !== "overseas" && (
+                    <span className="text-[10px] text-muted-foreground font-normal">
+                      {currentPredictionDay === "今日" ? "(11:30前)" : "(11:30后)"}
+                    </span>
+                  )}
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   {/* Cache freshness timer */}
@@ -7541,11 +7560,11 @@ export default function StockTAssistant() {
               </div>
             </CardHeader>
             <CardContent className="pb-3 px-4">
-              {/* Tabs: 大盘 / 板块 / 个股 */}
+              {/* Tabs: 大盘 / 板块 / 个股 / 美港股 */}
               <div className="flex items-center gap-1 mb-4">
-                {(["market", "sector", "stock"] as const).map((tab) => {
-                  const labels = { market: "大盘分析", sector: "板块分析", stock: "个股分析" };
-                  const icons = { market: "📈", sector: "🏭", stock: "📊" };
+                {(["market", "sector", "stock", "overseas"] as const).map((tab) => {
+                  const labels = { market: "大盘分析", sector: "板块分析", stock: "个股分析", overseas: "美港股" };
+                  const icons = { market: "📈", sector: "🏭", stock: "📊", overseas: "🌍" };
                   const disabled = tab === "sector" && !sectorInfo;
                   return (
                     <Button
@@ -7581,6 +7600,7 @@ export default function StockTAssistant() {
                   <span className="text-sm text-muted-foreground">
                     {newsActiveTab === "market" ? `正在多渠道搜索大盘资讯，深度分析${currentPredictionDay}走势...` :
                      newsActiveTab === "sector" ? `正在多渠道搜索板块资讯，深度分析${currentPredictionDay}走势...` :
+                     newsActiveTab === "overseas" ? `正在搜索隔夜美港股资讯，分析外盘影响...` :
                      `正在多渠道搜索个股资讯，深度分析${currentPredictionDay}走势...`}
                   </span>
                   <span className="text-xs text-muted-foreground/60">搜索维度：宏观政策 · 资金流向 · 外盘影响 · 技术分析</span>
@@ -7628,16 +7648,16 @@ export default function StockTAssistant() {
                                 <span className="text-2xl">{cfg.icon}</span>
                                 <div>
                                   <div className={`text-lg font-bold ${cfg.text}`}>
-                                    {currentPredictionDay}预判：{analysis.trend}
+                                    {newsActiveTab === "overseas" ? `A股影响：${analysis.trend}` : `${currentPredictionDay}预判：${analysis.trend}`}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    {newsActiveTab === "market" ? "大盘" : newsActiveTab === "sector" ? `${data.sectorName}板块` : quote?.name || symbol} · {data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "--"}
+                                    {newsActiveTab === "market" ? "大盘" : newsActiveTab === "sector" ? `${data.sectorName}板块` : newsActiveTab === "overseas" ? "美港股" : quote?.name || symbol} · {data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "--"}
                                   </div>
                                 </div>
                               </div>
                               <div className="flex flex-col items-end gap-1.5">
                                 <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${sCfg.bg} ${sCfg.text}`}>
-                                  {currentPredictionDay}建议：{analysis.suggestion}
+                                  {newsActiveTab === "overseas" ? "A股建议" : `${currentPredictionDay}建议`}：{analysis.suggestion}
                                 </span>
                                 <div className="flex items-center gap-1.5">
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-medium ${rCfg.bg} ${rCfg.text}`}>
@@ -7727,7 +7747,7 @@ export default function StockTAssistant() {
                                 const labelR = 78;
                                 const lx = 100 + labelR * Math.cos(angle);
                                 const ly = 90 + labelR * Math.sin(angle);
-                                const labels = ["技术面", "资金面", "政策面", "情绪面"];
+                                const labels = radarLabels;
                                 return (
                                   <g key={i}>
                                     <circle cx={cx} cy={cy} r={3} fill={s >= 60 ? '#ef4444' : s >= 40 ? '#eab308' : '#22c55e'} />
@@ -7786,8 +7806,8 @@ export default function StockTAssistant() {
                             {analysis.technicalView && (
                               <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
                                 <div className="flex items-center gap-1.5 mb-1">
-                                  <span className="text-xs">📊</span>
-                                  <span className="text-xs font-medium text-muted-foreground">技术面</span>
+                                  <span className="text-xs">{newsActiveTab === "overseas" ? "🇺🇸" : "📊"}</span>
+                                  <span className="text-xs font-medium text-muted-foreground">{newsActiveTab === "overseas" ? "美股走势" : "技术面"}</span>
                                   <span className={`ml-auto text-[9px] px-1 rounded ${
                                     sentimentScores[0] >= 60 ? 'bg-red-500/10 text-red-500' :
                                     sentimentScores[0] >= 40 ? 'bg-yellow-500/10 text-yellow-500' :
@@ -7802,8 +7822,8 @@ export default function StockTAssistant() {
                             {analysis.capitalView && (
                               <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
                                 <div className="flex items-center gap-1.5 mb-1">
-                                  <span className="text-xs">💰</span>
-                                  <span className="text-xs font-medium text-muted-foreground">资金面</span>
+                                  <span className="text-xs">{newsActiveTab === "overseas" ? "🇭🇰" : "💰"}</span>
+                                  <span className="text-xs font-medium text-muted-foreground">{newsActiveTab === "overseas" ? "港股走势" : "资金面"}</span>
                                   <span className={`ml-auto text-[9px] px-1 rounded ${
                                     sentimentScores[1] >= 60 ? 'bg-red-500/10 text-red-500' :
                                     sentimentScores[1] >= 40 ? 'bg-yellow-500/10 text-yellow-500' :
@@ -7819,7 +7839,9 @@ export default function StockTAssistant() {
                               <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
                                 <div className="flex items-center gap-1.5 mb-1">
                                   <span className="text-xs">📜</span>
-                                  <span className="text-xs font-medium text-muted-foreground">{newsActiveTab === "stock" ? "消息面" : newsActiveTab === "sector" ? "政策/行业" : "政策面"}</span>
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    {newsActiveTab === "overseas" ? "资金流向" : newsActiveTab === "stock" ? "消息面" : newsActiveTab === "sector" ? "政策/行业" : "政策面"}
+                                  </span>
                                   <span className={`ml-auto text-[9px] px-1 rounded ${
                                     sentimentScores[2] >= 60 ? 'bg-red-500/10 text-red-500' :
                                     sentimentScores[2] >= 40 ? 'bg-yellow-500/10 text-yellow-500' :
@@ -7835,7 +7857,9 @@ export default function StockTAssistant() {
                               <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
                                 <div className="flex items-center gap-1.5 mb-1">
                                   <span className="text-xs">🎭</span>
-                                  <span className="text-xs font-medium text-muted-foreground">情绪面</span>
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    {newsActiveTab === "overseas" ? "政策消息" : "情绪面"}
+                                  </span>
                                   <span className={`ml-auto text-[9px] px-1 rounded ${
                                     sentimentScores[3] >= 60 ? 'bg-red-500/10 text-red-500' :
                                     sentimentScores[3] >= 40 ? 'bg-yellow-500/10 text-yellow-500' :
@@ -8058,7 +8082,7 @@ export default function StockTAssistant() {
                       </summary>
                       <div className="mt-2 max-h-48 overflow-y-auto space-y-1.5">
                         {newsPredictions.slice(0, 20).map((p) => {
-                          const typeLabels: Record<string, string> = { market: "大盘", sector: "板块", stock: "个股" };
+                          const typeLabels: Record<string, string> = { market: "大盘", sector: "板块", stock: "个股", overseas: "美港股" };
                           const trendColors: Record<string, string> = {
                             "上升": "text-red-600 dark:text-red-400",
                             "下降": "text-green-600 dark:text-green-400",
