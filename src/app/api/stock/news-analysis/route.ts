@@ -300,19 +300,18 @@ export async function GET(req: NextRequest) {
     const params = { sectorName, stockName, symbol, day };
     const queryGroups = SEARCH_QUERIES[type]?.(params) || SEARCH_QUERIES.market(params);
 
-    // Step 1: Parallel multi-angle search
-    const searchPromises = queryGroups.map(async (g) => {
+    // Step 1: Sequential multi-angle search (throttled to avoid 429 rate limits)
+    const groups: { label: string; results: any[] }[] = [];
+    for (const g of queryGroups) {
       try {
         const results = await searchWeb(g.query, 5);
-        return { label: g.label, results: Array.isArray(results) ? results : [] };
+        groups.push({ label: g.label, results: Array.isArray(results) ? results : [] });
       } catch {
-        return { label: g.label, results: [] };
+        groups.push({ label: g.label, results: [] });
       }
-    });
-    const searchGroupResults = await Promise.allSettled(searchPromises);
-    const groups = searchGroupResults
-      .filter((r): r is PromiseFulfilledResult<{ label: string; results: any[] }> => r.status === "fulfilled")
-      .map((r) => r.value);
+      // Small delay between searches to avoid rate limiting
+      await new Promise(r => setTimeout(r, 500));
+    }
 
     // Deduplicate by URL and collect all news with source labels
     const seenUrls = new Set<string>();
@@ -342,21 +341,17 @@ export async function GET(req: NextRequest) {
     });
     const topNews = allNews.slice(0, 10);
 
-    // Step 2: Read full content from top 2 most relevant articles
-    const articleReadPromises = topNews.slice(0, 2).map(async (item) => {
-      const content = await readArticleContent(item.url);
-      return { ...item, fullContent: content };
-    });
-    const enrichedNews = await Promise.allSettled(articleReadPromises);
-    const finalNews = topNews.map((item, i) => {
-      if (i < 2) {
-        const settled = enrichedNews[i];
-        if (settled.status === "fulfilled" && settled.value.fullContent) {
-          return { ...item, fullContent: settled.value.fullContent };
-        }
+    // Step 2: Read full content from top 2 most relevant articles (sequential to avoid 429)
+    const finalNews = [...topNews];
+    for (let i = 0; i < Math.min(2, topNews.length); i++) {
+      try {
+        const content = await readArticleContent(topNews[i].url);
+        if (content) finalNews[i] = { ...topNews[i], fullContent: content };
+        await new Promise(r => setTimeout(r, 500));
+      } catch {
+        // Skip failed article reads
       }
-      return item;
-    });
+    }
 
     // Step 3: Build comprehensive LLM context
     const newsContextByGroup: Record<string, string[]> = {};

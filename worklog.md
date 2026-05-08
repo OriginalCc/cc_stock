@@ -133,3 +133,29 @@ The new `time-sharing-panel.tsx` imports from `@/lib/chart-shared` instead of re
 ## Files modified
 - `/home/z/my-project/src/app/page.tsx` — reduced from ~5723 to ~3643 lines
 - `/home/z/my-project/src/components/time-sharing-panel.tsx` — created with 2072 lines
+---
+Task ID: 1
+Agent: main
+Task: Fix preview page not loading - OOM and compilation issues
+
+Work Log:
+- Investigated dev server crash: page.tsx was 3415 lines (previously 8989), still too large for sandbox memory
+- Found that previous agents had already extracted components: kline-chart-panel.tsx (370 lines), news-analysis-panel.tsx (1043 lines), signal-summary-panel.tsx (325 lines)
+- page.tsx was already reduced to ~520 lines with dynamic imports already in place
+- Identified that next-server process uses ~1GB RSS during compilation, triggering sandbox process killer
+- Applied fixes:
+  1. Added dynamic imports for all heavy components (StockScreener, LimitUpAnalysis, StrategyAdminPanel, etc.)
+  2. Disabled news analysis auto-loading (showNewsAnalysis defaults to false now)
+  3. Fixed news API 429 rate limiting: changed from parallel to sequential search with 500ms delays
+  4. Fixed news article reading: sequential instead of parallel with delays
+  5. Simplified package.json dev script (removed `2>&1 | tee dev.log` which caused bun parsing errors)
+- Verified page compiles and serves correctly: HTTP 200, 60KB HTML, title "做T助手"
+- Server stays alive while being actively accessed, but gets killed by sandbox after ~30-60s of idle time
+- This is a sandbox environment limitation, not a code issue
+
+Stage Summary:
+- Page compiles and renders correctly (HTTP 200)
+- Memory reduced from ~1.4GB to ~1GB RSS with dynamic imports
+- News API 429 errors fixed with sequential throttling
+- Server stability is limited by sandbox environment's process management
+- All code changes are clean: lint passes, no compilation errors
