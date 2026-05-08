@@ -789,3 +789,21 @@ Stage Summary:
 - Quick presets for common screening strategies
 - Backend supports dynamic sector keyword search with alias expansion
 - Lint passes cleanly
+
+---
+Task ID: 1
+Agent: main
+Task: Update screener default values: 涨幅范围-5%~10%, 脉冲拉升10%, 放量拉升10%
+
+Work Log:
+- Updated DEFAULT_FILTERS in stock-screener.tsx: minChange 0→-5, maxChange 3→10, pulseThreshold 20→10, volumeSurgeThreshold 20→10
+- Updated backend route.ts default params: minChange "0"→"-5", maxChange "3"→"10", pulseThreshold "20"→"10", volumeSurgeThreshold "20"→"10"
+- Updated quick preset buttons (半导体/AI/新能源/医药) to use new defaults
+- Added "微弱脉冲" (score>=10) and "微弱放量" (score>=10) levels to label functions
+- Added score>=10 color level (emerald-400) and background level (emerald-500/10) for both pulse and volume surge
+- Updated fallback values in onChange handlers from || 20 to || 10
+
+Stage Summary:
+- Default screener filters now: 涨幅-5%~10%, 脉冲≥10, 放量≥10
+- Score label system now has 6 levels (≥70/≥50/≥30/≥20/≥10/<10)
+- Lint passes, dev server running normally

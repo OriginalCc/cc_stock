@@ -117,6 +117,7 @@ function getPulseScoreColor(score: number): string {
   if (score >= 50) return "text-orange-500";
   if (score >= 30) return "text-yellow-500";
   if (score >= 20) return "text-lime-500";
+  if (score >= 10) return "text-emerald-400";
   return "text-gray-400";
 }
 
@@ -125,6 +126,7 @@ function getPulseScoreBg(score: number): string {
   if (score >= 50) return "bg-orange-500/10 border-orange-500/30";
   if (score >= 30) return "bg-yellow-500/10 border-yellow-500/30";
   if (score >= 20) return "bg-lime-500/10 border-lime-500/30";
+  if (score >= 10) return "bg-emerald-500/10 border-emerald-500/30";
   return "bg-gray-500/10 border-gray-500/30";
 }
 
@@ -133,6 +135,7 @@ function getPulseLabel(score: number): string {
   if (score >= 50) return "中脉冲";
   if (score >= 30) return "弱脉冲";
   if (score >= 20) return "轻微脉冲";
+  if (score >= 10) return "微弱脉冲";
   return "无脉冲";
 }
 
@@ -141,6 +144,7 @@ function getVolumeSurgeScoreColor(score: number): string {
   if (score >= 50) return "text-orange-500";
   if (score >= 30) return "text-yellow-500";
   if (score >= 20) return "text-lime-500";
+  if (score >= 10) return "text-emerald-400";
   return "text-gray-400";
 }
 
@@ -149,6 +153,7 @@ function getVolumeSurgeScoreBg(score: number): string {
   if (score >= 50) return "bg-orange-500/10 border-orange-500/30";
   if (score >= 30) return "bg-yellow-500/10 border-yellow-500/30";
   if (score >= 20) return "bg-lime-500/10 border-lime-500/30";
+  if (score >= 10) return "bg-emerald-500/10 border-emerald-500/30";
   return "bg-gray-500/10 border-gray-500/30";
 }
 
@@ -157,6 +162,7 @@ function getVolumeSurgeLabel(score: number): string {
   if (score >= 50) return "中放量";
   if (score >= 30) return "弱放量";
   if (score >= 20) return "轻微放量";
+  if (score >= 10) return "微弱放量";
   return "无放量";
 }
 
@@ -239,15 +245,15 @@ interface ScreenerFilters {
 
 const DEFAULT_FILTERS: ScreenerFilters = {
   sector: "通信",
-  minChange: 0,
-  maxChange: 3,
+  minChange: -5,
+  maxChange: 10,
   maxMarketCap: 200,
-  pulseThreshold: 20,
+  pulseThreshold: 10,
   enablePulse: true,
   pulseTimeStart: "09:30",
   pulseTimeEnd: "10:30",
   enableVolumeSurge: true,
-  volumeSurgeThreshold: 20,
+  volumeSurgeThreshold: 10,
 };
 
 // ── Component ──────────────────────────────────────────
@@ -714,7 +720,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         <Input
                           type="number"
                           value={filters.pulseThreshold}
-                          onChange={(e) => handleFilterChange("pulseThreshold", parseInt(e.target.value) || 20)}
+                          onChange={(e) => handleFilterChange("pulseThreshold", parseInt(e.target.value) || 10)}
                           className="h-7 text-xs w-20"
                           step={5}
                         />
@@ -753,7 +759,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         <Input
                           type="number"
                           value={filters.volumeSurgeThreshold}
-                          onChange={(e) => handleFilterChange("volumeSurgeThreshold", parseInt(e.target.value) || 20)}
+                          onChange={(e) => handleFilterChange("volumeSurgeThreshold", parseInt(e.target.value) || 10)}
                           className="h-7 text-xs w-20"
                           step={5}
                         />
@@ -871,7 +877,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "半导体", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 15, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 15 };
+                          const f = { sector: "半导体", minChange: -5, maxChange: 10, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10 };
                           setFilters(f);
                           setSectorInput("半导体");
                         }}
@@ -881,7 +887,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "人工智能", minChange: 0, maxChange: 3, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10 };
+                          const f = { sector: "人工智能", minChange: -5, maxChange: 10, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10 };
                           setFilters(f);
                           setSectorInput("人工智能");
                         }}
@@ -891,7 +897,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "新能源", minChange: -1, maxChange: 5, maxMarketCap: 300, pulseThreshold: 20, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 20 };
+                          const f = { sector: "新能源", minChange: -5, maxChange: 10, maxMarketCap: 300, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10 };
                           setFilters(f);
                           setSectorInput("新能源");
                         }}
@@ -901,7 +907,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "医药", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 0, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: false, volumeSurgeThreshold: 20 };
+                          const f = { sector: "医药", minChange: -5, maxChange: 10, maxMarketCap: 500, pulseThreshold: 10, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: false, volumeSurgeThreshold: 10 };
                           setFilters(f);
                           setSectorInput("医药");
                         }}

@@ -620,16 +620,16 @@ function isETF(code: string): boolean {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const minChange = parseFloat(searchParams.get("minChange") || "0");
-  const maxChange = parseFloat(searchParams.get("maxChange") || "3");
+  const minChange = parseFloat(searchParams.get("minChange") || "-5");
+  const maxChange = parseFloat(searchParams.get("maxChange") || "10");
   const maxMarketCap = parseFloat(searchParams.get("maxMarketCap") || "200"); // 亿元
   const sectorKeyword = searchParams.get("sector") || "通信";
-  const pulseThreshold = parseInt(searchParams.get("pulseThreshold") || "20"); // 脉冲评分阈值
+  const pulseThreshold = parseInt(searchParams.get("pulseThreshold") || "10"); // 脉冲评分阈值
   const enablePulseDetection = searchParams.get("pulse") !== "false";
   const pulseTimeStart = searchParams.get("pulseTimeStart") || "09:30";
   const pulseTimeEnd = searchParams.get("pulseTimeEnd") || "10:30";
   const enableVolumeSurge = searchParams.get("volumeSurge") !== "false";
-  const volumeSurgeThreshold = parseInt(searchParams.get("volumeSurgeThreshold") || "20");
+  const volumeSurgeThreshold = parseInt(searchParams.get("volumeSurgeThreshold") || "10");
   const forceRefresh = searchParams.get("refresh") === "1";
 
   // Check server cache first
