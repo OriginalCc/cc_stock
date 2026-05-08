@@ -2504,6 +2504,19 @@ export function generateTimelineSignals(
     }
   }
 
+  // ── 应用因子强度覆盖（第一遍）：标记被用户覆盖的信号 ──
+  // 被用户覆盖的信号标记为 _userOverridden，后处理逻辑不应再升级其强度
+  if (factorOverrides && factorOverrides.length > 0) {
+    for (let i = 0; i < signals.length; i++) {
+      const sig = signals[i];
+      if (!sig) continue;
+      const override = factorOverrides.find(o => o.name === sig.reason);
+      if (override && override.strength) {
+        signals[i] = { ...sig, _userOverridden: true, _overrideStrength: override.strength } as any;
+      }
+    }
+  }
+
   // ── v3.8: 动态自定义因子评估 ──
   // 评估用户在UI中创建的自定义因子（非内置因子）
   // 内置因子（factor_31-34）已由上面的硬编码逻辑处理，这里只处理用户自定义因子
@@ -2611,7 +2624,11 @@ export function generateTimelineSignals(
     }
 
     // Upgrade strength based on confluence count
-    if (confluenceCount >= 3 && curSig.strength !== "strong") {
+    // 但被用户明确覆盖强度的信号不应被升级
+    const isUserOverridden = (curSig as any)._userOverridden;
+    if (isUserOverridden) {
+      // 用户覆盖的信号强度不可被共振升级
+    } else if (confluenceCount >= 3 && curSig.strength !== "strong") {
       signals[i] = {
         ...curSig,
         strength: "strong",
@@ -2655,6 +2672,18 @@ export function generateTimelineSignals(
         const proximity = Math.abs(price - level.price) / level.price * 100;
 
         if (proximity < 0.15) { // 价格在关键位0.15%范围内
+          const isUserOverridden = (curSig as any)._userOverridden;
+          // 被用户覆盖强度的信号不被关键价位升级
+          if (isUserOverridden) {
+            // 仅添加描述，不升级强度
+            signals[i] = {
+              ...curSig,
+              description: curSig.description
+                ? `${curSig.description} 【${level.name}${level.type === "resistance" ? "阻力" : "支撑"}附近】`
+                : `在${level.name}${level.type === "resistance" ? "阻力" : "支撑"}位附近`,
+            };
+            break;
+          }
           // 卖出信号在阻力位附近更可靠
           if (curSig.type === "sell" && level.type === "resistance") {
             if (curSig.strength === "weak") {
@@ -2714,8 +2743,8 @@ export function generateTimelineSignals(
     // 低波动环境（标准差<0.2%）：弱信号也可以考虑，因为波动小更安全
     if (vol > 0.5) {
       for (let i = 0; i < signals.length; i++) {
-        if (signals[i] && signals[i]!.strength === "weak" && signals[i]!.type !== "stoploss") {
-          // 高波动时弱信号不可靠，降为不显示
+        if (signals[i] && signals[i]!.strength === "weak" && signals[i]!.type !== "stoploss" && !(signals[i] as any)._userOverridden) {
+          // 高波动时弱信号不可靠，降为不显示（但用户覆盖的弱信号保留）
           signals[i] = null;
         }
       }
@@ -2799,12 +2828,13 @@ export function generateTimelineSignals(
       }
 
       // 大盘上升 + 个股卖出信号 → 降级（可能卖飞）
-      if (isMarketUp && curSig.type === "sell" && curSig.strength === "weak") {
+      // 但用户明确覆盖的弱信号保留（最终遍会恢复其强度）
+      if (isMarketUp && curSig.type === "sell" && curSig.strength === "weak" && !(curSig as any)._userOverridden) {
         signals[i] = null; // 弱卖出信号在牛市中过滤掉
       }
 
       // 大盘下跌 + 个股买入信号 → 降级（可能接飞刀）
-      if (isMarketDown && curSig.type === "buy" && curSig.strength === "weak") {
+      if (isMarketDown && curSig.type === "buy" && curSig.strength === "weak" && !(curSig as any)._userOverridden) {
         signals[i] = null; // 弱买入信号在熊市中过滤掉
       }
 
@@ -2857,12 +2887,13 @@ export function generateTimelineSignals(
       }
 
       // 板块上升 + 个股弱卖出信号 → 降级（板块向上，别急着卖）
-      if (isSectorUp && curSig.type === "sell" && curSig.strength === "weak") {
+      // 但用户明确覆盖的弱信号保留
+      if (isSectorUp && curSig.type === "sell" && curSig.strength === "weak" && !(curSig as any)._userOverridden) {
         signals[i] = null; // 弱卖出信号在板块上涨中过滤掉
       }
 
       // 板块下跌 + 个股弱买入信号 → 降级（板块向下，别急着买）
-      if (isSectorDown && curSig.type === "buy" && curSig.strength === "weak") {
+      if (isSectorDown && curSig.type === "buy" && curSig.strength === "weak" && !(curSig as any)._userOverridden) {
         signals[i] = null; // 弱买入信号在板块下跌中过滤掉
       }
 
@@ -2874,6 +2905,20 @@ export function generateTimelineSignals(
             ? `${curSig.description} 【板块震荡共振→中】`
             : `板块震荡市，高抛低吸信号`,
         };
+      }
+    }
+  }
+
+  // ── 应用因子强度覆盖（最终遍）：确保用户覆盖的强度不被后处理升级覆盖 ──
+  // 后处理（共振升级、关键价位增强、均价拐头、大盘/板块共振等）可能升级信号强度
+  // 但用户明确设置的强度优先级最高，必须最终生效
+  if (factorOverrides && factorOverrides.length > 0) {
+    for (let i = 0; i < signals.length; i++) {
+      const sig = signals[i];
+      if (!sig) continue;
+      const overrideStrength = (sig as any)._overrideStrength;
+      if (overrideStrength) {
+        signals[i] = { ...sig, strength: overrideStrength } as any;
       }
     }
   }

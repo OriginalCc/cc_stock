@@ -39,3 +39,25 @@ Stage Summary:
 - Weak signals always render independently as small gray dots on the chart
 - Info bar badges only show medium/strong signals
 - Server rebuilt and running successfully
+
+---
+Task ID: 3
+Agent: main
+Task: Fix root cause - factor strength overrides from DB not actually applied to signals
+
+Work Log:
+- Discovered the true root cause: `getFactorOverride()` function exists but is NEVER called
+- User adjusts MACD金叉 strength to "weak" in strategy admin panel → saved to DB
+- But signal generation code completely ignores the DB strength override
+- MACD金叉 always generates as "strong" (if MACD>0) or "medium" (if MACD≤0) regardless of DB setting
+- Added 3-layer fix in t-strategy.ts:
+  1. First pass after signal generation: mark signals with _userOverridden flag and _overrideStrength
+  2. Post-processing: skip _userOverridden signals in null-ification (大盘/板块/高波动 filter)
+  3. Final pass before return: apply _overrideStrength to ensure user setting wins over all upgrades
+- Also protects against: resonance upgrade, key level enhancement, VWAP slope upgrade, market/sector confluence
+- Rebuilt and verified server running
+
+Stage Summary:
+- Root cause: factor strength overrides were stored in DB but never applied during signal generation
+- Fix: 3-layer approach ensures user overrides always take final precedence
+- Display rules now correctly respected: weak→gray dot, medium→colored dot, strong→triangle+label
