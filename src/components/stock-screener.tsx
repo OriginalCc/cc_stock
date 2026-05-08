@@ -1278,6 +1278,92 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
           )}
         </CardContent>
       </Card>
+      {/* ── 早盘脉冲/放量续涨特征归纳 ── */}
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Zap className="w-4 h-4 text-amber-500" />
+            早盘脉冲/放量后续续涨股票特征
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-4">
+          {/* 核心特征 */}
+          <div className="space-y-2.5">
+            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+              <span className="inline-block w-5 h-5 rounded-full bg-red-500/10 text-red-500 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+              量价配合：放量不回落
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
+              早盘脉冲后，股价能在均价线上方横盘或缓步攀升，成交量从脉冲峰值逐步回落但不萎缩至均量以下。说明主力资金<strong className="text-foreground">持续驻留</strong>而非拉高出货。若脉冲后迅速跌回均价线以下，则为典型的<strong className="text-red-500">脉冲出货</strong>。
+            </p>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+              <span className="inline-block w-5 h-5 rounded-full bg-orange-500/10 text-orange-500 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+              换手率适中：2%~8%为佳
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
+              换手率过低(&lt;1%)说明脉冲为盘中散户行为，缺乏主力参与；换手率过高(&gt;10%)则可能是主力对倒或游资短炒，<strong className="text-foreground">次日低开概率大</strong>。2%~8%的换手率区间最有可能是有实力的机构在有序建仓或加仓。
+            </p>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+              <span className="inline-block w-5 h-5 rounded-full bg-amber-500/10 text-amber-500 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+              主力净流入为正
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
+              脉冲/放量的同一时段，主力资金净流入为正是最关键的验证指标。净流入越大，后续续涨概率越高。若脉冲伴随<strong className="text-red-500">主力净流出</strong>，大概率是拉高出货，应果断回避。
+            </p>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+              <span className="inline-block w-5 h-5 rounded-full bg-yellow-500/10 text-yellow-500 text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
+              市值规模：30亿~200亿最佳
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
+              小市值(&lt;30亿)脉冲多为游资短炒，波动大但持续性差；大市值(&gt;200亿)脉冲需要巨量资金，通常只有机构合力才能推动，持续性更好但涨幅有限。<strong className="text-foreground">30~200亿市值</strong>是机构与游资重合区，既有爆发力又有持续性。
+            </p>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+              <span className="inline-block w-5 h-5 rounded-full bg-lime-500/10 text-lime-500 text-[10px] font-bold flex items-center justify-center shrink-0">5</span>
+              板块联动：同板块多股共振
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
+              若同一板块内多只股票在早盘同时出现脉冲/放量，说明这是<strong className="text-foreground">板块级别的资金进驻</strong>，而非个股偶然行为。板块共振下的脉冲续涨概率远高于个股独立脉冲。可通过本页筛选同板块脉冲股数量来判断。
+            </p>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+              <span className="inline-block w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold flex items-center justify-center shrink-0">6</span>
+              脉冲时间：开盘30~60分钟内最优
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
+              开盘前30分钟的脉冲可能为集合竞价情绪延续，波动剧烈但方向不明；<strong className="text-foreground">9:30~10:30</strong>之间出现的脉冲最可靠——此时市场已充分换手，主力意图更清晰。10:30之后的脉冲若非伴随板块利好，需警惕尾盘回落。
+            </p>
+          </div>
+
+          {/* 避坑指南 */}
+          <div className="mt-3 p-3 rounded-lg bg-red-500/5 border border-red-500/15">
+            <div className="text-xs font-medium text-red-600 dark:text-red-400 mb-2 flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              避坑：脉冲后回落的危险信号
+            </div>
+            <ul className="text-xs text-muted-foreground space-y-1.5 pl-1">
+              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>脉冲后5分钟内回落超过脉冲涨幅的50% → 典型拉高出货</li>
+              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>脉冲时段主力净流出 → 主力借脉冲出货给散户</li>
+              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>脉冲后成交量迅速萎缩至均量1/3以下 → 无后续资金跟进</li>
+              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>脉冲后跌破均价线且无法收复 → 短期趋势转弱</li>
+              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>换手率超15%且为游资主导 → 次日大幅低开概率极高</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
