@@ -1121,6 +1121,26 @@ function MiniTimelinePanel({
   const { fullDayData, timeTicks } = useMemo(() => {
     if (data.length === 0) return { fullDayData: [], timeTicks: [] };
 
+    // ── Truncate API-pre-populated future minutes ──
+    // Tencent API returns full session data with flat (last known) prices for future minutes.
+    // Cut these off so the price line doesn't extend as a horizontal line into the future.
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
+    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
+    let truncated = data;
+    if (isMorningSession || isAfternoonSession) {
+      const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const lastValidIdx = data.reduce((lastIdx: number, d: TimelineItem, i: number) => {
+        if (d.time <= curMin) return i;
+        return lastIdx;
+      }, -1);
+      if (lastValidIdx >= 0 && lastValidIdx < data.length - 1) {
+        truncated = data.slice(0, lastValidIdx + 1);
+      }
+    }
+
     const allTimes: string[] = [];
     for (let h = 9; h <= 11; h++) {
       const startM = h === 9 ? 30 : 0;
@@ -1133,16 +1153,16 @@ function MiniTimelinePanel({
     }
 
     const dataByTime = new Map<string, TimelineItem>();
-    data.forEach(d => dataByTime.set(d.time, d));
-    const lastActualIdx = data.length > 0 ? allTimes.indexOf(data[data.length - 1].time) : -1;
+    truncated.forEach(d => dataByTime.set(d.time, d));
+    const lastActualIdx = truncated.length > 0 ? allTimes.indexOf(truncated[truncated.length - 1].time) : -1;
 
     const fullDay = allTimes.map((time, idx) => {
       const actual = dataByTime.get(time);
       const hasData = actual != null && idx <= lastActualIdx;
       if (hasData) {
-        const safePrevClose = prevClose > 0 ? prevClose : data[0].price;
+        const safePrevClose = prevClose > 0 ? prevClose : truncated[0].price;
         const prevActual = (() => {
-          for (let j = data.length - 1; j >= 0; j--) { if (data[j].time < time) return data[j]; }
+          for (let j = truncated.length - 1; j >= 0; j--) { if (truncated[j].time < time) return truncated[j]; }
           return null;
         })();
         return {
@@ -1172,8 +1192,26 @@ function MiniTimelinePanel({
     return { fullDayData: fullDay, timeTicks: ticks };
   }, [data, prevClose]);
 
-  // Compute MACD
-  const macdData = useMemo(() => computeMiniMACD(data), [data]);
+  // Compute MACD (use same truncation logic as fullDayData)
+  const macdData = useMemo(() => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
+    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
+    let macdInput = data;
+    if (isMorningSession || isAfternoonSession) {
+      const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const lastValidIdx = data.reduce((lastIdx: number, d: TimelineItem, i: number) => {
+        if (d.time <= curMin) return i;
+        return lastIdx;
+      }, -1);
+      if (lastValidIdx >= 0 && lastValidIdx < data.length - 1) {
+        macdInput = data.slice(0, lastValidIdx + 1);
+      }
+    }
+    return computeMiniMACD(macdInput);
+  }, [data]);
   const macdByTime = new Map(macdData.map(m => [m.time, m]));
 
   // Merge MACD into fullDayData
