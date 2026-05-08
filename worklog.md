@@ -725,3 +725,35 @@ Stage Summary:
 - Client-side: module-level clientCache survives tab switches, 3-min TTL
 - Both caches work together: client cache avoids even making the API request, server cache avoids re-running the expensive pipeline
 - User sees "缓存 Xs" badge when viewing cached data, can force refresh with button
+
+---
+Task ID: 2
+Agent: main
+Task: Add 涨停分析 (Limit-Up Analysis) page
+
+Work Log:
+- Created backend API at /api/stock/limit-up/route.ts (935 lines)
+  - Fetches top 3 hot sectors from EastMoney by change percent
+  - Gets limit-up stocks for each sector (>=9.9% main board, >=19.9% ChiNext/STAR)
+  - Technical analysis: lock time, lock strength, break count, volume ratio, limit-up type, consecutive days
+  - News analysis via z-ai-web-dev-sdk: sector driver, catalysts, outlook, key events
+  - 5-minute server-side cache with ?refresh=1 bypass
+  - Partial results on error, proper timeout handling
+- Created frontend component at /components/limit-up-analysis.tsx (815 lines)
+  - Header card with date, refresh button, cache countdown badge
+  - Three sector cards with news analysis section + stocks table
+  - Color-coded limit-up type badges (一字板/秒板/早板/午板/尾板)
+  - Lock strength progress bar with color coding
+  - Consecutive days highlighting (>=3 red pulsing badge)
+  - Module-level client cache (5-min TTL) persists across tab switches
+- Integrated into main page tab system
+  - Added "limit-up" to pageMode type union
+  - Added "涨停" toggle button in header with TrendingUp icon
+  - Added LimitUpAnalysis rendering in main content area
+  - Stock selection switches back to "t-assistant" mode
+
+Stage Summary:
+- New page "涨停分析" accessible via "涨停" tab button
+- Backend: full pipeline from sector discovery → limit-up filtering → technical + news analysis
+- Frontend: polished UI with caching, responsive design, proper loading/error states
+- All lint checks pass cleanly

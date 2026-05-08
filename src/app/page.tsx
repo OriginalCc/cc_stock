@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem, type TimelineItem, type ChartMode } from "@/hooks/use-stock-data";
 import { StockScreener } from "@/components/stock-screener";
+import { LimitUpAnalysis } from "@/components/limit-up-analysis";
 import { calculateMACD } from "@/lib/indicators";
 import { generateTimelineSignals as generateOptimizedSignals, getTimeWindow, detectMarketRegime, detectMarketRegimeDetail, buildFactorOverridesFromDB, computeKeyPriceLevels, type TSignal as OptimizedTSignal, type TimeWindow, type MarketRegime, type FactorOverride, type RegimeDetail, type Strength, type CustomFactorDefinition as EngineCustomFactorDefinition, STRATEGY_OVERVIEW } from "@/lib/t-strategy";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5473,8 +5474,8 @@ export default function StockTAssistant() {
     isAShare: isAShareStock,
   } = useStockData();
 
-  // ── Page Mode: "t-assistant" or "screener" ──
-  const [pageMode, setPageMode] = useState<"t-assistant" | "screener">("t-assistant");
+  // ── Page Mode: "t-assistant" or "screener" or "limit-up" ──
+  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "limit-up">("t-assistant");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
@@ -6649,6 +6650,17 @@ export default function StockTAssistant() {
                   <Filter className="w-3 h-3" />
                   选股
                 </button>
+                <button
+                  onClick={() => setPageMode("limit-up")}
+                  className={`px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${
+                    pageMode === "limit-up"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <TrendingUp className="w-3 h-3" />
+                  涨停
+                </button>
               </div>
             </div>
 
@@ -6734,6 +6746,13 @@ export default function StockTAssistant() {
       <main className="flex-1 max-w-[1400px] mx-auto w-full px-4 py-4">
         {pageMode === "screener" ? (
           <StockScreener
+            onSelectStock={(sym) => {
+              selectStock(sym);
+              setPageMode("t-assistant");
+            }}
+          />
+        ) : pageMode === "limit-up" ? (
+          <LimitUpAnalysis
             onSelectStock={(sym) => {
               selectStock(sym);
               setPageMode("t-assistant");
