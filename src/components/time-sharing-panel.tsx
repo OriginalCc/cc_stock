@@ -264,24 +264,45 @@ function TimelineSignalRenderer(props: any) {
   }
   if (priceLineData.length === 0) return null;
 
-  // ── Step 1: Collect signal points (filter out weak signals — they are too noisy for chart) ──
+  // ── Step 1: Collect all signal points ──
+  // 显示规则: 强信号=三角+标签, 中等=彩色圆点, 弱=灰色小圆点
   const allSignals: { x: number; y: number; signal: TSignal; index: number }[] = [];
   priceLineData.forEach((point: any, i: number) => {
     const signal = point?.payload?.tSignal as TSignal | undefined | null;
     if (!signal) return;
-    // 弱信号不在分时图上显示，避免噪音干扰
-    if (signal.strength === "weak") return;
     allSignals.push({ x: point.x, y: point.y, signal, index: i });
   });
 
   if (allSignals.length === 0) return null;
 
   // ── Step 2: Smart merge - same direction (buy/sell), wider distance ──
+  // 弱信号不参与合并，始终独立显示为灰色小圆点，避免被中/强信号"升级"
   const MERGE_DISTANCE_X = 30;
   const strengthOrder: Record<string, number> = { strong: 3, medium: 2, weak: 1 };
   const merged: MergedSignal[] = [];
   const used = new Set<number>();
 
+  // 弱信号直接独立入队，不参与合并
+  for (let i = 0; i < allSignals.length; i++) {
+    if (allSignals[i].signal.strength === "weak") {
+      used.add(i);
+      merged.push({
+        id: `sig-${allSignals[i].index}-${allSignals[i].signal.type === "buy" ? "up" : "down"}`,
+        x: allSignals[i].x,
+        y: allSignals[i].y,
+        type: allSignals[i].signal.type,
+        reasons: [allSignals[i].signal.reason],
+        strength: "weak",
+        count: 1,
+        originalIndex: allSignals[i].index,
+        direction: allSignals[i].signal.type === "buy" ? "up" : "down",
+        isCustom: allSignals[i].signal.description?.startsWith("自定义因子[") || false,
+        customReasons: new Set(),
+      });
+    }
+  }
+
+  // 中/强信号参与合并
   for (let i = 0; i < allSignals.length; i++) {
     if (used.has(i)) continue;
     const s = allSignals[i];
@@ -335,6 +356,9 @@ function TimelineSignalRenderer(props: any) {
       customReasons: customReasonSet,
     });
   }
+
+  // 按x坐标排序，保证渲染顺序正确
+  merged.sort((a, b) => a.x - b.x);
 
   // ── Step 3: Only strong signals get text labels ──
   const labelRects: { x: number; y: number; width: number; height: number }[] = [];
@@ -1412,11 +1436,11 @@ export function TimeSharingPanel({
     if (mMax < 0) mMax = 0;
     const mPad = (mMax - mMin) * 0.05 || 0.05;
 
-    // Last item & last signal
+    // Last item & last signal (skip weak signals for the info badge)
     const li = data[data.length - 1];
     let ls: typeof signals[number] = null;
     for (let i = signals.length - 1; i >= 0; i--) {
-      if (signals[i]) { ls = signals[i]; break; }
+      if (signals[i] && signals[i]!.strength !== "weak") { ls = signals[i]; break; }
     }
 
     const brs = zd.length > 200 ? 2 : zd.length > 100 ? 3 : zd.length > 60 ? 4 : 5;

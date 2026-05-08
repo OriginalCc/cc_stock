@@ -19,3 +19,23 @@ Stage Summary:
 - Server stable at ~86MB RSS in production mode
 - All 15 API routes + page route working correctly
 - 429 errors from external finance API are rate limiting, not server crashes
+
+---
+Task ID: 2
+Agent: main
+Task: Fix weak signal display on timeline chart - ensure signal strength rules are properly enforced
+
+Work Log:
+- Analyzed user complaint: MACD金叉 downgraded to "weak" still showed labels on timeline chart
+- Found root cause: signal merge logic (Step 2) upgraded weak signals to higher strength when merged with nearby medium/strong signals of same direction
+- Fixed merge logic: weak signals now independently enter the merged list, never participate in group merging, always render as gray dots
+- Updated latestTimelineSignal in page.tsx to skip weak signals for the info bar badge
+- Updated lastSignal in time-sharing-panel.tsx to skip weak signals for the bottom info badge
+- Final display rules: Strong=triangle+label, Medium=colored dot+badge, Weak=gray small dot only
+- Rebuilt production server and verified HTTP 200 response
+
+Stage Summary:
+- Key fix: weak signals no longer get "upgraded" via merge logic
+- Weak signals always render independently as small gray dots on the chart
+- Info bar badges only show medium/strong signals
+- Server rebuilt and running successfully
