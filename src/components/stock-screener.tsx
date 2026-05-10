@@ -2572,7 +2572,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               <Settings className="w-4 h-4 text-emerald-500" />
               选股策略面板
               <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-                v3.0
+                v4.0
               </Badge>
             </CardTitle>
             <div className="flex items-center gap-2">
@@ -2588,12 +2588,13 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
         {strategyExpanded && (
           <CardContent className="pt-0">
             <Tabs value={strategyTab} onValueChange={setStrategyTab}>
-              <TabsList className="w-full h-8 p-0.5 mb-3">
-                <TabsTrigger value="overview" className="text-xs h-7 flex-1">选股总纲</TabsTrigger>
-                <TabsTrigger value="scoring" className="text-xs h-7 flex-1">评分权重</TabsTrigger>
-                <TabsTrigger value="factors" className="text-xs h-7 flex-1">DB因子库</TabsTrigger>
-                <TabsTrigger value="evaluation" className="text-xs h-7 flex-1">评估模型</TabsTrigger>
-                <TabsTrigger value="params" className="text-xs h-7 flex-1">指标参数</TabsTrigger>
+              <TabsList className="w-full h-8 p-0.5 mb-3 flex flex-wrap">
+                <TabsTrigger value="overview" className="text-[10px] h-7 flex-1 min-w-0">总纲</TabsTrigger>
+                <TabsTrigger value="filters" className="text-[10px] h-7 flex-1 min-w-0">筛选条件</TabsTrigger>
+                <TabsTrigger value="scoring" className="text-[10px] h-7 flex-1 min-w-0">评分体系</TabsTrigger>
+                <TabsTrigger value="evaluation" className="text-[10px] h-7 flex-1 min-w-0">评估模型</TabsTrigger>
+                <TabsTrigger value="factors" className="text-[10px] h-7 flex-1 min-w-0">DB因子</TabsTrigger>
+                <TabsTrigger value="params" className="text-[10px] h-7 flex-1 min-w-0">参数</TabsTrigger>
               </TabsList>
 
               {/* ── Tab 1: Overview ── */}
@@ -2602,20 +2603,27 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                   <div className="p-3 rounded-lg border border-border bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
                     <div className="flex items-center gap-2 mb-2">
                       <Zap className="h-4 w-4 text-emerald-500" />
-                      <span className="text-sm font-bold">策略名称: 智能选股策略 v3.0</span>
+                      <span className="text-sm font-bold">智能选股策略 v4.0</span>
                     </div>
                     <div className="text-xs text-foreground/80">
-                      基于板块热点的智能选股系统，结合脉冲拉升检测、放量拉升识别、多维度增强筛选与综合可靠度评分模型，从板块成分股中筛选最具短线爆发潜力且可靠性最高的标的。
+                      基于板块热点的智能选股系统，结合脉冲拉升检测、放量拉升识别、递增放量检测、多维增强筛选（含v4.0新增条件：流通市值、PB市净率、内外盘比、日内分位、开盘跳空）与综合可靠度评分模型，从板块成分股中筛选最具短线爆发潜力且可靠性最高的标的。
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                       <Shield className="w-3 h-3" />
-                      核心理念
+                      选股流程
                     </div>
-                    <div className="text-xs text-foreground/80 p-3 rounded-lg bg-muted/30 border border-border/50">
-                      以板块为切入点筛选股票，通过脉冲评分识别短期资金异动，通过放量拉升评分确认量能配合与价格拉升，再通过增强筛选条件（换手率、PE、量比、主力净流入、振幅、均线趋势）层层过滤，最终通过8维可靠度评分模型综合判断选股质量，输出高可靠性的候选标的。
+                    <div className="text-xs text-foreground/80 p-3 rounded-lg bg-muted/30 border border-border/50 space-y-1.5">
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">Step 1</Badge><span>板块搜索 → 关键词匹配东方财富板块代码，支持别名自动扩展</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">Step 2</Badge><span>板块成分股获取 → 分页拉取所有板块成分股实时数据</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 shrink-0">Step 3</Badge><span>硬性过滤 → 主板/ST/创业板/科创板/北交/ETF/涨跌幅/市值/换手/PE/量比/振幅/流通市值/PB/内外盘/分位/跳空</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 shrink-0">Step 4</Badge><span>分时检测 → 逐股获取1分钟数据，运行脉冲/放量拉升/递增放量检测，评分0-100</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 shrink-0">Step 5</Badge><span>OR过滤 → 脉冲/放量拉升/递增放量满足任一阈值即通过（OR关系）</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 shrink-0">Step 6</Badge><span>综合评估 → 股票评估标签 + VWAP位置 + 资金趋势 + 多因子共振 + 综合评分 + 可靠度评分</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 shrink-0">Step 7</Badge><span>均线趋势过滤（可选） → 获取日K线，检测站上MA5/MA10/MA20/多头排列</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 shrink-0">Step 8</Badge><span>排序输出 → 按综合评分↓ → 可靠度↓ → 涨跌幅↓ 排序</span></div>
                     </div>
                   </div>
 
@@ -2623,88 +2631,223 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     <div className="text-xs font-medium text-muted-foreground">选股标准</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                        <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 mb-1">必选条件</div>
+                        <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 mb-1">必选条件（硬性过滤）</div>
                         <ul className="text-[10px] text-foreground/70 space-y-0.5">
-                          <li>- 主板标的（排除ST/创业板/科创板/北交）</li>
+                          <li>- 主板标的（600/601/603/605, 000/001/002）</li>
+                          <li>- 排除ETF</li>
                           <li>- 指定板块成分股</li>
                           <li>- 涨跌幅在设定范围内</li>
                           <li>- 总市值不超过上限</li>
-                          <li>- 脉冲/放量拉升检测(OR关系)</li>
+                          <li>- 脉冲/放量拉升/递增放量（OR）</li>
                         </ul>
                       </div>
                       <div className="p-2.5 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20">
                         <div className="text-[10px] font-bold text-red-700 dark:text-red-300 mb-1">排除规则</div>
                         <ul className="text-[10px] text-foreground/70 space-y-0.5">
-                          <li>- ST/*ST/退市风险股</li>
+                          <li>- ST/*ST/SST/S*ST</li>
                           <li>- 创业板(300/301)</li>
-                          <li>- 科创板(688)</li>
+                          <li>- 科创板(688/689)</li>
                           <li>- 北交所(8/4开头)</li>
+                          <li>- ETF基金(51/56/58/15/16/18)</li>
+                          <li>- 价格≤0 或 昨收≤0</li>
                         </ul>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs font-medium text-muted-foreground">评分体系</div>
+                    <div className="text-xs font-medium text-muted-foreground">评分体系总览</div>
                     <div className="p-2.5 rounded-lg border border-border bg-muted/30 space-y-2">
                       <div className="flex items-center gap-2 text-[10px]">
                         <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 text-[9px] h-4 px-1.5">综合</Badge>
-                        <span className="text-foreground/70">6维综合评分模型（脉冲20%+放量拉升20%+递增15%+评估15%+资金15%+均线15%），含多因子共振检测</span>
+                        <span className="text-foreground/70">6维加权评分（脉冲20%+放量拉升20%+递增15%+评估15%+资金15%+VWAP15%），含5类多因子共振检测</span>
                       </div>
                       <div className="flex items-center gap-2 text-[10px]">
                         <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 text-[9px] h-4 px-1.5">脉冲</Badge>
-                        <span className="text-foreground/70">5维脉冲拉升检测策略，加权评分0-100</span>
+                        <span className="text-foreground/70">5维检测（急速拉升35+冲高25+回落15+放量10+跳空10），评分0-100</span>
                       </div>
                       <div className="flex items-center gap-2 text-[10px]">
                         <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 text-[9px] h-4 px-1.5">放量拉升</Badge>
-                        <span className="text-foreground/70">6维放量拉升检测策略，加权评分0-100，放量不涨会被扣分</span>
+                        <span className="text-foreground/70">7维检测（量价齐升30+递增放量25+量能扩张15+集中买入15+拉高幅度10+拉升速度5+Gate门控），放量不涨最高5分且扣分</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 text-[9px] h-4 px-1.5">递增放量</Badge>
+                        <span className="text-foreground/70">5维检测（序列长度30+价格涨幅25+量增长率15+多轮递增10+均步增速8+占比7），评分0-100</span>
                       </div>
                       <div className="flex items-center gap-2 text-[10px]">
                         <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 text-[9px] h-4 px-1.5">可靠度</Badge>
-                        <span className="text-foreground/70">8维综合可靠度评分(信号25+量比15+主力15+换手10+PE10+价格10+均线15+评估5)</span>
+                        <span className="text-foreground/70">8维评分（信号25+量比15+主力15+换手10+PE10+价格10+均线15+评估5）</span>
                       </div>
                       <div className="flex items-center gap-2 text-[10px]">
-                        <Badge className="bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300 text-[9px] h-4 px-1.5">增强</Badge>
-                        <span className="text-foreground/70">换手率/PE/量比/主力净流入/振幅/均线趋势 多维过滤</span>
+                        <Badge className="bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300 text-[9px] h-4 px-1.5">v4.0新增</Badge>
+                        <span className="text-foreground/70">流通市值/PB市净率/内外盘比/日内分位/开盘跳空 5项增强条件</span>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ── Tab 2: Scoring Weights ── */}
-              {strategyTab === "scoring" && (
-                <div className="space-y-4">
-                  {/* Pulse detection factors */}
+              {/* ── Tab 2: Filter Conditions ── */}
+              {strategyTab === "filters" && (
+                <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                  {/* Hard filters */}
                   <div>
                     <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
-                      <Zap className="w-3 h-3 text-amber-500" />
-                      脉冲检测因子（5策略）
+                      <Shield className="w-3 h-3 text-red-500" />
+                      一、硬性过滤条件（必须满足）
                     </div>
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="text-[10px] h-7">策略名</TableHead>
-                          <TableHead className="text-[10px] h-7">权重</TableHead>
-                          <TableHead className="text-[10px] h-7">描述</TableHead>
+                          <TableHead className="text-[10px] h-7 w-24">条件</TableHead>
+                          <TableHead className="text-[10px] h-7">规则</TableHead>
+                          <TableHead className="text-[10px] h-7 w-16">数据源</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {[
-                          { name: "急速拉升", weight: "30%", desc: "分钟级快速上涨，涨幅>1.5%/3min" },
-                          { name: "放量拉升配合", weight: "25%", desc: "拉升伴随成交量放大，量比>2" },
-                          { name: "突破均价线", weight: "20%", desc: "价格从均线下方突破到上方" },
-                          { name: "连续上涨", weight: "15%", desc: "连续3根以上分钟线收涨" },
-                          { name: "主力净流入", weight: "10%", desc: "主力资金净流入为正" },
+                          { name: "主板标的", rule: "代码匹配：600/601/603/605(沪), 000/001/002(深)", src: "代码" },
+                          { name: "排除ETF", rule: "代码前缀匹配：51/56/58/15/16/18开头排除", src: "代码" },
+                          { name: "排除ST", rule: "名称匹配：ST/*ST/SST/S*ST 均排除", src: "名称" },
+                          { name: "排除创业板", rule: "代码300/301开头排除（20%涨跌幅）", src: "代码" },
+                          { name: "排除科创板", rule: "代码688/689开头排除（20%涨跌幅）", src: "代码" },
+                          { name: "排除北交所", rule: "代码8/4开头排除（30%涨跌幅）", src: "代码" },
+                          { name: "价格有效性", rule: "最新价>0 且 昨收>0", src: "实时" },
+                          { name: "涨跌幅范围", rule: `minChange(${filters.minChange}%) ≤ 涨跌幅 ≤ maxChange(${filters.maxChange}%)`, src: "f3" },
+                          { name: "总市值", rule: `总市值 ≤ ${filters.maxMarketCap}亿（原始单位:元÷1亿）`, src: "f20" },
+                        ].map((row) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="text-xs py-1 font-medium">{row.name}</TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{row.rule}</TableCell>
+                            <TableCell className="py-1"><Badge variant="outline" className="text-[8px] h-3.5 px-1">{row.src}</Badge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Optional filters */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <SlidersHorizontal className="w-3 h-3 text-amber-500" />
+                      二、增强筛选条件（可选，0=不限）
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7 w-24">条件</TableHead>
+                          <TableHead className="text-[10px] h-7">规则</TableHead>
+                          <TableHead className="text-[10px] h-7 w-16">当前值</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "换手率", rule: "minTurnover ≤ 换手率 ≤ maxTurnover", val: `${filters.minTurnover}~${filters.maxTurnover}%` },
+                          { name: "PE市盈率", rule: "PE>0时: minPE ≤ PE ≤ maxPE; PE≤0不过滤", val: `${filters.minPE}~${filters.maxPE}` },
+                          { name: "量比", rule: "量比 ≥ minVolumeRatio", val: `≥${filters.minVolumeRatio}` },
+                          { name: "主力净流入", rule: "开启后: 主力净流入 > 0", val: filters.mainNetInflowRequired ? "已开启" : "未开启" },
+                          { name: "振幅", rule: "minAmplitude ≤ 振幅 ≤ maxAmplitude", val: `${filters.minAmplitude}~${filters.maxAmplitude}%` },
+                          { name: "均线趋势", rule: "可选: 站上MA5/站上MA10/站上MA20/多头排列", val: filters.enableMATrend ? filters.maTrendType : "未开启" },
+                          { name: "评估标签", rule: "只显示指定评估标签的股票", val: filters.evaluationFilter.length > 0 ? filters.evaluationFilter.join("/") : "不限" },
+                          { name: "综合评分", rule: "综合评分 ≥ minCompositeScore", val: `≥${filters.minCompositeScore}` },
+                        ].map((row) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="text-xs py-1 font-medium">{row.name}</TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{row.rule}</TableCell>
+                            <TableCell className="py-1"><Badge variant="outline" className="text-[8px] h-3.5 px-1">{row.val}</Badge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* v4.0 new conditions */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Sparkles className="w-3 h-3 text-purple-500" />
+                      三、v4.0新增条件（可选，0=不限）
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7 w-28">条件</TableHead>
+                          <TableHead className="text-[10px] h-7">计算规则</TableHead>
+                          <TableHead className="text-[10px] h-7">逻辑</TableHead>
+                          <TableHead className="text-[10px] h-7 w-16">当前值</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "流通市值", calc: "f21字段(元)÷1亿", logic: "流通市值 ≤ maxCirculatingMarketCap亿", val: filters.maxCirculatingMarketCap > 0 ? `≤${filters.maxCirculatingMarketCap}亿` : "不限" },
+                          { name: "PB市净率", calc: "f23字段", logic: "PB>0时: minPB ≤ PB ≤ maxPB", val: filters.maxPB > 0 ? `${filters.minPB}~${filters.maxPB}` : "不限" },
+                          { name: "内外盘比", calc: "外盘(f112)/内盘(f100)，f100=0时: 外盘>0为99否则0", logic: "外盘/内盘 ≥ minBuySellRatio（>1表示买盘更强）", val: filters.minBuySellRatio > 0 ? `≥${filters.minBuySellRatio}` : "不限" },
+                          { name: "日内分位", calc: "(现价-最低)/(最高-最低)×100，最高=最低时: 50", logic: "日内分位 ≥ minPricePosition%（值越大越接近日内高点）", val: filters.minPricePosition > 0 ? `≥${filters.minPricePosition}%` : "不限" },
+                          { name: "开盘跳空", calc: "(开盘价-昨收)/昨收×100", logic: "跳空幅度 ≥ minGapUpRate%（正值=高开跳空）", val: filters.minGapUpRate > 0 ? `≥${filters.minGapUpRate}%` : "不限" },
+                        ].map((row) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="text-xs py-1 font-medium">{row.name}</TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{row.calc}</TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{row.logic}</TableCell>
+                            <TableCell className="py-1"><Badge variant="outline" className="text-[8px] h-3.5 px-1">{row.val}</Badge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pulse/VolumeSurge/ProgressiveVol OR filter */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Zap className="w-3 h-3 text-amber-500" />
+                      四、分时检测过滤（OR关系）
+                    </div>
+                    <div className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20">
+                      <div className="text-[10px] text-foreground/80 space-y-1">
+                        <div>• 三个检测因子为 <span className="font-bold text-amber-700 dark:text-amber-300">OR 关系</span>：任一因子评分≥对应阈值即通过</div>
+                        <div>• 脉冲检测: {filters.enablePulse ? `已开启，阈值≥${filters.pulseThreshold}` : "已关闭"}</div>
+                        <div>• 放量拉升检测: {filters.enableVolumeSurge ? `已开启，阈值≥${filters.volumeSurgeThreshold}` : "已关闭"}</div>
+                        <div>• 递增放量检测: {filters.enableProgressiveVol ? `已开启，阈值≥${filters.progressiveVolThreshold}` : "已关闭"}</div>
+                        <div>• 检测时段: {filters.pulseTimeStart} ~ {filters.pulseTimeEnd}</div>
+                        <div>• 评分通过后还需进行: 评估标签 → VWAP位置 → 资金趋势 → 共振检测 → 综合评分</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Tab 3: Scoring System ── */}
+              {strategyTab === "scoring" && (
+                <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+                  {/* Pulse detection factors */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Zap className="w-3 h-3 text-amber-500" />
+                      脉冲拉升检测（5策略，满分100）
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7 w-20">策略</TableHead>
+                          <TableHead className="text-[10px] h-7 w-14">最高分</TableHead>
+                          <TableHead className="text-[10px] h-7">评分规则</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "急速拉升", max: "35分", rule: "5分钟窗口最大涨幅: ≥3%→35, ≥2%→25, ≥1.5%→20, ≥1%→12, ≥0.5%→5" },
+                          { name: "开盘冲高", max: "25分", rule: "开盘到早盘最高涨幅: ≥3%→25, ≥2%→18, ≥1.5%→12, ≥1%→8, ≥0.5%→3" },
+                          { name: "冲高回落", max: "15分", rule: "峰值后回落0.5~5%且峰值在前半段→15, 仅峰值在前半段→8" },
+                          { name: "放量配合", max: "10分", rule: "峰值量/均量: ≥2→10, ≥1.5→6, ≥1.2→3" },
+                          { name: "跳空高开", max: "10分", rule: "(开盘-昨收)/昨收: ≥1%→10, ≥0.5%→5, >0%→2" },
                         ].map((row) => (
                           <TableRow key={row.name}>
                             <TableCell className="text-xs py-1.5 font-medium">{row.name}</TableCell>
                             <TableCell className="text-xs py-1.5">
                               <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300">
-                                {row.weight}
+                                {row.max}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-[10px] py-1.5 text-muted-foreground">{row.desc}</TableCell>
+                            <TableCell className="text-[10px] py-1.5 text-muted-foreground">{row.rule}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -2715,87 +2858,328 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                   <div>
                     <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
                       <TrendingUp className="w-3 h-3 text-blue-500" />
-                      放量拉升检测因子（6策略）
+                      放量拉升检测（7策略+Gate门控，满分100）
                     </div>
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="text-[10px] h-7">策略名</TableHead>
-                          <TableHead className="text-[10px] h-7">权重</TableHead>
-                          <TableHead className="text-[10px] h-7">描述</TableHead>
+                          <TableHead className="text-[10px] h-7 w-24">策略</TableHead>
+                          <TableHead className="text-[10px] h-7 w-14">最高分</TableHead>
+                          <TableHead className="text-[10px] h-7">评分规则</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {[
-                          { name: "量价齐升", weight: "30%", desc: "放量+价格上涨，核心拉升信号" },
-                          { name: "递增放量拉升", weight: "25%", desc: "量递增且价格持续上涨" },
-                          { name: "放量拉高幅度", weight: "10%", desc: "放量时刻价格拉高幅度" },
-                          { name: "拉升速度", weight: "5%", desc: "3分钟窗口最大拉升速度" },
-                          { name: "集中买入占比", weight: "15%", desc: "放量+上涨分钟占比" },
-                          { name: "量能扩张", weight: "15%", desc: "窗口均量vs基准+正涨幅" },
+                          { name: "量价齐升", max: "30分", rule: "最大量/均量 × 同分钟涨幅: 量比≥3且涨>0.3%→30; 放量下跌→-5分" },
+                          { name: "递增放量拉升", max: "25分", rule: "连续量递增+价格涨: ≥5分钟且涨>0.5%→25; 递增但下跌→-5分" },
+                          { name: "量能扩张+正涨幅", max: "15分", rule: "窗口均量/基准量 + 正涨幅: ≥2x且涨>1%→15; 扩张但下跌→-3分" },
+                          { name: "集中买入占比", max: "15分", rule: "放量+上涨分钟占比: ≥40%→15, ≥30%→12, ≥20%→8, ≥10%→4" },
+                          { name: "放量拉高幅度", max: "10分", rule: "最大量前后3分钟价格涨幅: ≥3%→10, ≥2%→8, ≥1%→5, ≥0.5%→3" },
+                          { name: "拉升速度", max: "5分", rule: "3分钟窗口最大涨幅: ≥2%→5, ≥1%→3, ≥0.5%→1" },
+                          { name: "Gate门控", max: "封顶5分", rule: "如无任何价格上涨(涨幅≤0.1%且最大量分钟跌且3分钟涨幅≤0.3%)，评分封顶5分（放量滞涨）" },
                         ].map((row) => (
                           <TableRow key={row.name}>
                             <TableCell className="text-xs py-1.5 font-medium">{row.name}</TableCell>
                             <TableCell className="text-xs py-1.5">
                               <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300">
-                                {row.weight}
+                                {row.max}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-[10px] py-1.5 text-muted-foreground">{row.desc}</TableCell>
+                            <TableCell className="text-[10px] py-1.5 text-muted-foreground">{row.rule}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </div>
 
-                  {/* Evaluation model */}
+                  {/* Progressive volume factors */}
                   <div>
                     <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
-                      <Shield className="w-3 h-3 text-emerald-500" />
-                      评估模型因子
+                      <Activity className="w-3 h-3 text-purple-500" />
+                      递增放量检测（5策略，满分100）
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div className="p-2.5 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20">
-                        <div className="text-[10px] font-bold text-red-700 dark:text-red-300 mb-1.5">看多因子</div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7 w-24">策略</TableHead>
+                          <TableHead className="text-[10px] h-7 w-14">最高分</TableHead>
+                          <TableHead className="text-[10px] h-7">评分规则</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {[
-                          { name: "强势信号评分", weight: "+3" },
-                          { name: "价格接近新高", weight: "+2" },
-                          { name: "主力净流入", weight: "+2" },
-                          { name: "换手率适中", weight: "+1" },
-                          { name: "日内强度", weight: "+1" },
-                          { name: "中大市值", weight: "+1" },
-                          { name: "脉冲+放量拉升共振", weight: "+2" },
-                        ].map(f => (
-                          <div key={f.name} className="flex items-center justify-between text-[10px] py-0.5">
-                            <span className="text-foreground/70">{f.name}</span>
-                            <Badge className="text-[8px] h-3.5 px-1 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">{f.weight}</Badge>
+                          { name: "最长递增序列", max: "30分", rule: "连续量递增分钟数: ≥8→30, ≥6→25, ≥5→20, ≥4→15, ≥3→10" },
+                          { name: "递增期间涨幅", max: "25分", rule: "递增序列内价格涨幅: ≥3%→25, ≥2%→20, ≥1%→15, ≥0.5%→10, ≥0%→3; 下跌→-5分" },
+                          { name: "量增长速率", max: "15分", rule: "末量/首量增长率: ≥300%→15, ≥200%→12, ≥100%→8, ≥50%→5, ≥20%→3" },
+                          { name: "多轮递增", max: "10分", rule: "递增序列轮数(含价格涨): ≥3轮且≥2轮涨→10, ≥2轮且≥1轮涨→6" },
+                          { name: "均步增速+占比", max: "15分", rule: "平均每步增长率≥50%→8, ≥30%→5; 递增量/总量≥50%→7, ≥30%→4" },
+                        ].map((row) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="text-xs py-1.5 font-medium">{row.name}</TableCell>
+                            <TableCell className="text-xs py-1.5">
+                              <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300">
+                                {row.max}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1.5 text-muted-foreground">{row.rule}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Composite scoring */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Target className="w-3 h-3 text-rose-500" />
+                      综合评分模型（6维加权）
+                    </div>
+                    <div className="p-2.5 rounded-lg border border-border bg-muted/30">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {[
+                          { name: "脉冲评分", weight: "20%", score: "0-100", color: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
+                          { name: "放量拉升评分", weight: "20%", score: "0-100", color: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" },
+                          { name: "递增放量评分", weight: "15%", score: "0-100", color: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300" },
+                          { name: "评估信号", weight: "15%", score: "0-100", color: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" },
+                          { name: "资金趋势", weight: "15%", score: "0-100", color: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300" },
+                          { name: "VWAP位置", weight: "15%", score: "0-100", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
+                        ].map((item) => (
+                          <div key={item.name} className="p-2 rounded border border-border/50 bg-background/50">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Badge className={`text-[8px] h-3.5 px-1 ${item.color}`}>{item.weight}</Badge>
+                              <span className="text-[10px] font-medium">{item.name}</span>
+                            </div>
+                            <div className="text-[9px] text-muted-foreground">评分范围: {item.score}</div>
                           </div>
                         ))}
                       </div>
-                      <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                        <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 mb-1.5">看空因子</div>
-                        {[
-                          { name: "长上影线", weight: "-3" },
-                          { name: "主力净流出", weight: "-2" },
-                          { name: "换手率过高", weight: "-2" },
-                          { name: "高开低走", weight: "-2" },
-                          { name: "弱势价格", weight: "-1" },
-                          { name: "大幅下跌", weight: "-2" },
-                          { name: "脉冲后回落", weight: "-1" },
-                          { name: "小盘操纵风险", weight: "-1" },
-                        ].map(f => (
-                          <div key={f.name} className="flex items-center justify-between text-[10px] py-0.5">
-                            <span className="text-foreground/70">{f.name}</span>
-                            <Badge className="text-[8px] h-3.5 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{f.weight}</Badge>
-                          </div>
-                        ))}
+                      <div className="text-[10px] text-muted-foreground mt-2">
+                        公式: 综合分 = 脉冲×0.20 + 放量拉升×0.20 + 递增×0.15 + 评估×0.15 + 资金×0.15 + VWAP×0.15，四舍五入保留1位小数，范围0-100
                       </div>
                     </div>
+                  </div>
+
+                  {/* Resonance detection */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Sparkles className="w-3 h-3 text-orange-500" />
+                      多因子共振检测（5类）
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7 w-28">共振类型</TableHead>
+                          <TableHead className="text-[10px] h-7">触发条件</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "脉冲放量共振", rule: "pulseScore ≥ 40 AND volumeSurgeScore ≥ 40" },
+                          { name: "递增放量共振", rule: "progressiveVolScore ≥ 40 AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)" },
+                          { name: "三因子共振", rule: "pulseScore ≥ 40 AND volumeSurgeScore ≥ 40 AND progressiveVolScore ≥ 40" },
+                          { name: "资金量能共振", rule: "资金趋势含inflow AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)" },
+                          { name: "均线共振", rule: "VWAP位置=above_vwap或cross_up AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)" },
+                        ].map((row) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="text-xs py-1 font-medium">{row.name}</TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground font-mono">{row.rule}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               )}
 
-              {/* ── Tab 3: DB Factors ── */}
+              {/* ── Tab 4: Evaluation Model ── */}
+              {strategyTab === "evaluation" && (
+                <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+                  <div className="p-3 rounded-lg border border-border bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Shield className="h-4 w-4 text-purple-500" />
+                      <span className="text-sm font-bold">股票评估模型</span>
+                    </div>
+                    <div className="text-xs text-foreground/80">
+                      基于多空因子评分，综合脉冲评分、放量拉升评分、递增放量评分与市场数据，输出6级评估标签。多空差值(bullish-bearish)决定最终标签。
+                    </div>
+                  </div>
+
+                  {/* Evaluation labels */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {[
+                      { label: "强势续涨", desc: "多头强势，动能充沛，短线有望继续上涨", range: "看多-看空≥5", ...getEvaluationStyle("强势续涨") },
+                      { label: "温和看多", desc: "偏多格局，动能尚可，注意节奏", range: "差值2~4", ...getEvaluationStyle("温和看多") },
+                      { label: "震荡整理", desc: "多空均衡，方向不明，建议观望", range: "差值-1~1", ...getEvaluationStyle("震荡整理") },
+                      { label: "弱势回调", desc: "偏空格局，动能偏弱，谨慎操作", range: "差值-3~-2", ...getEvaluationStyle("弱势回调") },
+                      { label: "拉高出货", desc: "强势看空，警惕主力出货，避免追高", range: "差值≤-5或主力流出+涨", ...getEvaluationStyle("拉高出货") },
+                      { label: "观望等待", desc: "信号不明确，建议观望等待", range: "看空≥6且差值<2", ...getEvaluationStyle("观望等待") },
+                    ].map((item) => (
+                      <div key={item.label} className="p-2.5 rounded-lg border border-border">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Badge className={`text-[9px] h-4 px-1.5 ${item.bg} ${item.text} border-0`}>
+                            {item.icon} {item.label}
+                          </Badge>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mb-1">{item.desc}</div>
+                        <div className="text-[9px] text-muted-foreground/60">阈值: {item.range}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Bullish factors */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-2">看多因子详情（12项）</div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7">因子</TableHead>
+                          <TableHead className="text-[10px] h-7 w-12">权重</TableHead>
+                          <TableHead className="text-[10px] h-7">触发条件</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "强脉冲/放量信号", weight: "+3", desc: "max(脉冲分,放量拉升分)≥70" },
+                          { name: "中等信号", weight: "+2", desc: "max(脉冲分,放量拉升分)≥50" },
+                          { name: "价格接近日高", weight: "+2", desc: "价格≥日内高点×99%(距高点<1%)" },
+                          { name: "价格接近新高", weight: "+1", desc: "价格≥日内高点×97%(距高点<3%)" },
+                          { name: "主力大幅净流入", weight: "+2", desc: "主力净流入/成交额 > 5%" },
+                          { name: "主力净流入", weight: "+1", desc: "主力净流入/成交额 > 2%" },
+                          { name: "换手率适中", weight: "+1", desc: "3% ≤ 换手率 ≤ 15%" },
+                          { name: "涨幅强劲", weight: "+2", desc: "涨跌幅 > 2%" },
+                          { name: "涨幅偏强", weight: "+1", desc: "涨跌幅 > 1%" },
+                          { name: "市值适中", weight: "+1", desc: "50亿 ≤ 总市值 ≤ 200亿" },
+                          { name: "脉冲+放量共振", weight: "+2", desc: "脉冲分≥40 且 放量拉升分≥40" },
+                          { name: "强递增放量", weight: "+2", desc: "递增放量评分≥70" },
+                          { name: "递增放量", weight: "+2", desc: "递增放量评分≥50" },
+                          { name: "轻微递增", weight: "+1", desc: "递增放量评分≥30" },
+                          { name: "递增放量共振", weight: "+1", desc: "递增≥40 且 (脉冲≥30 或 放量拉升≥30)" },
+                          { name: "量比偏强", weight: "+1", desc: "量比 ≥ 1.5" },
+                          { name: "低振幅抗跌", weight: "+1", desc: "振幅≤3% 且 -1%≤涨跌幅≤0%" },
+                          { name: "PE估值合理", weight: "+1", desc: "0 < PE ≤ 30" },
+                        ].map(f => (
+                          <TableRow key={f.name}>
+                            <TableCell className="text-xs py-1 font-medium">{f.name}</TableCell>
+                            <TableCell className="py-1">
+                              <Badge className="text-[9px] h-4 px-1 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">{f.weight}</Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{f.desc}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Bearish factors */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-2">看空因子详情（8项）</div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7">因子</TableHead>
+                          <TableHead className="text-[10px] h-7 w-12">权重</TableHead>
+                          <TableHead className="text-[10px] h-7">触发条件</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "长上影线", weight: "-3", desc: "上影线/最高价 > 3%（冲高回落明显）" },
+                          { name: "上影线", weight: "-2", desc: "上影线/最高价 > 2%" },
+                          { name: "主力大幅净流出", weight: "-3", desc: "主力净流出/成交额 > 5%" },
+                          { name: "主力净流出", weight: "-2", desc: "主力净流出/成交额 > 2%" },
+                          { name: "主力轻微流出", weight: "-1", desc: "主力净流出/成交额 > 0" },
+                          { name: "换手率过高", weight: "-3", desc: "换手率 > 20%（过度投机）" },
+                          { name: "换手率偏高", weight: "-1", desc: "换手率 > 15%" },
+                          { name: "高开低走", weight: "-2", desc: "开盘>昨收 且 当前价<昨收" },
+                          { name: "盘面偏弱", weight: "-1", desc: "当前价<开盘 且 跌幅>2%" },
+                          { name: "大幅震荡偏弱", weight: "-2", desc: "振幅>6% 且 涨幅<1%" },
+                          { name: "脉冲后回落", weight: "-1", desc: "脉冲分≥50 但 涨幅<1.5%" },
+                          { name: "小盘易操控", weight: "-1", desc: "总市值 < 30亿" },
+                        ].map(f => (
+                          <TableRow key={f.name}>
+                            <TableCell className="text-xs py-1 font-medium">{f.name}</TableCell>
+                            <TableCell className="py-1">
+                              <Badge className="text-[9px] h-4 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{f.weight}</Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{f.desc}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* VWAP position */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <BarChart3 className="w-3 h-3 text-teal-500" />
+                      VWAP均价线位置检测
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7 w-20">位置</TableHead>
+                          <TableHead className="text-[10px] h-7 w-14">评分</TableHead>
+                          <TableHead className="text-[10px] h-7">判定逻辑</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { pos: "above_vwap", score: "90分", logic: "价格偏离VWAP > 0.5%（上方）" },
+                          { pos: "cross_up", score: "85分", logic: "近5分钟内从均线下方突破到上方" },
+                          { pos: "near_vwap", score: "70分", logic: "价格偏离VWAP ≤ 0.5%（贴近均线）" },
+                          { pos: "cross_down", score: "40分", logic: "近5分钟内从均线上方跌破到下方" },
+                          { pos: "below_vwap", score: "30分", logic: "价格偏离VWAP > 0.5%（下方）" },
+                          { pos: "no_data", score: "50分", logic: "无分时数据或成交量异常" },
+                        ].map((row) => (
+                          <TableRow key={row.pos}>
+                            <TableCell className="text-xs py-1 font-medium">{row.pos}</TableCell>
+                            <TableCell className="text-xs py-1">
+                              <Badge variant="outline" className="text-[9px] h-4 px-1.5">{row.score}</Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{row.logic}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Capital trend */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Activity className="w-3 h-3 text-rose-500" />
+                      资金趋势分析
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7 w-28">趋势</TableHead>
+                          <TableHead className="text-[10px] h-7 w-14">评分</TableHead>
+                          <TableHead className="text-[10px] h-7">判定逻辑</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { trend: "strong_inflow", score: "100分", logic: "主力净流入/成交额 > 5%（大幅流入）" },
+                          { trend: "moderate_inflow", score: "75分", logic: "主力净流入/成交额 > 2%（温和流入）" },
+                          { trend: "neutral", score: "50分", logic: "主力净流入/成交额 -2%~2%（中性）" },
+                          { trend: "outflow", score: "25分", logic: "主力净流入/成交额 < -2%（流出）" },
+                          { trend: "strong_outflow", score: "10分", logic: "主力净流入/成交额 < -5%（大幅流出）" },
+                        ].map((row) => (
+                          <TableRow key={row.trend}>
+                            <TableCell className="text-xs py-1 font-medium">{row.trend}</TableCell>
+                            <TableCell className="text-xs py-1">
+                              <Badge variant="outline" className="text-[9px] h-4 px-1.5">{row.score}</Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{row.logic}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Tab 5: DB Factors ── */}
               {strategyTab === "factors" && (
                 <div className="space-y-3">
                   {strategyLoading ? (
@@ -2919,109 +3303,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                 </div>
               )}
 
-              {/* ── Tab 4: Evaluation Model ── */}
-              {strategyTab === "evaluation" && (
-                <div className="space-y-4">
-                  <div className="p-3 rounded-lg border border-border bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Shield className="h-4 w-4 text-purple-500" />
-                      <span className="text-sm font-bold">股票评估模型</span>
-                    </div>
-                    <div className="text-xs text-foreground/80">
-                      基于多空因子评分，综合脉冲评分、放量拉升评分与市场数据，输出6级评估标签。
-                    </div>
-                  </div>
-
-                  {/* Evaluation labels */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {[
-                      { label: "强势续涨", desc: "多头强势，动能充沛，短线有望继续上涨", range: "看多分≥8", ...getEvaluationStyle("强势续涨") },
-                      { label: "温和看多", desc: "偏多格局，动能尚可，注意节奏", range: "看多5-7", ...getEvaluationStyle("温和看多") },
-                      { label: "震荡整理", desc: "多空均衡，方向不明，建议观望", range: "看多3-4或看空2-3", ...getEvaluationStyle("震荡整理") },
-                      { label: "弱势回调", desc: "偏空格局，动能偏弱，谨慎操作", range: "看空4-5", ...getEvaluationStyle("弱势回调") },
-                      { label: "拉高出货", desc: "强势看空，警惕主力出货，避免追高", range: "看空≥6", ...getEvaluationStyle("拉高出货") },
-                      { label: "观望等待", desc: "信号不明确，建议观望等待", range: "看多≤2且看空≤1", ...getEvaluationStyle("观望等待") },
-                    ].map((item) => (
-                      <div key={item.label} className="p-2.5 rounded-lg border border-border">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <Badge className={`text-[9px] h-4 px-1.5 ${item.bg} ${item.text} border-0`}>
-                            {item.icon} {item.label}
-                          </Badge>
-                        </div>
-                        <div className="text-[10px] text-muted-foreground mb-1">{item.desc}</div>
-                        <div className="text-[9px] text-muted-foreground/60">阈值: {item.range}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Factor tables */}
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-2">看多因子详情</div>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-[10px] h-7">因子</TableHead>
-                          <TableHead className="text-[10px] h-7">权重</TableHead>
-                          <TableHead className="text-[10px] h-7">描述</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {[
-                          { name: "强势信号评分", weight: "+3", desc: "脉冲或放量拉升评分≥70" },
-                          { name: "价格接近新高", weight: "+2", desc: "价格≥日内高点×98%" },
-                          { name: "主力净流入", weight: "+2", desc: "主力资金净流入>0" },
-                          { name: "换手率适中", weight: "+1", desc: "1%≤换手率≤8%" },
-                          { name: "日内强度", weight: "+1", desc: "涨幅>0且价格>均价" },
-                          { name: "中大市值", weight: "+1", desc: "总市值≥50亿" },
-                          { name: "脉冲+放量拉升共振", weight: "+2", desc: "脉冲≥10且放量拉升≥10" },
-                        ].map(f => (
-                          <TableRow key={f.name}>
-                            <TableCell className="text-xs py-1 font-medium">{f.name}</TableCell>
-                            <TableCell className="py-1">
-                              <Badge className="text-[9px] h-4 px-1 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">{f.weight}</Badge>
-                            </TableCell>
-                            <TableCell className="text-[10px] py-1 text-muted-foreground">{f.desc}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-2">看空因子详情</div>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-[10px] h-7">因子</TableHead>
-                          <TableHead className="text-[10px] h-7">权重</TableHead>
-                          <TableHead className="text-[10px] h-7">描述</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {[
-                          { name: "长上影线", weight: "-3", desc: "上影线长度>实体2倍" },
-                          { name: "主力净流出", weight: "-2", desc: "主力资金净流出" },
-                          { name: "换手率过高", weight: "-2", desc: "换手率>8%" },
-                          { name: "高开低走", weight: "-2", desc: "开盘价>昨收且当前价<昨收" },
-                          { name: "弱势价格", weight: "-1", desc: "涨幅<0且价格<均价" },
-                          { name: "大幅下跌", weight: "-2", desc: "跌幅>3%" },
-                          { name: "脉冲后回落", weight: "-1", desc: "脉冲>30但涨幅<1%" },
-                          { name: "小盘操纵风险", weight: "-1", desc: "市值<30亿" },
-                        ].map(f => (
-                          <TableRow key={f.name}>
-                            <TableCell className="text-xs py-1 font-medium">{f.name}</TableCell>
-                            <TableCell className="py-1">
-                              <Badge className="text-[9px] h-4 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{f.weight}</Badge>
-                            </TableCell>
-                            <TableCell className="text-[10px] py-1 text-muted-foreground">{f.desc}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Tab 5: Indicator Params ── */}
+              {/* ── Tab 6: Indicator Params ── */}
               {strategyTab === "params" && (
                 <div className="space-y-3">
                   {strategyLoading ? (
