@@ -579,7 +579,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 ticks={yTicks}
                 tickCount={5}
               />
-              <Tooltip content={<FiveDayTooltip />} cursor={{ strokeDasharray: "3 3" }} wrapperStyle={{ background: "transparent", border: "none" }} />
+              <Tooltip content={<FiveDayTooltip />} cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "4 2" }} wrapperStyle={{ background: "transparent", border: "none" }} />
               {refClose > 0 && <ReferenceLine y={refClose} stroke="#64748b" strokeDasharray="4 4" strokeWidth={0.8} />}
               {/* Highest price dashed line */}
               {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#f87171" strokeDasharray="6 4" strokeWidth={0.8} />}
@@ -689,7 +689,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                     </div>
                   );
                 }}
-                cursor={{ strokeDasharray: "3 3" }}
+                cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "4 2" }}
                 wrapperStyle={{ background: "transparent", border: "none" }}
               />
               <Bar
