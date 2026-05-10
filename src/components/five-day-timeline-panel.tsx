@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   ComposedChart,
   Bar,
@@ -15,8 +15,10 @@ import {
   Customized,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
-import { formatVolume, formatAmount } from "@/lib/chart-shared";
+import { formatVolume } from "@/lib/chart-shared";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
 
 // ── Types ──
 
@@ -45,19 +47,46 @@ interface KLine5Min {
   volume: number;
 }
 
-async function fetch5MinKLine(symbol: string): Promise<KLine5Min[]> {
-  try {
-    const res = await fetch(
-      `/api/stock/ashare-history?symbol=${encodeURIComponent(symbol)}&interval=5m&limit=250`,
-      { signal: AbortSignal.timeout(12000) }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    if (data.error || !data.data) return [];
-    return (data.data || []).filter((d: any) => d.close > 0);
-  } catch {
-    return [];
+/**
+ * Fetch 5-min K-line data using the lightweight dedicated endpoint.
+ * Falls back to the full ashare-history endpoint if the lightweight one fails.
+ */
+async function fetch5MinKLine(symbol: string, retryCount = 1): Promise<KLine5Min[]> {
+  for (let attempt = 0; attempt <= retryCount; attempt++) {
+    try {
+      // Use the lightweight endpoint first (no MACD/KDJ computation)
+      const res = await fetch(
+        `/api/stock/ashare-5min-kline?symbol=${encodeURIComponent(symbol)}&limit=250`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.error && Array.isArray(data.data) && data.data.length > 0) {
+          return data.data.filter((d: any) => d.close > 0);
+        }
+      }
+
+      // Fallback to the full ashare-history endpoint
+      const res2 = await fetch(
+        `/api/stock/ashare-history?symbol=${encodeURIComponent(symbol)}&interval=5m&limit=250`,
+        { signal: AbortSignal.timeout(15000) }
+      );
+      if (res2.ok) {
+        const data = await res2.json();
+        if (!data.error && Array.isArray(data.data) && data.data.length > 0) {
+          return data.data.filter((d: any) => d.close > 0);
+        }
+      }
+    } catch (e) {
+      console.error(`5min-kline fetch attempt ${attempt + 1} failed:`, e);
+    }
+
+    // Wait before retry (except on last attempt)
+    if (attempt < retryCount) {
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
+  return [];
 }
 
 // ── Helper: convert 5-min K-line to 5-day timeline format ──
@@ -80,6 +109,7 @@ function convertTo5DayTimeline(
   const dayMap = new Map<string, KLine5Min[]>();
   for (const k of klines) {
     const dateKey = k.date.split(" ")[0];
+    if (!dateKey) continue;
     if (!dayMap.has(dateKey)) dayMap.set(dateKey, []);
     dayMap.get(dateKey)!.push(k);
   }
@@ -101,7 +131,7 @@ function convertTo5DayTimeline(
     if (dayKlines.length === 0) continue;
 
     dayBoundaries.push(items.length);
-    const d = new Date(dateStr);
+    const d = new Date(dateStr + "T00:00:00"); // Avoid timezone issues
     const dayLabel = dayNames[d.getDay()];
     dayLabels.push(`${dateStr.slice(5)} ${dayLabel}`);
 
@@ -110,14 +140,16 @@ function convertTo5DayTimeline(
     const refClose = prevClose > 0 ? prevClose : dayOpen;
 
     // Compute VWAP for the day
+    // NOTE: Sina K-line API returns per-bar volume (not cumulative), so we use k.volume directly
     let cumVol = 0;
     let cumAmt = 0;
 
     for (let i = 0; i < dayKlines.length; i++) {
       const k = dayKlines[i];
-      const minuteVol = i > 0 ? k.volume - dayKlines[i - 1].volume : k.volume;
-      cumVol += Math.max(0, minuteVol);
-      cumAmt += Math.max(0, minuteVol) * k.close;
+      // Use volume directly (per-bar volume from Sina API)
+      const barVol = Math.max(0, k.volume);
+      cumVol += barVol;
+      cumAmt += barVol * k.close;
       const avgPrice = cumVol > 0 ? cumAmt / cumVol : k.close;
       const changePercent = refClose > 0 ? ((k.close - refClose) / refClose) * 100 : 0;
 
@@ -127,7 +159,7 @@ function convertTo5DayTimeline(
         time: timeStr,
         price: k.close,
         avgPrice,
-        volume: Math.max(0, i > 0 ? k.volume - dayKlines[i - 1].volume : k.volume),
+        volume: barVol,
         changePercent: Number(changePercent.toFixed(2)),
         date: dateStr,
         dayIndex: di,
@@ -273,25 +305,65 @@ function DayBoundaryLines(props: any) {
   return <g>{result}</g>;
 }
 
+// ── Volume Bar Shape (renders on separate YAxis at bottom) ──
+
+function VolumeBarShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  // With separate YAxis domain=[0, maxVolume*8], bars naturally appear at bottom 12.5%
+  if (!height || Math.abs(height) < 0.3) return null;
+
+  return (
+    <rect
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      fill={payload.changePercent >= 0 ? "rgba(239,68,68,0.3)" : "rgba(22,163,74,0.3)"}
+    />
+  );
+}
+
 // ── Main Component ──
 
 export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClose }: FiveDayTimelinePanelProps) {
   const [kline5Min, setKline5Min] = useState<KLine5Min[]>([]);
-  const [fetching, setFetching] = useState(true);
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const fetchIdRef = useRef(0);
 
-  // Fetch 5-min K-line data
-  useEffect(() => {
-    let cancelled = false;
-    fetch5MinKLine(symbol).then((data) => {
-      if (!cancelled) {
-        setKline5Min(data);
+  // Fetch 5-min K-line data with proper cleanup and retry
+  const loadData = useCallback(async (sym: string) => {
+    const fetchId = ++fetchIdRef.current;
+    setFetching(true);
+    setFetchError(null);
+
+    try {
+      const data = await fetch5MinKLine(sym, 1);
+      // Check if this fetch is still current
+      if (fetchId !== fetchIdRef.current) return;
+      setKline5Min(data);
+      setDataLoaded(true);
+      if (data.length === 0) {
+        setFetchError("未获取到5分钟K线数据");
+      }
+    } catch (e) {
+      if (fetchId !== fetchIdRef.current) return;
+      setFetchError("获取数据失败，请重试");
+    } finally {
+      if (fetchId === fetchIdRef.current) {
         setFetching(false);
       }
-    });
-    return () => { cancelled = true; };
-  }, [symbol]);
+    }
+  }, []);
 
-  const loading = kline5Min.length === 0 && fetching;
+  // Initial fetch on mount and symbol change
+  useEffect(() => {
+    if (!symbol) return;
+    loadData(symbol);
+  }, [symbol, loadData]);
+
+  const loading = fetching && !dataLoaded;
 
   // Convert to 5-day timeline format
   const { items, dayBoundaries, dayLabels, prevClose } = useMemo(() => {
@@ -301,9 +373,10 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return convertTo5DayTimeline(kline5Min, timeline, quote, timelinePrevClose);
   }, [kline5Min, timeline, quote, timelinePrevClose]);
 
-  // Compute price range centered on prevClose
-  const { minPrice, maxPrice } = useMemo(() => {
-    if (items.length === 0) return { minPrice: 0, maxPrice: 100 };
+  // Compute price range — find the first day's prevClose as the reference
+  const { minPrice, maxPrice, refClose: chartRefClose } = useMemo(() => {
+    if (items.length === 0) return { minPrice: 0, maxPrice: 100, refClose: 0 };
+    // Use the prevClose of the FIRST day as the chart reference line
     const refClose = prevClose || items[0]?.price || 100;
     let maxDeviation = 0;
     for (const item of items) {
@@ -314,6 +387,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return {
       minPrice: refClose - maxDeviation - padding,
       maxPrice: refClose + maxDeviation + padding,
+      refClose,
     };
   }, [items, prevClose]);
 
@@ -350,7 +424,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
       <Card>
         <CardContent className="pb-2 pt-4 px-2">
           <div className="h-[480px] flex items-center justify-center">
-            <span className="text-sm text-muted-foreground">加载五日分时数据...</span>
+            <span className="text-sm text-muted-foreground animate-pulse">加载五日分时数据...</span>
           </div>
         </CardContent>
       </Card>
@@ -361,15 +435,27 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return (
       <Card>
         <CardContent className="pb-2 pt-4 px-2">
-          <div className="h-[480px] flex items-center justify-center">
-            <span className="text-sm text-muted-foreground">暂无五日分时数据</span>
+          <div className="h-[480px] flex flex-col items-center justify-center gap-3">
+            <span className="text-sm text-muted-foreground">
+              {fetchError || "暂无五日分时数据"}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => loadData(symbol)}
+              disabled={fetching}
+            >
+              <RefreshCw className={`h-3 w-3 mr-1 ${fetching ? "animate-spin" : ""}`} />
+              重新加载
+            </Button>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  const refClose = prevClose || items[0]?.price || 0;
+  const refClose = chartRefClose;
 
   return (
     <div className="space-y-0">
@@ -422,19 +508,19 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
               />
               <Tooltip content={<FiveDayTooltip />} cursor={{ strokeDasharray: "3 3" }} wrapperStyle={{ background: "transparent", border: "none" }} />
               {refClose > 0 && <ReferenceLine y={refClose} stroke="#94a3b8" strokeDasharray="4 4" strokeWidth={1} />}
-              {/* Volume bars at bottom */}
-              <Bar dataKey="volume" isAnimationActive={false} barSize={items.length > 400 ? 2 : items.length > 200 ? 3 : 4}
+              {/* Volume bars at bottom — use YAxis with separate domain */}
+              <YAxis
+                yAxisId="volume"
+                domain={[0, maxVolume * 8]}
+                hide
+              />
+              <Bar
+                yAxisId="volume"
+                dataKey="volume"
+                isAnimationActive={false}
+                barSize={items.length > 400 ? 2 : items.length > 200 ? 3 : 4}
                 fill="transparent"
-                shape={(props: any) => {
-                  const { x, y, width, height, payload } = props;
-                  if (!height || Math.abs(height) < 0.5) return null;
-                  // Scale volume bars to be small at the bottom (15% of chart height)
-                  const chartH = 400;
-                  const barMaxH = chartH * 0.12;
-                  const barH = (payload.volume / maxVolume) * barMaxH;
-                  const barY = chartH - barH;
-                  return <rect x={x} y={barY} width={width} height={barH} fill={payload.changePercent >= 0 ? "rgba(239,68,68,0.25)" : "rgba(22,163,74,0.25)"} />;
-                }}
+                shape={(props: any) => <VolumeBarShape {...props} />}
               />
               <Area type="monotone" dataKey="avgPrice" stroke="#eab308" strokeWidth={1} fill="none" dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} dot={false} isAnimationActive={false} />
