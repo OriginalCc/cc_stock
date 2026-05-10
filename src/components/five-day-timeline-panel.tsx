@@ -332,7 +332,7 @@ function VolumeBarShape(props: any) {
       y={y}
       width={width}
       height={height}
-      fill={isUp ? "rgba(239,68,68,0.55)" : "rgba(22,163,74,0.55)"}
+      fill={isUp ? "rgba(239,68,68,1)" : "rgba(22,163,74,1)"}
     />
   );
 }
