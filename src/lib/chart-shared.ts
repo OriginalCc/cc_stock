@@ -896,6 +896,7 @@ export function detectPulseVolumeMarkers(
     declineScore = Math.min(declineScore, 100);
 
     if (declineScore >= 10) {
+      const negativeScore = -declineScore; // 下跌得分为负
       const troughTime = session[troughIdx].time;
       const details: string[] = [];
       if (maxDropRate >= 1) details.push(`${session[dropStartIdx].time}-${session[dropEndIdx].time}急跌${maxDropRate.toFixed(1)}%`);
@@ -907,8 +908,8 @@ export function detectPulseVolumeMarkers(
       markers.push({
         time: troughTime,
         type: "pulse_decline",
-        score: declineScore,
-        label: declineScore >= 50 ? `强脉冲下跌 ${declineScore}分` : declineScore >= 30 ? `脉冲下跌 ${declineScore}分` : `微脉冲下跌 ${declineScore}分`,
+        score: negativeScore,
+        label: declineScore >= 50 ? `强脉冲下跌 ${negativeScore}分` : declineScore >= 30 ? `脉冲下跌 ${negativeScore}分` : `微脉冲下跌 ${negativeScore}分`,
         detail: details.length > 0 ? details.join("，") : "轻微下跌脉冲",
       });
     }
@@ -1020,6 +1021,7 @@ export function detectPulseVolumeMarkers(
     volDeclineScore = Math.min(volDeclineScore, 100);
 
     if (volDeclineScore >= 10) {
+      const negativeScore = -volDeclineScore; // 下跌得分为负
       const markTime = increments[maxVolIdx]?.time || session[0].time;
       const details: string[] = [];
       if (volumeRatio >= 1.5) details.push(`${increments[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
@@ -1031,8 +1033,8 @@ export function detectPulseVolumeMarkers(
       markers.push({
         time: markTime,
         type: "volume_decline",
-        score: volDeclineScore,
-        label: volDeclineScore >= 50 ? `强放量下跌 ${volDeclineScore}分` : volDeclineScore >= 30 ? `放量下跌 ${volDeclineScore}分` : `轻微放量下跌 ${volDeclineScore}分`,
+        score: negativeScore,
+        label: volDeclineScore >= 50 ? `强放量下跌 ${negativeScore}分` : volDeclineScore >= 30 ? `放量下跌 ${negativeScore}分` : `轻微放量下跌 ${negativeScore}分`,
         detail: details.length > 0 ? details.join("，") : "轻微放量下跌",
       });
     }
