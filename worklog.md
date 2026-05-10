@@ -102,3 +102,32 @@ Stage Summary:
 - 6 new v5.0 filter conditions documented in strategy panel
 - 3 new v5.0 resonance detection types added to backend and UI
 - 9 new evaluation factors (6 bullish + 3 bearish) added
+---
+Task ID: 1
+Agent: main
+Task: Speed up intraday chart page loading
+
+Work Log:
+- Analyzed full data loading flow: page.tsx → useStockData → API routes → external APIs (Tencent/Sina)
+- Identified 6 major bottlenecks: duplicate quote fetch, sequential requests, same cache TTL for all hours, 5-day chart retry delay, heavy client computation blocking render, delayed secondary data
+- Enhanced timeline API (`/api/stock/ashare-timeline`) to support `includeQuote=true` parameter, returning both timeline+quote data in single request
+- Added `fetchTimelineWithQuote` to useStockData hook for combined initial load
+- Updated `selectStock`, `changeChartMode`, and initial load to use combined fetch
+- Added adaptive cache TTL to timeline API: 10s during trading hours, 5min outside trading hours
+- Added `fetchGuarded` caching to quote API, history API, and 5min-kline API
+- Added cache size limit (MAX_CACHE_SIZE=200) and periodic cleanup to fetch-guard
+- Reduced 5-day chart retry delay from 1500ms to 500ms
+- Reduced 5-day chart fetch timeout from 10s/15s to 8s/12s
+- Added loading skeletons for dynamic imports of chart components
+- Added `useDeferredValue` for timeline signals and PV markers to avoid blocking initial chart paint
+- Reduced index data fetch delay from 3s to 1.5s
+- Reduced sector data fetch delay from 5s to 2s
+- Reduced factor overrides fetch delay from 2s to 1s
+- Used `startTransition` for factor overrides state update
+
+Stage Summary:
+- Key optimization: eliminated 1 network roundtrip on initial load by combining timeline+quote into single request
+- Server-side caching now uses fetchGuarded on all A-share API endpoints, preventing duplicate external calls
+- Adaptive cache TTL (5min outside trading hours) dramatically reduces API calls during off-hours
+- Client-side deferred rendering allows chart to paint first, signals overlay on next frame
+- All lint checks pass, page loads successfully

@@ -74,9 +74,10 @@ interface KLine5Min {
 async function fetch5MinKLine(symbol: string, retryCount = 1): Promise<KLine5Min[]> {
   for (let attempt = 0; attempt <= retryCount; attempt++) {
     try {
+      // Try the lightweight 5min-kline endpoint first (no MACD computation = faster)
       const res = await fetch(
         `/api/stock/ashare-5min-kline?symbol=${encodeURIComponent(symbol)}&limit=250`,
-        { signal: AbortSignal.timeout(10000) }
+        { signal: AbortSignal.timeout(8000) }
       );
       if (res.ok) {
         const data = await res.json();
@@ -84,9 +85,10 @@ async function fetch5MinKLine(symbol: string, retryCount = 1): Promise<KLine5Min
           return data.data.filter((d: any) => d.close > 0);
         }
       }
+      // Fallback to full history endpoint (slower, has MACD/KDJ computation)
       const res2 = await fetch(
         `/api/stock/ashare-history?symbol=${encodeURIComponent(symbol)}&interval=5m&limit=250`,
-        { signal: AbortSignal.timeout(15000) }
+        { signal: AbortSignal.timeout(12000) }
       );
       if (res2.ok) {
         const data = await res2.json();
@@ -97,8 +99,9 @@ async function fetch5MinKLine(symbol: string, retryCount = 1): Promise<KLine5Min
     } catch (e) {
       console.error(`5min-kline fetch attempt ${attempt + 1} failed:`, e);
     }
+    // Only wait before retry, not after the first attempt
     if (attempt < retryCount) {
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 500)); // Reduced from 1500ms to 500ms
     }
   }
   return [];

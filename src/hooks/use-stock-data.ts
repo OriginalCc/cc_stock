@@ -117,6 +117,30 @@ export function useStockData() {
     }
   }, [checkAShare]);
 
+  // Fetch timeline + quote in a single request (optimized for initial page load)
+  const fetchTimelineWithQuote = useCallback(async (sym: string) => {
+    if (!checkAShare(sym)) return;
+    try {
+      const res = await fetch(
+        `/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}&includeQuote=true`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.error) {
+          setTimeline(data.items || []);
+          setTimelinePrevClose(data.prevClose || 0);
+          // Use the included quote data to avoid a separate fetch
+          if (data.quote) {
+            setQuote(data.quote);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Timeline+Quote fetch error:", err);
+    }
+  }, [checkAShare]);
+
   // Fetch history with MACD
   const fetchHistory = useCallback(async (sym: string, intv: TimeInterval) => {
     setLoading(true);
@@ -148,7 +172,7 @@ export function useStockData() {
     }
   }, [checkAShare]);
 
-  // Fetch timeline data (A-share only)
+  // Fetch timeline data (A-share only) — without quote, for refresh scenarios
   const fetchTimeline = useCallback(async (sym: string) => {
     if (!checkAShare(sym)) return;
     try {
@@ -186,14 +210,15 @@ export function useStockData() {
       setSymbol(sym);
       // Persist last selected stock to localStorage
       try { localStorage.setItem(LAST_STOCK_KEY, sym); } catch {}
-      fetchQuote(sym);
-      // Only fetch timeline in timeline modes — skip in kline mode for faster switching
+      // Use combined timeline+quote fetch for faster loading when in timeline mode
       if (checkAShare(sym) && chartMode !== "kline") {
-        fetchTimeline(sym);
+        fetchTimelineWithQuote(sym);
+      } else {
+        fetchQuote(sym);
       }
       fetchHistory(sym, interval);
     },
-    [fetchQuote, fetchHistory, fetchTimeline, interval, checkAShare, chartMode]
+    [fetchQuote, fetchHistory, fetchTimelineWithQuote, interval, checkAShare, chartMode]
   );
 
   // Change interval
@@ -211,18 +236,17 @@ export function useStockData() {
       setChartMode(mode);
       try { localStorage.setItem(LAST_CHART_MODE_KEY, mode); } catch {}
       if ((mode === "timeline" || mode === "5d-timeline") && checkAShare(symbol)) {
-        fetchTimeline(symbol);
-        // Also fetch daily history for prev day MA reference lines
+        // Use combined fetch for faster mode switching
+        fetchTimelineWithQuote(symbol);
         fetchHistory(symbol, "1d");
         setInterval_("1d");
       } else if (mode === "kline") {
-        // Default to daily K-line when switching to kline mode
         const klineInterval: TimeInterval = "1d";
         setInterval_(klineInterval);
         fetchHistory(symbol, klineInterval);
       }
     },
-    [fetchTimeline, fetchHistory, symbol, checkAShare]
+    [fetchTimelineWithQuote, fetchHistory, symbol, checkAShare]
   );
 
   // Read saved stock and chart mode from localStorage after mount (avoids hydration mismatch)
@@ -246,16 +270,15 @@ export function useStockData() {
   // Initial load (only after mount to use correct symbol from localStorage)
   useEffect(() => {
     if (!mounted) return;
-    // Only fetch timeline if in timeline mode — skip in kline mode for faster load
     const currentMode = chartMode;
-    const fetches: Promise<any>[] = [
-      fetchQuote(symbol),
-      fetchHistory(symbol, interval),
-    ];
     if (checkAShare(symbol) && currentMode !== "kline") {
-      fetches.push(fetchTimeline(symbol));
+      // Combined timeline+quote fetch saves one network roundtrip on initial load
+      fetchTimelineWithQuote(symbol);
+      fetchHistory(symbol, interval);
+    } else {
+      fetchQuote(symbol);
+      fetchHistory(symbol, interval);
     }
-    Promise.allSettled(fetches);
   }, [mounted]);
 
   // Auto-refresh disabled - only refresh on user action or mount
@@ -283,6 +306,7 @@ export function useStockData() {
     fetchQuote,
     fetchHistory,
     fetchTimeline,
+    fetchTimelineWithQuote,
     isAShare: checkAShare(symbol),
   };
 }

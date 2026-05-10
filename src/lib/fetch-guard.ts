@@ -16,6 +16,21 @@ const cache = new Map<string, { data: any; timestamp: number }>();
 // Default cache TTL: 10 seconds
 const DEFAULT_TTL = 10000;
 
+// Maximum cache entries to prevent memory leaks
+const MAX_CACHE_SIZE = 200;
+
+// Periodic cleanup interval (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  // Remove expired entries
+  for (const [key, entry] of cache) {
+    // Remove entries older than 5 minutes (they're definitely stale by then)
+    if (now - entry.timestamp > 300000) {
+      cache.delete(key);
+    }
+  }
+}, 300000);
+
 /**
  * Fetch with deduplication, caching, and reliable timeout
  * If a request for the same key is already in-flight, returns the same promise
@@ -46,6 +61,11 @@ export function fetchGuarded<T>(
   const promise = fetcher(controller.signal)
     .then((data) => {
       clearTimeout(timeoutId);
+      // Evict oldest entries if cache is full
+      if (cache.size >= MAX_CACHE_SIZE) {
+        const oldestKey = cache.keys().next().value;
+        if (oldestKey !== undefined) cache.delete(oldestKey);
+      }
       cache.set(key, { data, timestamp: Date.now() });
       inFlight.delete(key);
       return data;

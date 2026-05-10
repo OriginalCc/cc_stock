@@ -1,20 +1,30 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect, startTransition, useDeferredValue } from "react";
 import dynamic from "next/dynamic";
 import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem, type TimelineItem, type ChartMode } from "@/hooks/use-stock-data";
 
 // Dynamic imports to reduce initial compilation memory
+// Use loading skeletons for critical chart components
 const StockScreener = dynamic(() => import("@/components/stock-screener").then(m => ({ default: m.StockScreener })), { ssr: false });
 const IntradayScreener = dynamic(() => import("@/components/intraday-screener").then(m => ({ default: m.IntradayScreener })), { ssr: false });
 const LimitUpAnalysis = dynamic(() => import("@/components/limit-up-analysis").then(m => ({ default: m.LimitUpAnalysis })), { ssr: false });
 const EarlyTradingScreener = dynamic(() => import("@/components/early-trading-screener").then(m => ({ default: m.EarlyTradingScreener })), { ssr: false });
 const LowOpenScreener = dynamic(() => import("@/components/low-open-screener").then(m => ({ default: m.LowOpenScreener })), { ssr: false });
 const StrategyAdminPanel = dynamic(() => import("@/components/strategy-admin-panel").then(m => ({ default: m.StrategyAdminPanel })), { ssr: false });
-const TimeSharingPanel = dynamic(() => import("@/components/time-sharing-panel").then(m => ({ default: m.TimeSharingPanel })), { ssr: false });
+const TimeSharingPanel = dynamic(() => import("@/components/time-sharing-panel").then(m => ({ default: m.TimeSharingPanel })), {
+  ssr: false,
+  loading: () => <div className="h-[500px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载分时图...</span></div>,
+});
 const MiniTimelinePanel = dynamic(() => import("@/components/time-sharing-panel").then(m => ({ default: m.MiniTimelinePanel })), { ssr: false });
-const KLineChartPanel = dynamic(() => import("@/components/kline-chart-panel").then(m => ({ default: m.KLineChartPanel })), { ssr: false });
-const FiveDayTimelinePanel = dynamic(() => import("@/components/five-day-timeline-panel").then(m => ({ default: m.FiveDayTimelinePanel })), { ssr: false });
+const KLineChartPanel = dynamic(() => import("@/components/kline-chart-panel").then(m => ({ default: m.KLineChartPanel })), {
+  ssr: false,
+  loading: () => <div className="h-[400px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载K线图...</span></div>,
+});
+const FiveDayTimelinePanel = dynamic(() => import("@/components/five-day-timeline-panel").then(m => ({ default: m.FiveDayTimelinePanel })), {
+  ssr: false,
+  loading: () => <div className="h-[500px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载五日分时图...</span></div>,
+});
 const NewsAnalysisPanel = dynamic(() => import("@/components/news-analysis-panel").then(m => ({ default: m.NewsAnalysisPanel })), { ssr: false });
 const SignalSummaryPanel = dynamic(() => import("@/components/signal-summary-panel").then(m => ({ default: m.SignalSummaryPanel })), { ssr: false });
 import { calculateMACD } from "@/lib/indicators";
@@ -95,8 +105,8 @@ export default function StockTAssistant() {
       setIndexRegimes(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newRegime = results[i].value!.regime; if (prev[key]?.regime !== newRegime.regime || prev[key]?.confidence !== newRegime.confidence) { next[key] = newRegime; changed = true; } } }); return changed ? next : prev; });
       setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
     };
-    // Delay index fetch by 3s so main stock data loads first
-    const timer = setTimeout(fetchAllIndices, 3000);
+    // Delay index fetch by 1.5s so main stock data loads first (reduced from 3s for faster UX)
+    const timer = setTimeout(fetchAllIndices, 1500);
     return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
@@ -145,8 +155,8 @@ export default function StockTAssistant() {
         if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
       }
     };
-    // Delay sector fetch by 5s to avoid blocking initial page load
-    const initTimer = setTimeout(fetchSectorData, 5000);
+    // Delay sector fetch by 2s to avoid blocking initial page load (reduced from 5s)
+    const initTimer = setTimeout(fetchSectorData, 2000);
     // Sector refresh disabled - only fetch once after delay
     // const timer = setInterval(fetchSectorData, 120000);
     return () => { cancelled = true; clearTimeout(initTimer); abortCtrl?.abort(); };
@@ -155,10 +165,10 @@ export default function StockTAssistant() {
   // ── DB Factor Overrides (deferred - not needed for initial render) ──
   const [factorOverrides, setFactorOverrides] = useState<FactorOverride[]>([]);
   useEffect(() => {
-    // Delay factor overrides fetch by 2s to avoid competing with critical data
+    // Delay factor overrides fetch by 1s (reduced from 2s)
     const timer = setTimeout(async () => {
-      try { const res = await fetch("/api/stock/strategy"); if (res.ok) { const data = await res.json(); if (data.dbFactors && Array.isArray(data.dbFactors)) setFactorOverrides(buildFactorOverridesFromDB(data.dbFactors)); } } catch (e) { console.error("Failed to fetch factor overrides:", e); }
-    }, 2000);
+      try { const res = await fetch("/api/stock/strategy"); if (res.ok) { const data = await res.json(); if (data.dbFactors && Array.isArray(data.dbFactors)) startTransition(() => setFactorOverrides(buildFactorOverridesFromDB(data.dbFactors))); } } catch (e) { console.error("Failed to fetch factor overrides:", e); }
+    }, 1000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -379,8 +389,11 @@ export default function StockTAssistant() {
     if (!isTimelineActive) return [] as (TSignal | null)[];
     return generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime);
   }, [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, isTimelineActive]);
+  // Defer signal rendering so the chart paints first, then signals overlay on next frame
+  const deferredTimelineSignals = useDeferredValue(timelineSignals);
   const pvMarkers = useMemo(() => { if (!isTimelineActive || liveTimeline.length < 10 || timelinePrevClose <= 0) return []; return detectPulseVolumeMarkers(liveTimeline, timelinePrevClose); }, [liveTimeline, timelinePrevClose, isTimelineActive]);
-  const latestTimelineSignal = useMemo(() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { if (timelineSignals[i]) return timelineSignals[i]; } return null; }, [timelineSignals]);
+  const deferredPvMarkers = useDeferredValue(pvMarkers);
+  const latestTimelineSignal = useMemo(() => { for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { if (deferredTimelineSignals[i]) return deferredTimelineSignals[i]; } return null; }, [deferredTimelineSignals]);
 
   // ── Signal counts ──
   const signalCounts = useMemo(() => {
@@ -388,9 +401,9 @@ export default function StockTAssistant() {
     let buyCount = 0, strongBuys = 0, sellCount = 0, strongSells = 0;
     let totalSigs = 0, strongSigs = 0, mediumSigs = 0, weakSigs = 0;
     let confluenceCount = 0, keyLevelCount = 0, vwapSlopeCount = 0, indexRegimeCount = 0;
-    for (const s of timelineSignals) { if (!s) continue; totalSigs++; if (s.type === "buy") { buyCount++; if (s.strength === "strong") strongBuys++; } else if (s.type === "sell") { sellCount++; if (s.strength === "strong") strongSells++; } if (s.strength === "strong") strongSigs++; else if (s.strength === "medium") mediumSigs++; else if (s.strength === "weak") weakSigs++; if (s.description?.includes("共振")) confluenceCount++; if (s.description?.includes("阻力确认") || s.description?.includes("支撑确认")) keyLevelCount++; if (s.description?.includes("均价线拐头")) vwapSlopeCount++; if (s.description?.includes("大盘")) indexRegimeCount++; }
+    for (const s of deferredTimelineSignals) { if (!s) continue; totalSigs++; if (s.type === "buy") { buyCount++; if (s.strength === "strong") strongBuys++; } else if (s.type === "sell") { sellCount++; if (s.strength === "strong") strongSells++; } if (s.strength === "strong") strongSigs++; else if (s.strength === "medium") mediumSigs++; else if (s.strength === "weak") weakSigs++; if (s.description?.includes("共振")) confluenceCount++; if (s.description?.includes("阻力确认") || s.description?.includes("支撑确认")) keyLevelCount++; if (s.description?.includes("均价线拐头")) vwapSlopeCount++; if (s.description?.includes("大盘")) indexRegimeCount++; }
     return { buyCount, strongBuys, sellCount, strongSells, totalSigs, strongSigs, mediumSigs, weakSigs, confluenceCount, keyLevelCount, vwapSlopeCount, indexRegimeCount };
-  }, [timelineSignals, isTimelineActive]);
+  }, [deferredTimelineSignals, isTimelineActive]);
 
   // ── Sound / Alert ──
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -401,19 +414,19 @@ export default function StockTAssistant() {
   useEffect(() => {
     if (!soundEnabled && flashSignal === null) return;
     const newStrongSignals: { type: 'buy' | 'sell' | 'stoploss'; id: string }[] = [];
-    for (let i = 0; i < timelineSignals.length; i++) { const sig = timelineSignals[i]; if (!sig || sig.strength !== 'strong') continue; const id = `${i}-${sig.type}-${sig.reason}`; if (!alertedSignalIdsRef.current.has(id)) { alertedSignalIdsRef.current.add(id); newStrongSignals.push({ type: sig.type, id }); } }
+    for (let i = 0; i < deferredTimelineSignals.length; i++) { const sig = deferredTimelineSignals[i]; if (!sig || sig.strength !== 'strong') continue; const id = `${i}-${sig.type}-${sig.reason}`; if (!alertedSignalIdsRef.current.has(id)) { alertedSignalIdsRef.current.add(id); newStrongSignals.push({ type: sig.type, id }); } }
     if (newStrongSignals.length > 0) { const latest = newStrongSignals[newStrongSignals.length - 1]; if (soundEnabled) playAlertSound(latest.type); setTimeout(() => { setFlashSignal(latest.type); setTimeout(() => setFlashSignal(null), 1200); }, 0); }
-  }, [timelineSignals, soundEnabled]);
+  }, [deferredTimelineSignals, soundEnabled]);
 
   // ── T-Index ──
   const tIndex = useMemo(() => {
     if (!isTimelineActive) return 50;
     let score = 50;
-    for (let i = timelineSignals.length - 1; i >= 0; i--) { const sig = timelineSignals[i]; if (!sig) continue; if (i < timelineSignals.length - 5) break; if (sig.type === 'buy') { if (sig.strength === 'strong') score += 15; else if (sig.strength === 'medium') score += 8; else score += 3; } else if (sig.type === 'sell') { if (sig.strength === 'strong') score -= 15; else if (sig.strength === 'medium') score -= 8; else score -= 3; } else if (sig.type === 'stoploss') score -= 20; }
+    for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { const sig = deferredTimelineSignals[i]; if (!sig) continue; if (i < deferredTimelineSignals.length - 5) break; if (sig.type === 'buy') { if (sig.strength === 'strong') score += 15; else if (sig.strength === 'medium') score += 8; else score += 3; } else if (sig.type === 'sell') { if (sig.strength === 'strong') score -= 15; else if (sig.strength === 'medium') score -= 8; else score -= 3; } else if (sig.type === 'stoploss') score -= 20; }
     const regime = szIndexRegime?.regime;
     if (regime === '震荡市') score += 5; else if (regime === '上升通道') score -= 5; else if (regime === '下跌趋势') score -= 10; else if (regime === '横盘末期') score -= 15;
     return Math.max(0, Math.min(100, score));
-  }, [timelineSignals, szIndexRegime, isTimelineActive]);
+  }, [deferredTimelineSignals, szIndexRegime, isTimelineActive]);
 
   // ── Smart Action ──
   const smartAction = useMemo(() => {
@@ -421,14 +434,14 @@ export default function StockTAssistant() {
     const lastTime = liveTimeline[liveTimeline.length - 1]?.time;
     const timeWindow = lastTime ? getTimeWindow(lastTime) : undefined;
     let latestStrong: TSignal | null = null; let strongCount = 0; let mediumCount = 0;
-    for (let i = timelineSignals.length - 1; i >= 0; i--) { const sig = timelineSignals[i]; if (!sig) continue; if (i < timelineSignals.length - 10) break; if (sig.strength === 'strong') { strongCount++; if (!latestStrong) latestStrong = sig; } if (sig.strength === 'medium') mediumCount++; }
-    const hasStoploss = timelineSignals.slice(-10).some(s => s?.type === 'stoploss');
+    for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { const sig = deferredTimelineSignals[i]; if (!sig) continue; if (i < deferredTimelineSignals.length - 10) break; if (sig.strength === 'strong') { strongCount++; if (!latestStrong) latestStrong = sig; } if (sig.strength === 'medium') mediumCount++; }
+    const hasStoploss = deferredTimelineSignals.slice(-10).some(s => s?.type === 'stoploss');
     if (hasStoploss) return { icon: '⚡', text: '紧急止损', reason: '触发止损信号，建议立即平仓', color: 'text-amber-500', bgColor: 'bg-amber-500/10 border-amber-500/25', confidence: 95, type: 'stoploss' as const };
     if (latestStrong?.type === 'buy' && latestStrong.strength === 'strong') { const isBuyWindow = timeWindow?.includes('买入') || timeWindow?.includes('低吸'); return { icon: '🟢', text: isBuyWindow ? '建议正T买回' : '建议买入', reason: `强买入信号(${latestStrong.reason})${isBuyWindow ? '，处于买入时段' : ''}`, color: 'text-green-500', bgColor: 'bg-green-500/10 border-green-500/25', confidence: 80 + strongCount * 5, type: 'buy' as const }; }
     if (latestStrong?.type === 'sell' && latestStrong.strength === 'strong') { const isSellWindow = timeWindow?.includes('卖出') || timeWindow?.includes('冲高'); return { icon: '🔴', text: isSellWindow ? '建议正T卖出' : '建议卖出', reason: `强卖出信号(${latestStrong.reason})${isSellWindow ? '，处于卖出时段' : ''}`, color: 'text-red-500', bgColor: 'bg-red-500/10 border-red-500/25', confidence: 80 + strongCount * 5, type: 'sell' as const }; }
-    if (mediumCount > 0 && strongCount === 0) { const mediumSig = (() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { if (timelineSignals[i]?.strength === 'medium') return timelineSignals[i]; } return null; })(); return { icon: '📊', text: '等待确认', reason: `${mediumSig?.type === 'buy' ? '买入' : '卖出'}信号强度中等(${mediumSig?.reason})，等待加强确认`, color: 'text-orange-500', bgColor: 'bg-orange-500/10 border-orange-500/25', confidence: 50 + mediumCount * 10, type: (mediumSig?.type || 'buy') as 'buy' | 'sell' }; }
+    if (mediumCount > 0 && strongCount === 0) { const mediumSig = (() => { for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { if (deferredTimelineSignals[i]?.strength === 'medium') return deferredTimelineSignals[i]; } return null; })(); return { icon: '📊', text: '等待确认', reason: `${mediumSig?.type === 'buy' ? '买入' : '卖出'}信号强度中等(${mediumSig?.reason})，等待加强确认`, color: 'text-orange-500', bgColor: 'bg-orange-500/10 border-orange-500/25', confidence: 50 + mediumCount * 10, type: (mediumSig?.type || 'buy') as 'buy' | 'sell' }; }
     return { icon: '⏳', text: '观望等待', reason: tIndex <= 50 ? '做T指数偏低，暂无明显操作机会' : '暂无有效信号，继续观察', color: 'text-muted-foreground', bgColor: 'bg-muted/50 border-border', confidence: 30, type: 'buy' as const };
-  }, [timelineSignals, liveTimeline, tIndex, isTimelineActive]);
+  }, [deferredTimelineSignals, liveTimeline, tIndex, isTimelineActive]);
 
   const prevDayMA5 = useMemo(() => {
     if (allChartData.length < 1) return null;
@@ -602,7 +615,7 @@ export default function StockTAssistant() {
           <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
-            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={pvMarkers} />
+            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={deferredTimelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={deferredPvMarkers} />
           </div>
         ) : chartData.length > 0 ? (
           <KLineChartPanel allChartData={allChartData} klineVisibleBars={klineVisibleBars} setKlineVisibleBars={setKlineVisibleBars} klinePanOffset={klinePanOffset} setKlinePanOffset={setKlinePanOffset} interval={interval} />
@@ -629,7 +642,7 @@ export default function StockTAssistant() {
 
         {/* T-Trading Signals Summary */}
         {(chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
-          <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={timelineSignals} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={pvMarkers} />
+          <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
         )}
 
         {/* News Analysis Panel */}

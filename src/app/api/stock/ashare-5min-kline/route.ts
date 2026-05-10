@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAShareKLine, isAShare } from "@/lib/ashare-api";
+import { fetchGuarded } from "@/lib/fetch-guard";
 
 /**
  * Lightweight K-line endpoint for intraday charts.
  * Returns ONLY raw OHLCV data (no MACD/KDJ/MA computation) for fast response.
  * Supports scale parameter: 1, 5, 15, 30, 60 (minutes).
+ * Uses fetchGuarded for deduplication and caching.
  */
 export async function GET(request: NextRequest) {
   const symbol = request.nextUrl.searchParams.get("symbol") || "";
@@ -24,7 +26,11 @@ export async function GET(request: NextRequest) {
   const safeScale = validScales.includes(scale) ? scale : 5;
 
   try {
-    const history = await getAShareKLine(symbol, safeScale, limit);
+    const history = await fetchGuarded(
+      `kline5m:${symbol}:${safeScale}:${limit}`,
+      async (_signal) => getAShareKLine(symbol, safeScale, limit),
+      60000 // 60s cache — K-line data changes slowly (5-min bars)
+    );
 
     // Return lightweight data — only date, OHLCV
     const data = history.map((item) => ({

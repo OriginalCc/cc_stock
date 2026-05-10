@@ -505,7 +505,7 @@ async function getTencentMinuteData(
 
   const response = await fetch(url, {
     next: { revalidate: 0 },
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(5000), // 5s timeout (was default, explicit for clarity)
   });
 
   if (!response.ok) return { items: [], prevClose };

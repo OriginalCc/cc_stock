@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAShareQuote, isAShare } from "@/lib/ashare-api";
 import { getStockQuote } from "@/lib/finance-api";
+import { fetchGuarded } from "@/lib/fetch-guard";
 
 export async function GET(request: NextRequest) {
   const symbol = request.nextUrl.searchParams.get("symbol") || "";
@@ -12,7 +13,11 @@ export async function GET(request: NextRequest) {
   try {
     // If A-share, use Sina/Tencent API
     if (isAShare(symbol)) {
-      const quote = await getAShareQuote(symbol);
+      const quote = await fetchGuarded(
+        `quote:${symbol}`,
+        async (_signal) => getAShareQuote(symbol),
+        10000 // 10s cache — quote data changes frequently during trading
+      );
       if (!quote) {
         return NextResponse.json({ error: "未找到A股数据" }, { status: 404 });
       }

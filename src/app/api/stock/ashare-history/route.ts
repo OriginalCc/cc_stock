@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAShareKLine, isAShare } from "@/lib/ashare-api";
 import { getStockHistory } from "@/lib/finance-api";
 import { calculateMACD, generateMACDSignals, calculateSMA, calculateKDJ } from "@/lib/indicators";
+import { fetchGuarded } from "@/lib/fetch-guard";
 
 // Scale mapping for Sina API
 const INTERVAL_SCALE_MAP: Record<string, number> = {
@@ -28,7 +29,12 @@ export async function GET(request: NextRequest) {
 
     if (isAShare(symbol)) {
       const scale = INTERVAL_SCALE_MAP[interval] || 5;
-      history = await getAShareKLine(symbol, scale, limit);
+      // Use fetchGuarded to deduplicate and cache K-line requests
+      history = await fetchGuarded(
+        `history:${symbol}:${scale}:${limit}`,
+        async (_signal) => getAShareKLine(symbol, scale, limit),
+        30000 // 30s cache — history data changes less frequently
+      );
     } else {
       // Use existing Finance API for non-A-share stocks
       history = await getStockHistory(symbol, interval, limit);
