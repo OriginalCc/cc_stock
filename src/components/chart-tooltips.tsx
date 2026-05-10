@@ -108,6 +108,18 @@ export const KLineTooltip = ({ active, payload, label }: any) => {
           </>
         )}
       </div>
+      {data.k != null && (
+        <div className="mt-2 pt-2 border-t border-border grid grid-cols-2 gap-y-1 gap-x-3">
+          <span className="text-muted-foreground">K</span>
+          <span className="text-right font-mono text-blue-500">{data.k.toFixed(2)}</span>
+          <span className="text-muted-foreground">D</span>
+          <span className="text-right font-mono text-orange-500">{data.d?.toFixed(2)}</span>
+          <span className="text-muted-foreground">J</span>
+          <span className={`text-right font-mono ${data.j != null && data.j > 100 ? "text-red-500" : data.j != null && data.j < 0 ? "text-green-500" : "text-purple-500"}`}>
+            {data.j?.toFixed(2)}
+          </span>
+        </div>
+      )}
       {data.dif != null && (
         <div className="mt-2 pt-2 border-t border-border grid grid-cols-2 gap-y-1 gap-x-3">
           <span className="text-muted-foreground">DIF</span>
@@ -164,6 +176,28 @@ export const VolumeTooltip = ({ active, payload }: any) => {
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+      </div>
+    </div>
+  );
+};
+
+export const KDJTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const data = payload[0]?.payload as KLineItem;
+  if (!data || data.k == null) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-3 shadow-xl text-xs min-w-[160px]">
+      <div className="font-medium mb-2 text-foreground">{data.date}</div>
+      <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+        <span className="text-muted-foreground">K</span>
+        <span className="text-right font-mono text-blue-500">{data.k.toFixed(2)}</span>
+        <span className="text-muted-foreground">D</span>
+        <span className="text-right font-mono text-orange-500">{data.d?.toFixed(2)}</span>
+        <span className="text-muted-foreground">J</span>
+        <span className={`text-right font-mono ${data.j != null && data.j > 100 ? "text-red-500" : data.j != null && data.j < 0 ? "text-green-500" : "text-purple-500"}`}>
+          {data.j?.toFixed(2)}
+        </span>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAShareKLine, isAShare } from "@/lib/ashare-api";
 import { getStockHistory } from "@/lib/finance-api";
-import { calculateMACD, generateMACDSignals, calculateSMA } from "@/lib/indicators";
+import { calculateMACD, generateMACDSignals, calculateSMA, calculateKDJ } from "@/lib/indicators";
 
 // Scale mapping for Sina API
 const INTERVAL_SCALE_MAP: Record<string, number> = {
@@ -53,6 +53,11 @@ export async function GET(request: NextRequest) {
     const ma10 = calculateSMA(closePrices, 10);
     const ma20 = calculateSMA(closePrices, 20);
 
+    // Calculate KDJ
+    const highs = history.map((h) => h.high);
+    const lows = history.map((h) => h.low);
+    const kdjData = calculateKDJ(highs, lows, closePrices);
+
     // Combine data
     const combinedData = history.map((item, i) => ({
       ...item,
@@ -62,6 +67,9 @@ export async function GET(request: NextRequest) {
       dif: isNaN(macdData[i].dif) ? null : macdData[i].dif,
       dea: isNaN(macdData[i].dea) ? null : macdData[i].dea,
       macd: isNaN(macdData[i].macd) ? null : macdData[i].macd,
+      k: isNaN(kdjData[i].k) ? null : kdjData[i].k,
+      d: isNaN(kdjData[i].d) ? null : kdjData[i].d,
+      j: isNaN(kdjData[i].j) ? null : kdjData[i].j,
       signal: signals[i],
     }));
 

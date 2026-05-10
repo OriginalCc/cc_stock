@@ -35,8 +35,8 @@ interface SignalCounts {
 interface SignalSummaryPanelProps {
   chartMode: ChartMode;
   chartData: KLineItem[];
-  liveTimeline: Array<{ time: string; price: number; avgPrice: number; volume: number; amount: number; changePercent: number }>;
-  timeline: Array<{ time: string; price: number; avgPrice: number; volume: number; amount: number; changePercent: number }>;
+  liveTimeline: Array<{ time: string; price: number; avgPrice: number; volume: number; changePercent: number }>;
+  timeline: Array<{ time: string; price: number; avgPrice: number; volume: number; changePercent: number }>;
   timelineSignals: (TSignal | null)[];
   latestTimelineSignal: TSignal | null;
   latestSignal: { type: string; strength: string; reason: string } | null;

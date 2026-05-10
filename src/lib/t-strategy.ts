@@ -33,6 +33,7 @@ export interface TSignal {
   spreadPct?: number;      // 差价百分比（如果适用）
   description?: string;    // 详细描述
   factorId?: string;       // 对应的因子ID（用于追踪）
+  strengthOverridden?: boolean; // 用户在策略面板中显式覆盖了强度，合并时不可被升级
 }
 
 // ── 因子覆盖配置（连接DB）──────────────────────────────
@@ -1284,6 +1285,7 @@ function evaluateCondition(
  * - 因子36: KDJ死叉卖出 — K线下穿D线(死叉)，尤其J>80超买区更可靠 → 卖出(正T)
  * - 因子37: J线超卖反弹 — J值低于0后拐头向上 → 买入(反T)
  * - 因子38: J线超买回落 — J值高于100后拐头向下 → 卖出(正T)
+ * - 因子39: 递增放量 — 连续3+分钟成交量递增+价格同步上涨 → 买入(反T)
  * 
  * v3.6 改进（胜率增强系统）：
  * - 信号共振确认：2+个不同因子在3分钟内同方向触发，自动提升信号强度
@@ -2504,15 +2506,86 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── 应用因子强度覆盖（第一遍）：标记被用户覆盖的信号 ──
-  // 被用户覆盖的信号标记为 _userOverridden，后处理逻辑不应再升级其强度
-  if (factorOverrides && factorOverrides.length > 0) {
-    for (let i = 0; i < signals.length; i++) {
-      const sig = signals[i];
-      if (!sig) continue;
-      const override = factorOverrides.find(o => o.name === sig.reason);
-      if (override && override.strength) {
-        signals[i] = { ...sig, _userOverridden: true, _overrideStrength: override.strength } as any;
+  // ── 因子39: 递增放量 → 买入信号 ──
+  // 连续3+分钟成交量逐步放大，且价格同步上涨 → 主力资金持续流入信号
+  // 递增根数越多、价格上涨幅度越大、量增速越快 → 信号越强
+  if (isFactorEnabled("递增放量", factorOverrides) && regimeAdj.allowBuy) {
+    for (let i = 4; i < timeline.length; i++) {
+      if (signals[i]) continue;
+
+      const cur = timeline[i];
+      const timeWindow = getTimeWindow(cur.time);
+      if (!isBuyWindow(timeWindow)) continue;
+
+      // Check for progressive volume: 3+ consecutive minutes of increasing volume
+      // Look back from current position to find the longest progressive sequence ending at i
+      let progLen = 1;
+      for (let j = i; j > Math.max(1, i - 10); j--) {
+        if (timeline[j].volume > timeline[j - 1].volume && timeline[j].volume > 0) {
+          progLen++;
+        } else {
+          break;
+        }
+      }
+
+      if (progLen >= 3) {
+        const startIdx = i - progLen + 1;
+        const startPrice = timeline[startIdx].price;
+        const endPrice = cur.price;
+        const priceRise = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
+
+        // Only generate signal if price is rising (量价齐升)
+        if (priceRise > 0) {
+          const startVol = timeline[startIdx].volume;
+          const endVol = cur.volume;
+          const volGrowth = startVol > 0 ? ((endVol - startVol) / startVol) * 100 : 0;
+
+          // Calculate average step growth rate
+          let totalStepGrowth = 0;
+          let stepCount = 0;
+          for (let j = startIdx + 1; j <= i; j++) {
+            if (timeline[j - 1].volume > 0) {
+              totalStepGrowth += (timeline[j].volume - timeline[j - 1].volume) / timeline[j - 1].volume;
+              stepCount++;
+            }
+          }
+          const avgStepGrowthRate = stepCount > 0 ? (totalStepGrowth / stepCount) * 100 : 0;
+
+          // Determine signal strength
+          let strength: Strength;
+          if (progLen >= 6 && priceRise >= 1.5 && volGrowth >= 100) {
+            strength = "strong";
+          } else if (progLen >= 4 && priceRise >= 0.5) {
+            strength = "medium";
+          } else if (progLen >= 3 && priceRise > 0) {
+            strength = "weak";
+          } else {
+            continue; // Not strong enough
+          }
+
+          // Adjust by regime
+          if (regimeAdj.signalStrengthBoost < 0) {
+            if (strength === "strong") strength = "medium";
+            else if (strength === "medium") strength = "weak";
+          }
+
+          const detailParts: string[] = [];
+          detailParts.push(`${progLen}分钟递增`);
+          if (priceRise >= 0.5) detailParts.push(`涨${priceRise.toFixed(1)}%`);
+          if (volGrowth >= 50) detailParts.push(`量增${volGrowth.toFixed(0)}%`);
+          if (avgStepGrowthRate >= 20) detailParts.push(`均步增速${avgStepGrowthRate.toFixed(0)}%`);
+
+          signals[i] = {
+            type: "buy",
+            reason: "递增放量",
+            strength,
+            tMode: "反T",
+            timeWindow,
+            description: detailParts.join("，") + "，主力资金持续流入",
+          };
+          lastSellPrice = null;
+          continue;
+        }
       }
     }
   }
@@ -2624,11 +2697,7 @@ export function generateTimelineSignals(
     }
 
     // Upgrade strength based on confluence count
-    // 但被用户明确覆盖强度的信号不应被升级
-    const isUserOverridden = (curSig as any)._userOverridden;
-    if (isUserOverridden) {
-      // 用户覆盖的信号强度不可被共振升级
-    } else if (confluenceCount >= 3 && curSig.strength !== "strong") {
+    if (confluenceCount >= 3 && curSig.strength !== "strong") {
       signals[i] = {
         ...curSig,
         strength: "strong",
@@ -2672,18 +2741,6 @@ export function generateTimelineSignals(
         const proximity = Math.abs(price - level.price) / level.price * 100;
 
         if (proximity < 0.15) { // 价格在关键位0.15%范围内
-          const isUserOverridden = (curSig as any)._userOverridden;
-          // 被用户覆盖强度的信号不被关键价位升级
-          if (isUserOverridden) {
-            // 仅添加描述，不升级强度
-            signals[i] = {
-              ...curSig,
-              description: curSig.description
-                ? `${curSig.description} 【${level.name}${level.type === "resistance" ? "阻力" : "支撑"}附近】`
-                : `在${level.name}${level.type === "resistance" ? "阻力" : "支撑"}位附近`,
-            };
-            break;
-          }
           // 卖出信号在阻力位附近更可靠
           if (curSig.type === "sell" && level.type === "resistance") {
             if (curSig.strength === "weak") {
@@ -2743,8 +2800,8 @@ export function generateTimelineSignals(
     // 低波动环境（标准差<0.2%）：弱信号也可以考虑，因为波动小更安全
     if (vol > 0.5) {
       for (let i = 0; i < signals.length; i++) {
-        if (signals[i] && signals[i]!.strength === "weak" && signals[i]!.type !== "stoploss" && !(signals[i] as any)._userOverridden) {
-          // 高波动时弱信号不可靠，降为不显示（但用户覆盖的弱信号保留）
+        if (signals[i] && signals[i]!.strength === "weak" && signals[i]!.type !== "stoploss") {
+          // 高波动时弱信号不可靠，降为不显示
           signals[i] = null;
         }
       }
@@ -2828,13 +2885,12 @@ export function generateTimelineSignals(
       }
 
       // 大盘上升 + 个股卖出信号 → 降级（可能卖飞）
-      // 但用户明确覆盖的弱信号保留（最终遍会恢复其强度）
-      if (isMarketUp && curSig.type === "sell" && curSig.strength === "weak" && !(curSig as any)._userOverridden) {
+      if (isMarketUp && curSig.type === "sell" && curSig.strength === "weak") {
         signals[i] = null; // 弱卖出信号在牛市中过滤掉
       }
 
       // 大盘下跌 + 个股买入信号 → 降级（可能接飞刀）
-      if (isMarketDown && curSig.type === "buy" && curSig.strength === "weak" && !(curSig as any)._userOverridden) {
+      if (isMarketDown && curSig.type === "buy" && curSig.strength === "weak") {
         signals[i] = null; // 弱买入信号在熊市中过滤掉
       }
 
@@ -2887,13 +2943,12 @@ export function generateTimelineSignals(
       }
 
       // 板块上升 + 个股弱卖出信号 → 降级（板块向上，别急着卖）
-      // 但用户明确覆盖的弱信号保留
-      if (isSectorUp && curSig.type === "sell" && curSig.strength === "weak" && !(curSig as any)._userOverridden) {
+      if (isSectorUp && curSig.type === "sell" && curSig.strength === "weak") {
         signals[i] = null; // 弱卖出信号在板块上涨中过滤掉
       }
 
       // 板块下跌 + 个股弱买入信号 → 降级（板块向下，别急着买）
-      if (isSectorDown && curSig.type === "buy" && curSig.strength === "weak" && !(curSig as any)._userOverridden) {
+      if (isSectorDown && curSig.type === "buy" && curSig.strength === "weak") {
         signals[i] = null; // 弱买入信号在板块下跌中过滤掉
       }
 
@@ -2909,16 +2964,30 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── 应用因子强度覆盖（最终遍）：确保用户覆盖的强度不被后处理升级覆盖 ──
-  // 后处理（共振升级、关键价位增强、均价拐头、大盘/板块共振等）可能升级信号强度
-  // 但用户明确设置的强度优先级最高，必须最终生效
+  // 8. 因子强度覆盖上限（用户在策略面板中设置的因子参数优先级最高）
+  //    如果用户将某个因子设为"弱"，则该因子产生的信号强度最高只能为"弱"
+  //    这确保用户对因子强度的显式设置不会被后续的共振/趋势增强等逻辑覆盖
+  //    同时标记 strengthOverridden，防止渲染层合并时被升级
   if (factorOverrides && factorOverrides.length > 0) {
+    const strengthRank: Record<string, number> = { weak: 1, medium: 2, strong: 3 };
     for (let i = 0; i < signals.length; i++) {
-      const sig = signals[i];
-      if (!sig) continue;
-      const overrideStrength = (sig as any)._overrideStrength;
-      if (overrideStrength) {
-        signals[i] = { ...sig, strength: overrideStrength } as any;
+      if (!signals[i]) continue;
+      const sig = signals[i]!;
+      const override = getFactorOverride(sig.reason, factorOverrides);
+      if (override?.strength) {
+        const currentRank = strengthRank[sig.strength] || 2;
+        const overrideRank = strengthRank[override.strength] || 2;
+        // 只有当覆盖强度 < 当前强度时才降级（覆盖是上限，不是下限）
+        if (overrideRank < currentRank) {
+          signals[i] = {
+            ...sig,
+            strength: override.strength,
+            strengthOverridden: true,
+            description: sig.description
+              ? `${sig.description} 【因子参数覆盖→${override.strength === "strong" ? "强" : override.strength === "medium" ? "中" : "弱"}】`
+              : `因子参数覆盖强度为${override.strength === "strong" ? "强" : override.strength === "medium" ? "中" : "弱"}`,
+          };
+        }
       }
     }
   }

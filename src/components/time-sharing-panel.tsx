@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useMemo, useEffect } from "react";
+import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import {
   ComposedChart,
   Bar,
@@ -22,11 +22,11 @@ import {
   REGIME_CONFIG,
   T_MODE_CONFIG,
   formatVolume,
+  formatAmount,
   computeMiniMACD,
   generateTimelineSignals,
   getStrengthLabel,
   getStrengthColor,
-  formatAShareAmount,
 } from "@/lib/chart-shared";
 import {
   detectMarketRegimeDetail,
@@ -67,7 +67,7 @@ const TimelineTooltip = ({ active, payload }: any) => {
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
         <span className="text-muted-foreground">成交额</span>
-        <span className="text-right font-mono text-yellow-600">{formatAShareAmount(data.amount || 0)}</span>
+        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * data.price)}</span>
       </div>
       {signal && (
         <div className="mt-2 pt-2 border-t border-border">
@@ -102,7 +102,7 @@ const TimelineVolumeTooltip = ({ active, payload }: any) => {
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
         <span className="text-muted-foreground">成交额</span>
-        <span className="text-right font-mono text-yellow-600">{formatAShareAmount(data.amount || 0)}</span>
+        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * data.price)}</span>
         <span className="text-muted-foreground">价格</span>
         <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price.toFixed(2)}</span>
       </div>
@@ -137,28 +137,21 @@ const TimelineMACDTooltip = ({ active, payload }: any) => {
 // Pulse = lightning bolt icon (⚡) in orange/amber
 // Volume surge = rising arrow icon (📈) in cyan/teal
 
-function PulseVolumeRenderer(props: any) {
-  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
-  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+// ── Extract Pulse/Volume marker data from chart points (shared by standalone & combined renderers) ──
 
-  const xAxis = Object.values(xAxisMap)[0] as any;
-  const yAxis = Object.values(yAxisMap)[0] as any;
-  if (!xAxis || !yAxis) return null;
-
-  // Get data points from the price line
+function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; y: number; marker: PulseVolumeMarker }[] {
   let priceLineData: any[] = [];
   for (const item of formattedGraphicalItems) {
     if (item?.props?.points && Array.isArray(item.props.points)) {
       const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
-      if (stroke === "#eab308") continue; // Skip avgPrice line
+      if (stroke === "#eab308") continue;
       if (priceLineData.length === 0) {
         priceLineData = item.props.points;
       }
     }
   }
-  if (priceLineData.length === 0) return null;
+  if (priceLineData.length === 0) return [];
 
-  // Get markers from the data payload
   const markers: PulseVolumeMarker[] = [];
   const seen = new Set<string>();
   for (const point of priceLineData) {
@@ -173,90 +166,136 @@ function PulseVolumeRenderer(props: any) {
       }
     }
   }
+  if (markers.length === 0) return [];
 
-  if (markers.length === 0) return null;
-
-  // Convert marker times to chart coordinates
-  const markerPoints: { x: number; y: number; marker: PulseVolumeMarker }[] = [];
+  const result: { x: number; y: number; marker: PulseVolumeMarker }[] = [];
   for (const marker of markers) {
-    // Find the chart point matching this marker's time
     const matchPoint = priceLineData.find((p: any) => p?.payload?.time === marker.time);
     if (!matchPoint) continue;
-    markerPoints.push({ x: matchPoint.x, y: matchPoint.y, marker });
+    result.push({ x: matchPoint.x, y: matchPoint.y, marker });
+  }
+  return result;
+}
+
+// ── Render a single Pulse/Volume marker as prominent SVG ──
+// v2: Much more prominent than before — larger markers, bolder labels, white glow
+
+function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker, idx: number): React.ReactNode {
+  const isPulse = marker.type === "pulse";
+  const isProgressiveVol = marker.type === "progressive_vol";
+
+  // Color schemes — brighter & more saturated for visibility
+  let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string, labelY: number;
+  if (isPulse) {
+    bgColor = "rgba(245, 158, 11, 0.25)";
+    borderColor = "rgba(245, 158, 11, 0.85)";
+    textColor = "#b45309";
+    iconColor = "#f59e0b";
+    glowColor = "rgba(245, 158, 11, 0.35)";
+    labelY = y - 26;
+  } else if (isProgressiveVol) {
+    bgColor = "rgba(16, 185, 129, 0.25)";
+    borderColor = "rgba(16, 185, 129, 0.85)";
+    textColor = "#047857";
+    iconColor = "#10b981";
+    glowColor = "rgba(16, 185, 129, 0.35)";
+    labelY = y - 26;
+  } else {
+    bgColor = "rgba(6, 182, 212, 0.25)";
+    borderColor = "rgba(6, 182, 212, 0.85)";
+    textColor = "#0e7490";
+    iconColor = "#06b6d4";
+    glowColor = "rgba(6, 182, 212, 0.35)";
+    labelY = y + 14;
   }
 
-  if (markerPoints.length === 0) return null;
+  const pillW = 84;
+  const pillH = 16;
+  const pillRx = 4;
 
-  // Render markers — enhanced visibility
   return (
-    <g className="pulse-volume-markers">
-      {markerPoints.map(({ x, y, marker }, idx) => {
-        const isPulse = marker.type === "pulse";
-        // Pulse: orange/amber theme, Volume surge: cyan/teal theme
-        const bgColor = isPulse ? "rgba(245, 158, 11, 0.25)" : "rgba(6, 182, 212, 0.25)";
-        const borderColor = isPulse ? "#f59e0b" : "#06b6d4";
-        const textColor = isPulse ? "#b45309" : "#0e7490";
-        const iconColor = isPulse ? "#f59e0b" : "#06b6d4";
-        const glowColor = isPulse ? "rgba(245, 158, 11, 0.35)" : "rgba(6, 182, 212, 0.35)";
-
-        // Position: above the price point for pulse, below for volume surge
-        const labelY = isPulse ? y - 28 : y + 16;
-
-        return (
-          <g key={`pv-${marker.type}-${idx}`}>
-            {/* Glow ring behind marker dot */}
-            <circle
-              cx={x} cy={y} r={10}
-              fill={glowColor} stroke="none"
-            />
-            {/* Connecting line from marker to price point */}
-            <line
-              x1={x} y1={y} x2={x} y2={labelY}
-              stroke={borderColor} strokeWidth={1.2} strokeDasharray="3 2"
-              opacity={0.8}
-            />
-            {/* Marker dot on price line */}
-            <circle
-              cx={x} cy={y} r={5.5}
-              fill={bgColor} stroke={borderColor} strokeWidth={1.8}
-            />
-            {/* Icon inside dot */}
-            <text
-              x={x} y={y + 1}
-              textAnchor="middle" dominantBaseline="middle"
-              fontSize={6.5} fill={iconColor}
-              fontWeight={700}
-            >
-              {isPulse ? "⚡" : "▲"}
-            </text>
-            {/* Label background pill */}
-            <rect
-              x={x - 40} y={isPulse ? labelY - 11 : labelY - 3}
-              width={80} height={16}
-              rx={4} ry={4}
-              fill={bgColor} stroke={borderColor} strokeWidth={0.8}
-            />
-            {/* Label text */}
-            <text
-              x={x} y={isPulse ? labelY - 3 : labelY + 5}
-              textAnchor="middle" dominantBaseline="middle"
-              fontSize={9} fontWeight={700} fill={textColor}
-            >
-              {marker.label}
-            </text>
-          </g>
-        );
-      })}
+    <g key={`pv-${marker.type}-${idx}`}>
+      {/* Connecting line from marker to price point */}
+      <line
+        x1={x} y1={y} x2={x} y2={labelY}
+        stroke={borderColor} strokeWidth={1} strokeDasharray="3 2"
+      />
+      {/* Marker dot on price line — larger & bolder */}
+      <circle
+        cx={x} cy={y} r={6}
+        fill={bgColor} stroke={iconColor} strokeWidth={2}
+      />
+      {/* Pulsing glow ring around dot */}
+      <circle
+        cx={x} cy={y} r={9}
+        fill="none" stroke={glowColor} strokeWidth={1.5}
+        strokeDasharray="2 2" opacity={0.7}
+      />
+      {/* Icon inside dot */}
+      <text
+        x={x} y={y + 1}
+        textAnchor="middle" dominantBaseline="middle"
+        fontSize={7} fill={iconColor} fontWeight="bold"
+      >
+        {isPulse ? "⚡" : isProgressiveVol ? "📈" : "▲"}
+      </text>
+      {/* White glow behind label pill for readability */}
+      <rect
+        x={x - pillW / 2 - 1.5} y={(isPulse || isProgressiveVol ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
+        width={pillW + 3} height={pillH + 3}
+        rx={pillRx + 1} ry={pillRx + 1}
+        fill="white" fillOpacity={0.85}
+      />
+      {/* Label background pill */}
+      <rect
+        x={x - pillW / 2} y={isPulse || isProgressiveVol ? labelY - pillH / 2 - 2 : labelY - 2}
+        width={pillW} height={pillH}
+        rx={pillRx} ry={pillRx}
+        fill={bgColor} stroke={borderColor} strokeWidth={1}
+      />
+      {/* Label text — larger & bolder */}
+      <text
+        x={x} y={isPulse || isProgressiveVol ? labelY + 1 : labelY + 7}
+        textAnchor="middle" dominantBaseline="middle"
+        fontSize={9} fontWeight={700} fill={textColor}
+      >
+        {marker.label}
+      </text>
     </g>
   );
 }
 
-// ── Timeline Signal Renderer (custom SVG on chart) ────
-// v6: Strong=label+triangle, Medium=amber dot+badge, Weak=gray dot only
+// ── Standalone PulseVolumeRenderer (kept for backward compat, uses shared extract+render) ──
 
-function TimelineSignalRenderer(props: any) {
+function PulseVolumeRenderer(props: any) {
   const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+
+  const xAxis = Object.values(xAxisMap)[0] as any;
+  const yAxis = Object.values(yAxisMap)[0] as any;
+  if (!xAxis || !yAxis) return null;
+
+  const markerPoints = extractPulseVolumePoints(formattedGraphicalItems);
+  if (markerPoints.length === 0) return null;
+
+  return (
+    <g className="pulse-volume-markers">
+      {markerPoints.map(({ x, y, marker }, idx) => renderPulseVolumeMarker(x, y, marker, idx))}
+    </g>
+  );
+}
+
+// ── Timeline Signal Rendering Logic (pure function, stateless) ────
+// v6: Strong=label+triangle, Medium=amber dot+badge, Weak=gray dot only
+// Extracted as a pure function so the combined overlay can control layer order.
+
+function computeTimelineSignalElements(
+  formattedGraphicalItems: any[],
+  xAxisMap: any,
+  yAxisMap: any,
+  expandedIds: Set<string>,
+  toggleExpand: (id: string) => void,
+): { signalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null {
   if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
 
   const xAxis = Object.values(xAxisMap)[0] as any;
@@ -278,7 +317,6 @@ function TimelineSignalRenderer(props: any) {
   if (priceLineData.length === 0) return null;
 
   // ── Step 1: Collect all signal points ──
-  // 显示规则: 强信号=三角+标签, 中等=彩色圆点, 弱=灰色小圆点
   const allSignals: { x: number; y: number; signal: TSignal; index: number }[] = [];
   priceLineData.forEach((point: any, i: number) => {
     const signal = point?.payload?.tSignal as TSignal | undefined | null;
@@ -289,33 +327,11 @@ function TimelineSignalRenderer(props: any) {
   if (allSignals.length === 0) return null;
 
   // ── Step 2: Smart merge - same direction (buy/sell), wider distance ──
-  // 弱信号不参与合并，始终独立显示为灰色小圆点，避免被中/强信号"升级"
   const MERGE_DISTANCE_X = 30;
   const strengthOrder: Record<string, number> = { strong: 3, medium: 2, weak: 1 };
   const merged: MergedSignal[] = [];
   const used = new Set<number>();
 
-  // 弱信号直接独立入队，不参与合并
-  for (let i = 0; i < allSignals.length; i++) {
-    if (allSignals[i].signal.strength === "weak") {
-      used.add(i);
-      merged.push({
-        id: `sig-${allSignals[i].index}-${allSignals[i].signal.type === "buy" ? "up" : "down"}`,
-        x: allSignals[i].x,
-        y: allSignals[i].y,
-        type: allSignals[i].signal.type,
-        reasons: [allSignals[i].signal.reason],
-        strength: "weak",
-        count: 1,
-        originalIndex: allSignals[i].index,
-        direction: allSignals[i].signal.type === "buy" ? "up" : "down",
-        isCustom: allSignals[i].signal.description?.startsWith("自定义因子[") || false,
-        customReasons: new Set(),
-      });
-    }
-  }
-
-  // 中/强信号参与合并
   for (let i = 0; i < allSignals.length; i++) {
     if (used.has(i)) continue;
     const s = allSignals[i];
@@ -338,11 +354,17 @@ function TimelineSignalRenderer(props: any) {
     let bestStrength: Strength = "weak";
     let bestIdx = 0;
     let hasCustomFactor = false;
+    let overriddenStrengthCap: Strength | null = null;
     const uniqueReasons = new Set<string>();
     const customReasonSet = new Set<string>();
     for (let k = 0; k < group.length; k++) {
       const g = group[k];
       uniqueReasons.add(g.signal.reason);
+      if (g.signal.strengthOverridden) {
+        if (overriddenStrengthCap === null || strengthOrder[g.signal.strength] < strengthOrder[overriddenStrengthCap]) {
+          overriddenStrengthCap = g.signal.strength;
+        }
+      }
       if (strengthOrder[g.signal.strength] > strengthOrder[bestStrength]) {
         bestStrength = g.signal.strength;
         bestIdx = k;
@@ -350,6 +372,16 @@ function TimelineSignalRenderer(props: any) {
       if (g.signal.description?.startsWith("自定义因子[")) {
         hasCustomFactor = true;
         customReasonSet.add(g.signal.reason);
+      }
+    }
+
+    if (overriddenStrengthCap !== null && strengthOrder[overriddenStrengthCap] < strengthOrder[bestStrength]) {
+      bestStrength = overriddenStrengthCap;
+      for (let k = 0; k < group.length; k++) {
+        if (group[k].signal.strength === overriddenStrengthCap) {
+          bestIdx = k;
+          break;
+        }
       }
     }
 
@@ -367,20 +399,12 @@ function TimelineSignalRenderer(props: any) {
       direction,
       isCustom: hasCustomFactor,
       customReasons: customReasonSet,
+      hasOverriddenStrength: overriddenStrengthCap !== null,
     });
   }
 
-  // 按x坐标排序，保证渲染顺序正确
-  merged.sort((a, b) => a.x - b.x);
-
   // ── Step 3: Only strong signals get text labels ──
   const labelRects: { x: number; y: number; width: number; height: number }[] = [];
-
-  // Helper: detect if a signal comes from a user-created custom factor
-  const isCustomFactor = (sig: TSignal): boolean => {
-    if (!sig.description) return false;
-    return sig.description.startsWith("自定义因子[");
-  };
 
   function overlapsAny(rect: { x: number; y: number; width: number; height: number }, rects: typeof labelRects): boolean {
     for (const r of rects) {
@@ -402,7 +426,6 @@ function TimelineSignalRenderer(props: any) {
   const labelPlans: LabelPlan[] = [];
   const assignedLabels = new Map<number, LabelPlan>();
 
-  // Process strong signals first (priority for label placement)
   const strongIndices = merged
     .map((_, i) => i)
     .filter((i) => merged[i].strength === "strong")
@@ -412,7 +435,6 @@ function TimelineSignalRenderer(props: any) {
     const m = merged[idx];
     const isBuy = m.direction === "up";
 
-    // Build compact label text
     let labelText: string;
     const fmtCustom = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
     if (m.count >= 3) {
@@ -424,7 +446,6 @@ function TimelineSignalRenderer(props: any) {
       labelText = fmtCustom(m.reasons[0]);
     }
 
-    // Estimate text width
     const labelFontSize = 8;
     let textWidth = 0;
     for (const ch of labelText) {
@@ -462,7 +483,6 @@ function TimelineSignalRenderer(props: any) {
       }
     }
 
-    // Try shorter label if still not placed
     if (!placed) {
       const sfmt = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
       const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
@@ -484,41 +504,21 @@ function TimelineSignalRenderer(props: any) {
     assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed });
   }
 
-  // Medium and weak signals: dot only, no labels
   for (let i = 0; i < merged.length; i++) {
     if (assignedLabels.has(i)) continue;
     assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false });
   }
 
-  // Build final label plans in original order
   for (let i = 0; i < merged.length; i++) {
     labelPlans.push(assignedLabels.get(i)!);
   }
 
   // ── Step 4: Render ──
-  // Color schemes by strength:
-  //   strong: direction color (red=buy, green=sell, amber=stoploss) — triangle + label
-  //   medium: amber/orange tones — dot + count badge
-  //   weak: gray — dot only
-
-  // Helper: toggle expand state for a badge
-  const toggleExpand = (id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  // Helper: render expandable count badge (shared by strong & medium)
-  // Returns { badgeSvg, bubbleSvg } — badgeSvg is the circle, bubbleSvg is the expanded popup (rendered on top layer)
   const renderCountBadge = (m: MergedSignal, badgeCx: number, badgeCy: number, badgeColor: string, badgeTextColor: string): { badgeSvg: React.ReactNode; bubbleSvg: React.ReactNode } => {
     if (m.count <= 1) return { badgeSvg: null, bubbleSvg: null };
     const isExpanded = expandedIds.has(m.id);
     const badgeR = 6;
 
-    // Collapsed badge
     const badgeSvg = (
       <g style={{ cursor: "pointer" }} onClick={() => toggleExpand(m.id)}>
         <circle cx={badgeCx} cy={badgeCy} r={badgeR} fill={badgeColor} stroke="white" strokeWidth={0.6} />
@@ -528,7 +528,6 @@ function TimelineSignalRenderer(props: any) {
       </g>
     );
 
-    // Expanded bubble — rendered separately on top layer
     if (!isExpanded) return { badgeSvg, bubbleSvg: null };
 
     const lineHeight = 12;
@@ -541,18 +540,15 @@ function TimelineSignalRenderer(props: any) {
       for (const ch of line) w += ch.charCodeAt(0) > 127 ? fontSize : fontSize * 0.55;
       return w;
     }));
-    const bubbleW = maxTextWidth + padX * 2 + 6; // +6 for bullet
+    const bubbleW = maxTextWidth + padX * 2 + 6;
     const bubbleH = lines.length * lineHeight + padY * 2;
     const bubbleX = badgeCx + badgeR + 4;
     const bubbleY = badgeCy - bubbleH / 2;
 
     const bubbleSvg = (
       <g key={`bubble-${m.id}`} style={{ cursor: "pointer" }} onClick={() => toggleExpand(m.id)}>
-        {/* Connector line */}
         <line x1={badgeCx + badgeR} y1={badgeCy} x2={bubbleX} y2={badgeCy} stroke={badgeColor} strokeWidth={0.5} strokeDasharray="2 1" opacity={0.5} />
-        {/* Bubble background */}
         <rect x={bubbleX} y={bubbleY} width={bubbleW} height={bubbleH} rx={4} fill="white" fillOpacity={0.97} stroke={badgeColor} strokeWidth={0.8} />
-        {/* Reason lines */}
         {lines.map((reason, ri) => (
           <text
             key={ri}
@@ -573,9 +569,6 @@ function TimelineSignalRenderer(props: any) {
     return { badgeSvg, bubbleSvg };
   };
 
-  // ── Step 4: Render ──
-  // Split into two layers: signal markers (bottom) and expanded bubbles (top)
-  // This ensures expanded bubbles are never obscured by subsequent signal elements
   const bubbleElements: React.ReactNode[] = [];
 
   const signalElements = labelPlans.map((plan, i) => {
@@ -583,26 +576,23 @@ function TimelineSignalRenderer(props: any) {
     const isBuy = m.direction === "up";
     const isStoploss = m.type === "stoploss";
 
-    // ── Strength-based color scheme ──
-    // Custom factors use purple/violet theme to distinguish from built-in signals
     let markerColor: string;
     let labelBgColor: string;
     let badgeColor: string;
     let badgeTextColor: string;
 
     if (m.isCustom) {
-      // Custom factor: purple/violet theme regardless of strength
       if (m.strength === "strong") {
-        markerColor = isBuy ? "#8b5cf6" : "#a78bfa";     // violet-500 / violet-400
-        labelBgColor = isBuy ? "#5b21b6" : "#6d28d9";    // violet-800 / violet-700
+        markerColor = isBuy ? "#8b5cf6" : "#a78bfa";
+        labelBgColor = isBuy ? "#5b21b6" : "#6d28d9";
         badgeColor = markerColor;
         badgeTextColor = "white";
       } else if (m.strength === "medium") {
-        markerColor = "#c084fc";                          // violet-400
+        markerColor = "#c084fc";
         badgeColor = markerColor;
         badgeTextColor = "white";
       } else {
-        markerColor = "#a78bfa";                          // violet-400 lighter
+        markerColor = "#a78bfa";
         badgeColor = "#a78bfa";
         badgeTextColor = "white";
       }
@@ -621,7 +611,6 @@ function TimelineSignalRenderer(props: any) {
       badgeTextColor = "white";
     }
 
-    // ── Render by strength level ──
     if (m.strength === "strong") {
       const markerSize = 6;
       const badgeCx = m.x + markerSize + 4;
@@ -630,7 +619,6 @@ function TimelineSignalRenderer(props: any) {
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
       return (
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
-          {/* Triangle marker */}
           {isStoploss ? (
             <polygon
               points={`${m.x},${m.y - markerSize} ${m.x + markerSize},${m.y} ${m.x},${m.y + markerSize} ${m.x - markerSize},${m.y}`}
@@ -653,11 +641,7 @@ function TimelineSignalRenderer(props: any) {
               strokeWidth={0.8}
             />
           )}
-
-          {/* Expandable count badge (collapsed only) */}
           {badgeSvg}
-
-          {/* Text label */}
           {plan.showLabel && plan.labelRect && (
             <>
               <line
@@ -726,7 +710,6 @@ function TimelineSignalRenderer(props: any) {
             stroke="white"
             strokeWidth={0.7}
           />
-          {/* Direction indicator: tiny arrow inside dot */}
           {isBuy ? (
             <polygon
               points={`${m.x},${m.y - 2.5} ${m.x - 2},${m.y + 1} ${m.x + 2},${m.y + 1}`}
@@ -740,12 +723,10 @@ function TimelineSignalRenderer(props: any) {
               fillOpacity={0.9}
             />
           )}
-          {/* Expandable count badge (collapsed only) */}
           {badgeSvg}
         </g>
       );
     } else {
-      // Weak: small gray dot, no badge, no label
       const dotRadius = 4;
       return (
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
@@ -763,12 +744,76 @@ function TimelineSignalRenderer(props: any) {
     }
   });
 
+  return { signalElements, bubbleElements };
+}
+
+// ── Combined Chart Overlay Renderer ──────────────────────
+// Ensures proper layer order:
+//   Layer 1 (bottom): 分时因子 signal markers & labels
+//   Layer 2 (middle): 选股标记 pulse/volume markers (ON TOP of factor signals)
+//   Layer 3 (top):    Expanded bubbles (interactive, must be on top for usability)
+
+function CombinedChartOverlay(props: any) {
+  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Compute signal elements (factor signals)
+  const signalResult = computeTimelineSignalElements(
+    formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand
+  );
+
+  // Compute PV marker points (screener markers)
+  const pvPoints = extractPulseVolumePoints(formattedGraphicalItems);
+
+  if (!signalResult && pvPoints.length === 0) return null;
+
   return (
     <g>
-      {/* Layer 1: All signal markers and labels */}
-      {signalElements}
-      {/* Layer 2: Expanded bubbles on top of everything */}
-      {bubbleElements}
+      {/* Layer 1 (bottom): 分时因子 signal markers & labels */}
+      {signalResult?.signalElements}
+      {/* Layer 2 (middle): 选股标记 pulse/volume markers — ON TOP of factor signals */}
+      {pvPoints.length > 0 && (
+        <g className="pulse-volume-markers">
+          {pvPoints.map(({ x, y, marker }, idx) => renderPulseVolumeMarker(x, y, marker, idx))}
+        </g>
+      )}
+      {/* Layer 3 (top): Expanded bubbles — interactive, must be on top for usability */}
+      {signalResult?.bubbleElements}
+    </g>
+  );
+}
+
+// ── Legacy TimelineSignalRenderer (kept for backward compat, delegates to computeTimelineSignalElements) ──
+
+function TimelineSignalRenderer(props: any) {
+  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const result = computeTimelineSignalElements(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand);
+  if (!result) return null;
+
+  return (
+    <g>
+      {result.signalElements}
+      {result.bubbleElements}
     </g>
   );
 }
@@ -1013,20 +1058,16 @@ export function MiniTimelinePanel({
       <div className="flex items-center px-2 text-[7px] text-muted-foreground select-none pointer-events-none">
         <span className="font-medium">VOL</span>
       </div>
-      <ResponsiveContainer width="100%" height={46}>
-        <ComposedChart data={chartData} margin={{ top: 0, right: 45, left: 2, bottom: 12 }}>
+      <ResponsiveContainer width="100%" height={32}>
+        <ComposedChart data={chartData} margin={{ top: 0, right: 45, left: 2, bottom: 0 }}>
           <XAxis dataKey="idx" type="number" domain={[0, chartData.length - 1]} tick={false} tickLine={false} axisLine={false} />
           <YAxis yAxisId="vol" domain={[0, maxVolume * 1.1]} tick={false} tickLine={false} axisLine={false} width={42} />
           <YAxis yAxisId="vol-r" orientation="right" domain={[0, maxVolume * 1.1]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => formatVolume(v)} />
           <Bar yAxisId="vol-r" dataKey="volume" isAnimationActive={false} barSize={barSize}
             shape={(props: any) => {
               const { x, y, width, height, payload } = props;
-              if (!payload?.hasData || !payload?.price) return null;
-              const isUp = payload.volUp as boolean;
-              const priceColor = isUp ? "#ef4444" : "#16a34a";
-              return (
-                <rect x={x} y={y} width={width} height={height} fill={priceColor} />
-              );
+              if (!payload?.hasData) return null;
+              return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
             }}
           />
         </ComposedChart>
@@ -1453,11 +1494,11 @@ export function TimeSharingPanel({
     if (mMax < 0) mMax = 0;
     const mPad = (mMax - mMin) * 0.05 || 0.05;
 
-    // Last item & last signal (skip weak signals for the info badge)
+    // Last item & last signal
     const li = data[data.length - 1];
     let ls: typeof signals[number] = null;
     for (let i = signals.length - 1; i >= 0; i--) {
-      if (signals[i] && signals[i]!.strength !== "weak") { ls = signals[i]; break; }
+      if (signals[i]) { ls = signals[i]; break; }
     }
 
     const brs = zd.length > 200 ? 2 : zd.length > 100 ? 3 : zd.length > 60 ? 4 : 5;
@@ -1647,10 +1688,7 @@ export function TimeSharingPanel({
               <span className={isUp ? "text-red-600" : "text-green-600"}>{crosshairItem.price?.toFixed(2)}</span>
               <span className={isUp ? "text-red-600" : "text-green-600"}>{isUp ? "+" : ""}{pct?.toFixed(2)}%</span>
               {crosshairItem.volume > 0 && (
-                <span className="flex flex-col leading-tight">
-                  <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
-                  <span className="text-yellow-600">额 {formatAShareAmount(crosshairItem.amount || 0)}</span>
-                </span>
+                <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
               )}
               {crosshairItem.dif != null && (
                 <span className="text-blue-600">DIF {crosshairItem.dif.toFixed(3)}</span>
@@ -1942,8 +1980,7 @@ export function TimeSharingPanel({
             {crosshairIdx != null && crosshairItem?.hasData && (
               <ReferenceLine yAxisId="price" x={crosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
             )}
-            <Customized component={TimelineSignalRenderer} />
-            <Customized component={PulseVolumeRenderer} />
+            <Customized component={CombinedChartOverlay} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

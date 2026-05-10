@@ -24,6 +24,23 @@ export async function GET() {
       return NextResponse.json({ factors: seededFactors, logic: seededLogic });
     }
 
+    // ── Auto-migration: ensure new default factors exist in DB ──
+    // If the DB was seeded before a new factor was added, we need to add it.
+    const existingFactorNames = new Set(factors.map(f => f.name));
+    const missingFactors = DEFAULT_FACTOR_SEEDS.filter(
+      seed => !existingFactorNames.has(seed.name)
+    );
+    if (missingFactors.length > 0) {
+      for (const factor of missingFactors) {
+        await db.strategyFactor.create({ data: factor });
+      }
+      // Re-fetch after migration
+      const allFactors = await db.strategyFactor.findMany({
+        orderBy: [{ category: "asc" }, { priority: "desc" }],
+      });
+      return NextResponse.json({ factors: allFactors, logic });
+    }
+
     return NextResponse.json({ factors, logic });
   } catch (error: any) {
     console.error("Strategy factors fetch error:", error);
@@ -105,6 +122,23 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+// ── Default factor seeds for auto-migration ────────────────
+// These factors are checked on every GET request and auto-created if missing.
+// This ensures new factors added in code updates appear in the DB automatically.
+
+const DEFAULT_FACTOR_SEEDS = [
+  // v3.3 new factors
+  { name: "价格偏离昨收", category: "SPREAD", signalType: "sell", description: "价格偏离昨收超过3%且开始回落，短期过度拉升后回归概率大", params: JSON.stringify({ priceDeviationSell: 3.0 }), enabled: true, priority: -1, strength: "weak", tMode: "正T", timeWindow: "sell_window" },
+  { name: "量比异常放大", category: "VOLUME_PATTERN", signalType: "sell", description: "当前成交量远超此前均量（量比>2）且价涨，警惕冲高回落", params: JSON.stringify({ volumeRatioThreshold: 2.0 }), enabled: true, priority: -2, strength: "weak", tMode: "正T", timeWindow: "sell_window" },
+  { name: "均价乖离回归", category: "VWAP", signalType: "buy", description: "价格之前在均线下方偏离较大，现在开始回归均线，买回信号", params: JSON.stringify({ avgPriceDeviationReturn: 1.5 }), enabled: true, priority: -3, strength: "medium", tMode: "正T", timeWindow: "buy_window" },
+  { name: "DIF顶背离", category: "DIVERGENCE", signalType: "sell", description: "顶背离：价格创新高但DIF未创新高，多头动能减弱，上涨动能衰竭，强烈的看跌信号。动能背离(Momentum Divergence)：价格与动能指标出现反向走势", params: JSON.stringify({ difDivergenceLookback: 20 }), enabled: true, priority: -4, strength: "medium", tMode: "正T", timeWindow: "sell_window" },
+  { name: "双底买回", category: "SUPPORT", signalType: "buy", description: "W底形态确认：回看周期内出现两个相近的低点，当前从第二个低点反弹", params: JSON.stringify({ doubleBottomTolerance: 0.5, doubleBottomLookback: 30 }), enabled: true, priority: -5, strength: "medium", tMode: "正T", timeWindow: "buy_window" },
+  { name: "尾盘急跌", category: "MOMENTUM", signalType: "buy", description: "14:00-14:25出现急跌（非尾盘最后5分钟），低吸机会", params: JSON.stringify({ lateDropThreshold: -0.5 }), enabled: true, priority: -6, strength: "medium", tMode: "反T", timeWindow: "buy_window" },
+  { name: "均价拐头", category: "VWAP", signalType: "sell", description: "MACD柱状线收敛：均价线从持续上升转为开始下降，趋势转折信号", params: JSON.stringify({ avgPriceTurnLookback: 5 }), enabled: true, priority: -7, strength: "medium", tMode: "正T", timeWindow: "sell_window" },
+  // v3.10 new factor
+  { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: JSON.stringify({ minProgressiveLen: 3, strongProgressiveLen: 6 }), enabled: true, priority: 8, strength: "medium", tMode: "反T", timeWindow: "buy_window" },
+];
+
 // ── 初始化默认数据 ──────────────────────────────────────
 
 async function seedDefaultData() {
@@ -134,6 +168,7 @@ async function seedDefaultData() {
     { name: "急跌反弹", category: "MOMENTUM", signalType: "buy", description: "前一根K线急跌后当前K线反弹，超跌反弹信号", params: JSON.stringify({ dipThreshold: -0.3, strongThreshold: -0.8 }), enabled: true, priority: 1, strength: "weak" },
     { name: "冲高回落", category: "MOMENTUM", signalType: "sell", description: "前一根K线冲高后当前K线回落，冲高回落信号", params: JSON.stringify({ surgeThreshold: 0.3, strongThreshold: 0.8 }), enabled: true, priority: 0, strength: "weak" },
     { name: "突破均价线", category: "VWAP", signalType: "buy", description: "价格从均线下方突破到均线上方，多方力量增强", params: JSON.stringify({}), enabled: true, priority: 0, strength: "medium" },
+    { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: JSON.stringify({ minProgressiveLen: 3, strongProgressiveLen: 6 }), enabled: true, priority: 8, strength: "medium" },
   ];
 
   for (const factor of defaultFactors) {

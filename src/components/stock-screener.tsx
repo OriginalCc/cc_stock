@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,11 +24,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Filter,
   RefreshCw,
   TrendingUp,
   Zap,
+  Activity,
   ArrowUpRight,
   ArrowDownRight,
   Search,
@@ -47,7 +50,17 @@ import {
   BookmarkPlus,
   Trash2,
   Check,
+  Settings,
+  Save,
+  Eye,
+  EyeOff,
+  Cpu,
+  Shield,
+  Star,
+  Clock,
 } from "lucide-react";
+
+import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoRefresh, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -74,8 +87,20 @@ interface ScreenerStock {
   pulseDetail: string;
   volumeSurgeScore: number;
   volumeSurgeDetail: string;
+  progressiveVolScore: number;
+  progressiveVolDetail: string;
   evaluation: string;
   evaluationDetail: string;
+  reliabilityScore: number;
+  reliabilityDetail: string;
+  volumeRatio: number;
+  compositeScore: number;
+  compositeDetail: string;
+  resonanceTags: string;
+  vwapPosition: string;
+  vwapPositionDetail: string;
+  capitalTrend: string;
+  capitalTrendDetail: string;
 }
 
 interface ScreenerResult {
@@ -90,29 +115,10 @@ interface ScreenerResult {
   cached?: boolean;
 }
 
-type SortField = "pulseScore" | "changePercent" | "marketCap" | "turnover" | "amplitude" | "mainNetInflow" | "volumeSurgeScore";
+type SortField = "compositeScore" | "pulseScore" | "changePercent" | "marketCap" | "turnover" | "amplitude" | "mainNetInflow" | "volumeSurgeScore" | "progressiveVolScore" | "reliabilityScore";
 type SortOrder = "asc" | "desc";
 
 // ── Helper Functions ───────────────────────────────────
-
-function formatMarketCap(val: number): string {
-  if (!val) return "--";
-  const yi = val / 1e8;
-  if (yi >= 10000) return (yi / 10000).toFixed(2) + "万亿";
-  if (yi >= 1) return yi.toFixed(2) + "亿";
-  const wan = val / 1e4;
-  if (wan >= 1) return wan.toFixed(2) + "万";
-  return val.toFixed(0);
-}
-
-function formatAmount(val: number): string {
-  if (!val) return "--";
-  const yi = val / 1e8;
-  if (yi >= 1) return yi.toFixed(2) + "亿";
-  const wan = val / 1e4;
-  if (wan >= 1) return wan.toFixed(2) + "万";
-  return val.toFixed(0);
-}
 
 function getPulseScoreColor(score: number): string {
   if (score >= 70) return "text-red-500";
@@ -160,52 +166,218 @@ function getVolumeSurgeScoreBg(score: number): string {
 }
 
 function getVolumeSurgeLabel(score: number): string {
-  if (score >= 70) return "强放量";
-  if (score >= 50) return "中放量";
-  if (score >= 30) return "弱放量";
-  if (score >= 20) return "轻微放量";
-  if (score >= 10) return "微弱放量";
-  return "无放量";
+  if (score >= 70) return "强放量拉升";
+  if (score >= 50) return "中放量拉升";
+  if (score >= 30) return "弱放量拉升";
+  if (score >= 20) return "轻微放量拉升";
+  if (score >= 10) return "微弱放量拉升";
+  return "无放量拉升";
 }
 
-function getEvaluationStyle(label: string): { color: string; bg: string; icon: string } {
+function getProgressiveVolScoreColor(score: number): string {
+  if (score >= 70) return "text-red-500";
+  if (score >= 50) return "text-orange-500";
+  if (score >= 30) return "text-yellow-500";
+  if (score >= 20) return "text-lime-500";
+  if (score >= 10) return "text-emerald-400";
+  return "text-gray-400";
+}
+
+function getProgressiveVolScoreBg(score: number): string {
+  if (score >= 70) return "bg-red-500/10 border-red-500/30";
+  if (score >= 50) return "bg-orange-500/10 border-orange-500/30";
+  if (score >= 30) return "bg-yellow-500/10 border-yellow-500/30";
+  if (score >= 20) return "bg-lime-500/10 border-lime-500/30";
+  if (score >= 10) return "bg-emerald-500/10 border-emerald-500/30";
+  return "bg-gray-500/10 border-gray-500/30";
+}
+
+function getProgressiveVolLabel(score: number): string {
+  if (score >= 70) return "强递增";
+  if (score >= 50) return "中递增";
+  if (score >= 30) return "弱递增";
+  if (score >= 20) return "轻微递增";
+  if (score >= 10) return "微弱递增";
+  return "无递增";
+}
+
+function getEvaluationStyle(label: string): { bg: string; text: string; icon: string } {
   switch (label) {
-    case "强势续涨":
-      return { color: "text-red-500", bg: "bg-red-500/10 border-red-500/30", icon: "🔥" };
-    case "温和看多":
-      return { color: "text-orange-500", bg: "bg-orange-500/10 border-orange-500/30", icon: "📈" };
-    case "震荡整理":
-      return { color: "text-yellow-500", bg: "bg-yellow-500/10 border-yellow-500/30", icon: "🔄" };
-    case "拉高出货":
-      return { color: "text-green-600", bg: "bg-green-500/10 border-green-500/30", icon: "⚠️" };
-    case "弱势回调":
-      return { color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/30", icon: "📉" };
-    case "观望等待":
-      return { color: "text-gray-400", bg: "bg-gray-500/10 border-gray-500/30", icon: "⏳" };
-    default:
-      return { color: "text-gray-400", bg: "bg-gray-500/10 border-gray-500/30", icon: "❓" };
+    case "强势续涨": return { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-300", icon: "🔥" };
+    case "温和看多": return { bg: "bg-orange-100 dark:bg-orange-900/30", text: "text-orange-700 dark:text-orange-300", icon: "📈" };
+    case "震荡整理": return { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-300", icon: "↔️" };
+    case "弱势回调": return { bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300", icon: "📉" };
+    case "拉高出货": return { bg: "bg-purple-100 dark:bg-purple-900/30", text: "text-purple-700 dark:text-purple-300", icon: "⚠️" };
+    case "观望等待": return { bg: "bg-gray-100 dark:bg-gray-900/30", text: "text-gray-700 dark:text-gray-300", icon: "⏳" };
+    default: return { bg: "bg-gray-50 dark:bg-gray-800", text: "text-gray-500", icon: "" };
+  }
+}
+
+function getReliabilityScoreColor(score: number): string {
+  if (score >= 70) return "text-emerald-500";
+  if (score >= 50) return "text-lime-500";
+  if (score >= 30) return "text-yellow-500";
+  if (score >= 15) return "text-orange-500";
+  return "text-gray-400";
+}
+
+function getReliabilityScoreBg(score: number): string {
+  if (score >= 70) return "bg-emerald-500/10 border-emerald-500/30";
+  if (score >= 50) return "bg-lime-500/10 border-lime-500/30";
+  if (score >= 30) return "bg-yellow-500/10 border-yellow-500/30";
+  if (score >= 15) return "bg-orange-500/10 border-orange-500/30";
+  return "bg-gray-500/10 border-gray-500/30";
+}
+
+function getReliabilityLabel(score: number): string {
+  if (score >= 70) return "高可靠";
+  if (score >= 50) return "较可靠";
+  if (score >= 30) return "中等";
+  if (score >= 15) return "一般";
+  return "低";
+}
+
+function getCompositeScoreColor(score: number): string {
+  if (score >= 80) return "text-red-500";
+  if (score >= 65) return "text-orange-500";
+  if (score >= 50) return "text-yellow-500";
+  if (score >= 35) return "text-lime-500";
+  if (score >= 20) return "text-emerald-400";
+  return "text-gray-400";
+}
+
+function getCompositeScoreBg(score: number): string {
+  if (score >= 80) return "bg-red-500/10 border-red-500/30";
+  if (score >= 65) return "bg-orange-500/10 border-orange-500/30";
+  if (score >= 50) return "bg-yellow-500/10 border-yellow-500/30";
+  if (score >= 35) return "bg-lime-500/10 border-lime-500/30";
+  if (score >= 20) return "bg-emerald-500/10 border-emerald-500/30";
+  return "bg-gray-500/10 border-gray-500/30";
+}
+
+function getCompositeLabel(score: number): string {
+  if (score >= 80) return "极佳";
+  if (score >= 65) return "优秀";
+  if (score >= 50) return "良好";
+  if (score >= 35) return "一般";
+  if (score >= 20) return "偏弱";
+  return "弱势";
+}
+
+function getVwapPositionLabel(pos: string): { text: string; color: string } {
+  switch (pos) {
+    case "above_vwap": return { text: "均线上方", color: "text-red-500" };
+    case "below_vwap": return { text: "均线下方", color: "text-green-500" };
+    case "near_vwap": return { text: "均线附近", color: "text-yellow-500" };
+    case "cross_up": return { text: "上穿均线", color: "text-red-500" };
+    case "cross_down": return { text: "下穿均线", color: "text-green-500" };
+    default: return { text: "--", color: "text-muted-foreground" };
+  }
+}
+
+function getCapitalTrendLabel(trend: string): { text: string; color: string; icon: string } {
+  switch (trend) {
+    case "strong_inflow": return { text: "大幅流入", color: "text-red-500", icon: "\uD83D\uDD25" };
+    case "moderate_inflow": return { text: "温和流入", color: "text-orange-500", icon: "\uD83D\uDCC8" };
+    case "neutral": return { text: "中性", color: "text-muted-foreground", icon: "\u27A1\uFE0F" };
+    case "outflow": return { text: "流出", color: "text-green-500", icon: "\uD83D\uDCC9" };
+    case "strong_outflow": return { text: "大幅流出", color: "text-green-600", icon: "\u26A0\uFE0F" };
+    default: return { text: "--", color: "text-muted-foreground", icon: "" };
   }
 }
 
 // ── Popular sectors for quick selection ────────────────
 
 const POPULAR_SECTORS = [
+  // ── 科技 ──
   { label: "通信", emoji: "📡" },
   { label: "半导体", emoji: "💎" },
   { label: "人工智能", emoji: "🤖" },
+  { label: "算力", emoji: "🖥️" },
+  { label: "软件", emoji: "💻" },
+  { label: "信创", emoji: "🔒" },
+  { label: "消费电子", emoji: "📱" },
+  { label: "机器人", emoji: "🦾" },
+  { label: "华为", emoji: "📲" },
+  { label: "鸿蒙", emoji: "🦋" },
+  { label: "游戏", emoji: "🎮" },
+  { label: "传媒", emoji: "🎬" },
+  { label: "云计算", emoji: "☁️" },
+  { label: "大数据", emoji: "📊" },
+  { label: "网络安全", emoji: "🔐" },
+  { label: "元宇宙", emoji: "🥽" },
+  { label: "物联网", emoji: "🔗" },
+  { label: "数字货币", emoji: "💰" },
+  // ── 新能源 ──
   { label: "新能源", emoji: "☀️" },
-  { label: "医药", emoji: "💊" },
-  { label: "军工", emoji: "🛡️" },
-  { label: "汽车", emoji: "🚗" },
-  { label: "消费", emoji: "🛒" },
-  { label: "银行", emoji: "🏦" },
-  { label: "证券", emoji: "📈" },
-  { label: "地产", emoji: "🏠" },
-  { label: "煤炭", emoji: "⛏️" },
-  { label: "钢铁", emoji: "🔩" },
-  { label: "电力", emoji: "⚡" },
   { label: "光伏", emoji: "🌞" },
   { label: "锂电池", emoji: "🔋" },
+  { label: "储能", emoji: "🔌" },
+  { label: "新能源车", emoji: "🚗" },
+  { label: "汽车", emoji: "🚘" },
+  { label: "充电桩", emoji: "⛽" },
+  { label: "风电", emoji: "🌬️" },
+  { label: "氢能源", emoji: "🧪" },
+  { label: "核能", emoji: "☢️" },
+  // ── 医药 ──
+  { label: "医药", emoji: "💊" },
+  { label: "中药", emoji: "🌿" },
+  { label: "创新药", emoji: "💉" },
+  { label: "医疗器械", emoji: "🏥" },
+  { label: "医美", emoji: "💆" },
+  { label: "CRO", emoji: "🔬" },
+  { label: "疫苗", emoji: "🦠" },
+  { label: "血制品", emoji: "🩸" },
+  // ── 金融 ──
+  { label: "银行", emoji: "🏦" },
+  { label: "证券", emoji: "📈" },
+  { label: "保险", emoji: "🛡️" },
+  { label: "多元金融", emoji: "🏛️" },
+  // ── 消费 ──
+  { label: "消费", emoji: "🛒" },
+  { label: "白酒", emoji: "🍶" },
+  { label: "食品", emoji: "🍜" },
+  { label: "家电", emoji: "📺" },
+  { label: "旅游", emoji: "✈️" },
+  { label: "零售", emoji: "🏪" },
+  { label: "纺织服装", emoji: "🧵" },
+  { label: "宠物", emoji: "🐾" },
+  { label: "预制菜", emoji: "🍱" },
+  // ── 周期/资源 ──
+  { label: "煤炭", emoji: "⛏️" },
+  { label: "钢铁", emoji: "🔩" },
+  { label: "有色", emoji: "🟡" },
+  { label: "稀土", emoji: "🧲" },
+  { label: "黄金", emoji: "🥇" },
+  { label: "石油", emoji: "🛢️" },
+  { label: "化工", emoji: "🧫" },
+  { label: "建材", emoji: "🧱" },
+  { label: "水泥", emoji: "🧱" },
+  // ── 制造 ──
+  { label: "军工", emoji: "🛡️" },
+  { label: "国防", emoji: "🎖️" },
+  { label: "航空", emoji: "🛩️" },
+  { label: "造船", emoji: "🚢" },
+  { label: "电力", emoji: "⚡" },
+  { label: "绿电", emoji: "🌱" },
+  { label: "机械", emoji: "⚙️" },
+  { label: "地产", emoji: "🏠" },
+  { label: "建筑", emoji: "🏗️" },
+  // ── 农业 ──
+  { label: "农业", emoji: "🌾" },
+  { label: "养殖", emoji: "🐷" },
+  { label: "种业", emoji: "🌱" },
+  { label: "化肥", emoji: "🧴" },
+  // ── 交通物流 ──
+  { label: "物流", emoji: "📦" },
+  { label: "港口", emoji: "⚓" },
+  { label: "高铁", emoji: "🚄" },
+  // ── 环保 ──
+  { label: "环保", emoji: "♻️" },
+  { label: "碳交易", emoji: "🌍" },
+  // ── 其他 ──
+  { label: "教育", emoji: "📚" },
+  { label: "跨境电商", emoji: "🌐" },
 ];
 
 // ── Custom Presets (localStorage) ─────────────────────────
@@ -262,6 +434,21 @@ interface ScreenerFilters {
   pulseTimeEnd: string;   // HH:mm format, e.g. "10:30"
   enableVolumeSurge: boolean;
   volumeSurgeThreshold: number;
+  enableProgressiveVol: boolean;
+  progressiveVolThreshold: number;
+  // ── Enhanced conditions ──
+  minTurnover: number;
+  maxTurnover: number;
+  minPE: number;
+  maxPE: number;
+  minVolumeRatio: number;
+  mainNetInflowRequired: boolean;
+  minAmplitude: number;
+  maxAmplitude: number;
+  enableMATrend: boolean;
+  maTrendType: string; // "above_ma5" | "above_ma10" | "above_ma20" | "bullish_alignment"
+  evaluationFilter: string[]; // 只显示特定评估标签
+  minCompositeScore: number;  // 最低综合评分
 }
 
 const DEFAULT_FILTERS: ScreenerFilters = {
@@ -275,6 +462,21 @@ const DEFAULT_FILTERS: ScreenerFilters = {
   pulseTimeEnd: "10:30",
   enableVolumeSurge: true,
   volumeSurgeThreshold: 10,
+  enableProgressiveVol: true,
+  progressiveVolThreshold: 10,
+  // Enhanced conditions
+  minTurnover: 0,
+  maxTurnover: 100,
+  minPE: 0,
+  maxPE: 500,
+  minVolumeRatio: 0,
+  mainNetInflowRequired: false,
+  minAmplitude: 0,
+  maxAmplitude: 20,
+  enableMATrend: false,
+  maTrendType: "above_ma5",
+  evaluationFilter: [],
+  minCompositeScore: 0,
 };
 
 // ── Component ──────────────────────────────────────────
@@ -287,7 +489,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   const [result, setResult] = useState<ScreenerResult | null>(clientCache?.result ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<SortField>("changePercent");
+  const [sortField, setSortField] = useState<SortField>("compositeScore");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [lastFetchTime, setLastFetchTime] = useState<string>(clientCache?.lastFetchTime ?? "");
   const [isFromCache, setIsFromCache] = useState(!!clientCache);
@@ -305,10 +507,54 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   const [showSavePreset, setShowSavePreset] = useState(false);
   const [deletingPresetId, setDeletingPresetId] = useState<string | null>(null);
 
+  // Strategy panel states
+  const [strategyExpanded, setStrategyExpanded] = useState(false);
+  const [strategyTab, setStrategyTab] = useState("overview");
+  const [strategyFactors, setStrategyFactors] = useState<any[]>([]);
+  const [strategyConfig, setStrategyConfig] = useState<Record<string, Record<string, number>>>({});
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const strategyFetchedRef = useRef(false);
+  const [editingParamKey, setEditingParamKey] = useState<string | null>(null);
+  const [editingParamValue, setEditingParamValue] = useState<string>("");
+
+  // Watchlist state
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+
+  // Auto-refresh state
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [pageVisible, setPageVisible] = useState(true);
+
+  // Stats expanded state
+  const [statsExpanded, setStatsExpanded] = useState(false);
+
   // Load custom presets from localStorage on mount
   useEffect(() => {
     setCustomPresets(loadCustomPresets());
   }, []);
+
+  // Load watchlist on mount
+  useEffect(() => {
+    setWatchlist(loadWatchlist());
+  }, []);
+
+  // Listen for watchlist changes from other components/tabs
+  useEffect(() => {
+    const handler = () => setWatchlist(loadWatchlist());
+    window.addEventListener("screener-watchlist-changed", handler);
+    return () => window.removeEventListener("screener-watchlist-changed", handler);
+  }, []);
+
+  // Track page visibility for auto-refresh
+  useEffect(() => {
+    const handleVisibility = () => setPageVisible(!document.hidden);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
+
+  // Auto-refresh during trading hours
+  useAutoRefresh(() => {
+    if (!loading) fetchScreenerData(false);
+  }, autoRefreshEnabled && pageVisible);
 
   // Close sector dropdown on outside click
   useEffect(() => {
@@ -336,9 +582,22 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
         pulseTimeStart: f.pulseTimeStart,
         pulseTimeEnd: f.pulseTimeEnd,
         volumeSurgeThreshold: String(f.volumeSurgeThreshold),
+        progressiveVolThreshold: String(f.progressiveVolThreshold),
+        // Enhanced conditions
+        minTurnover: String(f.minTurnover),
+        maxTurnover: String(f.maxTurnover),
+        minPE: String(f.minPE),
+        maxPE: String(f.maxPE),
+        minVolumeRatio: String(f.minVolumeRatio),
+        minAmplitude: String(f.minAmplitude),
+        maxAmplitude: String(f.maxAmplitude),
+        maTrendType: f.maTrendType,
       });
       if (!f.enablePulse) params.set("pulse", "false");
       if (!f.enableVolumeSurge) params.set("volumeSurge", "false");
+      if (!f.enableProgressiveVol) params.set("progressiveVol", "false");
+      if (f.mainNetInflowRequired) params.set("mainNetInflowRequired", "true");
+      if (f.enableMATrend) params.set("enableMATrend", "true");
       if (forceRefresh) params.set("refresh", "1");
       const res = await fetch(`/api/stock/screener?${params}`);
       const data: ScreenerResult = await res.json();
@@ -486,6 +745,81 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     return Math.max(0, Math.ceil((CLIENT_CACHE_TTL - elapsed) / 1000));
   }, [lastFetchTime, isFromCache]);
 
+  // ── Strategy Panel: fetch data on first expand ──
+  const fetchStrategyData = useCallback(async () => {
+    if (strategyFetchedRef.current) return;
+    setStrategyLoading(true);
+    try {
+      const [factorsRes, configRes] = await Promise.all([
+        fetch("/api/stock/strategy-factors"),
+        fetch("/api/stock/strategy-config"),
+      ]);
+      const factorsData = await factorsRes.json();
+      const configData = await configRes.json();
+      if (factorsData.factors) setStrategyFactors(factorsData.factors);
+      if (configData.configs) setStrategyConfig(configData.configs);
+      strategyFetchedRef.current = true;
+    } catch {
+      // silently fail
+    } finally {
+      setStrategyLoading(false);
+    }
+  }, []);
+
+  const handleStrategyExpand = () => {
+    const next = !strategyExpanded;
+    setStrategyExpanded(next);
+    if (next && !strategyFetchedRef.current) {
+      fetchStrategyData();
+    }
+  };
+
+  // Toggle factor enabled/disabled
+  const handleFactorToggle = async (factorId: string, enabled: boolean) => {
+    try {
+      await fetch("/api/stock/strategy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "factor", id: factorId, data: { enabled } }),
+      });
+      setStrategyFactors(prev => prev.map(f => f.id === factorId ? { ...f, enabled } : f));
+    } catch {
+      // silently fail
+    }
+  };
+
+  // Update factor field (strength, tMode, timeWindow)
+  const handleFactorFieldChange = async (factorId: string, field: string, value: string) => {
+    try {
+      await fetch("/api/stock/strategy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "factor", id: factorId, data: { [field]: value } }),
+      });
+      setStrategyFactors(prev => prev.map(f => f.id === factorId ? { ...f, [field]: value } : f));
+    } catch {
+      // silently fail
+    }
+  };
+
+  // Save strategy config param
+  const handleConfigSave = async (indicatorKey: string, paramKey: string, value: number) => {
+    try {
+      await fetch("/api/stock/strategy-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ indicatorKey, paramKey, value }),
+      });
+      setStrategyConfig(prev => ({
+        ...prev,
+        [indicatorKey]: { ...(prev[indicatorKey] || {}), [paramKey]: value },
+      }));
+    } catch {
+      // silently fail
+    }
+    setEditingParamKey(null);
+  };
+
   return (
     <div className="flex flex-col gap-4 h-full">
       {/* Header: Criteria Tags */}
@@ -508,6 +842,26 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                   更新于 {lastFetchTime}
                 </span>
               )}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={autoRefreshEnabled ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+                      className="h-7 text-xs gap-1 relative"
+                    >
+                      <Clock className="w-3 h-3" />
+                      {autoRefreshEnabled && isTradingHours() && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    {autoRefreshEnabled ? "自动刷新已开启（交易时段每分钟刷新）" : "自动刷新已关闭，点击开启"}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <Button
                 variant="outline"
                 size="sm"
@@ -548,16 +902,75 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               <AlertCircle className="w-3 h-3" />
               排除ST/创业板/科创板/北交
             </Badge>
-            {(filters.enablePulse || filters.enableVolumeSurge) && (
+            {(filters.enablePulse || filters.enableVolumeSurge || filters.enableProgressiveVol) && (
               <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300">
                 <Zap className="w-3 h-3" />
                 {filters.enablePulse && `脉冲≥${filters.pulseThreshold}`}
-                {filters.enablePulse && filters.enableVolumeSurge && " OR "}
-                {filters.enableVolumeSurge && `放量≥${filters.volumeSurgeThreshold}`}
+                {filters.enablePulse && (filters.enableVolumeSurge || filters.enableProgressiveVol) && " OR "}
+                {filters.enableVolumeSurge && `放量拉升≥${filters.volumeSurgeThreshold}`}
+                {filters.enableVolumeSurge && filters.enableProgressiveVol && " OR "}
+                {filters.enableProgressiveVol && `递增≥${filters.progressiveVolThreshold}`}
                 {" | "}{filters.pulseTimeStart}~{filters.pulseTimeEnd}
               </Badge>
             )}
+            {filters.minTurnover > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-teal-500/5 border-teal-500/20 text-teal-700 dark:text-teal-300">
+                换手{filters.minTurnover}~{filters.maxTurnover}%
+              </Badge>
+            )}
+            {filters.minVolumeRatio > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-teal-500/5 border-teal-500/20 text-teal-700 dark:text-teal-300">
+                量比≥{filters.minVolumeRatio}
+              </Badge>
+            )}
+            {filters.mainNetInflowRequired && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-red-500/5 border-red-500/20 text-red-700 dark:text-red-300">
+                主力净流入
+              </Badge>
+            )}
+            {filters.enableMATrend && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                <Cpu className="w-3 h-3" />
+                {filters.maTrendType === "above_ma5" ? "站上MA5" : filters.maTrendType === "above_ma10" ? "站上MA10" : filters.maTrendType === "above_ma20" ? "站上MA20" : "多头排列"}
+              </Badge>
+            )}
+            {filters.evaluationFilter.length > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-orange-500/5 border-orange-500/20 text-orange-700 dark:text-orange-300">
+                评估: {filters.evaluationFilter.join("/")}
+              </Badge>
+            )}
+            {filters.minCompositeScore > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-rose-500/5 border-rose-500/20 text-rose-700 dark:text-rose-300">
+                <Target className="w-3 h-3" />
+                综合≥{filters.minCompositeScore}
+              </Badge>
+            )}
           </div>
+
+          {/* Watchlist/Favorites Section */}
+          {watchlist.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Star className="w-3 h-3 text-yellow-500" />
+                自选
+              </span>
+              {watchlist.map((item) => (
+                <button
+                  key={item.symbol}
+                  onClick={() => onSelectStock?.(item.symbol)}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md border border-yellow-500/20 bg-yellow-500/5 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-500/10 transition-colors"
+                >
+                  <Star className="w-2.5 h-2.5 fill-yellow-500 text-yellow-500" />
+                  {item.name}
+                  {item.changePercent !== undefined && (
+                    <span className={item.changePercent >= 0 ? "text-red-500" : "text-green-500"}>
+                      {item.changePercent >= 0 ? "+" : ""}{item.changePercent.toFixed(2)}%
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Expand/Collapse Filter Panel */}
           <button
@@ -712,8 +1125,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                 </div>
               </div>
 
-              {/* Row 3: Pulse & Volume surge detection */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Row 3: Pulse, Volume surge & Progressive volume detection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
@@ -785,15 +1198,54 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           step={5}
                         />
                         <span className="text-xs text-muted-foreground">
-                          最低放量评分 (0-100)
+                          最低放量拉升评分 (0-100)
                         </span>
                       </div>
                     </>
                   )}
                 </div>
 
-                {/* Shared time range for both detections */}
-                {(filters.enablePulse || filters.enableVolumeSurge) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                      <Activity className="w-3 h-3" />
+                      递增放量检测
+                    </Label>
+                    <Switch
+                      checked={filters.enableProgressiveVol}
+                      onCheckedChange={(v) => handleFilterChange("enableProgressiveVol", v)}
+                    />
+                  </div>
+                  {filters.enableProgressiveVol && (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Slider
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={[filters.progressiveVolThreshold]}
+                          onValueChange={([v]) => handleFilterChange("progressiveVolThreshold", v)}
+                          className="flex-1"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={filters.progressiveVolThreshold}
+                          onChange={(e) => handleFilterChange("progressiveVolThreshold", parseInt(e.target.value) || 10)}
+                          className="h-7 text-xs w-20"
+                          step={5}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          最低递增评分 (0-100)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Shared time range for all detections */}
+                {(filters.enablePulse || filters.enableVolumeSurge || filters.enableProgressiveVol) && (
                   <div className="space-y-2">
                     <Label className="text-xs font-medium text-muted-foreground">检测时段</Label>
                     <div className="flex items-center gap-2">
@@ -872,10 +1324,277 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-1">
-                      脉冲/放量共享此时段，关系为 <span className="text-amber-500 font-medium">OR</span>（满足其一即可）
+                      脉冲/放量拉升共享此时段，关系为 <span className="text-amber-500 font-medium">OR</span>（满足其一即可）
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Composite Score filter */}
+              <div className="space-y-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                    <Target className="w-3 h-3" />
+                    最低综合评分
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Slider
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={[filters.minCompositeScore]}
+                      onValueChange={([v]) => handleFilterChange("minCompositeScore", v)}
+                      className="flex-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={filters.minCompositeScore}
+                      onChange={(e) => handleFilterChange("minCompositeScore", parseInt(e.target.value) || 0)}
+                      className="h-7 text-xs w-20"
+                      step={5}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      最低综合评分 (0-100)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <button onClick={() => handleFilterChange("minCompositeScore", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minCompositeScore === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                    <button onClick={() => handleFilterChange("minCompositeScore", 30)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minCompositeScore === 30 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥30</button>
+                    <button onClick={() => handleFilterChange("minCompositeScore", 50)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minCompositeScore === 50 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥50</button>
+                    <button onClick={() => handleFilterChange("minCompositeScore", 65)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minCompositeScore === 65 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥65</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Row 4: Enhanced Screening Conditions ── */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="text-xs font-medium text-muted-foreground">增强筛选条件</span>
+                  <span className="text-[10px] text-muted-foreground/60">（条件越多，选股越可靠）</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Turnover range */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      换手率 ({filters.minTurnover}% ~ {filters.maxTurnover}%)
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.minTurnover}
+                        onChange={(e) => handleFilterChange("minTurnover", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-16"
+                        step={0.5}
+                        min={0}
+                      />
+                      <span className="text-xs text-muted-foreground">~</span>
+                      <Input
+                        type="number"
+                        value={filters.maxTurnover}
+                        onChange={(e) => handleFilterChange("maxTurnover", parseFloat(e.target.value) || 100)}
+                        className="h-7 text-xs w-16"
+                        step={0.5}
+                        min={0}
+                      />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => { handleFilterChange("minTurnover", 0); handleFilterChange("maxTurnover", 100); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minTurnover === 0 && filters.maxTurnover === 100 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => { handleFilterChange("minTurnover", 1); handleFilterChange("maxTurnover", 100); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minTurnover === 1 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥1%</button>
+                      <button onClick={() => { handleFilterChange("minTurnover", 2); handleFilterChange("maxTurnover", 15); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minTurnover === 2 && filters.maxTurnover === 15 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>适中2-15%</button>
+                      <button onClick={() => { handleFilterChange("minTurnover", 3); handleFilterChange("maxTurnover", 8); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minTurnover === 3 && filters.maxTurnover === 8 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>最优3-8%</button>
+                    </div>
+                  </div>
+
+                  {/* PE range */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      市盈率PE ({filters.minPE} ~ {filters.maxPE})
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.minPE}
+                        onChange={(e) => handleFilterChange("minPE", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-16"
+                        step={5}
+                        min={0}
+                      />
+                      <span className="text-xs text-muted-foreground">~</span>
+                      <Input
+                        type="number"
+                        value={filters.maxPE}
+                        onChange={(e) => handleFilterChange("maxPE", parseFloat(e.target.value) || 500)}
+                        className="h-7 text-xs w-16"
+                        step={5}
+                        min={0}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => { handleFilterChange("minPE", 0); handleFilterChange("maxPE", 500); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minPE === 0 && filters.maxPE === 500 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => { handleFilterChange("minPE", 0); handleFilterChange("maxPE", 30); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxPE === 30 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≤30</button>
+                      <button onClick={() => { handleFilterChange("minPE", 0); handleFilterChange("maxPE", 60); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxPE === 60 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≤60</button>
+                      <button onClick={() => { handleFilterChange("minPE", 10); handleFilterChange("maxPE", 40); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minPE === 10 && filters.maxPE === 40 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>10-40</button>
+                    </div>
+                  </div>
+
+                  {/* Volume ratio & Main net inflow */}
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        量比下限 ({filters.minVolumeRatio})
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={filters.minVolumeRatio}
+                          onChange={(e) => handleFilterChange("minVolumeRatio", parseFloat(e.target.value) || 0)}
+                          className="h-7 text-xs w-16"
+                          step={0.5}
+                          min={0}
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          <button onClick={() => handleFilterChange("minVolumeRatio", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minVolumeRatio === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                          <button onClick={() => handleFilterChange("minVolumeRatio", 1)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minVolumeRatio === 1 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥1</button>
+                          <button onClick={() => handleFilterChange("minVolumeRatio", 1.5)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minVolumeRatio === 1.5 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥1.5</button>
+                          <button onClick={() => handleFilterChange("minVolumeRatio", 2)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minVolumeRatio === 2 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥2</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Shield className="w-3 h-3" />
+                        要求主力净流入
+                      </Label>
+                      <Switch
+                        checked={filters.mainNetInflowRequired}
+                        onCheckedChange={(v) => handleFilterChange("mainNetInflowRequired", v)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Amplitude & MA Trend */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Amplitude range */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      振幅范围 ({filters.minAmplitude}% ~ {filters.maxAmplitude}%)
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.minAmplitude}
+                        onChange={(e) => handleFilterChange("minAmplitude", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-16"
+                        step={0.5}
+                        min={0}
+                      />
+                      <span className="text-xs text-muted-foreground">~</span>
+                      <Input
+                        type="number"
+                        value={filters.maxAmplitude}
+                        onChange={(e) => handleFilterChange("maxAmplitude", parseFloat(e.target.value) || 20)}
+                        className="h-7 text-xs w-16"
+                        step={0.5}
+                        min={0}
+                      />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => { handleFilterChange("minAmplitude", 0); handleFilterChange("maxAmplitude", 20); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minAmplitude === 0 && filters.maxAmplitude === 20 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => { handleFilterChange("minAmplitude", 2); handleFilterChange("maxAmplitude", 20); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minAmplitude === 2 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥2%</button>
+                      <button onClick={() => { handleFilterChange("minAmplitude", 3); handleFilterChange("maxAmplitude", 8); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minAmplitude === 3 && filters.maxAmplitude === 8 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>适中3-8%</button>
+                    </div>
+                  </div>
+
+                  {/* MA Trend */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Cpu className="w-3 h-3" />
+                        均线趋势检测
+                      </Label>
+                      <Switch
+                        checked={filters.enableMATrend}
+                        onCheckedChange={(v) => handleFilterChange("enableMATrend", v)}
+                      />
+                    </div>
+                    {filters.enableMATrend && (
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          { value: "above_ma5", label: "站上MA5" },
+                          { value: "above_ma10", label: "站上MA10" },
+                          { value: "above_ma20", label: "站上MA20" },
+                          { value: "bullish_alignment", label: "多头排列" },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => handleFilterChange("maTrendType", opt.value)}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                              filters.maTrendType === opt.value
+                                ? "bg-primary/10 border-primary/30 text-primary"
+                                : "bg-background border-border hover:bg-muted"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {filters.enableMATrend && (
+                      <div className="text-[10px] text-amber-500 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        启用均线检测会增加请求耗时
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Evaluation label filter */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">评估标签筛选</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { label: "强势续涨", icon: "🔥" },
+                        { label: "温和看多", icon: "📈" },
+                        { label: "震荡整理", icon: "↔️" },
+                        { label: "弱势回调", icon: "📉" },
+                      ].map((opt) => {
+                        const isSelected = filters.evaluationFilter.includes(opt.label);
+                        return (
+                          <button
+                            key={opt.label}
+                            onClick={() => {
+                              const newFilter = isSelected
+                                ? filters.evaluationFilter.filter((l: string) => l !== opt.label)
+                                : [...filters.evaluationFilter, opt.label];
+                              handleFilterChange("evaluationFilter", newFilter);
+                            }}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                              isSelected
+                                ? "bg-primary/10 border-primary/30 text-primary"
+                                : "bg-background border-border hover:bg-muted"
+                            }`}
+                          >
+                            {opt.icon} {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {filters.evaluationFilter.length > 0 && (
+                      <button
+                        onClick={() => handleFilterChange("evaluationFilter", [])}
+                        className="text-[10px] text-muted-foreground hover:text-foreground"
+                      >
+                        清除筛选
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
                 {/* Quick presets & Custom presets */}
@@ -894,11 +1613,51 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                             : "bg-background border-border hover:bg-muted"
                         }`}
                       >
-                        默认(脉冲+放量)
+                        默认(脉冲+放量拉升)
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "半导体", minChange: -5, maxChange: 10, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10 };
+                          const f: ScreenerFilters = { sector: "通信", minChange: -5, maxChange: 10, maxMarketCap: 200, pulseThreshold: 30, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 30, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 2, maxTurnover: 15, minPE: 0, maxPE: 60, minVolumeRatio: 1.5, mainNetInflowRequired: true, minAmplitude: 2, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0 };
+                          setFilters(f);
+                          setSectorInput("通信");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        🔥 激进策略
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f: ScreenerFilters = { sector: "通信", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 2, maxTurnover: 8, minPE: 5, maxPE: 40, minVolumeRatio: 1, mainNetInflowRequired: true, minAmplitude: 1, maxAmplitude: 10, enableMATrend: true, maTrendType: "above_ma10", evaluationFilter: ["强势续涨", "温和看多"], minCompositeScore: 30 };
+                          setFilters(f);
+                          setSectorInput("通信");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        🛡️ 稳健策略
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f: ScreenerFilters = { sector: "通信", minChange: 0, maxChange: 10, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 1, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 1, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: true, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0 };
+                          setFilters(f);
+                          setSectorInput("通信");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        📊 均线策略
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f: ScreenerFilters = { sector: "通信", minChange: -3, maxChange: 3, maxMarketCap: 500, pulseThreshold: 10, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 8, minPE: 0, maxPE: 40, minVolumeRatio: 0.5, mainNetInflowRequired: true, minAmplitude: 0, maxAmplitude: 6, enableMATrend: true, maTrendType: "above_ma20", evaluationFilter: ["温和看多", "震荡整理"], minCompositeScore: 0 };
+                          setFilters(f);
+                          setSectorInput("通信");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        🎯 低吸策略
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f: ScreenerFilters = { sector: "半导体", minChange: -5, maxChange: 10, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 0, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0 };
                           setFilters(f);
                           setSectorInput("半导体");
                         }}
@@ -908,33 +1667,13 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f = { sector: "人工智能", minChange: -5, maxChange: 10, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10 };
+                          const f: ScreenerFilters = { sector: "人工智能", minChange: -5, maxChange: 10, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 0, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0 };
                           setFilters(f);
                           setSectorInput("人工智能");
                         }}
                         className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
                       >
                         🤖 AI大市值
-                      </button>
-                      <button
-                        onClick={() => {
-                          const f = { sector: "新能源", minChange: -5, maxChange: 10, maxMarketCap: 300, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10 };
-                          setFilters(f);
-                          setSectorInput("新能源");
-                        }}
-                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
-                      >
-                        ☀️ 新能源波动
-                      </button>
-                      <button
-                        onClick={() => {
-                          const f = { sector: "医药", minChange: -5, maxChange: 10, maxMarketCap: 500, pulseThreshold: 10, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: false, volumeSurgeThreshold: 10 };
-                          setFilters(f);
-                          setSectorInput("医药");
-                        }}
-                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
-                      >
-                        💊 医药纯筛选
                       </button>
                     </div>
                   </div>
@@ -1063,14 +1802,178 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
 
           {/* Stats */}
           {result && (
-            <div className="flex items-center gap-4 text-xs text-muted-foreground mt-3">
-              <span>板块: <strong className="text-foreground">{result.sectorName}</strong></span>
-              <span>板块总数: <strong className="text-foreground">{result.totalCount}</strong></span>
-              <span>筛选结果: <strong className="text-emerald-500">{result.filteredCount}</strong>只</span>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>板块: <strong className="text-foreground">{result.sectorName}</strong></span>
+                <span>板块总数: <strong className="text-foreground">{result.totalCount}</strong></span>
+                <span>筛选结果: <strong className="text-emerald-500">{result.filteredCount}</strong>只</span>
+                {result.filteredCount > 0 && (
+                  <button
+                    onClick={() => setStatsExpanded(!statsExpanded)}
+                    className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors ml-auto"
+                  >
+                    <BarChart3 className="w-3 h-3" />
+                    {statsExpanded ? "收起统计" : "展开统计"}
+                    {statsExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                )}
+              </div>
+
+              {/* Collapsible Statistics Section */}
+              {statsExpanded && result.filteredCount > 0 && (() => {
+                const pulseStats = computeScreenerStats(result.stocks.map(s => s.pulseScore));
+                const progVolStats = computeScreenerStats(result.stocks.map(s => s.progressiveVolScore));
+                const evalCounts: Record<string, number> = {};
+                const evalLabels = ["强势续涨", "温和看多", "震荡整理", "弱势回调", "拉高出货", "观望等待"];
+                result.stocks.forEach(s => {
+                  if (s.evaluation) {
+                    evalCounts[s.evaluation] = (evalCounts[s.evaluation] || 0) + 1;
+                  }
+                });
+                const maxPulseCount = Math.max(...pulseStats.distribution.map(d => d.count), 1);
+                const maxProgVolCount = Math.max(...progVolStats.distribution.map(d => d.count), 1);
+
+                return (
+                  <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-3">
+                    {/* Pulse Score Distribution */}
+                    <div>
+                      <div className="text-[10px] font-medium text-muted-foreground mb-1.5">脉冲评分分布 (均值:{pulseStats.avg} 中位数:{pulseStats.median})</div>
+                      <div className="flex items-end gap-0.5 h-8">
+                        {pulseStats.distribution.map((d, i) => (
+                          <div key={d.range} className="flex-1 flex flex-col items-center gap-0.5">
+                            <div
+                              className="w-full rounded-t-sm transition-all"
+                              style={{
+                                height: `${Math.max((d.count / maxPulseCount) * 100, 2)}%`,
+                                backgroundColor: i >= 7 ? "rgb(239 68 68 / 0.6)" : i >= 5 ? "rgb(249 115 22 / 0.5)" : i >= 3 ? "rgb(234 179 8 / 0.4)" : "rgb(156 163 175 / 0.3)",
+                              }}
+                              title={`${d.range}: ${d.count}只 (${d.percent}%)`}
+                            />
+                            <span className="text-[7px] text-muted-foreground leading-none">{d.range.split('-')[0]}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Progressive Volume Score Distribution */}
+                    <div>
+                      <div className="text-[10px] font-medium text-muted-foreground mb-1.5">递增放量评分分布 (均值:{progVolStats.avg} 中位数:{progVolStats.median})</div>
+                      <div className="flex items-end gap-0.5 h-8">
+                        {progVolStats.distribution.map((d, i) => (
+                          <div key={d.range} className="flex-1 flex flex-col items-center gap-0.5">
+                            <div
+                              className="w-full rounded-t-sm transition-all"
+                              style={{
+                                height: `${Math.max((d.count / maxProgVolCount) * 100, 2)}%`,
+                                backgroundColor: i >= 7 ? "rgb(168 85 247 / 0.6)" : i >= 5 ? "rgb(249 115 22 / 0.5)" : i >= 3 ? "rgb(234 179 8 / 0.4)" : "rgb(156 163 175 / 0.3)",
+                              }}
+                              title={`${d.range}: ${d.count}只 (${d.percent}%)`}
+                            />
+                            <span className="text-[7px] text-muted-foreground leading-none">{d.range.split('-')[0]}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Evaluation Distribution */}
+                    <div>
+                      <div className="text-[10px] font-medium text-muted-foreground mb-1.5">评估分布</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {evalLabels.map((label) => {
+                          const count = evalCounts[label] || 0;
+                          const style = getEvaluationStyle(label);
+                          return (
+                            <span key={label} className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>
+                              {style.icon} {label}
+                              <strong className="font-mono">{count}</strong>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Smart Recommendation Summary */}
+      {result && result.filteredCount > 0 && (() => {
+        const top3 = sortedStocks.slice(0, 3);
+        const avgComp = sortedStocks.reduce((s, st) => s + (st.compositeScore || 0), 0) / sortedStocks.length;
+        const resonanceCount = sortedStocks.filter(s => s.resonanceTags && s.resonanceTags.length > 0).length;
+        const inflowCount = sortedStocks.filter(s => s.capitalTrend === "strong_inflow" || s.capitalTrend === "moderate_inflow").length;
+        const aboveVwapCount = sortedStocks.filter(s => s.vwapPosition === "above_vwap" || s.vwapPosition === "cross_up").length;
+        return (
+          <Card className="border-border/50 shadow-sm">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Target className="w-4 h-4 text-rose-500" />
+                <span className="text-sm font-semibold">智能推荐</span>
+                <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-700 dark:text-rose-300">
+                  TOP {Math.min(3, top3.length)}
+                </Badge>
+              </div>
+              {/* Top picks */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                {top3.map((stock, idx) => {
+                  const compColor = getCompositeScoreColor(stock.compositeScore);
+                  const compBg = getCompositeScoreBg(stock.compositeScore);
+                  const isUp = stock.changePercent >= 0;
+                  const changeColor = isUp ? "text-red-500" : "text-green-500";
+                  return (
+                    <button
+                      key={stock.symbol}
+                      onClick={() => onSelectStock?.(stock.symbol)}
+                      className="p-2.5 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/40 transition-colors text-left"
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-base">{idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"}</span>
+                          <span className="text-sm font-bold">{stock.name}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">{stock.symbol}</span>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] py-0 px-1.5 font-mono ${compBg} ${compColor} border`}>
+                          {stock.compositeScore}分
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className={`font-mono font-medium ${changeColor}`}>
+                          {isUp ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                        </span>
+                        {stock.resonanceTags && (
+                          <span className="text-[10px] text-rose-500 font-medium">🎯{stock.resonanceTags}</span>
+                        )}
+                        {stock.vwapPosition && stock.vwapPosition !== "no_data" && (
+                          <span className={`text-[10px] ${getVwapPositionLabel(stock.vwapPosition).color}`}>
+                            📏{getVwapPositionLabel(stock.vwapPosition).text}
+                          </span>
+                        )}
+                      </div>
+                      {stock.evaluation && stock.evaluation !== "待评估" && (
+                        <div className="mt-1">
+                          <Badge variant="outline" className={`${getEvaluationStyle(stock.evaluation).bg} ${getEvaluationStyle(stock.evaluation).text} text-[10px] py-0 px-1`}>
+                            {getEvaluationStyle(stock.evaluation).icon} {stock.evaluation}
+                          </Badge>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Quick stats */}
+              <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
+                <span>平均综合评分 <strong className="text-foreground">{avgComp.toFixed(0)}</strong></span>
+                <span>共振标的 <strong className="text-rose-500">{resonanceCount}</strong>只</span>
+                <span>资金流入 <strong className="text-red-500">{inflowCount}</strong>只</span>
+                <span>均线上方 <strong className="text-emerald-500">{aboveVwapCount}</strong>只</span>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Results Table */}
       <Card className="border-border/50 shadow-sm flex-1 flex flex-col min-h-0">
@@ -1124,8 +2027,24 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-[60px] text-xs font-medium">代码</TableHead>
+                    <TableHead className="w-[90px] text-xs font-medium">代码</TableHead>
                     <TableHead className="w-[80px] text-xs font-medium">名称</TableHead>
+                    <TableHead
+                      className="w-[75px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
+                      onClick={() => handleSort("compositeScore")}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        综合评分 <SortIcon field="compositeScore" />
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      className="w-[70px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
+                      onClick={() => handleSort("reliabilityScore")}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        可靠度 <SortIcon field="reliabilityScore" />
+                      </div>
+                    </TableHead>
                     <TableHead
                       className="w-[70px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
                       onClick={() => handleSort("pulseScore")}
@@ -1139,7 +2058,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       onClick={() => handleSort("volumeSurgeScore")}
                     >
                       <div className="flex items-center gap-0.5">
-                        放量 <SortIcon field="volumeSurgeScore" />
+                        放量拉升 <SortIcon field="volumeSurgeScore" />
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      className="w-[70px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
+                      onClick={() => handleSort("progressiveVolScore")}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        递增 <SortIcon field="progressiveVolScore" />
                       </div>
                     </TableHead>
                     <TableHead className="w-[65px] text-xs font-medium">最新价</TableHead>
@@ -1151,24 +2078,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         涨跌幅 <SortIcon field="changePercent" />
                       </div>
                     </TableHead>
-                    <TableHead className="w-[60px] text-xs font-medium">开盘</TableHead>
-                    <TableHead className="w-[70px] text-xs font-medium">振幅%</TableHead>
                     <TableHead
-                      className="w-[75px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
-                      onClick={() => handleSort("marketCap")}
-                    >
-                      <div className="flex items-center gap-0.5">
-                        总市值 <SortIcon field="marketCap" />
-                      </div>
-                    </TableHead>
-                    <TableHead
-                      className="w-[60px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
+                      className="w-[55px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
                       onClick={() => handleSort("turnover")}
                     >
                       <div className="flex items-center gap-0.5">
                         换手% <SortIcon field="turnover" />
                       </div>
                     </TableHead>
+                    <TableHead className="w-[50px] text-xs font-medium">量比</TableHead>
                     <TableHead
                       className="w-[75px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
                       onClick={() => handleSort("mainNetInflow")}
@@ -1178,30 +2096,71 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </div>
                     </TableHead>
                     <TableHead className="w-[60px] text-xs font-medium">PE</TableHead>
-                    <TableHead className="text-xs font-medium min-w-[100px]">股票评估</TableHead>
+                    <TableHead className="text-center text-xs">评估</TableHead>
                     <TableHead className="text-xs font-medium min-w-[120px]">信号详情</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedStocks.map((stock) => {
+                  {(() => {
+                    // Apply client-side evaluation filter and composite score filter
+                    const displayStocks = (filters.evaluationFilter.length > 0
+                      ? sortedStocks.filter(s => filters.evaluationFilter.includes(s.evaluation))
+                      : sortedStocks
+                    ).filter(s => s.compositeScore >= filters.minCompositeScore);
+                    return displayStocks;
+                  })().map((stock, idx) => {
                     const isUp = stock.changePercent >= 0;
                     const changeColor = isUp ? "text-red-500" : "text-green-500";
+                    const compColor = getCompositeScoreColor(stock.compositeScore);
+                    const compBg = getCompositeScoreBg(stock.compositeScore);
+                    const compLabel = getCompositeLabel(stock.compositeScore);
                     const pulseColor = getPulseScoreColor(stock.pulseScore);
                     const pulseBg = getPulseScoreBg(stock.pulseScore);
                     const pulseLabel = getPulseLabel(stock.pulseScore);
                     const volSurgeColor = getVolumeSurgeScoreColor(stock.volumeSurgeScore);
                     const volSurgeBg = getVolumeSurgeScoreBg(stock.volumeSurgeScore);
                     const volSurgeLabel = getVolumeSurgeLabel(stock.volumeSurgeScore);
+                    const progVolColor = getProgressiveVolScoreColor(stock.progressiveVolScore);
+                    const progVolBg = getProgressiveVolScoreBg(stock.progressiveVolScore);
+                    const progVolLabel = getProgressiveVolLabel(stock.progressiveVolScore);
                     const mainFlowColor = stock.mainNetInflow >= 0 ? "text-red-500" : "text-green-500";
+                    const relColor = getReliabilityScoreColor(stock.reliabilityScore);
+                    const relBg = getReliabilityScoreBg(stock.reliabilityScore);
+                    const relLabel = getReliabilityLabel(stock.reliabilityScore);
+                    const inWatchlist = watchlist.some(w => w.symbol === stock.symbol);
+                    const rankBadge = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : null;
 
                     return (
                       <TableRow
                         key={stock.symbol}
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        className={`cursor-pointer hover:bg-muted/50 transition-colors ${idx % 2 === 0 ? "bg-background" : "bg-muted/20"}`}
                         onClick={() => onSelectStock?.(stock.symbol)}
                       >
                         <TableCell className="text-xs font-mono py-2">
-                          {stock.symbol}
+                          <div className="flex items-center gap-1">
+                            {rankBadge && <span className="text-xs">{rankBadge}</span>}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (inWatchlist) {
+                                  const updated = removeFromWatchlist(stock.symbol);
+                                  setWatchlist(updated);
+                                } else {
+                                  const updated = addToWatchlist(stock.symbol, stock.name, "智能选股", stock.price, stock.changePercent);
+                                  setWatchlist(updated);
+                                }
+                              }}
+                              className="focus:outline-none flex-shrink-0"
+                              title={inWatchlist ? "移出自选" : "加入自选"}
+                            >
+                              {inWatchlist ? (
+                                <Star className="w-3.5 h-3.5 fill-yellow-500 text-yellow-500" />
+                              ) : (
+                                <Star className="w-3.5 h-3.5 text-muted-foreground/40 hover:text-yellow-500 transition-colors" />
+                              )}
+                            </button>
+                            <span>{stock.symbol}</span>
+                          </div>
                         </TableCell>
                         <TableCell className="text-xs font-medium py-2 max-w-[80px] truncate">
                           <TooltipProvider>
@@ -1211,6 +2170,52 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                               </TooltipTrigger>
                               <TooltipContent side="top" className="text-xs">
                                 {stock.name} ({stock.exchange})
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center gap-1 cursor-help">
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-xs py-0 px-1.5 font-mono ${compBg} ${compColor} border`}
+                                  >
+                                    {stock.compositeScore}
+                                  </Badge>
+                                  <span className={`text-[10px] ${compColor}`}>
+                                    {compLabel}
+                                  </span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-xs text-xs">
+                                <div>综合评分: {stock.compositeScore}/100</div>
+                                {stock.compositeDetail && <div className="text-muted-foreground">{stock.compositeDetail}</div>}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center gap-1 cursor-help">
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-xs py-0 px-1.5 font-mono ${relBg} ${relColor} border`}
+                                  >
+                                    {stock.reliabilityScore}
+                                  </Badge>
+                                  <span className={`text-[10px] ${relColor}`}>
+                                    {relLabel}
+                                  </span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-xs text-xs">
+                                <div>可靠度: {stock.reliabilityScore}/100</div>
+                                <div className="text-muted-foreground">{stock.reliabilityDetail || "综合评分"}</div>
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
@@ -1241,6 +2246,19 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                             </span>
                           </div>
                         </TableCell>
+                        <TableCell className="py-2">
+                          <div className="flex items-center gap-1">
+                            <Badge
+                              variant="outline"
+                              className={`text-xs py-0 px-1.5 font-mono ${progVolBg} ${progVolColor} border`}
+                            >
+                              {stock.progressiveVolScore}
+                            </Badge>
+                            <span className={`text-[10px] ${progVolColor}`}>
+                              {progVolLabel}
+                            </span>
+                          </div>
+                        </TableCell>
                         <TableCell className={`text-xs font-mono py-2 ${changeColor}`}>
                           {stock.price.toFixed(2)}
                         </TableCell>
@@ -1255,16 +2273,10 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           </div>
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2">
-                          {stock.open.toFixed(2)}
-                        </TableCell>
-                        <TableCell className="text-xs font-mono py-2">
-                          {stock.amplitude.toFixed(2)}
-                        </TableCell>
-                        <TableCell className="text-xs font-mono py-2">
-                          {formatMarketCap(stock.marketCap)}
-                        </TableCell>
-                        <TableCell className="text-xs font-mono py-2">
                           {stock.turnover.toFixed(2)}
+                        </TableCell>
+                        <TableCell className={`text-xs font-mono py-2 ${stock.volumeRatio >= 1.5 ? "text-amber-500" : stock.volumeRatio >= 1 ? "text-foreground" : "text-muted-foreground"}`}>
+                          {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(2) : "--"}
                         </TableCell>
                         <TableCell className={`text-xs font-mono py-2 ${mainFlowColor}`}>
                           {stock.mainNetInflow >= 0 ? "+" : ""}
@@ -1273,47 +2285,50 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         <TableCell className="text-xs font-mono py-2 text-muted-foreground">
                           {stock.pe > 0 ? stock.pe.toFixed(1) : "--"}
                         </TableCell>
-                        <TableCell className="text-xs py-2">
-                          {(() => {
-                            const evStyle = getEvaluationStyle(stock.evaluation || "观望等待");
-                            return (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1 cursor-default">
-                                      <Badge
-                                        variant="outline"
-                                        className={`text-xs py-0 px-1.5 font-medium ${evStyle.bg} ${evStyle.color} border`}
-                                      >
-                                        {evStyle.icon} {stock.evaluation || "待评估"}
-                                      </Badge>
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" className="text-xs max-w-[280px]">
-                                    <div className="font-medium mb-1">{evStyle.icon} {stock.evaluation}</div>
-                                    {stock.evaluationDetail && (
-                                      <div className="text-muted-foreground">{stock.evaluationDetail}</div>
-                                    )}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            );
-                          })()}
+                        <TableCell className="text-center">
+                          {stock.evaluation && stock.evaluation !== "待评估" ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="outline" className={`${getEvaluationStyle(stock.evaluation).bg} ${getEvaluationStyle(stock.evaluation).text} text-xs cursor-help`}>
+                                    {getEvaluationStyle(stock.evaluation).icon} {stock.evaluation}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs text-xs">
+                                  {stock.evaluationDetail}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
                         </TableCell>
-                        <TableCell className="text-xs py-2 text-muted-foreground max-w-[160px] truncate">
+                        <TableCell className="text-xs py-2 text-muted-foreground max-w-[200px] truncate">
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span className="truncate block">
+                                  {stock.resonanceTags && <span className="text-rose-500 font-medium">🎯{stock.resonanceTags} </span>}
+                                  {stock.compositeScore > 0 && <span className="text-emerald-500">🛡{stock.compositeDetail}</span>}
+                                  {stock.compositeScore > 0 && (stock.pulseScore > 0 || stock.volumeSurgeScore > 0 || stock.progressiveVolScore > 0) && " | "}
                                   {stock.pulseScore > 0 && <span className="text-amber-500">⚡{stock.pulseDetail}</span>}
-                                  {stock.pulseScore > 0 && stock.volumeSurgeScore > 0 && " | "}
+                                  {stock.pulseScore > 0 && (stock.volumeSurgeScore > 0 || stock.progressiveVolScore > 0) && " | "}
                                   {stock.volumeSurgeScore > 0 && <span className="text-blue-500">📊{stock.volumeSurgeDetail}</span>}
-                                  {stock.pulseScore === 0 && stock.volumeSurgeScore === 0 && "无信号"}
+                                  {stock.volumeSurgeScore > 0 && stock.progressiveVolScore > 0 && " | "}
+                                  {stock.progressiveVolScore > 0 && <span className="text-purple-500">📈{stock.progressiveVolDetail}</span>}
+                                  {stock.vwapPosition && stock.vwapPosition !== "no_data" && <span className="text-teal-500"> 📏{getVwapPositionLabel(stock.vwapPosition).text}</span>}
+                                  {stock.capitalTrend && stock.capitalTrend !== "neutral" && <span className={getCapitalTrendLabel(stock.capitalTrend).color}> {getCapitalTrendLabel(stock.capitalTrend).icon}{getCapitalTrendLabel(stock.capitalTrend).text}</span>}
+                                  {stock.compositeScore === 0 && stock.pulseScore === 0 && stock.volumeSurgeScore === 0 && stock.progressiveVolScore === 0 && "无信号"}
                                 </span>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs max-w-[300px]">
+                              <TooltipContent side="top" className="text-xs max-w-[350px]">
+                                {stock.resonanceTags && <div className="text-rose-500 font-medium">🎯 共振: {stock.resonanceTags}</div>}
+                                {stock.compositeScore > 0 && <div>🛡 综合: {stock.compositeDetail}</div>}
                                 {stock.pulseScore > 0 && <div>⚡ 脉冲: {stock.pulseDetail}</div>}
-                                {stock.volumeSurgeScore > 0 && <div>📊 放量: {stock.volumeSurgeDetail}</div>}
+                                {stock.volumeSurgeScore > 0 && <div>📊 放量拉升: {stock.volumeSurgeDetail}</div>}
+                                {stock.progressiveVolScore > 0 && <div>📈 递增: {stock.progressiveVolDetail}</div>}
+                                {stock.vwapPosition && stock.vwapPosition !== "no_data" && <div>📏 均价线: {stock.vwapPositionDetail}</div>}
+                                {stock.capitalTrend && stock.capitalTrend !== "neutral" && <div>💰 资金: {stock.capitalTrendDetail}</div>}
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
@@ -1327,91 +2342,559 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
           )}
         </CardContent>
       </Card>
-      {/* ── 早盘脉冲/放量续涨特征归纳 ── */}
+
+      {/* ── Strategy Panel ── */}
       <Card className="border-border/50 shadow-sm">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Zap className="w-4 h-4 text-amber-500" />
-            早盘脉冲/放量后续续涨股票特征
-          </CardTitle>
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={handleStrategyExpand}
+          >
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Settings className="w-4 h-4 text-emerald-500" />
+              选股策略面板
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                v3.0
+              </Badge>
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {strategyLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />}
+              {strategyExpanded ? (
+                <ChevronUp className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              )}
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="pt-0 space-y-4">
-          {/* 核心特征 */}
-          <div className="space-y-2.5">
-            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-              <span className="inline-block w-5 h-5 rounded-full bg-red-500/10 text-red-500 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-              量价配合：放量不回落
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
-              早盘脉冲后，股价能在均价线上方横盘或缓步攀升，成交量从脉冲峰值逐步回落但不萎缩至均量以下。说明主力资金<strong className="text-foreground">持续驻留</strong>而非拉高出货。若脉冲后迅速跌回均价线以下，则为典型的<strong className="text-red-500">脉冲出货</strong>。
-            </p>
-          </div>
+        {strategyExpanded && (
+          <CardContent className="pt-0">
+            <Tabs value={strategyTab} onValueChange={setStrategyTab}>
+              <TabsList className="w-full h-8 p-0.5 mb-3">
+                <TabsTrigger value="overview" className="text-xs h-7 flex-1">选股总纲</TabsTrigger>
+                <TabsTrigger value="scoring" className="text-xs h-7 flex-1">评分权重</TabsTrigger>
+                <TabsTrigger value="factors" className="text-xs h-7 flex-1">DB因子库</TabsTrigger>
+                <TabsTrigger value="evaluation" className="text-xs h-7 flex-1">评估模型</TabsTrigger>
+                <TabsTrigger value="params" className="text-xs h-7 flex-1">指标参数</TabsTrigger>
+              </TabsList>
 
-          <div className="space-y-2.5">
-            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-              <span className="inline-block w-5 h-5 rounded-full bg-orange-500/10 text-orange-500 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
-              换手率适中：2%~8%为佳
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
-              换手率过低(&lt;1%)说明脉冲为盘中散户行为，缺乏主力参与；换手率过高(&gt;10%)则可能是主力对倒或游资短炒，<strong className="text-foreground">次日低开概率大</strong>。2%~8%的换手率区间最有可能是有实力的机构在有序建仓或加仓。
-            </p>
-          </div>
+              {/* ── Tab 1: Overview ── */}
+              {strategyTab === "overview" && (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-lg border border-border bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Zap className="h-4 w-4 text-emerald-500" />
+                      <span className="text-sm font-bold">策略名称: 智能选股策略 v3.0</span>
+                    </div>
+                    <div className="text-xs text-foreground/80">
+                      基于板块热点的智能选股系统，结合脉冲拉升检测、放量拉升识别、多维度增强筛选与综合可靠度评分模型，从板块成分股中筛选最具短线爆发潜力且可靠性最高的标的。
+                    </div>
+                  </div>
 
-          <div className="space-y-2.5">
-            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-              <span className="inline-block w-5 h-5 rounded-full bg-amber-500/10 text-amber-500 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
-              主力净流入为正
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
-              脉冲/放量的同一时段，主力资金净流入为正是最关键的验证指标。净流入越大，后续续涨概率越高。若脉冲伴随<strong className="text-red-500">主力净流出</strong>，大概率是拉高出货，应果断回避。
-            </p>
-          </div>
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                      <Shield className="w-3 h-3" />
+                      核心理念
+                    </div>
+                    <div className="text-xs text-foreground/80 p-3 rounded-lg bg-muted/30 border border-border/50">
+                      以板块为切入点筛选股票，通过脉冲评分识别短期资金异动，通过放量拉升评分确认量能配合与价格拉升，再通过增强筛选条件（换手率、PE、量比、主力净流入、振幅、均线趋势）层层过滤，最终通过8维可靠度评分模型综合判断选股质量，输出高可靠性的候选标的。
+                    </div>
+                  </div>
 
-          <div className="space-y-2.5">
-            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-              <span className="inline-block w-5 h-5 rounded-full bg-yellow-500/10 text-yellow-500 text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
-              市值规模：30亿~200亿最佳
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
-              小市值(&lt;30亿)脉冲多为游资短炒，波动大但持续性差；大市值(&gt;200亿)脉冲需要巨量资金，通常只有机构合力才能推动，持续性更好但涨幅有限。<strong className="text-foreground">30~200亿市值</strong>是机构与游资重合区，既有爆发力又有持续性。
-            </p>
-          </div>
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">选股标准</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                        <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 mb-1">必选条件</div>
+                        <ul className="text-[10px] text-foreground/70 space-y-0.5">
+                          <li>- 主板标的（排除ST/创业板/科创板/北交）</li>
+                          <li>- 指定板块成分股</li>
+                          <li>- 涨跌幅在设定范围内</li>
+                          <li>- 总市值不超过上限</li>
+                          <li>- 脉冲/放量拉升检测(OR关系)</li>
+                        </ul>
+                      </div>
+                      <div className="p-2.5 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20">
+                        <div className="text-[10px] font-bold text-red-700 dark:text-red-300 mb-1">排除规则</div>
+                        <ul className="text-[10px] text-foreground/70 space-y-0.5">
+                          <li>- ST/*ST/退市风险股</li>
+                          <li>- 创业板(300/301)</li>
+                          <li>- 科创板(688)</li>
+                          <li>- 北交所(8/4开头)</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
 
-          <div className="space-y-2.5">
-            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-              <span className="inline-block w-5 h-5 rounded-full bg-lime-500/10 text-lime-500 text-[10px] font-bold flex items-center justify-center shrink-0">5</span>
-              板块联动：同板块多股共振
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
-              若同一板块内多只股票在早盘同时出现脉冲/放量，说明这是<strong className="text-foreground">板块级别的资金进驻</strong>，而非个股偶然行为。板块共振下的脉冲续涨概率远高于个股独立脉冲。可通过本页筛选同板块脉冲股数量来判断。
-            </p>
-          </div>
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">评分体系</div>
+                    <div className="p-2.5 rounded-lg border border-border bg-muted/30 space-y-2">
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 text-[9px] h-4 px-1.5">综合</Badge>
+                        <span className="text-foreground/70">6维综合评分模型（脉冲20%+放量拉升20%+递增15%+评估15%+资金15%+均线15%），含多因子共振检测</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 text-[9px] h-4 px-1.5">脉冲</Badge>
+                        <span className="text-foreground/70">5维脉冲拉升检测策略，加权评分0-100</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 text-[9px] h-4 px-1.5">放量拉升</Badge>
+                        <span className="text-foreground/70">6维放量拉升检测策略，加权评分0-100，放量不涨会被扣分</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 text-[9px] h-4 px-1.5">可靠度</Badge>
+                        <span className="text-foreground/70">8维综合可靠度评分(信号25+量比15+主力15+换手10+PE10+价格10+均线15+评估5)</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <Badge className="bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300 text-[9px] h-4 px-1.5">增强</Badge>
+                        <span className="text-foreground/70">换手率/PE/量比/主力净流入/振幅/均线趋势 多维过滤</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-          <div className="space-y-2.5">
-            <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-              <span className="inline-block w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold flex items-center justify-center shrink-0">6</span>
-              脉冲时间：开盘30~60分钟内最优
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed pl-6">
-              开盘前30分钟的脉冲可能为集合竞价情绪延续，波动剧烈但方向不明；<strong className="text-foreground">9:30~10:30</strong>之间出现的脉冲最可靠——此时市场已充分换手，主力意图更清晰。10:30之后的脉冲若非伴随板块利好，需警惕尾盘回落。
-            </p>
-          </div>
+              {/* ── Tab 2: Scoring Weights ── */}
+              {strategyTab === "scoring" && (
+                <div className="space-y-4">
+                  {/* Pulse detection factors */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Zap className="w-3 h-3 text-amber-500" />
+                      脉冲检测因子（5策略）
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7">策略名</TableHead>
+                          <TableHead className="text-[10px] h-7">权重</TableHead>
+                          <TableHead className="text-[10px] h-7">描述</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "急速拉升", weight: "30%", desc: "分钟级快速上涨，涨幅>1.5%/3min" },
+                          { name: "放量拉升配合", weight: "25%", desc: "拉升伴随成交量放大，量比>2" },
+                          { name: "突破均价线", weight: "20%", desc: "价格从均线下方突破到上方" },
+                          { name: "连续上涨", weight: "15%", desc: "连续3根以上分钟线收涨" },
+                          { name: "主力净流入", weight: "10%", desc: "主力资金净流入为正" },
+                        ].map((row) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="text-xs py-1.5 font-medium">{row.name}</TableCell>
+                            <TableCell className="text-xs py-1.5">
+                              <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300">
+                                {row.weight}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1.5 text-muted-foreground">{row.desc}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
 
-          {/* 避坑指南 */}
-          <div className="mt-3 p-3 rounded-lg bg-red-500/5 border border-red-500/15">
-            <div className="text-xs font-medium text-red-600 dark:text-red-400 mb-2 flex items-center gap-1">
-              <AlertCircle className="w-3.5 h-3.5" />
-              避坑：脉冲后回落的危险信号
-            </div>
-            <ul className="text-xs text-muted-foreground space-y-1.5 pl-1">
-              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>脉冲后5分钟内回落超过脉冲涨幅的50% → 典型拉高出货</li>
-              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>脉冲时段主力净流出 → 主力借脉冲出货给散户</li>
-              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>脉冲后成交量迅速萎缩至均量1/3以下 → 无后续资金跟进</li>
-              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>脉冲后跌破均价线且无法收复 → 短期趋势转弱</li>
-              <li className="flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">-</span>换手率超15%且为游资主导 → 次日大幅低开概率极高</li>
-            </ul>
-          </div>
-        </CardContent>
+                  {/* Volume surge factors */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <TrendingUp className="w-3 h-3 text-blue-500" />
+                      放量拉升检测因子（6策略）
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7">策略名</TableHead>
+                          <TableHead className="text-[10px] h-7">权重</TableHead>
+                          <TableHead className="text-[10px] h-7">描述</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "量价齐升", weight: "30%", desc: "放量+价格上涨，核心拉升信号" },
+                          { name: "递增放量拉升", weight: "25%", desc: "量递增且价格持续上涨" },
+                          { name: "放量拉高幅度", weight: "10%", desc: "放量时刻价格拉高幅度" },
+                          { name: "拉升速度", weight: "5%", desc: "3分钟窗口最大拉升速度" },
+                          { name: "集中买入占比", weight: "15%", desc: "放量+上涨分钟占比" },
+                          { name: "量能扩张", weight: "15%", desc: "窗口均量vs基准+正涨幅" },
+                        ].map((row) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="text-xs py-1.5 font-medium">{row.name}</TableCell>
+                            <TableCell className="text-xs py-1.5">
+                              <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300">
+                                {row.weight}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1.5 text-muted-foreground">{row.desc}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Evaluation model */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Shield className="w-3 h-3 text-emerald-500" />
+                      评估模型因子
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="p-2.5 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20">
+                        <div className="text-[10px] font-bold text-red-700 dark:text-red-300 mb-1.5">看多因子</div>
+                        {[
+                          { name: "强势信号评分", weight: "+3" },
+                          { name: "价格接近新高", weight: "+2" },
+                          { name: "主力净流入", weight: "+2" },
+                          { name: "换手率适中", weight: "+1" },
+                          { name: "日内强度", weight: "+1" },
+                          { name: "中大市值", weight: "+1" },
+                          { name: "脉冲+放量拉升共振", weight: "+2" },
+                        ].map(f => (
+                          <div key={f.name} className="flex items-center justify-between text-[10px] py-0.5">
+                            <span className="text-foreground/70">{f.name}</span>
+                            <Badge className="text-[8px] h-3.5 px-1 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">{f.weight}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                        <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 mb-1.5">看空因子</div>
+                        {[
+                          { name: "长上影线", weight: "-3" },
+                          { name: "主力净流出", weight: "-2" },
+                          { name: "换手率过高", weight: "-2" },
+                          { name: "高开低走", weight: "-2" },
+                          { name: "弱势价格", weight: "-1" },
+                          { name: "大幅下跌", weight: "-2" },
+                          { name: "脉冲后回落", weight: "-1" },
+                          { name: "小盘操纵风险", weight: "-1" },
+                        ].map(f => (
+                          <div key={f.name} className="flex items-center justify-between text-[10px] py-0.5">
+                            <span className="text-foreground/70">{f.name}</span>
+                            <Badge className="text-[8px] h-3.5 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{f.weight}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Tab 3: DB Factors ── */}
+              {strategyTab === "factors" && (
+                <div className="space-y-3">
+                  {strategyLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+                      <span className="ml-2 text-xs text-muted-foreground">加载因子数据...</span>
+                    </div>
+                  ) : strategyFactors.length === 0 ? (
+                    <div className="text-xs text-muted-foreground text-center py-8">暂无因子数据</div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Database className="w-3.5 h-3.5 text-muted-foreground" />
+                          <span className="text-xs font-medium">策略因子 ({strategyFactors.length})</span>
+                          <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                            已启用 {strategyFactors.filter(f => f.enabled).length}/{strategyFactors.length}
+                          </Badge>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-[10px] gap-1"
+                          onClick={() => { strategyFetchedRef.current = false; fetchStrategyData(); }}
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          刷新
+                        </Button>
+                      </div>
+                      <div className="max-h-96 overflow-y-auto rounded-lg border border-border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-[10px] h-7 w-8">状态</TableHead>
+                              <TableHead className="text-[10px] h-7">因子名</TableHead>
+                              <TableHead className="text-[10px] h-7">类别</TableHead>
+                              <TableHead className="text-[10px] h-7">信号</TableHead>
+                              <TableHead className="text-[10px] h-7">强度</TableHead>
+                              <TableHead className="text-[10px] h-7">T模式</TableHead>
+                              <TableHead className="text-[10px] h-7">时间窗</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {strategyFactors.map((factor) => (
+                              <TableRow key={factor.id}>
+                                <TableCell className="py-1.5">
+                                  <button
+                                    onClick={() => handleFactorToggle(factor.id, !factor.enabled)}
+                                    className="focus:outline-none"
+                                    title={factor.enabled ? "点击禁用" : "点击启用"}
+                                  >
+                                    {factor.enabled ? (
+                                      <Eye className="w-3.5 h-3.5 text-emerald-500" />
+                                    ) : (
+                                      <EyeOff className="w-3.5 h-3.5 text-gray-400" />
+                                    )}
+                                  </button>
+                                </TableCell>
+                                <TableCell className="text-xs py-1.5 font-medium max-w-[120px] truncate" title={factor.name}>
+                                  {factor.name}
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <Badge variant="outline" className="text-[9px] h-4 px-1">{factor.category}</Badge>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <Badge className={`text-[9px] h-4 px-1 ${factor.signalType === "buy" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.signalType === "sell" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
+                                    {factor.signalType === "buy" ? "买" : factor.signalType === "sell" ? "卖" : "止损"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <Select
+                                    value={factor.strength || "medium"}
+                                    onValueChange={(v) => handleFactorFieldChange(factor.id, "strength", v)}
+                                  >
+                                    <SelectTrigger className="h-5 text-[9px] w-14 px-1.5">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="strong">强</SelectItem>
+                                      <SelectItem value="medium">中</SelectItem>
+                                      <SelectItem value="weak">弱</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <Select
+                                    value={factor.tMode || "正T"}
+                                    onValueChange={(v) => handleFactorFieldChange(factor.id, "tMode", v)}
+                                  >
+                                    <SelectTrigger className="h-5 text-[9px] w-12 px-1.5">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="正T">正T</SelectItem>
+                                      <SelectItem value="反T">反T</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="py-1.5">
+                                  <Select
+                                    value={factor.timeWindow || "any"}
+                                    onValueChange={(v) => handleFactorFieldChange(factor.id, "timeWindow", v)}
+                                  >
+                                    <SelectTrigger className="h-5 text-[9px] w-16 px-1.5">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="any">任意</SelectItem>
+                                      <SelectItem value="sell_window">卖窗</SelectItem>
+                                      <SelectItem value="buy_window">买窗</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── Tab 4: Evaluation Model ── */}
+              {strategyTab === "evaluation" && (
+                <div className="space-y-4">
+                  <div className="p-3 rounded-lg border border-border bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Shield className="h-4 w-4 text-purple-500" />
+                      <span className="text-sm font-bold">股票评估模型</span>
+                    </div>
+                    <div className="text-xs text-foreground/80">
+                      基于多空因子评分，综合脉冲评分、放量拉升评分与市场数据，输出6级评估标签。
+                    </div>
+                  </div>
+
+                  {/* Evaluation labels */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {[
+                      { label: "强势续涨", desc: "多头强势，动能充沛，短线有望继续上涨", range: "看多分≥8", ...getEvaluationStyle("强势续涨") },
+                      { label: "温和看多", desc: "偏多格局，动能尚可，注意节奏", range: "看多5-7", ...getEvaluationStyle("温和看多") },
+                      { label: "震荡整理", desc: "多空均衡，方向不明，建议观望", range: "看多3-4或看空2-3", ...getEvaluationStyle("震荡整理") },
+                      { label: "弱势回调", desc: "偏空格局，动能偏弱，谨慎操作", range: "看空4-5", ...getEvaluationStyle("弱势回调") },
+                      { label: "拉高出货", desc: "强势看空，警惕主力出货，避免追高", range: "看空≥6", ...getEvaluationStyle("拉高出货") },
+                      { label: "观望等待", desc: "信号不明确，建议观望等待", range: "看多≤2且看空≤1", ...getEvaluationStyle("观望等待") },
+                    ].map((item) => (
+                      <div key={item.label} className="p-2.5 rounded-lg border border-border">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Badge className={`text-[9px] h-4 px-1.5 ${item.bg} ${item.text} border-0`}>
+                            {item.icon} {item.label}
+                          </Badge>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mb-1">{item.desc}</div>
+                        <div className="text-[9px] text-muted-foreground/60">阈值: {item.range}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Factor tables */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-2">看多因子详情</div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7">因子</TableHead>
+                          <TableHead className="text-[10px] h-7">权重</TableHead>
+                          <TableHead className="text-[10px] h-7">描述</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "强势信号评分", weight: "+3", desc: "脉冲或放量拉升评分≥70" },
+                          { name: "价格接近新高", weight: "+2", desc: "价格≥日内高点×98%" },
+                          { name: "主力净流入", weight: "+2", desc: "主力资金净流入>0" },
+                          { name: "换手率适中", weight: "+1", desc: "1%≤换手率≤8%" },
+                          { name: "日内强度", weight: "+1", desc: "涨幅>0且价格>均价" },
+                          { name: "中大市值", weight: "+1", desc: "总市值≥50亿" },
+                          { name: "脉冲+放量拉升共振", weight: "+2", desc: "脉冲≥10且放量拉升≥10" },
+                        ].map(f => (
+                          <TableRow key={f.name}>
+                            <TableCell className="text-xs py-1 font-medium">{f.name}</TableCell>
+                            <TableCell className="py-1">
+                              <Badge className="text-[9px] h-4 px-1 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">{f.weight}</Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{f.desc}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-2">看空因子详情</div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7">因子</TableHead>
+                          <TableHead className="text-[10px] h-7">权重</TableHead>
+                          <TableHead className="text-[10px] h-7">描述</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "长上影线", weight: "-3", desc: "上影线长度>实体2倍" },
+                          { name: "主力净流出", weight: "-2", desc: "主力资金净流出" },
+                          { name: "换手率过高", weight: "-2", desc: "换手率>8%" },
+                          { name: "高开低走", weight: "-2", desc: "开盘价>昨收且当前价<昨收" },
+                          { name: "弱势价格", weight: "-1", desc: "涨幅<0且价格<均价" },
+                          { name: "大幅下跌", weight: "-2", desc: "跌幅>3%" },
+                          { name: "脉冲后回落", weight: "-1", desc: "脉冲>30但涨幅<1%" },
+                          { name: "小盘操纵风险", weight: "-1", desc: "市值<30亿" },
+                        ].map(f => (
+                          <TableRow key={f.name}>
+                            <TableCell className="text-xs py-1 font-medium">{f.name}</TableCell>
+                            <TableCell className="py-1">
+                              <Badge className="text-[9px] h-4 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{f.weight}</Badge>
+                            </TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{f.desc}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Tab 5: Indicator Params ── */}
+              {strategyTab === "params" && (
+                <div className="space-y-3">
+                  {strategyLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+                      <span className="ml-2 text-xs text-muted-foreground">加载参数数据...</span>
+                    </div>
+                  ) : (
+                    Object.entries(strategyConfig).map(([indicatorKey, params]) => {
+                      const indicatorNames: Record<string, string> = {
+                        macd: "MACD 参数",
+                        vwap: "VWAP 偏离度",
+                        rsi: "RSI 参数",
+                        boll: "布林带参数",
+                        volume: "成交量参数",
+                      };
+                      const paramLabels: Record<string, Record<string, string>> = {
+                        macd: { fastPeriod: "快线EMA周期", slowPeriod: "慢线EMA周期", signalPeriod: "信号线EMA周期" },
+                        vwap: { deviationSell: "卖出偏离阈值(%)", deviationBuy: "买回偏离阈值(%)" },
+                        rsi: { rsiPeriod: "RSI周期", oversold: "超卖阈值", overbought: "超买阈值" },
+                        boll: { bollPeriod: "布林带周期", bollMultiplier: "标准差倍数" },
+                        volume: { volumeMultiplier: "放量倍数阈值", volumeMultiplierStrong: "强放量倍数", volumeShrinkRatio: "缩量比例", volumePulseMultiplier: "脉冲放量倍数", consecutiveShrinkBars: "连续缩量根数" },
+                      };
+                      return (
+                        <div key={indicatorKey} className="p-3 rounded-lg border border-border">
+                          <div className="text-xs font-medium mb-2 flex items-center gap-1.5">
+                            <Cpu className="w-3 h-3 text-muted-foreground" />
+                            {indicatorNames[indicatorKey] || indicatorKey}
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {Object.entries(params).map(([paramKey, value]) => {
+                              const paramId = `${indicatorKey}.${paramKey}`;
+                              const isEditing = editingParamKey === paramId;
+                              return (
+                                <div key={paramKey} className="flex items-center gap-1.5 p-1.5 rounded bg-muted/30">
+                                  <span className="text-[10px] text-muted-foreground min-w-0 flex-shrink-0">
+                                    {(paramLabels[indicatorKey] || {})[paramKey] || paramKey}
+                                  </span>
+                                  {isEditing ? (
+                                    <Input
+                                      type="number"
+                                      value={editingParamValue}
+                                      onChange={(e) => setEditingParamValue(e.target.value)}
+                                      onBlur={() => {
+                                        const numVal = parseFloat(editingParamValue);
+                                        if (!isNaN(numVal)) {
+                                          handleConfigSave(indicatorKey, paramKey, numVal);
+                                        } else {
+                                          setEditingParamKey(null);
+                                        }
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          const numVal = parseFloat(editingParamValue);
+                                          if (!isNaN(numVal)) {
+                                            handleConfigSave(indicatorKey, paramKey, numVal);
+                                          } else {
+                                            setEditingParamKey(null);
+                                          }
+                                        } else if (e.key === "Escape") {
+                                          setEditingParamKey(null);
+                                        }
+                                      }}
+                                      className="h-5 text-[10px] w-16 px-1"
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <button
+                                      className="text-xs font-mono font-medium hover:text-emerald-600 transition-colors"
+                                      onClick={() => {
+                                        setEditingParamKey(paramId);
+                                        setEditingParamValue(String(value));
+                                      }}
+                                      title="点击编辑"
+                                    >
+                                      {typeof value === "number" ? (Number.isInteger(value) ? value : value.toFixed(2)) : value}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </Tabs>
+          </CardContent>
+        )}
       </Card>
     </div>
   );

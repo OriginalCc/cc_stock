@@ -47,7 +47,6 @@ export interface AShareTimelineItem {
   price: number;
   avgPrice: number;    // VWAP
   volume: number;
-  amount: number;      // 成交额 (元)
   changePercent: number; // vs prev close
 }
 
@@ -157,9 +156,8 @@ export async function getAShareKLine(
     const response = await fetch(url, {
       headers: { "Referer": "https://finance.sina.com.cn" },
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(8000),
     });
-
-    if (!response.ok) return [];
 
     const text = await response.text();
     if (!text || text === "null") return [];
@@ -194,6 +192,7 @@ export async function getAShareQuote(symbol: string): Promise<AShareQuote | null
   try {
     const response = await fetch(url, {
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) return null;
@@ -359,6 +358,7 @@ export async function searchAShare(query: string): Promise<AShareSearchResult[]>
     const resp = await fetch(sinaUrl, {
       headers: { "Referer": "https://finance.sina.com.cn" },
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (resp.ok) {
@@ -451,31 +451,42 @@ export async function getAShareTimeline(
 ): Promise<{ items: AShareTimelineItem[]; prevClose: number }> {
   const sinaSymbol = toSinaSymbol(symbol);
 
-  // First get the quote to know prevClose
-  const quote = await getAShareQuote(symbol);
-  const prevClose = quote?.prevClose || 0;
-
+  // Get quote and timeline data in parallel (instead of serial)
+  const quotePromise = getAShareQuote(symbol);
+  
   // Try Tencent minute API first (provides real 1-minute data)
   try {
-    const tencentResult = await getTencentMinuteData(sinaSymbol, prevClose, symbol);
+    const [quote, tencentResult] = await Promise.all([
+      quotePromise,
+      getTencentMinuteData(sinaSymbol, 0, symbol), // prevClose=0, will adjust later
+    ]);
+    const prevClose = quote?.prevClose || tencentResult.prevClose || 0;
     if (tencentResult.items.length > 0) {
-      return tencentResult;
+      // Adjust changePercent with correct prevClose
+      if (prevClose > 0 && tencentResult.items.some(item => item.changePercent === 0)) {
+        for (const item of tencentResult.items) {
+          item.changePercent = Number((((item.price - prevClose) / prevClose) * 100).toFixed(2));
+        }
+      }
+      return { items: tencentResult.items, prevClose };
     }
   } catch (error) {
     console.error("Tencent minute data fetch error:", error);
   }
 
-  // Fallback: Sina 5-min K-line data
+  // Fallback with quote
   try {
+    const quote = await quotePromise;
+    const prevClose = quote?.prevClose || 0;
     const sinaResult = await getSinaTimelineFallback(sinaSymbol, prevClose);
     if (sinaResult.items.length > 0) {
       return sinaResult;
     }
+    return { items: [], prevClose };
   } catch (error) {
     console.error("Sina timeline fallback error:", error);
+    return { items: [], prevClose: 0 };
   }
-
-  return { items: [], prevClose };
 }
 
 /**
@@ -494,6 +505,7 @@ async function getTencentMinuteData(
 
   const response = await fetch(url, {
     next: { revalidate: 0 },
+    signal: AbortSignal.timeout(5000),
   });
 
   if (!response.ok) return { items: [], prevClose };
@@ -553,15 +565,11 @@ async function getTencentMinuteData(
 
     const changePercent = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
 
-    // Per-minute amount = current cumulative - previous cumulative
-    const minuteAmt = cumAmt - prevCumAmt;
-
     items.push({
       time: timeFormatted,
       price: Number(price.toFixed(2)),
       avgPrice: Number(avgPrice.toFixed(2)),
       volume: Math.max(minuteVol, 0), // per-minute volume
-      amount: Math.max(minuteAmt, 0), // per-minute amount (元)
       changePercent: Number(changePercent.toFixed(2)),
     });
 
@@ -618,6 +626,7 @@ async function getSinaTimelineFallback(
   const response = await fetch(url, {
     headers: { "Referer": "https://finance.sina.com.cn" },
     next: { revalidate: 0 },
+    signal: AbortSignal.timeout(8000),
   });
 
   if (!response.ok) return { items: [], prevClose };
@@ -666,15 +675,11 @@ function buildTimelineDataFromKLine(
 
     const changePercent = prevClose > 0 ? ((close - prevClose) / prevClose) * 100 : 0;
 
-    // Estimate amount from volume * average price
-    const estAmount = vol * avgP;
-
     return {
       time: timeShort,
       price: close,
       avgPrice: Number(vwap.toFixed(2)),
       volume: vol,
-      amount: Math.round(estAmount),
       changePercent: Number(changePercent.toFixed(2)),
     };
   });
@@ -696,7 +701,6 @@ export interface SectorTimelineItem {
   price: number;      // 板块指数价格
   avgPrice: number;   // 均价
   volume: number;     // 成交量
-  amount: number;     // 成交额 (元)
   changePercent: number;  // 涨跌幅%
 }
 
@@ -719,26 +723,33 @@ function toEastMoneySecid(symbol: string): string {
  */
 export async function getStockSector(symbol: string): Promise<SectorInfo | null> {
   try {
+    const fallback = getStockSectorFallback(symbol);
     const secid = toEastMoneySecid(symbol);
     const url = `http://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f127`;
 
-    const response = await fetch(url, {
-      next: { revalidate: 0 },
-      signal: AbortSignal.timeout(8000), // 8s timeout
-    });
+    const response = await Promise.race([
+      fetch(url, { next: { revalidate: 0 }, signal: AbortSignal.timeout(8000) }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+    ]);
 
-    if (!response.ok) return getStockSectorFallback(symbol);
+    if (!response || response === null) return fallback;
+    if (!response.ok) return fallback;
 
-    const data = await response.json();
+    const data = await Promise.race([
+      response.json(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+    ]);
+    if (!data) return fallback;
+
     const sectorName: string | undefined = data?.data?.f127;
-    if (!sectorName) return getStockSectorFallback(symbol);
+    if (!sectorName) return fallback;
 
     // Strip Ⅱ/Ⅲ suffix (e.g. "白酒Ⅱ" → "白酒")
     const cleanedName = sectorName.replace(/[ⅡⅢⅣ]+$/, "").trim();
-    if (!cleanedName) return getStockSectorFallback(symbol);
+    if (!cleanedName) return fallback;
 
     const result = await searchSectorCode(cleanedName);
-    return result || getStockSectorFallback(symbol);
+    return result || fallback;
   } catch (error) {
     console.error("getStockSector error:", error);
     return getStockSectorFallback(symbol);
@@ -793,6 +804,7 @@ export async function searchSectorCode(sectorName: string): Promise<SectorInfo |
 
     const response = await fetch(url, {
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) return null;
@@ -857,7 +869,6 @@ export async function getSectorTimeline(sectorCode: string): Promise<{ items: Se
       const timeStr = parts[0]; // "2026-05-06 09:30"
       const price = parseFloat(parts[2]);
       const volume = parseInt(parts[5]);
-      const amount = parseFloat(parts[6]) || 0;
       const avgPrice = parseFloat(parts[7]);
 
       if (isNaN(price) || price <= 0) continue;
@@ -873,7 +884,6 @@ export async function getSectorTimeline(sectorCode: string): Promise<{ items: Se
         price: Number(price.toFixed(2)),
         avgPrice: Number(avgPrice.toFixed(2)),
         volume,
-        amount: Math.round(amount),
         changePercent: Number(changePercent.toFixed(2)),
       });
     }

@@ -48,6 +48,9 @@ export interface KLineItem {
   dif: number | null;
   dea: number | null;
   macd: number | null;
+  k: number | null;
+  d: number | null;
+  j: number | null;
   signal?: {
     type: "buy" | "sell" | "hold";
     strength: "strong" | "medium" | "weak";
@@ -60,7 +63,6 @@ export interface TimelineItem {
   price: number;
   avgPrice: number;
   volume: number;
-  amount: number;      // 成交额 (元)
   changePercent: number;
 }
 
@@ -70,6 +72,8 @@ export type ChartMode = "timeline" | "kline";
 // ── Hook ──────────────────────────────────────────────
 
 const LAST_STOCK_KEY = "lastSelectedStock";
+
+const LAST_CHART_MODE_KEY = "lastChartMode";
 
 export function useStockData() {
   // Initialize with default value to avoid hydration mismatch
@@ -101,7 +105,7 @@ export function useStockData() {
       const url = isA
         ? `/api/stock/ashare-quote?symbol=${encodeURIComponent(sym)}`
         : `/api/stock/quote?ticker=${encodeURIComponent(sym)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (res.ok) {
         const data = await res.json();
         if (!data.error) {
@@ -109,7 +113,7 @@ export function useStockData() {
         }
       }
     } catch (err) {
-      console.error("Quote fetch error:", err);
+      // Silently ignore timeout errors for quote
     }
   }, [checkAShare]);
 
@@ -122,7 +126,7 @@ export function useStockData() {
       const url = isA
         ? `/api/stock/ashare-history?symbol=${encodeURIComponent(sym)}&interval=${intv}&limit=300`
         : `/api/stock/history?symbol=${encodeURIComponent(sym)}&interval=${intv}&limit=300`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
       if (res.ok) {
         const data = await res.json();
         if (data.error) {
@@ -148,7 +152,7 @@ export function useStockData() {
   const fetchTimeline = useCallback(async (sym: string) => {
     if (!checkAShare(sym)) return;
     try {
-      const res = await fetch(`/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}`);
+      const res = await fetch(`/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}`, { signal: AbortSignal.timeout(10000) });
       if (res.ok) {
         const data = await res.json();
         if (!data.error) {
@@ -183,12 +187,13 @@ export function useStockData() {
       // Persist last selected stock to localStorage
       try { localStorage.setItem(LAST_STOCK_KEY, sym); } catch {}
       fetchQuote(sym);
-      if (checkAShare(sym)) {
+      // Only fetch timeline in timeline mode — skip in kline mode for faster switching
+      if (checkAShare(sym) && chartMode === "timeline") {
         fetchTimeline(sym);
       }
       fetchHistory(sym, interval);
     },
-    [fetchQuote, fetchHistory, fetchTimeline, interval, checkAShare]
+    [fetchQuote, fetchHistory, fetchTimeline, interval, checkAShare, chartMode]
   );
 
   // Change interval
@@ -204,6 +209,7 @@ export function useStockData() {
   const changeChartMode = useCallback(
     (mode: ChartMode) => {
       setChartMode(mode);
+      try { localStorage.setItem(LAST_CHART_MODE_KEY, mode); } catch {}
       if (mode === "timeline" && checkAShare(symbol)) {
         fetchTimeline(symbol);
         // Also fetch daily history for prev day MA reference lines
@@ -219,14 +225,19 @@ export function useStockData() {
     [fetchTimeline, fetchHistory, symbol, checkAShare]
   );
 
-  // Read saved stock from localStorage after mount (avoids hydration mismatch)
+  // Read saved stock and chart mode from localStorage after mount (avoids hydration mismatch)
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LAST_STOCK_KEY);
       if (saved && /^[0-9]{6}$/.test(saved) && saved !== symbol) {
-        // Use microtask to avoid lint warning about setState in effect
         queueMicrotask(() => setSymbol(saved));
+      }
+    } catch {}
+    try {
+      const savedMode = localStorage.getItem(LAST_CHART_MODE_KEY);
+      if (savedMode === "kline" || savedMode === "timeline") {
+        queueMicrotask(() => setChartMode(savedMode));
       }
     } catch {}
     queueMicrotask(() => setMounted(true));
@@ -235,43 +246,23 @@ export function useStockData() {
   // Initial load (only after mount to use correct symbol from localStorage)
   useEffect(() => {
     if (!mounted) return;
-    Promise.allSettled([
+    // Only fetch timeline if in timeline mode — skip in kline mode for faster load
+    const currentMode = chartMode;
+    const fetches: Promise<any>[] = [
       fetchQuote(symbol),
       fetchHistory(symbol, interval),
-      checkAShare(symbol) ? fetchTimeline(symbol) : Promise.resolve(),
-    ]);
+    ];
+    if (checkAShare(symbol) && currentMode === "timeline") {
+      fetches.push(fetchTimeline(symbol));
+    }
+    Promise.allSettled(fetches);
   }, [mounted]);
 
-  // Auto-refresh: quote every 3s (live price), timeline every 10s (VOL/MACD), history every 30s
+  // Auto-refresh disabled - only refresh on user action or mount
+  // External APIs can be unreliable and may block the server
   useEffect(() => {
-    // Fast quote refresh (3s) — drives live price updates on timeline
-    quoteTimerRef.current = setInterval(() => {
-      fetchQuote(symbol);
-    }, 3000);
-
-    // Timeline refresh (10s) — drives VOL and MACD updates
-    const timelineTimer = setInterval(() => {
-      if (checkAShare(symbol)) fetchTimeline(symbol);
-    }, 10000);
-
-    // Slow data refresh (30s) — history K-line
-    refreshTimerRef.current = setInterval(() => {
-      Promise.allSettled([
-        fetchQuote(symbol),
-        checkAShare(symbol) ? fetchTimeline(symbol) : Promise.resolve(),
-        fetchHistory(symbol, interval),
-      ]);
-    }, 30000);
-
-    return () => {
-      if (quoteTimerRef.current) {
-        clearInterval(quoteTimerRef.current);
-      }
-      clearInterval(timelineTimer);
-      if (refreshTimerRef.current) {
-        clearInterval(refreshTimerRef.current);
-      }
-    };
+    // No auto-refresh intervals
+    return () => {};
   }, [symbol, interval, fetchQuote, fetchHistory, fetchTimeline, checkAShare]);
 
   return {

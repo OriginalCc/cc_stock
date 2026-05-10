@@ -4,7 +4,6 @@
 import type { TimelineItem } from "@/hooks/use-stock-data";
 import type { FactorOverride, RegimeDetail, Strength, CustomFactorDefinition as EngineCustomFactorDefinition } from "@/lib/t-strategy";
 import { generateTimelineSignals as generateOptimizedSignals } from "@/lib/t-strategy";
-export { formatAShareAmount } from "@/lib/ashare-api";
 import { calculateMACD } from "@/lib/indicators";
 
 // ── Types ──────────────────────────────────────────────
@@ -16,6 +15,7 @@ export interface TSignal {
   tMode?: string;
   timeWindow?: string;
   description?: string;
+  strengthOverridden?: boolean; // 用户在策略面板中显式覆盖了强度，合并时不可被升级
 }
 
 export interface MergedSignal {
@@ -30,11 +30,12 @@ export interface MergedSignal {
   direction: "up" | "down";
   isCustom?: boolean;
   customReasons?: Set<string>;
+  hasOverriddenStrength?: boolean; // 合并组中有用户覆盖强度的信号，不可被升级
 }
 
 export interface PulseVolumeMarker {
   time: string;
-  type: "pulse" | "volume_surge";
+  type: "pulse" | "volume_surge" | "progressive_vol";
   score: number;
   label: string;
   detail: string;
@@ -351,6 +352,13 @@ export function formatVolume(vol: number) {
   return vol.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+export function formatAmount(amount: number) {
+  if (!amount) return "--";
+  if (amount >= 1e8) return (amount / 1e8).toFixed(2) + "亿";
+  if (amount >= 1e4) return (amount / 1e4).toFixed(2) + "万";
+  return amount.toLocaleString();
+}
+
 export function formatMarketCap(val: number) {
   if (!val) return "--";
   if (val >= 1e12) return (val / 1e12).toFixed(2) + "万亿";
@@ -460,6 +468,7 @@ export function generateTimelineSignals(
       tMode: s.tMode,
       timeWindow: s.timeWindow,
       description: s.description,
+      strengthOverridden: s.strengthOverridden,
     };
   });
 }
@@ -671,9 +680,151 @@ export function detectPulseVolumeMarkers(
         time: markTime,
         type: "volume_surge",
         score: volSurgeScore,
-        label: volSurgeScore >= 50 ? `强放量 ${volSurgeScore}分` : volSurgeScore >= 30 ? `放量 ${volSurgeScore}分` : `微放量 ${volSurgeScore}分`,
-        detail: details.length > 0 ? details.join("，") : "轻微放量",
+        label: volSurgeScore >= 50 ? `强放量拉升 ${volSurgeScore}分` : volSurgeScore >= 30 ? `放量拉升 ${volSurgeScore}分` : `轻微放量拉升 ${volSurgeScore}分`,
+        detail: details.length > 0 ? details.join("，") : "轻微放量拉升",
       });
+    }
+  }
+
+  // ── Progressive Volume Detection (递增放量) ──
+  {
+    const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
+    for (let i = 0; i < session.length; i++) {
+      const prevVol = i > 0 ? session[i - 1].volume : 0;
+      const curVol = session[i].volume;
+      const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+      const prevPrice = i > 0 ? session[i - 1].price : prevClose;
+      const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
+      increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
+    }
+
+    // Find ALL progressive volume sequences (3+ consecutive increasing)
+    interface ProgressiveSeq { startIdx: number; length: number; startPrice: number; endPrice: number; startVol: number; endVol: number; startTime: string; endTime: string; }
+    const sequences: ProgressiveSeq[] = [];
+    let curStart = 0;
+    let curLen = 1;
+
+    for (let i = 1; i < increments.length; i++) {
+      if (increments[i].vol > increments[i - 1].vol && increments[i].vol > 0) {
+        curLen++;
+      } else {
+        if (curLen >= 3) {
+          sequences.push({
+            startIdx: curStart, length: curLen,
+            startPrice: increments[curStart].price, endPrice: increments[curStart + curLen - 1].price,
+            startVol: increments[curStart].vol, endVol: increments[curStart + curLen - 1].vol,
+            startTime: increments[curStart].time, endTime: increments[curStart + curLen - 1].time,
+          });
+        }
+        curStart = i;
+        curLen = 1;
+      }
+    }
+    // Don't forget the last sequence
+    if (curLen >= 3) {
+      sequences.push({
+        startIdx: curStart, length: curLen,
+        startPrice: increments[curStart].price, endPrice: increments[curStart + curLen - 1].price,
+        startVol: increments[curStart].vol, endVol: increments[curStart + curLen - 1].vol,
+        startTime: increments[curStart].time, endTime: increments[curStart + curLen - 1].time,
+      });
+    }
+
+    if (sequences.length > 0) {
+      // Find the best sequence (longest)
+      const bestSeq = sequences.reduce((best, seq) => seq.length > best.length ? seq : best, sequences[0]);
+      const bestPriceRise = bestSeq.startPrice > 0
+        ? ((bestSeq.endPrice - bestSeq.startPrice) / bestSeq.startPrice) * 100 : 0;
+      const bestVolGrowth = bestSeq.startVol > 0
+        ? ((bestSeq.endVol - bestSeq.startVol) / bestSeq.startVol) * 100 : 0;
+
+      // Average step growth rate
+      let totalStepGrowth = 0;
+      let stepCount = 0;
+      for (let i = bestSeq.startIdx + 1; i < bestSeq.startIdx + bestSeq.length; i++) {
+        if (increments[i - 1].vol > 0) {
+          totalStepGrowth += (increments[i].vol - increments[i - 1].vol) / increments[i - 1].vol;
+          stepCount++;
+        }
+      }
+      const avgStepGrowthRate = stepCount > 0 ? (totalStepGrowth / stepCount) * 100 : 0;
+
+      // Multi-round progressive bonus
+      const progressiveRounds = sequences.length;
+      const sequencesWithPriceRise = sequences.filter(s => s.startPrice > 0 && s.endPrice > s.startPrice).length;
+
+      // Total progressive volume ratio
+      const totalProgressiveVol = sequences.reduce((sum, seq) => {
+        let vol = 0;
+        for (let i = seq.startIdx; i < seq.startIdx + seq.length; i++) vol += increments[i].vol;
+        return sum + vol;
+      }, 0);
+      const totalVol = increments.reduce((s, t) => s + t.vol, 0);
+      const progressiveVolRatio = totalVol > 0 ? totalProgressiveVol / totalVol : 0;
+
+      // Calculate composite score
+      let progScore = 0;
+      if (bestSeq.length >= 8) progScore += 30;
+      else if (bestSeq.length >= 6) progScore += 25;
+      else if (bestSeq.length >= 5) progScore += 20;
+      else if (bestSeq.length >= 4) progScore += 15;
+      else if (bestSeq.length >= 3) progScore += 10;
+
+      if (bestPriceRise >= 3) progScore += 25;
+      else if (bestPriceRise >= 2) progScore += 20;
+      else if (bestPriceRise >= 1) progScore += 15;
+      else if (bestPriceRise >= 0.5) progScore += 10;
+      else if (bestPriceRise >= 0) progScore += 3;
+      if (bestPriceRise < -0.5) progScore -= 5;
+
+      if (bestVolGrowth >= 300) progScore += 15;
+      else if (bestVolGrowth >= 200) progScore += 12;
+      else if (bestVolGrowth >= 100) progScore += 8;
+      else if (bestVolGrowth >= 50) progScore += 5;
+      else if (bestVolGrowth >= 20) progScore += 3;
+
+      if (progressiveRounds >= 3 && sequencesWithPriceRise >= 2) progScore += 10;
+      else if (progressiveRounds >= 2 && sequencesWithPriceRise >= 1) progScore += 6;
+      else if (progressiveRounds >= 2) progScore += 3;
+
+      if (avgStepGrowthRate >= 50) progScore += 8;
+      else if (avgStepGrowthRate >= 30) progScore += 5;
+      else if (avgStepGrowthRate >= 15) progScore += 3;
+
+      if (progressiveVolRatio >= 0.5) progScore += 7;
+      else if (progressiveVolRatio >= 0.3) progScore += 4;
+      else if (progressiveVolRatio >= 0.2) progScore += 2;
+
+      progScore = Math.max(0, Math.min(100, progScore));
+
+      if (progScore >= 10) {
+        // Mark at the end of the best progressive sequence
+        const markTime = bestSeq.endTime;
+        const details: string[] = [];
+        if (bestSeq.length >= 3) {
+          details.push(`${bestSeq.length}分钟递增${bestPriceRise >= 0 ? `涨${bestPriceRise.toFixed(1)}%` : `跌${Math.abs(bestPriceRise).toFixed(1)}%`}`);
+        }
+        if (progressiveRounds >= 2) {
+          details.push(`${progressiveRounds}轮递增`);
+        }
+        if (bestVolGrowth >= 50) {
+          details.push(`量增${bestVolGrowth.toFixed(0)}%`);
+        }
+        if (avgStepGrowthRate >= 15) {
+          details.push(`均步增速${avgStepGrowthRate.toFixed(0)}%`);
+        }
+        if (progressiveVolRatio >= 0.3) {
+          details.push(`递增量占比${(progressiveVolRatio * 100).toFixed(0)}%`);
+        }
+
+        markers.push({
+          time: markTime,
+          type: "progressive_vol",
+          score: progScore,
+          label: progScore >= 50 ? `强递增 ${progScore}分` : progScore >= 30 ? `递增 ${progScore}分` : `微递增 ${progScore}分`,
+          detail: details.length > 0 ? details.join("，") : (progScore > 0 ? "轻微递增" : "无明显递增放量"),
+        });
+      }
     }
   }
 

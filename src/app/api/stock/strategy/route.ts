@@ -5,6 +5,7 @@ import { STRATEGY_OVERVIEW, DEFAULT_STRATEGY_CONFIG } from "@/lib/t-strategy";
 // ── 做 T 策略参数与逻辑配置 (v3.0 基于滚动做T操作策略PDF) ──
 
 export async function GET() {
+  try {
   // Fetch factors from database
   const factors = await db.strategyFactor.findMany({
     orderBy: { priority: "desc" },
@@ -332,6 +333,17 @@ export async function GET() {
             { condition: "MACD柱 ≥ 0（趋势初转）", strength: "medium" },
           ],
         },
+        {
+          id: 24, name: "递增放量", type: "buy", priority: 24,
+          description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）",
+          condition: "连续3+分钟 vol递增 && 价格同步上涨",
+          category: "VOLUME_PATTERN", tMode: "反T", timeWindow: "buy_window",
+          strengthRules: [
+            { condition: "连续6+分钟递增+涨幅>1%", strength: "strong" },
+            { condition: "连续4-5分钟递增+涨幅>0.3%", strength: "medium" },
+            { condition: "连续3分钟递增", strength: "weak" },
+          ],
+        },
       ],
       postProcess: {
         name: "信号去重",
@@ -481,6 +493,10 @@ export async function GET() {
   };
 
   return NextResponse.json(strategy);
+  } catch (error: any) {
+    console.error("Strategy GET error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }
 
 // ── PUT: Update a strategy factor ──
@@ -604,6 +620,8 @@ export async function POST(request: NextRequest) {
             { name: "双底买回", category: "SUPPORT", signalType: "buy", description: "W底形态确认：回看周期内出现两个相近的低点，当前从第二个低点反弹", params: "{\"doubleBottomTolerance\":0.5,\"doubleBottomLookback\":30}", enabled: true, priority: -5, strength: "medium", tMode: "正T", timeWindow: "buy_window" },
             { name: "尾盘急跌", category: "MOMENTUM", signalType: "buy", description: "14:00-14:25出现急跌（非尾盘最后5分钟），低吸机会", params: "{\"lateDropThreshold\":-0.5}", enabled: true, priority: -6, strength: "medium", tMode: "反T", timeWindow: "buy_window" },
             { name: "均价拐头", category: "VWAP", signalType: "sell", description: "MACD柱状线收敛：均价线从持续上升转为开始下降，趋势转折信号", params: "{\"avgPriceTurnLookback\":5}", enabled: true, priority: -7, strength: "medium", tMode: "正T", timeWindow: "sell_window" },
+            // v3.10 新增因子
+            { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: "{\"minProgressiveLen\":3,\"strongProgressiveLen\":6}", enabled: true, priority: 8, strength: "medium", tMode: "反T", timeWindow: "buy_window" },
           ],
         });
       }
