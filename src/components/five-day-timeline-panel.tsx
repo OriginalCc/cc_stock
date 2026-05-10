@@ -689,7 +689,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
               {quote && <span className="text-[10px] text-muted-foreground ml-auto">{quote.symbol} {quote.name}</span>}
             </div>
             <ResponsiveContainer width="100%" height={chartHeight}>
-              <ComposedChart data={visibleItems} syncId="5dayTimeline" margin={{ top: 4, right: 60, left: 0, bottom: 0 }}>
+              <ComposedChart data={visibleItems} syncId="5dayTimeline" margin={{ top: 4, right: 80, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#334155", strokeWidth: 0.5 }} interval={xTickInterval} />
                 <YAxis domain={[minPrice, maxPrice]} tickLine={false} axisLine={false} width={65} tick={<PercentYTick prevClose={refClose} />} ticks={yTicks} tickCount={5} />
@@ -703,7 +703,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 <Customized component={(props: any) => <DayBoundaryLines {...props} dayBoundaries={visibleDayBoundaries} dayLabels={dayLabels} chartHeight={chartHeight} />} />
                 <Customized component={(props: any) => {
                   const { yAxisMap } = props;
-                  if (!yAxisMap || (highestPrice == null && lowestPrice == null)) return null;
+                  if (!yAxisMap || (highestPrice == null && lowestPrice == null) || refClose <= 0) return null;
                   const yAxis = Object.values(yAxisMap)[0] as any;
                   if (!yAxis) return null;
                   const yScale = yAxis.scale;
@@ -712,11 +712,13 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                   if (highestPrice != null) {
                     const y = yScale(highestPrice);
                     if (y != null && !isNaN(y)) {
+                      const pct = ((highestPrice - refClose) / refClose * 100);
                       els.push(
                         <g key="hi-tag">
                           <polygon points={`${chartRight - 8},${y + 5} ${chartRight + 2},${y + 5} ${chartRight - 3},${y - 3}`} fill="#ef4444" />
-                          <rect x={chartRight + 1} y={y - 11} width={66} height={22} rx={3} fill="#ef4444" fillOpacity={0.92} />
-                          <text x={chartRight + 34} y={y + 5} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{highestPrice.toFixed(2)}</text>
+                          <rect x={chartRight + 1} y={y - 17} width={76} height={34} rx={3} fill="#ef4444" fillOpacity={0.92} />
+                          <text x={chartRight + 39} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{highestPrice.toFixed(2)}</text>
+                          <text x={chartRight + 39} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">+{pct.toFixed(2)}%</text>
                         </g>
                       );
                     }
@@ -724,11 +726,13 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                   if (lowestPrice != null) {
                     const y = yScale(lowestPrice);
                     if (y != null && !isNaN(y)) {
+                      const pct = ((lowestPrice - refClose) / refClose * 100);
                       els.push(
                         <g key="lo-tag">
                           <polygon points={`${chartRight - 8},${y - 5} ${chartRight + 2},${y - 5} ${chartRight - 3},${y + 3}`} fill="#22c55e" />
-                          <rect x={chartRight + 1} y={y - 11} width={66} height={22} rx={3} fill="#22c55e" fillOpacity={0.92} />
-                          <text x={chartRight + 34} y={y + 5} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{lowestPrice.toFixed(2)}</text>
+                          <rect x={chartRight + 1} y={y - 17} width={76} height={34} rx={3} fill="#22c55e" fillOpacity={0.92} />
+                          <text x={chartRight + 39} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{lowestPrice.toFixed(2)}</text>
+                          <text x={chartRight + 39} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">{pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</text>
                         </g>
                       );
                     }
@@ -747,7 +751,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
               <span className="text-[10px] text-muted-foreground">成交量</span>
             </div>
             <ResponsiveContainer width="100%" height={volumeChartHeight}>
-              <ComposedChart data={visibleItems} syncId="5dayTimeline" margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
+              <ComposedChart data={visibleItems} syncId="5dayTimeline" margin={{ top: 2, right: 80, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.2} vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 8, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#334155", strokeWidth: 0.5 }} interval={xTickInterval} />
                 <YAxis domain={[0, maxVolume * 1.2]} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => formatVolume(v)} tick={{ fontSize: 8, fill: "#64748b" }} tickCount={3} />
