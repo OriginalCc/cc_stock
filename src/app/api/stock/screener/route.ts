@@ -1370,6 +1370,9 @@ function calculateCompositeScore(
  * - 三因子共振: pulseScore >= 40 AND volumeSurgeScore >= 40 AND progressiveVolScore >= 40
  * - 资金量能共振: capitalTrend includes "inflow" AND (pulseScore >= 30 OR volumeSurgeScore >= 30)
  * - 均线共振: vwapPosition is "above_vwap" or "cross_up" AND (pulseScore >= 30 OR volumeSurgeScore >= 30)
+ * - v5.0 开盘资金共振: openingStrength=strong_open AND capitalTrend includes "inflow"
+ * - v5.0 大单量能共振: largeOrderRatio >= 10 AND (pulseScore >= 30 OR volumeSurgeScore >= 30)
+ * - v5.0 尾盘资金共振: lateSessionActivity=late_rally AND capitalTrend includes "inflow"
  *
  * Returns comma-separated tags or empty string if no resonance
  */
@@ -1379,6 +1382,9 @@ function detectResonance(
   progressiveVolScore: number,
   capitalTrend: string,
   vwapPosition: string,
+  openingStrength?: string,
+  largeOrderRatio?: number,
+  lateSessionActivity?: string,
 ): string {
   const tags: string[] = [];
 
@@ -1405,6 +1411,21 @@ function detectResonance(
   // 均线共振
   if ((vwapPosition === "above_vwap" || vwapPosition === "cross_up") && (pulseScore >= 30 || volumeSurgeScore >= 30)) {
     tags.push("均线共振");
+  }
+
+  // v5.0 开盘资金共振: 强开盘 + 主力流入 = 涨势确认
+  if (openingStrength === "strong_open" && capitalTrend.includes("inflow")) {
+    tags.push("开盘资金共振");
+  }
+
+  // v5.0 大单量能共振: 大单主导 + 量能信号 = 机构合力
+  if ((largeOrderRatio ?? 0) >= 10 && (pulseScore >= 30 || volumeSurgeScore >= 30)) {
+    tags.push("大单量能共振");
+  }
+
+  // v5.0 尾盘资金共振: 尾盘抢筹 + 主力流入 = 次日高开概率大
+  if (lateSessionActivity === "late_rally" && capitalTrend.includes("inflow")) {
+    tags.push("尾盘资金共振");
   }
 
   return tags.join(",");
@@ -1798,6 +1819,7 @@ export async function GET(request: NextRequest) {
           stock.resonanceTags = detectResonance(
             stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
             stock.capitalTrend, stock.vwapPosition,
+            stock.openingStrength, stock.largeOrderRatio, stock.lateSessionActivity,
           );
 
           // Calculate composite score
@@ -1955,6 +1977,7 @@ export async function GET(request: NextRequest) {
         stock.resonanceTags = detectResonance(
           stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
           stock.capitalTrend, stock.vwapPosition,
+          stock.openingStrength, stock.largeOrderRatio, stock.lateSessionActivity,
         );
         const compResult = calculateCompositeScore(
           stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
@@ -2002,6 +2025,7 @@ export async function GET(request: NextRequest) {
       stock.resonanceTags = detectResonance(
         stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
         stock.capitalTrend, stock.vwapPosition,
+        stock.openingStrength, stock.largeOrderRatio, stock.lateSessionActivity,
       );
       const compResult = calculateCompositeScore(
         stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,

@@ -74,3 +74,31 @@ Stage Summary:
 - Price line still renders at 1-minute resolution for smooth appearance
 - Volume bars are wider (spanning ~5 data slots) and visually distinct
 - syncId crosshair still works perfectly (same data array for both charts)
+---
+Task ID: 1
+Agent: main
+Task: Update stock screening strategy panel to sync v5.0 conditions and add new resonance detection
+
+Work Log:
+- Read all relevant files: stock-screener.tsx, screener route.ts, screener-shared.ts, strategy-admin-panel.tsx, t-strategy.ts
+- Identified that strategy panel was at v4.0 but code had v5.0 fields undocumented
+- Updated strategy panel version from v4.0 to v5.0
+- Updated overview description to include v5.0 features (连涨天数, 封板强度, 大单占比, 开盘强弱, 均价偏离度, 尾盘异动)
+- Updated Step 3 flow description to include all v5.0 filter names
+- Added v5.0 badge and description in scoring overview section
+- Added "四、v5.0进阶筛选条件" section in filters tab with 6 conditions (连涨天数, 封板强度, 大单占比, 开盘强弱, 均价偏离度, 尾盘异动)
+- Renumbered "分时检测过滤" from 四 to 五
+- Added 6 v5.0 bullish factors (连涨趋势+2, 大单主导+2, 强开盘+2, 尾盘抢筹+2, 均价线附近+1) to evaluation model
+- Added 3 v5.0 bearish factors (弱开盘-2, 尾盘出逃-2, 均价偏离过大-1) to evaluation model
+- Updated bullish factor count from 12 to 24, bearish from 8 to 15
+- Added 3 new v5.0 resonance types to backend detectResonance function (开盘资金共振, 大单量能共振, 尾盘资金共振)
+- Updated all 3 detectResonance call sites to pass v5.0 parameters
+- Updated resonance table in strategy panel from 5 types to 8 types with version badges
+- Verified no TypeScript errors in modified files
+- Verified lint passes
+
+Stage Summary:
+- Strategy panel updated from v4.0 to v5.0 with complete documentation of all screening conditions
+- 6 new v5.0 filter conditions documented in strategy panel
+- 3 new v5.0 resonance detection types added to backend and UI
+- 9 new evaluation factors (6 bullish + 3 bearish) added

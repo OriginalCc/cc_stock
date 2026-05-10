@@ -2864,7 +2864,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               <Settings className="w-4 h-4 text-emerald-500" />
               选股策略面板
               <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-                v4.0
+                v5.0
               </Badge>
             </CardTitle>
             <div className="flex items-center gap-2">
@@ -2895,10 +2895,10 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                   <div className="p-3 rounded-lg border border-border bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
                     <div className="flex items-center gap-2 mb-2">
                       <Zap className="h-4 w-4 text-emerald-500" />
-                      <span className="text-sm font-bold">智能选股策略 v4.0</span>
+                      <span className="text-sm font-bold">智能选股策略 v5.0</span>
                     </div>
                     <div className="text-xs text-foreground/80">
-                      基于板块热点的智能选股系统，结合脉冲拉升检测、放量拉升识别、递增放量检测、多维增强筛选（含v4.0新增条件：流通市值、PB市净率、内外盘比、日内分位、开盘跳空）与综合可靠度评分模型，从板块成分股中筛选最具短线爆发潜力且可靠性最高的标的。
+                      基于板块热点的智能选股系统，结合脉冲拉升检测、放量拉升识别、递增放量检测、多维增强筛选（含v4.0条件：流通市值、PB市净率、内外盘比、日内分位、开盘跳空）与v5.0进阶筛选（连涨天数、封板强度、大单占比、开盘强弱、均价偏离度、尾盘异动），以及综合可靠度评分模型，从板块成分股中筛选最具短线爆发潜力且可靠性最高的标的。
                     </div>
                   </div>
 
@@ -2910,7 +2910,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     <div className="text-xs text-foreground/80 p-3 rounded-lg bg-muted/30 border border-border/50 space-y-1.5">
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">Step 1</Badge><span>板块搜索 → 关键词匹配东方财富板块代码，支持别名自动扩展</span></div>
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">Step 2</Badge><span>板块成分股获取 → 分页拉取所有板块成分股实时数据</span></div>
-                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 shrink-0">Step 3</Badge><span>硬性过滤 → 主板/ST/创业板/科创板/北交/ETF/涨跌幅/市值/换手/PE/量比/振幅/流通市值/PB/内外盘/分位/跳空</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 shrink-0">Step 3</Badge><span>硬性过滤 → 主板/ST/创业板/科创板/北交/ETF/涨跌幅/市值/换手/PE/量比/振幅/流通市值/PB/内外盘/分位/跳空/连涨/封板/大单/开盘强弱/均价偏离/尾盘异动</span></div>
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 shrink-0">Step 4</Badge><span>分时检测 → 逐股获取1分钟数据，运行脉冲/放量拉升/递增放量检测，评分0-100</span></div>
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 shrink-0">Step 5</Badge><span>OR过滤 → 脉冲/放量拉升/递增放量满足任一阈值即通过（OR关系）</span></div>
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 shrink-0">Step 6</Badge><span>综合评估 → 股票评估标签 + VWAP位置 + 资金趋势 + 多因子共振 + 综合评分 + 可靠度评分</span></div>
@@ -2973,6 +2973,10 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       <div className="flex items-center gap-2 text-[10px]">
                         <Badge className="bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300 text-[9px] h-4 px-1.5">v4.0新增</Badge>
                         <span className="text-foreground/70">流通市值/PB市净率/内外盘比/日内分位/开盘跳空 5项增强条件</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300 text-[9px] h-4 px-1.5">v5.0进阶</Badge>
+                        <span className="text-foreground/70">连涨天数/封板强度/大单占比/开盘强弱/均价偏离度/尾盘异动 6项进阶条件</span>
                       </div>
                     </div>
                   </div>
@@ -3087,11 +3091,46 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     </Table>
                   </div>
 
+                  {/* v5.0 advanced conditions */}
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                      <Sparkles className="w-3 h-3 text-violet-500" />
+                      四、v5.0进阶筛选条件（可选，0=不限）
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[10px] h-7 w-28">条件</TableHead>
+                          <TableHead className="text-[10px] h-7">计算规则</TableHead>
+                          <TableHead className="text-[10px] h-7">筛选逻辑</TableHead>
+                          <TableHead className="text-[10px] h-7 w-16">当前值</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { name: "连涨天数", calc: "近期连续收阳天数（日K线级别）", logic: "连涨天数 ≥ minConsecutiveUpDays天（趋势延续确认）", val: filters.minConsecutiveUpDays > 0 ? `≥${filters.minConsecutiveUpDays}天` : "不限" },
+                          { name: "封板强度", calc: "涨停封单占比，反映封板意愿强弱，0-100分", logic: "封板强度 ≥ minLimitUpStrength（值越大封板越坚决）", val: filters.minLimitUpStrength > 0 ? `≥${filters.minLimitUpStrength}` : "不限" },
+                          { name: "大单占比", calc: "大单成交额/总成交额×100%，反映机构参与度", logic: "大单占比 ≥ minLargeOrderRatio%（值越大机构参与越积极）", val: filters.minLargeOrderRatio > 0 ? `≥${filters.minLargeOrderRatio}%` : "不限" },
+                          { name: "开盘强弱", calc: "开盘15分钟走势判断: 强势/弱势/中性", logic: "strong_open=强开盘（高开高走），weak_open=弱开盘（低开低走）", val: filters.openingStrengthFilter ? (filters.openingStrengthFilter === "strong_open" ? "强开盘" : "弱开盘") : "不限" },
+                          { name: "均价偏离度", calc: "(现价-VWAP均价)/VWAP均价×100%", logic: "minVwapDeviation ≤ 偏离度 ≤ maxVwapDeviation（可筛选偏离过大或过小的标的）", val: (filters.minVwapDeviation > 0 || filters.maxVwapDeviation > 0) ? `${filters.minVwapDeviation || "−∞"}~${filters.maxVwapDeviation || "+∞"}%` : "不限" },
+                          { name: "尾盘异动", calc: "14:30后走势判断: 尾盘拉升/尾盘跳水/无", logic: "late_rally=尾盘拉升（抢筹信号），late_drop=尾盘跳水（出逃信号）", val: filters.enableLateSessionFilter ? (filters.lateSessionType === "late_rally" ? "尾盘拉升" : "尾盘跳水") : "未开启" },
+                        ].map((row) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="text-xs py-1 font-medium">{row.name}</TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{row.calc}</TableCell>
+                            <TableCell className="text-[10px] py-1 text-muted-foreground">{row.logic}</TableCell>
+                            <TableCell className="py-1"><Badge variant="outline" className="text-[8px] h-3.5 px-1">{row.val}</Badge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
                   {/* Pulse/VolumeSurge/ProgressiveVol OR filter */}
                   <div>
                     <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
                       <Zap className="w-3 h-3 text-amber-500" />
-                      四、分时检测过滤（OR关系）
+                      五、分时检测过滤（OR关系）
                     </div>
                     <div className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20">
                       <div className="text-[10px] text-foreground/80 space-y-1">
@@ -3255,26 +3294,31 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                   <div>
                     <div className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
                       <Sparkles className="w-3 h-3 text-orange-500" />
-                      多因子共振检测（5类）
+                      多因子共振检测（8类，含v5.0新增3类）
                     </div>
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead className="text-[10px] h-7 w-28">共振类型</TableHead>
                           <TableHead className="text-[10px] h-7">触发条件</TableHead>
+                          <TableHead className="text-[10px] h-7 w-16">版本</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {[
-                          { name: "脉冲放量共振", rule: "pulseScore ≥ 40 AND volumeSurgeScore ≥ 40" },
-                          { name: "递增放量共振", rule: "progressiveVolScore ≥ 40 AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)" },
-                          { name: "三因子共振", rule: "pulseScore ≥ 40 AND volumeSurgeScore ≥ 40 AND progressiveVolScore ≥ 40" },
-                          { name: "资金量能共振", rule: "资金趋势含inflow AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)" },
-                          { name: "均线共振", rule: "VWAP位置=above_vwap或cross_up AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)" },
+                          { name: "脉冲放量共振", rule: "pulseScore ≥ 40 AND volumeSurgeScore ≥ 40", ver: "v4.0" },
+                          { name: "递增放量共振", rule: "progressiveVolScore ≥ 40 AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)", ver: "v4.0" },
+                          { name: "三因子共振", rule: "pulseScore ≥ 40 AND volumeSurgeScore ≥ 40 AND progressiveVolScore ≥ 40", ver: "v4.0" },
+                          { name: "资金量能共振", rule: "资金趋势含inflow AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)", ver: "v4.0" },
+                          { name: "均线共振", rule: "VWAP位置=above_vwap或cross_up AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)", ver: "v4.0" },
+                          { name: "开盘资金共振", rule: "开盘强弱=strong_open AND 资金趋势含inflow（强开盘+主力流入=涨势确认）", ver: "v5.0" },
+                          { name: "大单量能共振", rule: "大单占比≥10% AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)（机构合力）", ver: "v5.0" },
+                          { name: "尾盘资金共振", rule: "尾盘异动=late_rally AND 资金趋势含inflow（尾盘抢筹+主力流入=次日高开概率大）", ver: "v5.0" },
                         ].map((row) => (
                           <TableRow key={row.name}>
                             <TableCell className="text-xs py-1 font-medium">{row.name}</TableCell>
                             <TableCell className="text-[10px] py-1 text-muted-foreground font-mono">{row.rule}</TableCell>
+                            <TableCell className="py-1"><Badge variant="outline" className={`text-[8px] h-3.5 px-1 ${row.ver === "v5.0" ? "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950 dark:text-violet-300" : "bg-muted/50 text-muted-foreground"}`}>{row.ver}</Badge></TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -3320,7 +3364,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
 
                   {/* Bullish factors */}
                   <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-2">看多因子详情（12项）</div>
+                    <div className="text-xs font-medium text-muted-foreground mb-2">看多因子详情（24项，含v5.0新增6项）</div>
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -3349,6 +3393,11 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           { name: "量比偏强", weight: "+1", desc: "量比 ≥ 1.5" },
                           { name: "低振幅抗跌", weight: "+1", desc: "振幅≤3% 且 -1%≤涨跌幅≤0%" },
                           { name: "PE估值合理", weight: "+1", desc: "0 < PE ≤ 30" },
+                          { name: "连涨趋势", weight: "+2", desc: "连涨天数 ≥ 3天（趋势延续信号）" },
+                          { name: "大单主导", weight: "+2", desc: "大单占比 ≥ 10%（机构积极介入）" },
+                          { name: "强开盘", weight: "+2", desc: "开盘15分钟均价高于昨收0.5%以上（做多意愿强烈）" },
+                          { name: "尾盘抢筹", weight: "+2", desc: "14:30后涨幅>1%（资金尾盘抢筹）" },
+                          { name: "均价线附近", weight: "+1", desc: "均价偏离度绝对值 < 1%（方向待选择，风险可控）" },
                         ].map(f => (
                           <TableRow key={f.name}>
                             <TableCell className="text-xs py-1 font-medium">{f.name}</TableCell>
@@ -3364,7 +3413,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
 
                   {/* Bearish factors */}
                   <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-2">看空因子详情（8项）</div>
+                    <div className="text-xs font-medium text-muted-foreground mb-2">看空因子详情（15项，含v5.0新增3项）</div>
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -3387,6 +3436,9 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           { name: "大幅震荡偏弱", weight: "-2", desc: "振幅>6% 且 涨幅<1%" },
                           { name: "脉冲后回落", weight: "-1", desc: "脉冲分≥50 但 涨幅<1.5%" },
                           { name: "小盘易操控", weight: "-1", desc: "总市值 < 30亿" },
+                          { name: "弱开盘", weight: "-2", desc: "开盘15分钟均价低于昨收0.3%以上（卖压明显）" },
+                          { name: "尾盘出逃", weight: "-2", desc: "14:30后跌幅>1%（资金尾盘出逃）" },
+                          { name: "均价偏离过大", weight: "-1", desc: "均价偏离度绝对值 > 3%（过度偏离，回归压力大）" },
                         ].map(f => (
                           <TableRow key={f.name}>
                             <TableCell className="text-xs py-1 font-medium">{f.name}</TableCell>
