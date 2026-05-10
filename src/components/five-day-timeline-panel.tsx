@@ -158,6 +158,12 @@ function interpolateDayTo1Min(dayKlines: KLine5Min[]): MinuteBar[] {
   return result;
 }
 
+// Tencent timeline API returns volume in 手 (lots, 1 lot = 100 shares),
+// while Sina K-line API returns volume in 股 (shares).
+// For the 5-day chart where both sources are mixed, we must convert
+// timeline volume to 股 by multiplying by 100 so units are consistent.
+const VOL_LOT_TO_SHARE = 100;
+
 function padLiveTimelineTo1Min(timelineData: TimelineItem[]): MinuteBar[] {
   const timeMap = new Map<string, { price: number; volume: number }>();
   for (const t of timelineData) timeMap.set(t.time, { price: t.price, volume: t.volume });
@@ -172,7 +178,7 @@ function padLiveTimelineTo1Min(timelineData: TimelineItem[]): MinuteBar[] {
       const bh = Math.floor(boundaryMin / 60);
       const bm = boundaryMin % 60;
       const boundaryKey = `${String(bh).padStart(2, "0")}:${String(bm).padStart(2, "0")}`;
-      vol5Min.set(boundaryKey, (vol5Min.get(boundaryKey) || 0) + bar.volume);
+      vol5Min.set(boundaryKey, (vol5Min.get(boundaryKey) || 0) + bar.volume * VOL_LOT_TO_SHARE);
     }
   }
 
@@ -361,7 +367,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const availableHeight = window.innerHeight - rect.top - 20;
-      setChartHeight(Math.max(250, Math.floor(availableHeight * 0.85)));
+      setChartHeight(Math.max(300, Math.floor(availableHeight * 0.92)));
     };
     updateHeight();
     window.addEventListener("resize", updateHeight);
@@ -548,7 +554,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return stats;
   }, [items, dayBoundaries, dayLabels, prevClose]);
 
-  const volumeChartHeight = useMemo(() => Math.max(150, Math.floor(chartHeight * 0.35)), [chartHeight]);
+  const volumeChartHeight = useMemo(() => Math.max(130, Math.floor(chartHeight * 0.28)), [chartHeight]);
 
   const xTickInterval = useMemo(() => Math.max(1, Math.floor(visibleItems.length / 14)), [visibleItems.length]);
 
