@@ -295,7 +295,19 @@ function PercentYTick(props: any) {
     return <text x={x} y={y} dy={4} textAnchor="end" fontSize={9} fontFamily="monospace" fill="#94a3b8">{payload.value.toFixed(2)}</text>;
   }
   const pct = ((payload.value - prevClose) / prevClose) * 100;
+  const isZero = Math.abs(pct) < 0.01;
   const isUp = pct >= 0;
+
+  if (isZero) {
+    return (
+      <g>
+        <rect x={x - 62} y={y - 10} width={63} height={20} rx={3} fill="#334155" fillOpacity={0.7} />
+        <text x={x} y={y} textAnchor="end" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#e2e8f0">{payload.value.toFixed(2)}</text>
+        <text x={x} y={y + 12} textAnchor="end" fontSize={8} fontWeight={600} fill="#94a3b8">0.0%</text>
+      </g>
+    );
+  }
+
   return (
     <g>
       <text x={x} y={y} textAnchor="end" fontSize={9} fontFamily="monospace" fill={isUp ? "#ef4444" : "#16a34a"}>{payload.value.toFixed(2)}</text>
