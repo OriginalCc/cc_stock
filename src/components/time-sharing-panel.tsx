@@ -1417,6 +1417,7 @@ export function TimeSharingPanel({
     buySignals, sellSignals, stoplossSignals,
     maxVolume, macdMin, macdMax, macdPad,
     lastItem, lastSignal, barSize, lastDataIdx,
+    highestPrice, lowestPrice,
   } = useMemo(() => {
     // ── Zoom: slice fullDayData to show only visibleMinutes ──
     const lastDataIdx = fullDayData.reduce((last, item, idx) => (item.hasData ? idx : last), -1);
@@ -1503,12 +1504,23 @@ export function TimeSharingPanel({
 
     const brs = zd.length > 200 ? 2 : zd.length > 100 ? 3 : zd.length > 60 ? 4 : 5;
 
+    // Highest & lowest price in visible data
+    let hi = -Infinity, lo = Infinity;
+    for (const d of zd) {
+      if (!d.hasData) continue;
+      if (d.price > hi) hi = d.price;
+      if (d.price < lo) lo = d.price;
+    }
+    const highestPrice = isFinite(hi) ? hi : null;
+    const lowestPrice = isFinite(lo) ? lo : null;
+
     return {
       zoomData: zd, xDomain: xd, zoomTimeTicks: ztt, isZoomed: iz, safePrevClose: spc,
       yMin: ymn, yMax: ymx, percentMin: pMin, percentMax: pMax,
       buySignals: bs, sellSignals: ss, stoplossSignals: sls,
       maxVolume: mv, macdMin: mMin, macdMax: mMax, macdPad: mPad,
       lastItem: li, lastSignal: ls, barSize: brs, lastDataIdx,
+      highestPrice, lowestPrice,
     };
   }, [fullDayData, data, visibleMinutes, panOffset, timeTicks, prevClose, signals, macdData]);
 
@@ -1777,7 +1789,7 @@ export function TimeSharingPanel({
         <ResponsiveContainer width="100%" height={isZoomed ? 420 : 360}>
           <ComposedChart
             data={zoomData}
-            margin={{ top: 36, right: 58, left: 2, bottom: 16 }}
+            margin={{ top: 36, right: 82, left: 2, bottom: 16 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
                 setCrosshairIdx(state.activeTooltipIndex);
@@ -1947,6 +1959,61 @@ export function TimeSharingPanel({
               }
               return null;
             })()}
+            {/* Highest & Lowest price dashed lines + labels */}
+            {highestPrice != null && highestPrice !== safePrevClose && (
+              <ReferenceLine
+                yAxisId="price"
+                y={highestPrice}
+                stroke="#ef4444"
+                strokeDasharray="8 4"
+                strokeWidth={1.8}
+              />
+            )}
+            {lowestPrice != null && lowestPrice !== safePrevClose && (
+              <ReferenceLine
+                yAxisId="price"
+                y={lowestPrice}
+                stroke="#22c55e"
+                strokeDasharray="8 4"
+                strokeWidth={1.8}
+              />
+            )}
+            <Customized component={(props: any) => {
+              const { yAxisMap, offset } = props;
+              if (!yAxisMap || (highestPrice == null && lowestPrice == null) || safePrevClose <= 0) return null;
+              const yAxis = yAxisMap.price;
+              if (!yAxis || !yAxis.scale) return null;
+              const yScale = yAxis.scale;
+              const labelX = offset ? offset.left + offset.width + 5 : 0;
+              const els: React.ReactNode[] = [];
+              if (highestPrice != null) {
+                const y = yScale(highestPrice);
+                if (y != null && !isNaN(y)) {
+                  const pct = ((highestPrice - safePrevClose) / safePrevClose * 100);
+                  els.push(
+                    <g key="hi-tag">
+                      <rect x={labelX} y={y - 17} width={76} height={34} rx={3} fill="#ef4444" fillOpacity={0.5} />
+                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{highestPrice.toFixed(2)}</text>
+                      <text x={labelX + 38} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">+{pct.toFixed(2)}%</text>
+                    </g>
+                  );
+                }
+              }
+              if (lowestPrice != null) {
+                const y = yScale(lowestPrice);
+                if (y != null && !isNaN(y)) {
+                  const pct = ((lowestPrice - safePrevClose) / safePrevClose * 100);
+                  els.push(
+                    <g key="lo-tag">
+                      <rect x={labelX} y={y - 17} width={76} height={34} rx={3} fill="#22c55e" fillOpacity={0.5} />
+                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{lowestPrice.toFixed(2)}</text>
+                      <text x={labelX + 38} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">{pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</text>
+                    </g>
+                  );
+                }
+              }
+              return els.length > 0 ? <g>{els}</g> : null;
+            }} />
             {/* Area fill below price line - 同花顺 style */}
             <Area
               yAxisId="price"
