@@ -58,6 +58,7 @@ import {
   Shield,
   Star,
   Clock,
+  Sparkles,
 } from "lucide-react";
 
 import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoRefresh, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
@@ -81,8 +82,14 @@ interface ScreenerStock {
   marketCap: number;
   circulatingMarketCap: number;
   pe: number;
+  pb: number;
   amplitude: number;
   mainNetInflow: number;
+  sellVol: number;
+  buyVol: number;
+  buySellRatio: number;
+  pricePosition: number;
+  gapUpRate: number;
   pulseScore: number;
   pulseDetail: string;
   volumeSurgeScore: number;
@@ -449,6 +456,13 @@ interface ScreenerFilters {
   maTrendType: string; // "above_ma5" | "above_ma10" | "above_ma20" | "bullish_alignment"
   evaluationFilter: string[]; // 只显示特定评估标签
   minCompositeScore: number;  // 最低综合评分
+  // ── New v4.0 conditions ──
+  maxCirculatingMarketCap: number; // 最大流通市值(亿)，0=不限
+  minPB: number;              // 最小市净率
+  maxPB: number;              // 最大市净率，0=不限
+  minBuySellRatio: number;    // 最小外盘/内盘比率，0=不限
+  minPricePosition: number;   // 最小日内价格位置分位(0-100)，0=不限
+  minGapUpRate: number;       // 最小开盘跳空幅度%，0=不限
 }
 
 const DEFAULT_FILTERS: ScreenerFilters = {
@@ -477,6 +491,13 @@ const DEFAULT_FILTERS: ScreenerFilters = {
   maTrendType: "above_ma5",
   evaluationFilter: [],
   minCompositeScore: 0,
+  // New v4.0 conditions
+  maxCirculatingMarketCap: 0,
+  minPB: 0,
+  maxPB: 0,
+  minBuySellRatio: 0,
+  minPricePosition: 0,
+  minGapUpRate: 0,
 };
 
 // ── Component ──────────────────────────────────────────
@@ -598,6 +619,12 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
       if (!f.enableProgressiveVol) params.set("progressiveVol", "false");
       if (f.mainNetInflowRequired) params.set("mainNetInflowRequired", "true");
       if (f.enableMATrend) params.set("enableMATrend", "true");
+      if (f.maxCirculatingMarketCap > 0) params.set("maxCirculatingMarketCap", String(f.maxCirculatingMarketCap));
+      if (f.minPB > 0) params.set("minPB", String(f.minPB));
+      if (f.maxPB > 0) params.set("maxPB", String(f.maxPB));
+      if (f.minBuySellRatio > 0) params.set("minBuySellRatio", String(f.minBuySellRatio));
+      if (f.minPricePosition > 0) params.set("minPricePosition", String(f.minPricePosition));
+      if (f.minGapUpRate > 0) params.set("minGapUpRate", String(f.minGapUpRate));
       if (forceRefresh) params.set("refresh", "1");
       const res = await fetch(`/api/stock/screener?${params}`);
       const data: ScreenerResult = await res.json();
@@ -943,6 +970,31 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-rose-500/5 border-rose-500/20 text-rose-700 dark:text-rose-300">
                 <Target className="w-3 h-3" />
                 综合≥{filters.minCompositeScore}
+              </Badge>
+            )}
+            {filters.maxCirculatingMarketCap > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-teal-500/5 border-teal-500/20 text-teal-700 dark:text-teal-300">
+                流通市值≤{filters.maxCirculatingMarketCap}亿
+              </Badge>
+            )}
+            {filters.maxPB > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-teal-500/5 border-teal-500/20 text-teal-700 dark:text-teal-300">
+                PB {filters.minPB>0?`${filters.minPB}~`:"≤"}{filters.maxPB}
+              </Badge>
+            )}
+            {filters.minBuySellRatio > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-red-500/5 border-red-500/20 text-red-700 dark:text-red-300">
+                外/内盘≥{filters.minBuySellRatio}
+              </Badge>
+            )}
+            {filters.minPricePosition > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                日内分位≥{filters.minPricePosition}%
+              </Badge>
+            )}
+            {filters.minGapUpRate > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300">
+                跳空≥{filters.minGapUpRate}%
               </Badge>
             )}
           </div>
@@ -1597,6 +1649,152 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                 </div>
               </div>
 
+              {/* ── Row 5: New v4.0 Screening Conditions ── */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="text-xs font-medium text-muted-foreground">高级筛选条件</span>
+                  <span className="text-[10px] text-muted-foreground/60">（v4.0新增，精准选股）</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Circulating Market Cap */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      最大流通市值 ({filters.maxCirculatingMarketCap > 0 ? `${filters.maxCirculatingMarketCap}亿` : "不限"})
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.maxCirculatingMarketCap || ""}
+                        onChange={(e) => handleFilterChange("maxCirculatingMarketCap", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-20"
+                        step={20}
+                        min={0}
+                        placeholder="不限"
+                      />
+                      <span className="text-xs text-muted-foreground">亿</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => handleFilterChange("maxCirculatingMarketCap", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxCirculatingMarketCap === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => handleFilterChange("maxCirculatingMarketCap", 50)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxCirculatingMarketCap === 50 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≤50亿</button>
+                      <button onClick={() => handleFilterChange("maxCirculatingMarketCap", 100)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxCirculatingMarketCap === 100 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≤100亿</button>
+                      <button onClick={() => handleFilterChange("maxCirculatingMarketCap", 200)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxCirculatingMarketCap === 200 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≤200亿</button>
+                    </div>
+                  </div>
+
+                  {/* PB Range */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      市净率PB {filters.maxPB > 0 ? `(${filters.minPB>0?filters.minPB:0} ~ ${filters.maxPB})` : "(不限)"}
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.minPB || ""}
+                        onChange={(e) => handleFilterChange("minPB", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-16"
+                        step={0.5}
+                        min={0}
+                        placeholder="0"
+                      />
+                      <span className="text-xs text-muted-foreground">~</span>
+                      <Input
+                        type="number"
+                        value={filters.maxPB || ""}
+                        onChange={(e) => handleFilterChange("maxPB", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-16"
+                        step={0.5}
+                        min={0}
+                        placeholder="不限"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => { handleFilterChange("minPB", 0); handleFilterChange("maxPB", 0); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxPB === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => { handleFilterChange("minPB", 0); handleFilterChange("maxPB", 3); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxPB === 3 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≤3</button>
+                      <button onClick={() => { handleFilterChange("minPB", 0); handleFilterChange("maxPB", 5); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxPB === 5 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≤5</button>
+                      <button onClick={() => { handleFilterChange("minPB", 1); handleFilterChange("maxPB", 5); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minPB === 1 && filters.maxPB === 5 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>1~5</button>
+                    </div>
+                  </div>
+
+                  {/* Buy/Sell Ratio + Price Position + Gap Up */}
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        外盘/内盘比率 ≥ {filters.minBuySellRatio}
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={filters.minBuySellRatio || ""}
+                          onChange={(e) => handleFilterChange("minBuySellRatio", parseFloat(e.target.value) || 0)}
+                          className="h-7 text-xs w-16"
+                          step={0.1}
+                          min={0}
+                          placeholder="0"
+                        />
+                        <span className="text-[10px] text-muted-foreground">外盘&gt;内盘=买方强</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <button onClick={() => handleFilterChange("minBuySellRatio", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minBuySellRatio === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                        <button onClick={() => handleFilterChange("minBuySellRatio", 1)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minBuySellRatio === 1 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥1</button>
+                        <button onClick={() => handleFilterChange("minBuySellRatio", 1.5)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minBuySellRatio === 1.5 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥1.5</button>
+                        <button onClick={() => handleFilterChange("minBuySellRatio", 2)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minBuySellRatio === 2 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥2</button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        日内价格分位 ≥ {filters.minPricePosition}%
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={filters.minPricePosition || ""}
+                          onChange={(e) => handleFilterChange("minPricePosition", parseFloat(e.target.value) || 0)}
+                          className="h-7 text-xs w-16"
+                          step={10}
+                          min={0}
+                          max={100}
+                          placeholder="0"
+                        />
+                        <span className="text-[10px] text-muted-foreground">越接近100越强势</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <button onClick={() => handleFilterChange("minPricePosition", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minPricePosition === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                        <button onClick={() => handleFilterChange("minPricePosition", 60)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minPricePosition === 60 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥60%</button>
+                        <button onClick={() => handleFilterChange("minPricePosition", 80)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minPricePosition === 80 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥80%</button>
+                        <button onClick={() => handleFilterChange("minPricePosition", 90)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minPricePosition === 90 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥90%</button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        开盘跳空 ≥ {filters.minGapUpRate}%
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={filters.minGapUpRate || ""}
+                          onChange={(e) => handleFilterChange("minGapUpRate", parseFloat(e.target.value) || 0)}
+                          className="h-7 text-xs w-16"
+                          step={0.5}
+                          min={0}
+                          placeholder="0"
+                        />
+                        <span className="text-[10px] text-muted-foreground">高开=做多意愿强</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <button onClick={() => handleFilterChange("minGapUpRate", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minGapUpRate === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                        <button onClick={() => handleFilterChange("minGapUpRate", 0.5)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minGapUpRate === 0.5 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥0.5%</button>
+                        <button onClick={() => handleFilterChange("minGapUpRate", 1)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minGapUpRate === 1 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥1%</button>
+                        <button onClick={() => handleFilterChange("minGapUpRate", 2)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minGapUpRate === 2 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥2%</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
                 {/* Quick presets & Custom presets */}
                 <div className="space-y-3">
                   <div className="space-y-2">
@@ -2096,6 +2294,9 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </div>
                     </TableHead>
                     <TableHead className="w-[60px] text-xs font-medium">PE</TableHead>
+                    <TableHead className="w-[45px] text-xs font-medium">PB</TableHead>
+                    <TableHead className="w-[45px] text-xs font-medium">外/内</TableHead>
+                    <TableHead className="w-[45px] text-xs font-medium">分位</TableHead>
                     <TableHead className="text-center text-xs">评估</TableHead>
                     <TableHead className="text-xs font-medium min-w-[120px]">信号详情</TableHead>
                   </TableRow>
@@ -2284,6 +2485,23 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2 text-muted-foreground">
                           {stock.pe > 0 ? stock.pe.toFixed(1) : "--"}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono py-2 text-muted-foreground">
+                          {stock.pb > 0 ? stock.pb.toFixed(1) : "--"}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.buySellRatio > 0 ? (
+                            <span className={stock.buySellRatio >= 1.5 ? "text-red-500" : stock.buySellRatio >= 1 ? "text-orange-500" : "text-muted-foreground"}>
+                              {stock.buySellRatio.toFixed(1)}
+                            </span>
+                          ) : "--"}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.pricePosition > 0 ? (
+                            <span className={stock.pricePosition >= 80 ? "text-red-500" : stock.pricePosition >= 60 ? "text-orange-500" : "text-muted-foreground"}>
+                              {stock.pricePosition.toFixed(0)}%
+                            </span>
+                          ) : "--"}
                         </TableCell>
                         <TableCell className="text-center">
                           {stock.evaluation && stock.evaluation !== "待评估" ? (

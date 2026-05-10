@@ -48,8 +48,14 @@ function buildCacheKey(params: {
   maxAmplitude: number;
   enableMATrend: boolean;
   maTrendType: string;
+  maxCirculatingMarketCap: number;
+  minPB: number;
+  maxPB: number;
+  minBuySellRatio: number;
+  minPricePosition: number;
+  minGapUpRate: number;
 }): string {
-  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}|${params.pulseTimeStart}|${params.pulseTimeEnd}|${params.volumeSurge}|${params.volumeSurgeThreshold}|${params.progressiveVol}|${params.progressiveVolThreshold}|${params.minTurnover}|${params.maxTurnover}|${params.minPE}|${params.maxPE}|${params.minVolumeRatio}|${params.mainNetInflowRequired}|${params.minAmplitude}|${params.maxAmplitude}|${params.enableMATrend}|${params.maTrendType}`;
+  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}|${params.pulseTimeStart}|${params.pulseTimeEnd}|${params.volumeSurge}|${params.volumeSurgeThreshold}|${params.progressiveVol}|${params.progressiveVolThreshold}|${params.minTurnover}|${params.maxTurnover}|${params.minPE}|${params.maxPE}|${params.minVolumeRatio}|${params.mainNetInflowRequired}|${params.minAmplitude}|${params.maxAmplitude}|${params.enableMATrend}|${params.maTrendType}|${params.maxCirculatingMarketCap}|${params.minPB}|${params.maxPB}|${params.minBuySellRatio}|${params.minPricePosition}|${params.minGapUpRate}`;
 }
 
 // ── Types ──────────────────────────────────────────────
@@ -71,8 +77,14 @@ interface ScreenerStock {
   marketCap: number;        // 总市值(元)
   circulatingMarketCap: number; // 流通市值(元)
   pe: number;               // 市盈率(动)
+  pb: number;               // 市净率
   amplitude: number;        // 振幅%
   mainNetInflow: number;    // 主力净流入
+  sellVol: number;          // 内盘（主动卖出量，手）
+  buyVol: number;           // 外盘（主动买入量，手）
+  buySellRatio: number;     // 外盘/内盘比率
+  pricePosition: number;    // 日内价格位置分位 (0-100)，(现价-最低)/(最高-最低)*100
+  gapUpRate: number;        // 开盘跳空幅度%
   pulseScore: number;       // 脉冲拉升评分 0-100
   pulseDetail: string;      // 脉冲拉升描述
   volumeSurgeScore: number; // 放量拉升评分 0-100
@@ -277,7 +289,7 @@ async function getSectorStocks(sectorCode: string, pageSize: number = 200): Prom
 
   while (hasMore && page <= 5) {
     try {
-      const url = `http://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=b:${sectorCode}&fields=f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f11,f62,f128,f140,f141,f136`;
+      const url = `http://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=b:${sectorCode}&fields=f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f11,f62,f128,f140,f141,f136,f100,f112`;
       const resp = await fetch(url, {
         next: { revalidate: 0 },
         signal: AbortSignal.timeout(15000),
@@ -1410,6 +1422,12 @@ export async function GET(request: NextRequest) {
   const enableMATrend = searchParams.get("enableMATrend") === "true";
   const maTrendType = searchParams.get("maTrendType") || "above_ma5";
   const forceRefresh = searchParams.get("refresh") === "1";
+  const maxCirculatingMarketCap = parseFloat(searchParams.get("maxCirculatingMarketCap") || "0");
+  const minPB = parseFloat(searchParams.get("minPB") || "0");
+  const maxPB = parseFloat(searchParams.get("maxPB") || "0");
+  const minBuySellRatio = parseFloat(searchParams.get("minBuySellRatio") || "0");
+  const minPricePosition = parseFloat(searchParams.get("minPricePosition") || "0");
+  const minGapUpRate = parseFloat(searchParams.get("minGapUpRate") || "0");
 
   // Check server cache first
   const cacheKey = buildCacheKey({
@@ -1421,6 +1439,7 @@ export async function GET(request: NextRequest) {
     minTurnover, maxTurnover, minPE, maxPE, minVolumeRatio,
     mainNetInflowRequired, minAmplitude, maxAmplitude,
     enableMATrend, maTrendType,
+    maxCirculatingMarketCap, minPB, maxPB, minBuySellRatio, minPricePosition, minGapUpRate,
   });
   if (!forceRefresh) {
     const cached = screenerCache.get(cacheKey);
@@ -1510,6 +1529,16 @@ export async function GET(request: NextRequest) {
       const circulatingMarketCap = parseFloat(stock.f21) || 0;
       const mainNetInflow = parseFloat(stock.f62) || 0;
       const volumeRatio = parseFloat(stock.f10) || 0;
+      const pb = parseFloat(stock.f23) || 0;
+      // f100 = 内盘（主卖成交量，手），f112 = 外盘（主买成交量，手）
+      // Some EastMoney API versions use different field codes; fallback to 0
+      const sellVol = parseFloat(stock.f100) || 0;
+      const buyVol = parseFloat(stock.f112) || 0;
+      const buySellRatio = sellVol > 0 ? buyVol / sellVol : (buyVol > 0 ? 99 : 0);
+      // Price position: (price - low) / (high - low) * 100
+      const pricePosition = (high > low) ? ((price - low) / (high - low)) * 100 : (price > 0 ? 50 : 0);
+      // Gap up rate: (open - prevClose) / prevClose * 100
+      const gapUpRate = prevClose > 0 ? ((open - prevClose) / prevClose) * 100 : 0;
 
       // Skip invalid data
       if (price <= 0 || prevClose <= 0) continue;
@@ -1536,6 +1565,24 @@ export async function GET(request: NextRequest) {
       // Filter: amplitude
       if (amplitude < minAmplitude || amplitude > maxAmplitude) continue;
 
+      // Filter: circulating market cap (0 = no limit)
+      if (maxCirculatingMarketCap > 0) {
+        const circCapYi = circulatingMarketCap / 1e8;
+        if (circCapYi > maxCirculatingMarketCap || circCapYi <= 0) continue;
+      }
+
+      // Filter: PB ratio (0 maxPB = no limit)
+      if (maxPB > 0 && pb > 0 && (pb < minPB || pb > maxPB)) continue;
+
+      // Filter: buy/sell ratio (外盘/内盘)
+      if (minBuySellRatio > 0 && buySellRatio < minBuySellRatio) continue;
+
+      // Filter: price position (日内分位)
+      if (minPricePosition > 0 && pricePosition < minPricePosition) continue;
+
+      // Filter: gap up rate (开盘跳空)
+      if (minGapUpRate > 0 && gapUpRate < minGapUpRate) continue;
+
       candidates.push({
         symbol: code,
         name,
@@ -1553,8 +1600,14 @@ export async function GET(request: NextRequest) {
         marketCap,
         circulatingMarketCap,
         pe,
+        pb,
         amplitude,
         mainNetInflow,
+        sellVol,
+        buyVol,
+        buySellRatio,
+        pricePosition,
+        gapUpRate,
         pulseScore: 0,
         pulseDetail: "待检测",
         volumeSurgeScore: 0,
