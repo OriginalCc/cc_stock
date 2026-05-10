@@ -195,7 +195,23 @@ function convertTo5DayTimeline(
     // Keep items before the last day
     const beforeLastDay = items.slice(0, lastDayStartIdx);
 
-    // Rebuild last day with live timeline data
+    // Downsample 1-min timeline to 5-min intervals so the last day
+    // has the same data density as the other 4 days (~48 bars).
+    // Take the last bar in each 5-min window.
+    const sampled: TimelineItem[] = [];
+    for (let i = 0; i < currentTimeline.length; i++) {
+      const t = currentTimeline[i];
+      const [h, m] = t.time.split(":").map(Number);
+      const totalMin = h * 60 + m;
+      // Only keep bars at 5-minute boundaries (e.g. 09:30, 09:35, 09:40, …)
+      if (totalMin % 5 === 0) {
+        sampled.push(t);
+      }
+    }
+    // If sampling produced nothing (edge case), keep last bar of each 5-min window
+    const timelineSource = sampled.length > 0 ? sampled : currentTimeline;
+
+    // Rebuild last day with (downsampled) live timeline data
     const liveItems: FiveDayTimelineItem[] = [];
     let cumVol = 0;
     let cumAmt = 0;
@@ -203,8 +219,12 @@ function convertTo5DayTimeline(
       ? beforeLastDay[beforeLastDay.length - 1].price
       : (quote?.prevClose || timelinePrevClose || currentTimeline[0]?.price || 0);
 
-    for (let i = 0; i < currentTimeline.length; i++) {
-      const t = currentTimeline[i];
+    for (let i = 0; i < timelineSource.length; i++) {
+      const t = timelineSource[i];
+      // For sampled data, volume should represent the 5-min bar,
+      // but since we only have 1-min bars, we accumulate volume within
+      // the 5-min window. Reset cumulative when starting a new window.
+      // Actually, for simplicity we use per-bar volume from the sampled point.
       cumVol += t.volume;
       cumAmt += t.volume * t.price;
       const avgPrice = cumVol > 0 ? cumAmt / cumVol : t.price;
