@@ -117,9 +117,13 @@ export function SignalSummaryPanel({
                   <div key={`pvm-${i}`} className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border ${
                     m.type === "pulse"
                       ? "bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300"
+                      : m.type === "pulse_decline"
+                      ? "bg-green-500/5 border-green-500/20 text-green-700 dark:text-green-300"
+                      : m.type === "volume_decline"
+                      ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300"
                       : "bg-cyan-500/5 border-cyan-500/20 text-cyan-700 dark:text-cyan-300"
                   }`}>
-                    {m.type === "pulse" ? <Zap className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+                    {m.type === "pulse" ? <Zap className="w-3 h-3" /> : m.type === "pulse_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "volume_decline" ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
                     <span className="font-mono">{m.time}</span>
                     <span className="font-medium">{m.label}</span>
                     <span className="text-muted-foreground">{m.detail}</span>

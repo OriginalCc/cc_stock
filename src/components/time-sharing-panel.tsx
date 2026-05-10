@@ -183,8 +183,12 @@ function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; 
 function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker, idx: number): React.ReactNode {
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
+  const isPulseDecline = marker.type === "pulse_decline";
+  const isVolumeDecline = marker.type === "volume_decline";
+  const isDecline = isPulseDecline || isVolumeDecline;
 
   // Color schemes — brighter & more saturated for visibility
+  // Decline markers use green tones (bearish in Chinese markets)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string, labelY: number;
   if (isPulse) {
     bgColor = "rgba(245, 158, 11, 0.25)";
@@ -200,6 +204,20 @@ function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker
     iconColor = "#10b981";
     glowColor = "rgba(16, 185, 129, 0.35)";
     labelY = y - 26;
+  } else if (isPulseDecline) {
+    bgColor = "rgba(22, 163, 74, 0.25)";
+    borderColor = "rgba(22, 163, 74, 0.85)";
+    textColor = "#166534";
+    iconColor = "#16a34a";
+    glowColor = "rgba(22, 163, 74, 0.35)";
+    labelY = y + 14;
+  } else if (isVolumeDecline) {
+    bgColor = "rgba(34, 197, 94, 0.25)";
+    borderColor = "rgba(34, 197, 94, 0.85)";
+    textColor = "#15803d";
+    iconColor = "#22c55e";
+    glowColor = "rgba(34, 197, 94, 0.35)";
+    labelY = y + 14;
   } else {
     bgColor = "rgba(6, 182, 212, 0.25)";
     borderColor = "rgba(6, 182, 212, 0.85)";
@@ -237,25 +255,25 @@ function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker
         textAnchor="middle" dominantBaseline="middle"
         fontSize={7} fill={iconColor} fontWeight="bold"
       >
-        {isPulse ? "⚡" : isProgressiveVol ? "📈" : "▲"}
+        {isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
       </text>
       {/* White glow behind label pill for readability */}
       <rect
-        x={x - pillW / 2 - 1.5} y={(isPulse || isProgressiveVol ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
+        x={x - pillW / 2 - 1.5} y={((isPulse || isProgressiveVol) ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
         width={pillW + 3} height={pillH + 3}
         rx={pillRx + 1} ry={pillRx + 1}
         fill="white" fillOpacity={0.85}
       />
       {/* Label background pill */}
       <rect
-        x={x - pillW / 2} y={isPulse || isProgressiveVol ? labelY - pillH / 2 - 2 : labelY - 2}
+        x={x - pillW / 2} y={(isPulse || isProgressiveVol) ? labelY - pillH / 2 - 2 : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
         fill={bgColor} stroke={borderColor} strokeWidth={1}
       />
       {/* Label text — larger & bolder */}
       <text
-        x={x} y={isPulse || isProgressiveVol ? labelY + 1 : labelY + 7}
+        x={x} y={(isPulse || isProgressiveVol) ? labelY + 1 : labelY + 7}
         textAnchor="middle" dominantBaseline="middle"
         fontSize={9} fontWeight={700} fill={textColor}
       >
