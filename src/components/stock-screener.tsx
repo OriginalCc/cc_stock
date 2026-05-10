@@ -2540,6 +2540,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         主力净流 <SortIcon field="mainNetInflow" />
                       </div>
                     </TableHead>
+                    <TableHead className="text-center text-xs">评估</TableHead>
                     <TableHead className="w-[60px] text-xs font-medium">PE</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">PB</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">外/内</TableHead>
@@ -2550,7 +2551,6 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     <TableHead className="w-[50px] text-xs font-medium">开盘</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">偏离</TableHead>
                     <TableHead className="w-[50px] text-xs font-medium">尾盘</TableHead>
-                    <TableHead className="text-center text-xs">评估</TableHead>
                     <TableHead className="text-xs font-medium min-w-[120px]">信号详情</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -2736,6 +2736,24 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           {stock.mainNetInflow >= 0 ? "+" : ""}
                           {formatAmount(stock.mainNetInflow)}
                         </TableCell>
+                        <TableCell className="text-center">
+                          {stock.evaluation && stock.evaluation !== "待评估" ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="outline" className={`${getEvaluationStyle(stock.evaluation).bg} ${getEvaluationStyle(stock.evaluation).text} text-xs cursor-help`}>
+                                    {getEvaluationStyle(stock.evaluation).icon} {stock.evaluation}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs text-xs">
+                                  {stock.evaluationDetail}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-xs font-mono py-2 text-muted-foreground">
                           {stock.pe > 0 ? stock.pe.toFixed(1) : "--"}
                         </TableCell>
@@ -2801,24 +2819,6 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                             <span className="text-green-500">跳水</span>
                           ) : (
                             <span className="text-muted-foreground">--</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {stock.evaluation && stock.evaluation !== "待评估" ? (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Badge variant="outline" className={`${getEvaluationStyle(stock.evaluation).bg} ${getEvaluationStyle(stock.evaluation).text} text-xs cursor-help`}>
-                                    {getEvaluationStyle(stock.evaluation).icon} {stock.evaluation}
-                                  </Badge>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="max-w-xs text-xs">
-                                  {stock.evaluationDetail}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-xs py-2 text-muted-foreground max-w-[200px] truncate">
