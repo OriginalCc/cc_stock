@@ -95,8 +95,12 @@ interface ScreenerStock {
   gapUpRate: number;        // 开盘跳空幅度%
   pulseScore: number;       // 脉冲拉升评分 0-100
   pulseDetail: string;      // 脉冲拉升描述
+  pulseDeclineScore: number;  // 脉冲下跌评分 0-100
+  pulseDeclineDetail: string; // 脉冲下跌描述
   volumeSurgeScore: number; // 放量拉升评分 0-100
   volumeSurgeDetail: string;// 放量拉升描述
+  volumeDeclineScore: number; // 放量下跌评分 0-100
+  volumeDeclineDetail: string;// 放量下跌描述
   progressiveVolScore: number; // 递增放量评分 0-100
   progressiveVolDetail: string; // 递增放量描述
   evaluation: string;        // 股票评估标签
@@ -538,6 +542,359 @@ function detectPulseSurge(
   return {
     score,
     detail: details.length > 0 ? details.join("，") : (score > 0 ? "轻微脉冲" : "无明显脉冲"),
+  };
+}
+
+/**
+ * Detect pulse decline (脉冲下跌) — mirror of detectPulseSurge for downward movement
+ * Returns { score: 0-100, detail: string }
+ *
+ * Detection strategies:
+ * 1. Rapid price drop in short 5-min window (快速下跌)
+ * 2. Open-to-low rate (开盘急跌)
+ * 3. Trough then rebound pattern (探底回升 — classic pulse decline signature)
+ * 4. Volume spike at the drop (放量砸盘)
+ * 5. Gap down at open (跳空低开)
+ */
+function detectPulseDecline(
+  timeline: { time: string; price: number; volume: number }[],
+  prevClose: number,
+  open: number,
+  timeStart: string = "09:30",
+  timeEnd: string = "10:30",
+): { score: number; detail: string } {
+  if (!timeline || timeline.length < 5 || prevClose <= 0) {
+    return { score: 0, detail: "数据不足" };
+  }
+
+  const startMin = parseTimeToMinutes(timeStart);
+  const endMin = parseTimeToMinutes(timeEnd);
+
+  const earlySession = timeline.filter(t => {
+    const hour = parseInt(t.time.split(":")[0]);
+    const minute = parseInt(t.time.split(":")[1]);
+    const totalMin = hour * 60 + minute;
+    return totalMin >= startMin && totalMin <= endMin;
+  });
+
+  if (earlySession.length < 3) {
+    return { score: 0, detail: "早盘数据不足" };
+  }
+
+  // Strategy 1: Check for rapid drop in short window
+  let maxDropRate = 0;
+  let dropStart = "";
+  let dropEnd = "";
+  const windowSize = 5;
+
+  for (let i = 0; i <= earlySession.length - windowSize; i++) {
+    const startPrice = earlySession[i].price;
+    const endPrice = earlySession[i + windowSize - 1].price;
+    if (startPrice <= 0) continue;
+
+    const dropRate = ((startPrice - endPrice) / startPrice) * 100; // positive = price dropped
+    if (dropRate > maxDropRate) {
+      maxDropRate = dropRate;
+      dropStart = earlySession[i].time;
+      dropEnd = earlySession[i + windowSize - 1].time;
+    }
+  }
+
+  // Strategy 2: Check open-to-low rate (开盘急跌)
+  const openPrice = earlySession[0].price;
+  const earlyLow = Math.min(...earlySession.map(t => t.price));
+  const openToLowRate = openPrice > 0 ? ((openPrice - earlyLow) / openPrice) * 100 : 0;
+
+  // Strategy 3: Trough then rebound (探底回升 — classic pulse decline)
+  let troughIdx = 0;
+  let troughPrice = Infinity;
+  for (let i = 0; i < earlySession.length; i++) {
+    if (earlySession[i].price < troughPrice) {
+      troughPrice = earlySession[i].price;
+      troughIdx = i;
+    }
+  }
+
+  const lastEarlyPrice = earlySession[earlySession.length - 1].price;
+  const reboundRate = troughPrice > 0 ? ((lastEarlyPrice - troughPrice) / troughPrice) * 100 : 0;
+
+  // Strategy 4: Volume spike at the trough (放量砸盘)
+  const avgVol = earlySession.reduce((sum, t) => sum + t.volume, 0) / earlySession.length;
+  const troughVol = earlySession[troughIdx]?.volume || 0;
+  const volumeRatio = avgVol > 0 ? troughVol / avgVol : 1;
+
+  // Strategy 5: Gap down at open (跳空低开)
+  const gapDownRate = prevClose > 0 ? ((prevClose - openPrice) / prevClose) * 100 : 0;
+
+  // Calculate composite pulse decline score
+  let score = 0;
+
+  // Short-window rapid drop (most important signal)
+  if (maxDropRate >= 3) score += 35;
+  else if (maxDropRate >= 2) score += 25;
+  else if (maxDropRate >= 1.5) score += 20;
+  else if (maxDropRate >= 1) score += 12;
+  else if (maxDropRate >= 0.5) score += 5;
+
+  // Open-to-low rate
+  if (openToLowRate >= 3) score += 25;
+  else if (openToLowRate >= 2) score += 18;
+  else if (openToLowRate >= 1.5) score += 12;
+  else if (openToLowRate >= 1) score += 8;
+  else if (openToLowRate >= 0.5) score += 3;
+
+  // Trough then rebound (classic pulse decline signature: drop then recover)
+  if (reboundRate >= 0.5 && reboundRate <= 5 && troughIdx < earlySession.length - 2) {
+    score += 15; // Trough followed by rebound = strong decline-then-recover signal
+  } else if (reboundRate > 0 && troughIdx < earlySession.length / 2) {
+    score += 8;
+  }
+
+  // Volume spike at drop
+  if (volumeRatio >= 2) score += 10;
+  else if (volumeRatio >= 1.5) score += 6;
+  else if (volumeRatio >= 1.2) score += 3;
+
+  // Gap down bonus
+  if (gapDownRate >= 1) score += 10;
+  else if (gapDownRate >= 0.5) score += 5;
+  else if (gapDownRate > 0) score += 2;
+
+  score = Math.min(score, 100);
+
+  // Build detail string
+  const details: string[] = [];
+  if (maxDropRate >= 1) {
+    details.push(`${dropStart}-${dropEnd}急跌${maxDropRate.toFixed(1)}%`);
+  }
+  if (openToLowRate >= 1) {
+    details.push(`开盘急跌${openToLowRate.toFixed(1)}%`);
+  }
+  if (gapDownRate >= 0.5) {
+    details.push(`跳空低开${gapDownRate.toFixed(1)}%`);
+  }
+  if (reboundRate >= 0.3 && troughIdx < earlySession.length - 2) {
+    details.push(`探底回升${reboundRate.toFixed(1)}%`);
+  }
+  if (volumeRatio >= 1.5) {
+    details.push(`放量砸盘${volumeRatio.toFixed(1)}x`);
+  }
+
+  return {
+    score,
+    detail: details.length > 0 ? details.join("，") : (score > 0 ? "轻微下跌脉冲" : "无明显下跌脉冲"),
+  };
+}
+
+/**
+ * Detect volume surge WITH price decline pattern (放量下跌)
+ * Returns { score: 0-100, detail: string }
+ *
+ * "放量下跌" = volume surge accompanied by price decline.
+ * This is the bearish counterpart of "放量拉升".
+ *
+ * Detection strategies:
+ * 1. Volume spike + price drop in the same minute (量价齐跌)
+ * 2. Progressive volume increase with sustained price drop (递增放量下跌)
+ * 3. Volume expansion ratio above baseline WITH negative price gain
+ * 4. Concentrated selling: high % of down-minutes with above-average volume
+ * 5. Price drop magnitude during volume peak (放量砸盘幅度)
+ * 6. Speed of drop during volume surge (下跌速度)
+ */
+function detectVolumeDecline(
+  timeline: { time: string; price: number; volume: number }[],
+  prevClose: number,
+  open: number,
+  timeStart: string = "09:30",
+  timeEnd: string = "10:30",
+): { score: number; detail: string } {
+  if (!timeline || timeline.length < 10 || prevClose <= 0) {
+    return { score: 0, detail: "数据不足" };
+  }
+
+  const startMin = parseTimeToMinutes(timeStart);
+  const endMin = parseTimeToMinutes(timeEnd);
+
+  const session = timeline.filter(t => {
+    const hour = parseInt(t.time.split(":")[0]);
+    const minute = parseInt(t.time.split(":")[1]);
+    const totalMin = hour * 60 + minute;
+    return totalMin >= startMin && totalMin <= endMin;
+  });
+
+  if (session.length < 5) {
+    return { score: 0, detail: "时段数据不足" };
+  }
+
+  // Calculate incremental volumes
+  const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
+  for (let i = 0; i < session.length; i++) {
+    const prevVol = i > 0 ? session[i - 1].volume : 0;
+    const curVol = session[i].volume;
+    const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+    const prevPrice = i > 0 ? session[i - 1].price : prevClose;
+    const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
+    increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
+  }
+
+  // ── Strategy 1: Volume spike + price drop (量价齐跌) — MOST IMPORTANT ──
+  const avgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
+  const maxVol = Math.max(...increments.map(t => t.vol));
+  const maxVolIdx = increments.findIndex(t => t.vol === maxVol);
+  const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
+  const maxVolPriceChange = increments[maxVolIdx]?.priceChange || 0;
+
+  // ── Strategy 2: Progressive volume increase WITH price drop (递增放量下跌) ──
+  let maxProgressiveLen = 1;
+  let curProgressiveLen = 1;
+  let progressiveStart = 0;
+  let bestProgressiveStart = 0;
+  for (let i = 1; i < increments.length; i++) {
+    if (increments[i].vol > increments[i - 1].vol && increments[i].vol > 0) {
+      curProgressiveLen++;
+      if (curProgressiveLen > maxProgressiveLen) {
+        maxProgressiveLen = curProgressiveLen;
+        bestProgressiveStart = progressiveStart;
+      }
+    } else {
+      curProgressiveLen = 1;
+      progressiveStart = i;
+    }
+  }
+
+  const progressivePriceDrop = maxProgressiveLen >= 3
+    ? (() => {
+        const startP = increments[bestProgressiveStart]?.price || 0;
+        const endP = increments[bestProgressiveStart + maxProgressiveLen - 1]?.price || 0;
+        return startP > 0 ? ((startP - endP) / startP) * 100 : 0; // positive = price dropped
+      })()
+    : 0;
+
+  // ── Strategy 3: Volume expansion vs baseline WITH negative price gain ──
+  const baselineVol = increments.slice(0, Math.min(5, increments.length))
+    .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
+  const totalWindowVol = increments.reduce((s, t) => s + t.vol, 0);
+  const windowAvgVol = totalWindowVol / increments.length;
+  const windowVolRatio = baselineVol > 0 ? windowAvgVol / baselineVol : 1;
+
+  // ── Strategy 4: Price drop in the window ──
+  const windowStartPrice = session[0].price;
+  const windowEndPrice = session[session.length - 1].price;
+  const windowPriceDrop = windowStartPrice > 0
+    ? ((windowStartPrice - windowEndPrice) / windowStartPrice) * 100 // positive = price dropped
+    : 0;
+
+  // ── Strategy 5: Concentrated selling — down-minutes with above-average volume ──
+  const downWithHighVol = increments.filter(t => t.priceChange < 0 && t.vol > avgVol).length;
+  const downHighVolRatio = increments.length > 0 ? downWithHighVol / increments.length : 0;
+
+  // ── Strategy 6: Price drop magnitude during volume peak (放量砸盘幅度) ──
+  let dropRate = 0;
+  if (maxVolIdx >= 2) {
+    const preDropPrice = increments[Math.max(0, maxVolIdx - 3)].price;
+    const lowPrice = Math.min(
+      ...increments.slice(Math.max(0, maxVolIdx - 1), Math.min(increments.length, maxVolIdx + 3)).map(t => t.price)
+    );
+    dropRate = preDropPrice > 0 ? ((preDropPrice - lowPrice) / preDropPrice) * 100 : 0; // positive = price dropped
+  }
+
+  // ── Strategy 7: Speed of drop — max price decrease in any 3-minute window ──
+  let maxDropSpeed = 0;
+  let maxDropStart = 0;
+  for (let i = 0; i <= increments.length - 3; i++) {
+    const startP = increments[i].price;
+    const endP = increments[i + 2].price;
+    if (startP > 0) {
+      const dropSpeed = ((startP - endP) / startP) * 100; // positive = price dropped
+      if (dropSpeed > maxDropSpeed) {
+        maxDropSpeed = dropSpeed;
+        maxDropStart = i;
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════
+  // Calculate composite score — 放量下跌 (volume surge + price decline)
+  // KEY: Volume without price decline gets ZERO or NEGATIVE score
+  // ══════════════════════════════════════════════════
+  let score = 0;
+
+  // Gate check: if there's no meaningful price decline at all, score is capped
+  const hasPriceDrop = windowPriceDrop > 0.1 || maxVolPriceChange < -0.1 || maxDropSpeed > 0.3;
+
+  // ── Strategy 1: Volume spike + price drop (量价齐跌) — 30 points max ──
+  if (volumeRatio >= 3 && maxVolPriceChange < -0.3) score += 30;
+  else if (volumeRatio >= 2.5 && maxVolPriceChange < -0.2) score += 25;
+  else if (volumeRatio >= 2 && maxVolPriceChange < -0.1) score += 20;
+  else if (volumeRatio >= 2 && maxVolPriceChange < 0) score += 12;
+  else if (volumeRatio >= 1.5 && maxVolPriceChange < -0.1) score += 10;
+  else if (volumeRatio >= 1.5 && maxVolPriceChange < 0) score += 5;
+
+  // ── Strategy 2: Progressive volume WITH price drop (递增放量下跌) — 25 points max ──
+  if (maxProgressiveLen >= 5 && progressivePriceDrop > 0.5) score += 25;
+  else if (maxProgressiveLen >= 4 && progressivePriceDrop > 0.3) score += 20;
+  else if (maxProgressiveLen >= 3 && progressivePriceDrop > 0.1) score += 15;
+  else if (maxProgressiveLen >= 3 && progressivePriceDrop > 0) score += 8;
+
+  // ── Strategy 3: Volume expansion above baseline WITH price drop — 15 points max ──
+  if (windowVolRatio >= 2 && windowPriceDrop > 1) score += 15;
+  else if (windowVolRatio >= 1.5 && windowPriceDrop > 0.5) score += 12;
+  else if (windowVolRatio >= 1.5 && windowPriceDrop > 0.2) score += 8;
+  else if (windowVolRatio >= 1.2 && windowPriceDrop > 0.1) score += 5;
+
+  // ── Strategy 4: Concentrated selling (放量+下跌分钟占比) — 15 points max ──
+  if (downHighVolRatio >= 0.4) score += 15;
+  else if (downHighVolRatio >= 0.3) score += 12;
+  else if (downHighVolRatio >= 0.2) score += 8;
+  else if (downHighVolRatio >= 0.1) score += 4;
+
+  // ── Strategy 5: Price drop magnitude during volume peak (放量砸盘幅度) — 10 points max ──
+  if (dropRate >= 3) score += 10;
+  else if (dropRate >= 2) score += 8;
+  else if (dropRate >= 1) score += 5;
+  else if (dropRate >= 0.5) score += 3;
+
+  // ── Strategy 6: Drop speed (下跌速度) — 5 points max ──
+  if (maxDropSpeed >= 2) score += 5;
+  else if (maxDropSpeed >= 1) score += 3;
+  else if (maxDropSpeed >= 0.5) score += 1;
+
+  // ── Final gate: if no price drop at all, cap score very low ──
+  if (!hasPriceDrop) {
+    score = Math.min(score, 5);
+  }
+
+  // Cap at 0-100
+  score = Math.max(0, Math.min(100, score));
+
+  // Build detail string — emphasize the "下跌" aspect
+  const details: string[] = [];
+  if (volumeRatio >= 1.5 && maxVolPriceChange < 0) {
+    details.push(`${increments[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x下跌${Math.abs(maxVolPriceChange).toFixed(1)}%`);
+  } else if (volumeRatio >= 1.5 && maxVolPriceChange >= 0) {
+    details.push(`${increments[maxVolIdx]?.time || ""}放量未跌量比${volumeRatio.toFixed(1)}x`);
+  }
+  if (maxProgressiveLen >= 3 && progressivePriceDrop > 0) {
+    details.push(`${maxProgressiveLen}分钟递增下跌跌${progressivePriceDrop.toFixed(1)}%`);
+  } else if (maxProgressiveLen >= 3 && progressivePriceDrop <= 0) {
+    details.push(`${maxProgressiveLen}分钟递增放量未跌`);
+  }
+  if (windowPriceDrop >= 0.5) {
+    details.push(`时段跌幅${windowPriceDrop.toFixed(1)}%`);
+  }
+  if (dropRate >= 1) {
+    details.push(`放量砸盘${dropRate.toFixed(1)}%`);
+  }
+  if (downHighVolRatio >= 0.2) {
+    details.push(`${(downHighVolRatio * 100).toFixed(0)}%放量下跌`);
+  }
+  if (maxDropSpeed >= 1) {
+    details.push(`${increments[maxDropStart]?.time || ""}3分钟急跌${maxDropSpeed.toFixed(1)}%`);
+  }
+
+  return {
+    score,
+    detail: details.length > 0 ? details.join("，") : (score > 0 ? "轻微放量下跌" : "无明显放量下跌"),
   };
 }
 
@@ -1139,6 +1496,24 @@ function evaluateStock(stock: ScreenerStock): { label: string; detail: string } 
     bearishScore += 1; reasons.push("小盘易操控");
   }
 
+  // 9. Pulse decline signal (脉冲下跌)
+  if (stock.pulseDeclineScore >= 50) {
+    bearishScore += 3; reasons.push("强脉冲下跌");
+  } else if (stock.pulseDeclineScore >= 30) {
+    bearishScore += 2; reasons.push("脉冲下跌");
+  } else if (stock.pulseDeclineScore >= 15) {
+    bearishScore += 1; reasons.push("轻微脉冲下跌");
+  }
+
+  // 10. Volume decline signal (放量下跌)
+  if (stock.volumeDeclineScore >= 50) {
+    bearishScore += 3; reasons.push("强放量下跌");
+  } else if (stock.volumeDeclineScore >= 30) {
+    bearishScore += 2; reasons.push("放量下跌");
+  } else if (stock.volumeDeclineScore >= 15) {
+    bearishScore += 1; reasons.push("轻微放量下跌");
+  }
+
   // ── Determine label ──
   const diff = bullishScore - bearishScore;
 
@@ -1385,6 +1760,8 @@ function detectResonance(
   openingStrength?: string,
   largeOrderRatio?: number,
   lateSessionActivity?: string,
+  pulseDeclineScore?: number,
+  volumeDeclineScore?: number,
 ): string {
   const tags: string[] = [];
 
@@ -1426,6 +1803,27 @@ function detectResonance(
   // v5.0 尾盘资金共振: 尾盘抢筹 + 主力流入 = 次日高开概率大
   if (lateSessionActivity === "late_rally" && capitalTrend.includes("inflow")) {
     tags.push("尾盘资金共振");
+  }
+
+  // ── 下跌共振标签 ──
+  // 脉冲下跌+放量下跌共振
+  if ((pulseDeclineScore ?? 0) >= 40 && (volumeDeclineScore ?? 0) >= 40) {
+    tags.push("脉冲放量下跌共振");
+  }
+
+  // 脉冲下跌+资金流出共振
+  if ((pulseDeclineScore ?? 0) >= 30 && capitalTrend.includes("outflow")) {
+    tags.push("脉冲下跌资金共振");
+  }
+
+  // 放量下跌+均线下方共振
+  if ((volumeDeclineScore ?? 0) >= 30 && (vwapPosition === "below_vwap" || vwapPosition === "cross_down")) {
+    tags.push("放量下跌均线共振");
+  }
+
+  // 弱开盘+下跌共振
+  if (openingStrength === "weak_open" && ((pulseDeclineScore ?? 0) >= 30 || (volumeDeclineScore ?? 0) >= 30)) {
+    tags.push("弱开下跌共振");
   }
 
   return tags.join(",");
@@ -1670,8 +2068,12 @@ export async function GET(request: NextRequest) {
         gapUpRate,
         pulseScore: 0,
         pulseDetail: "待检测",
+        pulseDeclineScore: 0,
+        pulseDeclineDetail: "待检测",
         volumeSurgeScore: 0,
         volumeSurgeDetail: "待检测",
+        volumeDeclineScore: 0,
+        volumeDeclineDetail: "待检测",
         progressiveVolScore: 0,
         progressiveVolDetail: "待检测",
         evaluation: "待评估",
@@ -1711,11 +2113,19 @@ export async function GET(request: NextRequest) {
             const pulseResult = detectPulseSurge(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
             stock.pulseScore = pulseResult.score;
             stock.pulseDetail = pulseResult.detail;
+            // Also detect pulse decline alongside pulse surge
+            const pulseDeclineResult = detectPulseDecline(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
+            stock.pulseDeclineScore = pulseDeclineResult.score;
+            stock.pulseDeclineDetail = pulseDeclineResult.detail;
           }
           if (needVolumeSurge) {
             const volResult = detectVolumeSurge(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
             stock.volumeSurgeScore = volResult.score;
             stock.volumeSurgeDetail = volResult.detail;
+            // Also detect volume decline alongside volume surge
+            const volDeclineResult = detectVolumeDecline(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
+            stock.volumeDeclineScore = volDeclineResult.score;
+            stock.volumeDeclineDetail = volDeclineResult.detail;
           }
           if (needProgressiveVol) {
             const progResult = detectProgressiveVolume(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
@@ -1820,6 +2230,7 @@ export async function GET(request: NextRequest) {
             stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
             stock.capitalTrend, stock.vwapPosition,
             stock.openingStrength, stock.largeOrderRatio, stock.lateSessionActivity,
+            stock.pulseDeclineScore, stock.volumeDeclineScore,
           );
 
           // Calculate composite score
@@ -1978,6 +2389,7 @@ export async function GET(request: NextRequest) {
           stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
           stock.capitalTrend, stock.vwapPosition,
           stock.openingStrength, stock.largeOrderRatio, stock.lateSessionActivity,
+          stock.pulseDeclineScore, stock.volumeDeclineScore,
         );
         const compResult = calculateCompositeScore(
           stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
@@ -2026,6 +2438,7 @@ export async function GET(request: NextRequest) {
         stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
         stock.capitalTrend, stock.vwapPosition,
         stock.openingStrength, stock.largeOrderRatio, stock.lateSessionActivity,
+        stock.pulseDeclineScore, stock.volumeDeclineScore,
       );
       const compResult = calculateCompositeScore(
         stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,

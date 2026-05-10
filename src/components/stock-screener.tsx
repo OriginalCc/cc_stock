@@ -93,8 +93,12 @@ interface ScreenerStock {
   gapUpRate: number;
   pulseScore: number;
   pulseDetail: string;
+  pulseDeclineScore: number;
+  pulseDeclineDetail: string;
   volumeSurgeScore: number;
   volumeSurgeDetail: string;
+  volumeDeclineScore: number;
+  volumeDeclineDetail: string;
   progressiveVolScore: number;
   progressiveVolDetail: string;
   evaluation: string;
@@ -2268,6 +2272,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               {statsExpanded && result.filteredCount > 0 && (() => {
                 const pulseStats = computeScreenerStats(result.stocks.map(s => s.pulseScore));
                 const progVolStats = computeScreenerStats(result.stocks.map(s => s.progressiveVolScore));
+                const pulseDeclineStats = computeScreenerStats(result.stocks.map(s => s.pulseDeclineScore));
+                const volumeDeclineStats = computeScreenerStats(result.stocks.map(s => s.volumeDeclineScore));
                 const evalCounts: Record<string, number> = {};
                 const evalLabels = ["强势续涨", "温和看多", "震荡整理", "弱势回调", "拉高出货", "观望等待"];
                 result.stocks.forEach(s => {
@@ -2277,6 +2283,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                 });
                 const maxPulseCount = Math.max(...pulseStats.distribution.map(d => d.count), 1);
                 const maxProgVolCount = Math.max(...progVolStats.distribution.map(d => d.count), 1);
+                const maxPulseDeclineCount = Math.max(...pulseDeclineStats.distribution.map(d => d.count), 1);
+                const maxVolumeDeclineCount = Math.max(...volumeDeclineStats.distribution.map(d => d.count), 1);
 
                 return (
                   <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-3">
@@ -2311,6 +2319,46 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                               style={{
                                 height: `${Math.max((d.count / maxProgVolCount) * 100, 2)}%`,
                                 backgroundColor: i >= 7 ? "rgb(168 85 247 / 0.6)" : i >= 5 ? "rgb(249 115 22 / 0.5)" : i >= 3 ? "rgb(234 179 8 / 0.4)" : "rgb(156 163 175 / 0.3)",
+                              }}
+                              title={`${d.range}: ${d.count}只 (${d.percent}%)`}
+                            />
+                            <span className="text-[7px] text-muted-foreground leading-none">{d.range.split('-')[0]}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Pulse Decline Score Distribution */}
+                    <div>
+                      <div className="text-[10px] font-medium text-green-600 mb-1.5">脉冲下跌评分分布 (均值:{pulseDeclineStats.avg} 中位数:{pulseDeclineStats.median})</div>
+                      <div className="flex items-end gap-0.5 h-8">
+                        {pulseDeclineStats.distribution.map((d, i) => (
+                          <div key={d.range} className="flex-1 flex flex-col items-center gap-0.5">
+                            <div
+                              className="w-full rounded-t-sm transition-all"
+                              style={{
+                                height: `${Math.max((d.count / maxPulseDeclineCount) * 100, 2)}%`,
+                                backgroundColor: i >= 7 ? "rgb(22 163 74 / 0.6)" : i >= 5 ? "rgb(34 197 94 / 0.5)" : i >= 3 ? "rgb(132 204 22 / 0.4)" : "rgb(156 163 175 / 0.3)",
+                              }}
+                              title={`${d.range}: ${d.count}只 (${d.percent}%)`}
+                            />
+                            <span className="text-[7px] text-muted-foreground leading-none">{d.range.split('-')[0]}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Volume Decline Score Distribution */}
+                    <div>
+                      <div className="text-[10px] font-medium text-green-500 mb-1.5">放量下跌评分分布 (均值:{volumeDeclineStats.avg} 中位数:{volumeDeclineStats.median})</div>
+                      <div className="flex items-end gap-0.5 h-8">
+                        {volumeDeclineStats.distribution.map((d, i) => (
+                          <div key={d.range} className="flex-1 flex flex-col items-center gap-0.5">
+                            <div
+                              className="w-full rounded-t-sm transition-all"
+                              style={{
+                                height: `${Math.max((d.count / maxVolumeDeclineCount) * 100, 2)}%`,
+                                backgroundColor: i >= 7 ? "rgb(22 163 74 / 0.6)" : i >= 5 ? "rgb(34 197 94 / 0.5)" : i >= 3 ? "rgb(132 204 22 / 0.4)" : "rgb(156 163 175 / 0.3)",
                               }}
                               title={`${d.range}: ${d.count}只 (${d.percent}%)`}
                             />
@@ -2514,6 +2562,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         递增 <SortIcon field="progressiveVolScore" />
                       </div>
                     </TableHead>
+                    <TableHead className="w-[55px] text-xs font-medium text-green-600">脉冲跌</TableHead>
+                    <TableHead className="w-[55px] text-xs font-medium text-green-600">放量跌</TableHead>
                     <TableHead className="w-[65px] text-xs font-medium">最新价</TableHead>
                     <TableHead
                       className="w-[65px] text-xs font-medium cursor-pointer select-none hover:text-foreground"
@@ -2713,6 +2763,78 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                             </span>
                           </div>
                         </TableCell>
+                        {/* 脉冲下跌 */}
+                        <TableCell className="py-2">
+                          {stock.pulseDeclineScore > 0 ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="flex items-center gap-1 cursor-help">
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-xs py-0 px-1.5 font-mono ${
+                                        stock.pulseDeclineScore >= 50 ? "bg-green-500/15 border-green-500/40 text-green-600" :
+                                        stock.pulseDeclineScore >= 30 ? "bg-green-500/10 border-green-500/30 text-green-500" :
+                                        stock.pulseDeclineScore >= 15 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" :
+                                        "bg-gray-500/10 border-gray-500/30 text-gray-400"
+                                      } border`}
+                                    >
+                                      {stock.pulseDeclineScore}
+                                    </Badge>
+                                    <span className={`text-[10px] ${
+                                      stock.pulseDeclineScore >= 50 ? "text-green-600 font-medium" :
+                                      stock.pulseDeclineScore >= 30 ? "text-green-500" :
+                                      "text-emerald-400"
+                                    }`}>
+                                      {stock.pulseDeclineScore >= 50 ? "强" : stock.pulseDeclineScore >= 30 ? "中" : stock.pulseDeclineScore >= 15 ? "弱" : ""}
+                                    </span>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs text-xs">
+                                  📉 脉冲下跌: {stock.pulseDeclineDetail}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">--</span>
+                          )}
+                        </TableCell>
+                        {/* 放量下跌 */}
+                        <TableCell className="py-2">
+                          {stock.volumeDeclineScore > 0 ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="flex items-center gap-1 cursor-help">
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-xs py-0 px-1.5 font-mono ${
+                                        stock.volumeDeclineScore >= 50 ? "bg-green-500/15 border-green-500/40 text-green-600" :
+                                        stock.volumeDeclineScore >= 30 ? "bg-green-500/10 border-green-500/30 text-green-500" :
+                                        stock.volumeDeclineScore >= 15 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" :
+                                        "bg-gray-500/10 border-gray-500/30 text-gray-400"
+                                      } border`}
+                                    >
+                                      {stock.volumeDeclineScore}
+                                    </Badge>
+                                    <span className={`text-[10px] ${
+                                      stock.volumeDeclineScore >= 50 ? "text-green-600 font-medium" :
+                                      stock.volumeDeclineScore >= 30 ? "text-green-500" :
+                                      "text-emerald-400"
+                                    }`}>
+                                      {stock.volumeDeclineScore >= 50 ? "强" : stock.volumeDeclineScore >= 30 ? "中" : stock.volumeDeclineScore >= 15 ? "弱" : ""}
+                                    </span>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs text-xs">
+                                  📉 放量下跌: {stock.volumeDeclineDetail}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">--</span>
+                          )}
+                        </TableCell>
                         <TableCell className={`text-xs font-mono py-2 ${changeColor}`}>
                           {stock.price.toFixed(2)}
                         </TableCell>
@@ -2834,9 +2956,12 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                                   {stock.volumeSurgeScore > 0 && <span className="text-blue-500">📊{stock.volumeSurgeDetail}</span>}
                                   {stock.volumeSurgeScore > 0 && stock.progressiveVolScore > 0 && " | "}
                                   {stock.progressiveVolScore > 0 && <span className="text-purple-500">📈{stock.progressiveVolDetail}</span>}
+                                  {stock.pulseDeclineScore > 0 && <span className="text-green-600">📉{stock.pulseDeclineDetail}</span>}
+                                  {stock.pulseDeclineScore > 0 && stock.volumeDeclineScore > 0 && " | "}
+                                  {stock.volumeDeclineScore > 0 && <span className="text-green-500">🔽{stock.volumeDeclineDetail}</span>}
                                   {stock.vwapPosition && stock.vwapPosition !== "no_data" && <span className="text-teal-500"> 📏{getVwapPositionLabel(stock.vwapPosition).text}</span>}
                                   {stock.capitalTrend && stock.capitalTrend !== "neutral" && <span className={getCapitalTrendLabel(stock.capitalTrend).color}> {getCapitalTrendLabel(stock.capitalTrend).icon}{getCapitalTrendLabel(stock.capitalTrend).text}</span>}
-                                  {stock.compositeScore === 0 && stock.pulseScore === 0 && stock.volumeSurgeScore === 0 && stock.progressiveVolScore === 0 && "无信号"}
+                                  {stock.compositeScore === 0 && stock.pulseScore === 0 && stock.volumeSurgeScore === 0 && stock.progressiveVolScore === 0 && stock.pulseDeclineScore === 0 && stock.volumeDeclineScore === 0 && "无信号"}
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent side="top" className="text-xs max-w-[350px]">
@@ -2845,6 +2970,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                                 {stock.pulseScore > 0 && <div>⚡ 脉冲: {stock.pulseDetail}</div>}
                                 {stock.volumeSurgeScore > 0 && <div>📊 放量拉升: {stock.volumeSurgeDetail}</div>}
                                 {stock.progressiveVolScore > 0 && <div>📈 递增: {stock.progressiveVolDetail}</div>}
+                                {stock.pulseDeclineScore > 0 && <div className="text-green-600">📉 脉冲下跌: {stock.pulseDeclineDetail}</div>}
+                                {stock.volumeDeclineScore > 0 && <div className="text-green-500">🔽 放量下跌: {stock.volumeDeclineDetail}</div>}
                                 {stock.vwapPosition && stock.vwapPosition !== "no_data" && <div>📏 均价线: {stock.vwapPositionDetail}</div>}
                                 {stock.capitalTrend && stock.capitalTrend !== "neutral" && <div>💰 资金: {stock.capitalTrendDetail}</div>}
                               </TooltipContent>
@@ -2919,9 +3046,9 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">Step 1</Badge><span>板块搜索 → 关键词匹配东方财富板块代码，支持别名自动扩展</span></div>
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">Step 2</Badge><span>板块成分股获取 → 分页拉取所有板块成分股实时数据</span></div>
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 shrink-0">Step 3</Badge><span>硬性过滤 → 主板/ST/创业板/科创板/北交/ETF/涨跌幅/市值/换手/PE/量比/振幅/流通市值/PB/内外盘/分位/跳空/连涨/封板/大单/开盘强弱/均价偏离/尾盘异动</span></div>
-                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 shrink-0">Step 4</Badge><span>分时检测 → 逐股获取1分钟数据，运行脉冲/放量拉升/递增放量检测，评分0-100</span></div>
-                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 shrink-0">Step 5</Badge><span>OR过滤 → 脉冲/放量拉升/递增放量满足任一阈值即通过（OR关系）</span></div>
-                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 shrink-0">Step 6</Badge><span>综合评估 → 股票评估标签 + VWAP位置 + 资金趋势 + 多因子共振 + 综合评分 + 可靠度评分</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 shrink-0">Step 4</Badge><span>分时检测 → 逐股获取1分钟数据，运行脉冲/脉冲下跌/放量拉升/放量下跌/递增放量检测，评分0-100</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 shrink-0">Step 5</Badge><span>OR过滤 → 脉冲/放量拉升/递增放量满足任一阈值即通过（OR关系），下跌指标仅标识不参与过滤</span></div>
+                      <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 shrink-0">Step 6</Badge><span>综合评估 → 股票评估标签(含下跌因子) + VWAP位置 + 资金趋势 + 多因子共振(含下跌共振) + 综合评分 + 可靠度评分</span></div>
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 shrink-0">Step 7</Badge><span>均线趋势过滤（可选） → 获取日K线，检测站上MA5/MA10/MA20/多头排列</span></div>
                       <div className="flex items-start gap-2"><Badge className="text-[8px] h-3.5 px-1 bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 shrink-0">Step 8</Badge><span>排序输出 → 按综合评分↓ → 可靠度↓ → 涨跌幅↓ 排序</span></div>
                     </div>
@@ -3282,6 +3409,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           { name: "评估信号", weight: "15%", score: "0-100", color: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" },
                           { name: "资金趋势", weight: "15%", score: "0-100", color: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300" },
                           { name: "VWAP位置", weight: "15%", score: "0-100", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
+                          { name: "脉冲下跌(标识)", weight: "—", score: "0-100", color: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" },
+                          { name: "放量下跌(标识)", weight: "—", score: "0-100", color: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" },
                         ].map((item) => (
                           <div key={item.name} className="p-2 rounded border border-border/50 bg-background/50">
                             <div className="flex items-center gap-1 mb-1">
@@ -3322,6 +3451,10 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                           { name: "开盘资金共振", rule: "开盘强弱=strong_open AND 资金趋势含inflow（强开盘+主力流入=涨势确认）", ver: "v5.0" },
                           { name: "大单量能共振", rule: "大单占比≥10% AND (pulseScore ≥ 30 OR volumeSurgeScore ≥ 30)（机构合力）", ver: "v5.0" },
                           { name: "尾盘资金共振", rule: "尾盘异动=late_rally AND 资金趋势含inflow（尾盘抢筹+主力流入=次日高开概率大）", ver: "v5.0" },
+                          { name: "脉冲放量下跌共振", rule: "pulseDeclineScore ≥ 40 AND volumeDeclineScore ≥ 40（脉冲+放量双跌=强看空信号）", ver: "v6.0" },
+                          { name: "脉冲下跌资金共振", rule: "pulseDeclineScore ≥ 30 AND 资金趋势含outflow（脉冲下跌+资金流出=空方合力）", ver: "v6.0" },
+                          { name: "放量下跌均线共振", rule: "volumeDeclineScore ≥ 30 AND VWAP位置=below_vwap或cross_down（放量下跌+均线下方=弱势确认）", ver: "v6.0" },
+                          { name: "弱开下跌共振", rule: "开盘强弱=weak_open AND (pulseDeclineScore ≥ 30 OR volumeDeclineScore ≥ 30)（弱开+下跌=弱势延续）", ver: "v6.0" },
                         ].map((row) => (
                           <TableRow key={row.name}>
                             <TableCell className="text-xs py-1 font-medium">{row.name}</TableCell>
@@ -3344,7 +3477,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       <span className="text-sm font-bold">股票评估模型</span>
                     </div>
                     <div className="text-xs text-foreground/80">
-                      基于多空因子评分，综合脉冲评分、放量拉升评分、递增放量评分与市场数据，输出6级评估标签。多空差值(bullish-bearish)决定最终标签。
+                      基于多空因子评分，综合脉冲评分、放量拉升评分、递增放量评分、脉冲下跌评分、放量下跌评分与市场数据，输出6级评估标签。多空差值(bullish-bearish)决定最终标签。下跌因子增加bearishScore，使评估标签更偏向"弱势回调"/"观望等待"。
                     </div>
                   </div>
 
