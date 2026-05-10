@@ -689,8 +689,8 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 <YAxis domain={[minPrice, maxPrice]} tickLine={false} axisLine={false} width={65} tick={<PercentYTick prevClose={refClose} />} ticks={yTicks} tickCount={5} />
                 <Tooltip content={<FiveDayTooltip />} cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "4 2" }} wrapperStyle={{ background: "transparent", border: "none" }} />
                 {refClose > 0 && <ReferenceLine y={refClose} stroke="#64748b" strokeDasharray="4 4" strokeWidth={0.8} />}
-                {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#f87171" strokeDasharray="6 4" strokeWidth={0.8} />}
-                {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#4ade80" strokeDasharray="6 4" strokeWidth={0.8} />}
+                {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#ef4444" strokeDasharray="8 4" strokeWidth={1.8} />}
+                {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#22c55e" strokeDasharray="8 4" strokeWidth={1.8} />}
                 <Area type="monotone" dataKey="price" stroke="none" fill={(() => { const last = visibleItems[visibleItems.length - 1]; return last?.price >= refClose ? "rgba(239,68,68,0.06)" : "rgba(22,163,74,0.06)"; })()} isAnimationActive={false} connectNulls={false} />
                 <Area type="monotone" dataKey="avgPrice" stroke="#eab308" strokeWidth={1} fill="none" dot={false} isAnimationActive={false} strokeDasharray="3 2" connectNulls={false} />
                 <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
@@ -708,9 +708,9 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                     if (y != null && !isNaN(y)) {
                       els.push(
                         <g key="hi-tag">
-                          <polygon points={`${chartRight - 8},${y + 5} ${chartRight + 2},${y + 5} ${chartRight - 3},${y - 3}`} fill="#f87171" />
-                          <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#f87171" fillOpacity={0.85} />
-                          <text x={chartRight + 32} y={y + 4} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="#ffffff">{highestPrice.toFixed(2)}</text>
+                          <polygon points={`${chartRight - 8},${y + 5} ${chartRight + 2},${y + 5} ${chartRight - 3},${y - 3}`} fill="#ef4444" />
+                          <rect x={chartRight + 1} y={y - 11} width={66} height={22} rx={3} fill="#ef4444" fillOpacity={0.92} />
+                          <text x={chartRight + 34} y={y + 5} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{highestPrice.toFixed(2)}</text>
                         </g>
                       );
                     }
@@ -720,9 +720,9 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                     if (y != null && !isNaN(y)) {
                       els.push(
                         <g key="lo-tag">
-                          <polygon points={`${chartRight - 8},${y - 5} ${chartRight + 2},${y - 5} ${chartRight - 3},${y + 3}`} fill="#4ade80" />
-                          <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#4ade80" fillOpacity={0.85} />
-                          <text x={chartRight + 32} y={y + 4} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="#ffffff">{lowestPrice.toFixed(2)}</text>
+                          <polygon points={`${chartRight - 8},${y - 5} ${chartRight + 2},${y - 5} ${chartRight - 3},${y + 3}`} fill="#22c55e" />
+                          <rect x={chartRight + 1} y={y - 11} width={66} height={22} rx={3} fill="#22c55e" fillOpacity={0.92} />
+                          <text x={chartRight + 34} y={y + 5} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{lowestPrice.toFixed(2)}</text>
                         </g>
                       );
                     }
