@@ -14,6 +14,7 @@ const StrategyAdminPanel = dynamic(() => import("@/components/strategy-admin-pan
 const TimeSharingPanel = dynamic(() => import("@/components/time-sharing-panel").then(m => ({ default: m.TimeSharingPanel })), { ssr: false });
 const MiniTimelinePanel = dynamic(() => import("@/components/time-sharing-panel").then(m => ({ default: m.MiniTimelinePanel })), { ssr: false });
 const KLineChartPanel = dynamic(() => import("@/components/kline-chart-panel").then(m => ({ default: m.KLineChartPanel })), { ssr: false });
+const FiveDayTimelinePanel = dynamic(() => import("@/components/five-day-timeline-panel").then(m => ({ default: m.FiveDayTimelinePanel })), { ssr: false });
 const NewsAnalysisPanel = dynamic(() => import("@/components/news-analysis-panel").then(m => ({ default: m.NewsAnalysisPanel })), { ssr: false });
 const SignalSummaryPanel = dynamic(() => import("@/components/signal-summary-panel").then(m => ({ default: m.SignalSummaryPanel })), { ssr: false });
 import { calculateMACD } from "@/lib/indicators";
@@ -28,7 +29,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, TrendingUp, TrendingDown, Activity, ArrowUpRight, ArrowDownRight,
   X, Clock, Zap, LineChart, CandlestickChart, GitBranch, Filter,
-  Star, Bell, BellOff, Volume2, Newspaper,
+  Star, Bell, BellOff, Volume2, Newspaper, CalendarDays,
 } from "lucide-react";
 
 export default function StockTAssistant() {
@@ -299,7 +300,7 @@ export default function StockTAssistant() {
   }, [selectStock]);
 
   // ── Performance flag: skip heavy timeline computations in K-line mode ──
-  const isTimelineActive = chartMode === "timeline";
+  const isTimelineActive = chartMode === "timeline" || chartMode === "5d-timeline";
 
   // ── Live Timeline (skip heavy computation in kline mode) ──
   const liveTimeline = useMemo(() => {
@@ -510,9 +511,9 @@ export default function StockTAssistant() {
                   <span className={`text-3xl font-bold tabular-nums ${priceColor}`}>{formatNum(quote.price)}</span>
                   <span className={`flex items-center gap-1 text-sm font-medium ${priceColor}`}>{isUp ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}{formatNum(Math.abs(quote.change))}({formatNum(Math.abs(quote.changePercent))}%)</span>
                 </div>
-                {(chartMode === "timeline" ? latestTimelineSignal : (latestSignal && latestSignal.type !== "hold" ? latestSignal : null)) && (
-                  <Badge variant={(chartMode === "timeline" ? latestTimelineSignal!.type : latestSignal!.type) === "buy" ? "default" : "destructive"} className="text-xs px-3 py-1">
-                    {((chartMode === "timeline" ? latestTimelineSignal!.type : latestSignal!.type) === "buy" ? "🟢 买入信号" : "🔴 卖出信号")} · {(chartMode === "timeline" ? latestTimelineSignal!.reason : latestSignal!.reason)}
+                {(isTimelineActive ? latestTimelineSignal : (latestSignal && latestSignal.type !== "hold" ? latestSignal : null)) && (
+                  <Badge variant={(isTimelineActive ? latestTimelineSignal!.type : latestSignal!.type) === "buy" ? "default" : "destructive"} className="text-xs px-3 py-1">
+                    {((isTimelineActive ? latestTimelineSignal!.type : latestSignal!.type) === "buy" ? "🟢 买入信号" : "🔴 卖出信号")} · {(isTimelineActive ? latestTimelineSignal!.reason : latestSignal!.reason)}
                   </Badge>
                 )}
                 <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm ml-auto">
@@ -530,7 +531,7 @@ export default function StockTAssistant() {
           </CardContent>
         </Card>
 
-        {/* T-Index & Smart Action Panel (only in timeline mode) */}
+        {/* T-Index & Smart Action Panel (only in timeline modes) */}
         {quote && isTimelineActive && liveTimeline.length > 0 && (
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Card className="border overflow-hidden">
@@ -582,7 +583,7 @@ export default function StockTAssistant() {
 
         {/* Chart Mode & Interval Selector */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {isAShareStock && (<Tabs value={chartMode} onValueChange={(v) => changeChartMode(v as ChartMode)}><TabsList className="h-8"><TabsTrigger value="timeline" className="text-xs px-3 h-6"><LineChart className="h-3.5 w-3.5 mr-1" />分时</TabsTrigger><TabsTrigger value="kline" className="text-xs px-3 h-6"><CandlestickChart className="h-3.5 w-3.5 mr-1" />K线</TabsTrigger></TabsList></Tabs>)}
+          {isAShareStock && (<Tabs value={chartMode} onValueChange={(v) => changeChartMode(v as ChartMode)}><TabsList className="h-8"><TabsTrigger value="5d-timeline" className="text-xs px-2 h-6"><CalendarDays className="h-3.5 w-3.5 mr-1" />五日</TabsTrigger><TabsTrigger value="timeline" className="text-xs px-3 h-6"><LineChart className="h-3.5 w-3.5 mr-1" />分时</TabsTrigger><TabsTrigger value="kline" className="text-xs px-3 h-6"><CandlestickChart className="h-3.5 w-3.5 mr-1" />K线</TabsTrigger></TabsList></Tabs>)}
           <Button variant={showNewsAnalysis ? "default" : "outline"} size="sm" className="h-8 text-xs px-3" onClick={() => { const next = !showNewsAnalysis; setShowNewsAnalysis(next); if (next && !newsData.market) (window as any).__newsFetchAnalysis?.(); }}><Newspaper className="h-3.5 w-3.5 mr-1" />资讯分析</Button>
           {chartMode === "kline" && (<div className="flex items-center gap-1">{INTERVALS.map((intv) => (<Button key={intv.value} variant={interval === intv.value ? "default" : "ghost"} size="sm" className="h-7 text-xs px-3" onClick={() => changeInterval(intv.value)}>{intv.label}</Button>))}</div>)}
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
@@ -597,6 +598,8 @@ export default function StockTAssistant() {
         {/* Charts */}
         {loading && chartData.length === 0 && liveTimeline.length === 0 ? (
           <div className="space-y-4"><Skeleton className="h-[400px] w-full" /><Skeleton className="h-[150px] w-full" /><Skeleton className="h-[100px] w-full" /></div>
+        ) : chartMode === "5d-timeline" ? (
+          <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
             <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={pvMarkers} />

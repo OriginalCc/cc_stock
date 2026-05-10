@@ -758,3 +758,35 @@ Stage Summary:
 - Sub-charts deferred by 1 frame for faster initial paint
 - Non-critical fetches (indices, factor overrides) deferred 2-3s
 - Previous session's "放量"→"放量拉升" label fix confirmed in chart-shared.ts
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Add 五日分时图 (5-day intraday chart) button and page
+
+Work Log:
+- Added "5d-timeline" to ChartMode type in use-stock-data.ts
+- Updated changeChartMode, localStorage persistence, and initial load to handle 5d-timeline mode
+- Added CalendarDays icon import to page.tsx
+- Added "五日" tab trigger button (CalendarDays icon) to the left of "分时" button
+- Created FiveDayTimelinePanel component (src/components/five-day-timeline-panel.tsx)
+  - Fetches 5-minute K-line data (last 250 bars ≈ 5 trading days)
+  - Converts K-line data to timeline format with date grouping
+  - Merges today's live timeline data for real-time updates
+  - Renders price line + avg price line + volume bars + prevClose reference line
+  - Day boundary vertical lines with date labels
+  - Custom Y-axis ticks showing both price and percentage from prevClose
+  - Daily summary header bar showing each day's close and change%
+- Updated page.tsx chart rendering to support 5d-timeline mode
+- Updated isTimelineActive flag to cover both "timeline" and "5d-timeline" modes
+- Updated signal badge rendering to use isTimelineActive instead of chartMode === "timeline"
+- All lint checks pass
+
+Stage Summary:
+- New "五日" tab button added to the left of "分时" in chart mode tabs
+- FiveDayTimelinePanel component created with 5-day continuous intraday chart
+- Daily summary bar shows each day's close price and change percentage
+- Day boundary lines separate trading days visually
+- Custom Y-axis shows both price and % deviation from reference close
+- Volume bars rendered at chart bottom with red/green coloring
+- Mode persistence in localStorage working for all 3 modes (5d-timeline, timeline, kline)

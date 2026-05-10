@@ -67,7 +67,7 @@ export interface TimelineItem {
 }
 
 export type TimeInterval = "1m" | "5m" | "15m" | "30m" | "1h" | "1d" | "1wk";
-export type ChartMode = "timeline" | "kline";
+export type ChartMode = "5d-timeline" | "timeline" | "kline";
 
 // ── Hook ──────────────────────────────────────────────
 
@@ -187,8 +187,8 @@ export function useStockData() {
       // Persist last selected stock to localStorage
       try { localStorage.setItem(LAST_STOCK_KEY, sym); } catch {}
       fetchQuote(sym);
-      // Only fetch timeline in timeline mode — skip in kline mode for faster switching
-      if (checkAShare(sym) && chartMode === "timeline") {
+      // Only fetch timeline in timeline modes — skip in kline mode for faster switching
+      if (checkAShare(sym) && chartMode !== "kline") {
         fetchTimeline(sym);
       }
       fetchHistory(sym, interval);
@@ -210,7 +210,7 @@ export function useStockData() {
     (mode: ChartMode) => {
       setChartMode(mode);
       try { localStorage.setItem(LAST_CHART_MODE_KEY, mode); } catch {}
-      if (mode === "timeline" && checkAShare(symbol)) {
+      if ((mode === "timeline" || mode === "5d-timeline") && checkAShare(symbol)) {
         fetchTimeline(symbol);
         // Also fetch daily history for prev day MA reference lines
         fetchHistory(symbol, "1d");
@@ -236,7 +236,7 @@ export function useStockData() {
     } catch {}
     try {
       const savedMode = localStorage.getItem(LAST_CHART_MODE_KEY);
-      if (savedMode === "kline" || savedMode === "timeline") {
+      if (savedMode === "kline" || savedMode === "timeline" || savedMode === "5d-timeline") {
         queueMicrotask(() => setChartMode(savedMode));
       }
     } catch {}
@@ -252,7 +252,7 @@ export function useStockData() {
       fetchQuote(symbol),
       fetchHistory(symbol, interval),
     ];
-    if (checkAShare(symbol) && currentMode === "timeline") {
+    if (checkAShare(symbol) && currentMode !== "kline") {
       fetches.push(fetchTimeline(symbol));
     }
     Promise.allSettled(fetches);
