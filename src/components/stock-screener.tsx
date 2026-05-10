@@ -2541,6 +2541,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </div>
                     </TableHead>
                     <TableHead className="text-center text-xs">评估</TableHead>
+                    <TableHead className="w-[50px] text-xs font-medium">开盘</TableHead>
                     <TableHead className="w-[60px] text-xs font-medium">PE</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">PB</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">外/内</TableHead>
@@ -2548,7 +2549,6 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     <TableHead className="w-[45px] text-xs font-medium">连涨</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">封板</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">大单%</TableHead>
-                    <TableHead className="w-[50px] text-xs font-medium">开盘</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">偏离</TableHead>
                     <TableHead className="w-[50px] text-xs font-medium">尾盘</TableHead>
                     <TableHead className="text-xs font-medium min-w-[120px]">信号详情</TableHead>
@@ -2754,6 +2754,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                             <span className="text-xs text-muted-foreground">-</span>
                           )}
                         </TableCell>
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.openingStrength === "strong_open" ? (
+                            <span className="text-red-500 font-medium">强</span>
+                          ) : stock.openingStrength === "weak_open" ? (
+                            <span className="text-green-500">弱</span>
+                          ) : (
+                            <span className="text-muted-foreground">中</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-xs font-mono py-2 text-muted-foreground">
                           {stock.pe > 0 ? stock.pe.toFixed(1) : "--"}
                         </TableCell>
@@ -2795,15 +2804,6 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                               {stock.largeOrderRatio.toFixed(1)}
                             </span>
                           ) : "--"}
-                        </TableCell>
-                        <TableCell className="text-xs font-mono py-2">
-                          {stock.openingStrength === "strong_open" ? (
-                            <span className="text-red-500 font-medium">强</span>
-                          ) : stock.openingStrength === "weak_open" ? (
-                            <span className="text-green-500">弱</span>
-                          ) : (
-                            <span className="text-muted-foreground">中</span>
-                          )}
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2">
                           {stock.vwapDeviation !== 0 ? (
