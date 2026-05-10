@@ -193,6 +193,18 @@ const CONDITION_LIBRARY: CustomFactorCondition[] = [
   // ── 综合形态 ──
   { key: "v_shape_bottom", label: "V型反转", description: "急跌后快速反弹，形成V型底部，强反转信号", category: "pattern" },
   { key: "inverted_v_top", label: "倒V型反转", description: "急涨后快速回落，形成倒V型顶部，强反转信号", category: "pattern" },
+  { key: "strong_open", label: "强势开盘", description: "开盘15分钟均价高于昨收0.5%以上，做多意愿强烈", category: "pattern" },
+  { key: "weak_open", label: "弱势开盘", description: "开盘15分钟均价低于昨收0.3%以上，卖压明显", category: "pattern" },
+  { key: "late_rally", label: "尾盘拉升", description: "14:30后价格上涨超过1%，尾盘资金抢筹", category: "pattern" },
+  { key: "late_drop", label: "尾盘急跌", description: "14:30后价格下跌超过1%，尾盘资金出逃", category: "pattern" },
+  { key: "limit_up_lock", label: "封板锁定", description: "涨幅接近涨停且封板强度高，资金一致性看多", category: "pattern" },
+  { key: "consecutive_up", label: "连续上涨", description: "连续多日收阳，短期多头趋势明确", category: "pattern" },
+  { key: "large_order_dominant", label: "大单主导", description: "大单净流入占比高，机构资金积极介入", category: "pattern" },
+  { key: "vwap_deviation_high", label: "偏离均价过高", description: "价格偏离VWAP均价超过2%，短线超买需注意回调", category: "pattern" },
+  { key: "vwap_deviation_low", label: "偏离均价过低", description: "价格偏离VWAP均价超过-2%，短线超卖或有反弹机会", category: "pattern" },
+  { key: "vwap_near", label: "紧贴均价", description: "价格紧贴VWAP均价运行(偏离<0.5%)，方向待选择", category: "pattern" },
+  { key: "opening_gap_up", label: "跳空高开", description: "开盘价高于昨收1%以上，多头强势信号", category: "pattern" },
+  { key: "opening_gap_down", label: "跳空低开", description: "开盘价低于昨收1%以上，空头强势信号", category: "pattern" },
 ];
 
 // 内置自定义因子

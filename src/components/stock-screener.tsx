@@ -108,6 +108,13 @@ interface ScreenerStock {
   vwapPositionDetail: string;
   capitalTrend: string;
   capitalTrendDetail: string;
+  // ── v5.0 进阶筛选字段 ──
+  consecutiveUpDays: number;
+  limitUpStrength: number;
+  largeOrderRatio: number;
+  openingStrength: string;
+  vwapDeviation: number;
+  lateSessionActivity: string;
 }
 
 interface ScreenerResult {
@@ -463,6 +470,15 @@ interface ScreenerFilters {
   minBuySellRatio: number;    // 最小外盘/内盘比率，0=不限
   minPricePosition: number;   // 最小日内价格位置分位(0-100)，0=不限
   minGapUpRate: number;       // 最小开盘跳空幅度%，0=不限
+  // ── v5.0 进阶筛选 ──
+  minConsecutiveUpDays: number;   // 最小连涨天数，0=不限
+  minLimitUpStrength: number;     // 最小封板强度，0=不限
+  minLargeOrderRatio: number;     // 最小大单占比%，0=不限
+  openingStrengthFilter: string;  // 开盘强弱筛选，""=不限
+  maxVwapDeviation: number;       // 最大均价偏离度%，0=不限
+  minVwapDeviation: number;       // 最小均价偏离度%，0=不限
+  enableLateSessionFilter: boolean; // 是否启用尾盘异动筛选
+  lateSessionType: string;        // 尾盘异动类型: "late_rally" | "late_drop"
 }
 
 const DEFAULT_FILTERS: ScreenerFilters = {
@@ -498,6 +514,15 @@ const DEFAULT_FILTERS: ScreenerFilters = {
   minBuySellRatio: 0,
   minPricePosition: 0,
   minGapUpRate: 0,
+  // v5.0 进阶筛选
+  minConsecutiveUpDays: 0,
+  minLimitUpStrength: 0,
+  minLargeOrderRatio: 0,
+  openingStrengthFilter: "",
+  maxVwapDeviation: 0,
+  minVwapDeviation: 0,
+  enableLateSessionFilter: false,
+  lateSessionType: "late_rally",
 };
 
 // ── Component ──────────────────────────────────────────
@@ -625,6 +650,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
       if (f.minBuySellRatio > 0) params.set("minBuySellRatio", String(f.minBuySellRatio));
       if (f.minPricePosition > 0) params.set("minPricePosition", String(f.minPricePosition));
       if (f.minGapUpRate > 0) params.set("minGapUpRate", String(f.minGapUpRate));
+      // v5.0 进阶筛选
+      if (f.minConsecutiveUpDays > 0) params.set("minConsecutiveUpDays", String(f.minConsecutiveUpDays));
+      if (f.minLimitUpStrength > 0) params.set("minLimitUpStrength", String(f.minLimitUpStrength));
+      if (f.minLargeOrderRatio > 0) params.set("minLargeOrderRatio", String(f.minLargeOrderRatio));
+      if (f.openingStrengthFilter) params.set("openingStrengthFilter", f.openingStrengthFilter);
+      if (f.maxVwapDeviation > 0) params.set("maxVwapDeviation", String(f.maxVwapDeviation));
+      if (f.minVwapDeviation > 0) params.set("minVwapDeviation", String(f.minVwapDeviation));
+      if (f.enableLateSessionFilter) params.set("enableLateSessionFilter", "true");
+      if (f.enableLateSessionFilter && f.lateSessionType) params.set("lateSessionType", f.lateSessionType);
       if (forceRefresh) params.set("refresh", "1");
       const res = await fetch(`/api/stock/screener?${params}`);
       const data: ScreenerResult = await res.json();
@@ -995,6 +1029,41 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
             {filters.minGapUpRate > 0 && (
               <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300">
                 跳空≥{filters.minGapUpRate}%
+              </Badge>
+            )}
+            {filters.minConsecutiveUpDays > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-purple-500/5 border-purple-500/20 text-purple-700 dark:text-purple-300">
+                连涨≥{filters.minConsecutiveUpDays}天
+              </Badge>
+            )}
+            {filters.minLimitUpStrength > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-red-500/5 border-red-500/20 text-red-700 dark:text-red-300">
+                封板≥{filters.minLimitUpStrength}
+              </Badge>
+            )}
+            {filters.minLargeOrderRatio > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-teal-500/5 border-teal-500/20 text-teal-700 dark:text-teal-300">
+                大单占比≥{filters.minLargeOrderRatio}%
+              </Badge>
+            )}
+            {filters.openingStrengthFilter && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-orange-500/5 border-orange-500/20 text-orange-700 dark:text-orange-300">
+                {filters.openingStrengthFilter === "strong_open" ? "强开盘" : "弱开盘"}
+              </Badge>
+            )}
+            {filters.maxVwapDeviation > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-yellow-500/5 border-yellow-500/20 text-yellow-700 dark:text-yellow-300">
+                偏离≤{filters.maxVwapDeviation}%
+              </Badge>
+            )}
+            {filters.minVwapDeviation > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-yellow-500/5 border-yellow-500/20 text-yellow-700 dark:text-yellow-300">
+                偏离≥{filters.minVwapDeviation}%
+              </Badge>
+            )}
+            {filters.enableLateSessionFilter && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-violet-500/5 border-violet-500/20 text-violet-700 dark:text-violet-300">
+                {filters.lateSessionType === "late_rally" ? "尾盘拉升" : "尾盘跳水"}
               </Badge>
             )}
           </div>
@@ -1795,6 +1864,166 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                 </div>
               </div>
 
+              {/* ── Row 6: v5.0 进阶筛选条件 ── */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-3.5 h-3.5 text-purple-500" />
+                  <span className="text-xs font-medium text-muted-foreground">v5.0 进阶筛选</span>
+                  <span className="text-[10px] text-muted-foreground/60">（新增6项因子，精细选股）</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Consecutive Up Days */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      连涨天数 ≥ {filters.minConsecutiveUpDays}天
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.minConsecutiveUpDays || ""}
+                        onChange={(e) => handleFilterChange("minConsecutiveUpDays", parseInt(e.target.value) || 0)}
+                        className="h-7 text-xs w-16"
+                        step={1}
+                        min={0}
+                        max={10}
+                        placeholder="0"
+                      />
+                      <span className="text-[10px] text-muted-foreground">0=不限，连续收阳天数</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => handleFilterChange("minConsecutiveUpDays", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minConsecutiveUpDays === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => handleFilterChange("minConsecutiveUpDays", 2)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minConsecutiveUpDays === 2 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥2天</button>
+                      <button onClick={() => handleFilterChange("minConsecutiveUpDays", 3)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minConsecutiveUpDays === 3 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥3天</button>
+                      <button onClick={() => handleFilterChange("minConsecutiveUpDays", 5)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minConsecutiveUpDays === 5 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥5天</button>
+                    </div>
+                  </div>
+
+                  {/* Limit-Up Strength */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      封板强度 ≥ {filters.minLimitUpStrength}
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.minLimitUpStrength || ""}
+                        onChange={(e) => handleFilterChange("minLimitUpStrength", parseInt(e.target.value) || 0)}
+                        className="h-7 text-xs w-16"
+                        step={10}
+                        min={0}
+                        max={100}
+                        placeholder="0"
+                      />
+                      <span className="text-[10px] text-muted-foreground">0=不限，仅涨幅≥8%有效</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => handleFilterChange("minLimitUpStrength", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minLimitUpStrength === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => handleFilterChange("minLimitUpStrength", 30)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minLimitUpStrength === 30 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥30</button>
+                      <button onClick={() => handleFilterChange("minLimitUpStrength", 50)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minLimitUpStrength === 50 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥50</button>
+                      <button onClick={() => handleFilterChange("minLimitUpStrength", 70)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minLimitUpStrength === 70 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥70</button>
+                    </div>
+                  </div>
+
+                  {/* Large Order Ratio */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      大单占比 ≥ {filters.minLargeOrderRatio}%
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.minLargeOrderRatio || ""}
+                        onChange={(e) => handleFilterChange("minLargeOrderRatio", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-16"
+                        step={0.5}
+                        min={0}
+                        max={100}
+                        placeholder="0"
+                      />
+                      <span className="text-[10px] text-muted-foreground">|主力净流入|/成交额</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => handleFilterChange("minLargeOrderRatio", 0)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minLargeOrderRatio === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => handleFilterChange("minLargeOrderRatio", 2)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minLargeOrderRatio === 2 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥2%</button>
+                      <button onClick={() => handleFilterChange("minLargeOrderRatio", 5)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minLargeOrderRatio === 5 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥5%</button>
+                      <button onClick={() => handleFilterChange("minLargeOrderRatio", 8)} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minLargeOrderRatio === 8 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥8%</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Opening Strength */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">开盘强弱</Label>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => handleFilterChange("openingStrengthFilter", "")} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.openingStrengthFilter === "" ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => handleFilterChange("openingStrengthFilter", "strong_open")} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.openingStrengthFilter === "strong_open" ? "bg-red-500/10 border-red-500/30 text-red-600" : "bg-background border-border hover:bg-muted"}`}>强开盘</button>
+                      <button onClick={() => handleFilterChange("openingStrengthFilter", "weak_open")} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.openingStrengthFilter === "weak_open" ? "bg-green-500/10 border-green-500/30 text-green-600" : "bg-background border-border hover:bg-muted"}`}>弱开盘</button>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">前15min均价vs昨收</div>
+                  </div>
+
+                  {/* VWAP Deviation */}
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      均价偏离度 {filters.maxVwapDeviation > 0 ? `≤${filters.maxVwapDeviation}%` : ""}{filters.minVwapDeviation > 0 ? ` ≥${filters.minVwapDeviation}%` : ""}
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={filters.minVwapDeviation || ""}
+                        onChange={(e) => handleFilterChange("minVwapDeviation", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-14"
+                        step={0.5}
+                        min={0}
+                        placeholder="最小"
+                      />
+                      <span className="text-xs text-muted-foreground">~</span>
+                      <Input
+                        type="number"
+                        value={filters.maxVwapDeviation || ""}
+                        onChange={(e) => handleFilterChange("maxVwapDeviation", parseFloat(e.target.value) || 0)}
+                        className="h-7 text-xs w-14"
+                        step={0.5}
+                        min={0}
+                        placeholder="最大"
+                      />
+                      <span className="text-[10px] text-muted-foreground">%</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button onClick={() => { handleFilterChange("minVwapDeviation", 0); handleFilterChange("maxVwapDeviation", 0); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minVwapDeviation === 0 && filters.maxVwapDeviation === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>不限</button>
+                      <button onClick={() => { handleFilterChange("minVwapDeviation", 0); handleFilterChange("maxVwapDeviation", 2); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.maxVwapDeviation === 2 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≤2%</button>
+                      <button onClick={() => { handleFilterChange("minVwapDeviation", 1); handleFilterChange("maxVwapDeviation", 5); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minVwapDeviation === 1 && filters.maxVwapDeviation === 5 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>1-5%</button>
+                      <button onClick={() => { handleFilterChange("minVwapDeviation", 2); handleFilterChange("maxVwapDeviation", 0); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.minVwapDeviation === 2 && filters.maxVwapDeviation === 0 ? "bg-primary/10 border-primary/30 text-primary" : "bg-background border-border hover:bg-muted"}`}>≥2%</button>
+                    </div>
+                  </div>
+
+                  {/* Late Session Activity */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        尾盘异动检测
+                      </Label>
+                      <Switch
+                        checked={filters.enableLateSessionFilter}
+                        onCheckedChange={(v) => handleFilterChange("enableLateSessionFilter", v)}
+                      />
+                    </div>
+                    {filters.enableLateSessionFilter && (
+                      <>
+                        <div className="flex flex-wrap gap-1">
+                          <button onClick={() => handleFilterChange("lateSessionType", "late_rally")} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.lateSessionType === "late_rally" ? "bg-red-500/10 border-red-500/30 text-red-600" : "bg-background border-border hover:bg-muted"}`}>尾盘拉升</button>
+                          <button onClick={() => handleFilterChange("lateSessionType", "late_drop")} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filters.lateSessionType === "late_drop" ? "bg-green-500/10 border-green-500/30 text-green-600" : "bg-background border-border hover:bg-muted"}`}>尾盘跳水</button>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">14:30-15:00价格变动&gt;1%</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
                 {/* Quick presets & Custom presets */}
                 <div className="space-y-3">
                   <div className="space-y-2">
@@ -1815,7 +2044,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f: ScreenerFilters = { sector: "通信", minChange: -5, maxChange: 10, maxMarketCap: 200, pulseThreshold: 30, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 30, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 2, maxTurnover: 15, minPE: 0, maxPE: 60, minVolumeRatio: 1.5, mainNetInflowRequired: true, minAmplitude: 2, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0 };
+                          const f: ScreenerFilters = { sector: "通信", minChange: -5, maxChange: 10, maxMarketCap: 200, pulseThreshold: 30, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 30, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 2, maxTurnover: 15, minPE: 0, maxPE: 60, minVolumeRatio: 1.5, mainNetInflowRequired: true, minAmplitude: 2, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0, maxCirculatingMarketCap: 0, minPB: 0, maxPB: 0, minBuySellRatio: 0, minPricePosition: 0, minGapUpRate: 0, minConsecutiveUpDays: 0, minLimitUpStrength: 0, minLargeOrderRatio: 0, openingStrengthFilter: "", maxVwapDeviation: 0, minVwapDeviation: 0, enableLateSessionFilter: false, lateSessionType: "late_rally" };
                           setFilters(f);
                           setSectorInput("通信");
                         }}
@@ -1825,7 +2054,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f: ScreenerFilters = { sector: "通信", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 2, maxTurnover: 8, minPE: 5, maxPE: 40, minVolumeRatio: 1, mainNetInflowRequired: true, minAmplitude: 1, maxAmplitude: 10, enableMATrend: true, maTrendType: "above_ma10", evaluationFilter: ["强势续涨", "温和看多"], minCompositeScore: 30 };
+                          const f: ScreenerFilters = { sector: "通信", minChange: 0, maxChange: 5, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 2, maxTurnover: 8, minPE: 5, maxPE: 40, minVolumeRatio: 1, mainNetInflowRequired: true, minAmplitude: 1, maxAmplitude: 10, enableMATrend: true, maTrendType: "above_ma10", evaluationFilter: ["强势续涨", "温和看多"], minCompositeScore: 30, maxCirculatingMarketCap: 0, minPB: 0, maxPB: 0, minBuySellRatio: 0, minPricePosition: 0, minGapUpRate: 0, minConsecutiveUpDays: 2, minLimitUpStrength: 0, minLargeOrderRatio: 3, openingStrengthFilter: "strong_open", maxVwapDeviation: 0, minVwapDeviation: 0, enableLateSessionFilter: false, lateSessionType: "late_rally" };
                           setFilters(f);
                           setSectorInput("通信");
                         }}
@@ -1835,7 +2064,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f: ScreenerFilters = { sector: "通信", minChange: 0, maxChange: 10, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 1, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 1, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: true, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0 };
+                          const f: ScreenerFilters = { sector: "通信", minChange: 0, maxChange: 10, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 1, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 1, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: true, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0, maxCirculatingMarketCap: 0, minPB: 0, maxPB: 0, minBuySellRatio: 0, minPricePosition: 0, minGapUpRate: 0, minConsecutiveUpDays: 0, minLimitUpStrength: 0, minLargeOrderRatio: 0, openingStrengthFilter: "", maxVwapDeviation: 0, minVwapDeviation: 0, enableLateSessionFilter: false, lateSessionType: "late_rally" };
                           setFilters(f);
                           setSectorInput("通信");
                         }}
@@ -1845,7 +2074,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f: ScreenerFilters = { sector: "通信", minChange: -3, maxChange: 3, maxMarketCap: 500, pulseThreshold: 10, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 8, minPE: 0, maxPE: 40, minVolumeRatio: 0.5, mainNetInflowRequired: true, minAmplitude: 0, maxAmplitude: 6, enableMATrend: true, maTrendType: "above_ma20", evaluationFilter: ["温和看多", "震荡整理"], minCompositeScore: 0 };
+                          const f: ScreenerFilters = { sector: "通信", minChange: -3, maxChange: 3, maxMarketCap: 500, pulseThreshold: 10, enablePulse: false, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 8, minPE: 0, maxPE: 40, minVolumeRatio: 0.5, mainNetInflowRequired: true, minAmplitude: 0, maxAmplitude: 6, enableMATrend: true, maTrendType: "above_ma20", evaluationFilter: ["温和看多", "震荡整理"], minCompositeScore: 0, maxCirculatingMarketCap: 0, minPB: 0, maxPB: 0, minBuySellRatio: 0, minPricePosition: 0, minGapUpRate: 0, minConsecutiveUpDays: 0, minLimitUpStrength: 0, minLargeOrderRatio: 0, openingStrengthFilter: "", maxVwapDeviation: 3, minVwapDeviation: 0, enableLateSessionFilter: false, lateSessionType: "late_rally" };
                           setFilters(f);
                           setSectorInput("通信");
                         }}
@@ -1855,7 +2084,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f: ScreenerFilters = { sector: "半导体", minChange: -5, maxChange: 10, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 0, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0 };
+                          const f: ScreenerFilters = { sector: "半导体", minChange: -5, maxChange: 10, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 0, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0, maxCirculatingMarketCap: 0, minPB: 0, maxPB: 0, minBuySellRatio: 0, minPricePosition: 0, minGapUpRate: 0, minConsecutiveUpDays: 0, minLimitUpStrength: 0, minLargeOrderRatio: 0, openingStrengthFilter: "", maxVwapDeviation: 0, minVwapDeviation: 0, enableLateSessionFilter: false, lateSessionType: "late_rally" };
                           setFilters(f);
                           setSectorInput("半导体");
                         }}
@@ -1865,13 +2094,23 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                       </button>
                       <button
                         onClick={() => {
-                          const f: ScreenerFilters = { sector: "人工智能", minChange: -5, maxChange: 10, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 0, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0 };
+                          const f: ScreenerFilters = { sector: "人工智能", minChange: -5, maxChange: 10, maxMarketCap: 1000, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 0, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 0, mainNetInflowRequired: false, minAmplitude: 0, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0, maxCirculatingMarketCap: 0, minPB: 0, maxPB: 0, minBuySellRatio: 0, minPricePosition: 0, minGapUpRate: 0, minConsecutiveUpDays: 0, minLimitUpStrength: 0, minLargeOrderRatio: 0, openingStrengthFilter: "", maxVwapDeviation: 0, minVwapDeviation: 0, enableLateSessionFilter: false, lateSessionType: "late_rally" };
                           setFilters(f);
                           setSectorInput("人工智能");
                         }}
                         className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
                       >
                         🤖 AI大市值
+                      </button>
+                      <button
+                        onClick={() => {
+                          const f: ScreenerFilters = { sector: "通信", minChange: -5, maxChange: 10, maxMarketCap: 500, pulseThreshold: 10, enablePulse: true, pulseTimeStart: "09:30", pulseTimeEnd: "10:30", enableVolumeSurge: true, volumeSurgeThreshold: 10, enableProgressiveVol: true, progressiveVolThreshold: 10, minTurnover: 1, maxTurnover: 100, minPE: 0, maxPE: 500, minVolumeRatio: 1, mainNetInflowRequired: true, minAmplitude: 0, maxAmplitude: 20, enableMATrend: false, maTrendType: "above_ma5", evaluationFilter: [], minCompositeScore: 0, maxCirculatingMarketCap: 0, minPB: 0, maxPB: 0, minBuySellRatio: 1, minPricePosition: 60, minGapUpRate: 0, minConsecutiveUpDays: 2, minLimitUpStrength: 0, minLargeOrderRatio: 3, openingStrengthFilter: "strong_open", maxVwapDeviation: 0, minVwapDeviation: 0, enableLateSessionFilter: true, lateSessionType: "late_rally" };
+                          setFilters(f);
+                          setSectorInput("通信");
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-md border bg-background border-border hover:bg-muted transition-colors"
+                      >
+                        🚀 v5.0强势策略
                       </button>
                     </div>
                   </div>
@@ -2297,6 +2536,12 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                     <TableHead className="w-[45px] text-xs font-medium">PB</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">外/内</TableHead>
                     <TableHead className="w-[45px] text-xs font-medium">分位</TableHead>
+                    <TableHead className="w-[45px] text-xs font-medium">连涨</TableHead>
+                    <TableHead className="w-[45px] text-xs font-medium">封板</TableHead>
+                    <TableHead className="w-[45px] text-xs font-medium">大单%</TableHead>
+                    <TableHead className="w-[50px] text-xs font-medium">开盘</TableHead>
+                    <TableHead className="w-[45px] text-xs font-medium">偏离</TableHead>
+                    <TableHead className="w-[50px] text-xs font-medium">尾盘</TableHead>
                     <TableHead className="text-center text-xs">评估</TableHead>
                     <TableHead className="text-xs font-medium min-w-[120px]">信号详情</TableHead>
                   </TableRow>
@@ -2502,6 +2747,53 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                               {stock.pricePosition.toFixed(0)}%
                             </span>
                           ) : "--"}
+                        </TableCell>
+                        {/* v5.0 new columns */}
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.consecutiveUpDays > 0 ? (
+                            <span className={stock.consecutiveUpDays >= 3 ? "text-red-500 font-medium" : stock.consecutiveUpDays >= 2 ? "text-orange-500" : "text-muted-foreground"}>
+                              {stock.consecutiveUpDays}天
+                            </span>
+                          ) : "--"}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.limitUpStrength > 0 ? (
+                            <span className={stock.limitUpStrength >= 70 ? "text-red-500 font-medium" : stock.limitUpStrength >= 50 ? "text-orange-500" : "text-yellow-500"}>
+                              {stock.limitUpStrength}
+                            </span>
+                          ) : "--"}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.largeOrderRatio > 0 ? (
+                            <span className={stock.largeOrderRatio >= 5 ? "text-red-500 font-medium" : stock.largeOrderRatio >= 3 ? "text-orange-500" : "text-muted-foreground"}>
+                              {stock.largeOrderRatio.toFixed(1)}
+                            </span>
+                          ) : "--"}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.openingStrength === "strong_open" ? (
+                            <span className="text-red-500 font-medium">强</span>
+                          ) : stock.openingStrength === "weak_open" ? (
+                            <span className="text-green-500">弱</span>
+                          ) : (
+                            <span className="text-muted-foreground">中</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.vwapDeviation !== 0 ? (
+                            <span className={Math.abs(stock.vwapDeviation) >= 3 ? "text-orange-500" : "text-muted-foreground"}>
+                              {stock.vwapDeviation > 0 ? "+" : ""}{stock.vwapDeviation.toFixed(1)}
+                            </span>
+                          ) : "--"}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono py-2">
+                          {stock.lateSessionActivity === "late_rally" ? (
+                            <span className="text-red-500 font-medium">拉升</span>
+                          ) : stock.lateSessionActivity === "late_drop" ? (
+                            <span className="text-green-500">跳水</span>
+                          ) : (
+                            <span className="text-muted-foreground">--</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           {stock.evaluation && stock.evaluation !== "待评估" ? (

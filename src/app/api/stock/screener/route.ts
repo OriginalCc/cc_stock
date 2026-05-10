@@ -54,8 +54,16 @@ function buildCacheKey(params: {
   minBuySellRatio: number;
   minPricePosition: number;
   minGapUpRate: number;
+  minConsecutiveUpDays: number;
+  minLimitUpStrength: number;
+  minLargeOrderRatio: number;
+  openingStrengthFilter: string;
+  maxVwapDeviation: number;
+  minVwapDeviation: number;
+  enableLateSessionFilter: boolean;
+  lateSessionType: string;
 }): string {
-  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}|${params.pulseTimeStart}|${params.pulseTimeEnd}|${params.volumeSurge}|${params.volumeSurgeThreshold}|${params.progressiveVol}|${params.progressiveVolThreshold}|${params.minTurnover}|${params.maxTurnover}|${params.minPE}|${params.maxPE}|${params.minVolumeRatio}|${params.mainNetInflowRequired}|${params.minAmplitude}|${params.maxAmplitude}|${params.enableMATrend}|${params.maTrendType}|${params.maxCirculatingMarketCap}|${params.minPB}|${params.maxPB}|${params.minBuySellRatio}|${params.minPricePosition}|${params.minGapUpRate}`;
+  return `${params.sector}|${params.minChange}|${params.maxChange}|${params.maxMarketCap}|${params.pulseThreshold}|${params.pulse}|${params.pulseTimeStart}|${params.pulseTimeEnd}|${params.volumeSurge}|${params.volumeSurgeThreshold}|${params.progressiveVol}|${params.progressiveVolThreshold}|${params.minTurnover}|${params.maxTurnover}|${params.minPE}|${params.maxPE}|${params.minVolumeRatio}|${params.mainNetInflowRequired}|${params.minAmplitude}|${params.maxAmplitude}|${params.enableMATrend}|${params.maTrendType}|${params.maxCirculatingMarketCap}|${params.minPB}|${params.maxPB}|${params.minBuySellRatio}|${params.minPricePosition}|${params.minGapUpRate}|${params.minConsecutiveUpDays}|${params.minLimitUpStrength}|${params.minLargeOrderRatio}|${params.openingStrengthFilter}|${params.maxVwapDeviation}|${params.minVwapDeviation}|${params.enableLateSessionFilter}|${params.lateSessionType}`;
 }
 
 // ── Types ──────────────────────────────────────────────
@@ -103,6 +111,13 @@ interface ScreenerStock {
   vwapPositionDetail: string;   // 均价线关系描述
   capitalTrend: string;         // 资金趋势
   capitalTrendDetail: string;   // 资金趋势描述
+  // ── v5.0 进阶筛选字段 ──
+  consecutiveUpDays: number;    // 连涨天数
+  limitUpStrength: number;      // 封板强度 0-100
+  largeOrderRatio: number;      // 大单占比 0-100%
+  openingStrength: string;      // 开盘强弱: "strong_open" | "weak_open" | "neutral_open"
+  vwapDeviation: number;        // 均价偏离度(%)
+  lateSessionActivity: string;  // 尾盘异动: "late_rally" | "late_drop" | "none"
 }
 
 interface ScreenerResult {
@@ -1428,6 +1443,14 @@ export async function GET(request: NextRequest) {
   const minBuySellRatio = parseFloat(searchParams.get("minBuySellRatio") || "0");
   const minPricePosition = parseFloat(searchParams.get("minPricePosition") || "0");
   const minGapUpRate = parseFloat(searchParams.get("minGapUpRate") || "0");
+  const minConsecutiveUpDays = parseInt(searchParams.get("minConsecutiveUpDays") || "0");
+  const minLimitUpStrength = parseInt(searchParams.get("minLimitUpStrength") || "0");
+  const minLargeOrderRatio = parseFloat(searchParams.get("minLargeOrderRatio") || "0");
+  const openingStrengthFilter = searchParams.get("openingStrengthFilter") || "";
+  const maxVwapDeviation = parseFloat(searchParams.get("maxVwapDeviation") || "0");
+  const minVwapDeviation = parseFloat(searchParams.get("minVwapDeviation") || "0");
+  const enableLateSessionFilter = searchParams.get("enableLateSessionFilter") === "true";
+  const lateSessionType = searchParams.get("lateSessionType") || "late_rally";
 
   // Check server cache first
   const cacheKey = buildCacheKey({
@@ -1440,6 +1463,8 @@ export async function GET(request: NextRequest) {
     mainNetInflowRequired, minAmplitude, maxAmplitude,
     enableMATrend, maTrendType,
     maxCirculatingMarketCap, minPB, maxPB, minBuySellRatio, minPricePosition, minGapUpRate,
+    minConsecutiveUpDays, minLimitUpStrength, minLargeOrderRatio, openingStrengthFilter,
+    maxVwapDeviation, minVwapDeviation, enableLateSessionFilter, lateSessionType,
   });
   if (!forceRefresh) {
     const cached = screenerCache.get(cacheKey);
@@ -1583,6 +1608,20 @@ export async function GET(request: NextRequest) {
       // Filter: gap up rate (开盘跳空)
       if (minGapUpRate > 0 && gapUpRate < minGapUpRate) continue;
 
+      // ── v5.0 new field computations (from raw data) ──
+      // largeOrderRatio: |mainNetInflow| / amount * 100
+      const largeOrderRatio = amount > 0 ? Math.abs(mainNetInflow) / amount * 100 : 0;
+      // vwapDeviation: (price - avgPrice) / avgPrice * 100, where avgPrice = amount / (volume * 100)
+      const avgPrice = volume > 0 ? amount / (volume * 100) : price;
+      const vwapDeviation = avgPrice > 0 ? (price - avgPrice) / avgPrice * 100 : 0;
+
+      // Filter: largeOrderRatio
+      if (minLargeOrderRatio > 0 && largeOrderRatio < minLargeOrderRatio) continue;
+
+      // Filter: vwapDeviation range
+      if (maxVwapDeviation > 0 && Math.abs(vwapDeviation) > maxVwapDeviation) continue;
+      if (minVwapDeviation > 0 && Math.abs(vwapDeviation) < minVwapDeviation) continue;
+
       candidates.push({
         symbol: code,
         name,
@@ -1626,6 +1665,13 @@ export async function GET(request: NextRequest) {
         vwapPositionDetail: "",
         capitalTrend: "neutral",
         capitalTrendDetail: "",
+        // v5.0 fields (computed from raw data, or deferred to timeline)
+        consecutiveUpDays: 0,
+        limitUpStrength: 0,
+        largeOrderRatio,
+        openingStrength: "neutral_open",
+        vwapDeviation,
+        lateSessionActivity: "none",
       });
     }
 
@@ -1665,6 +1711,84 @@ export async function GET(request: NextRequest) {
           stock.vwapPosition = vwapResult.position;
           stock.vwapPositionDetail = vwapResult.detail;
 
+          // ── v5.0: Compute timeline-based factors ──
+
+          // 1. Opening strength: compare first 15min avg price vs prevClose
+          if (timeline.length >= 5) {
+            const first15 = timeline.filter(t => {
+              const totalMin = parseInt(t.time.split(":")[0]) * 60 + parseInt(t.time.split(":")[1]);
+              return totalMin >= 570 && totalMin <= 585; // 09:30-09:45
+            });
+            if (first15.length >= 3) {
+              const avgFirst15Price = first15.reduce((s, t) => s + t.price, 0) / first15.length;
+              const diffFromPrevClose = stock.prevClose > 0 ? ((avgFirst15Price - stock.prevClose) / stock.prevClose) * 100 : 0;
+              if (diffFromPrevClose > 0.5) {
+                stock.openingStrength = "strong_open";
+              } else if (diffFromPrevClose < -0.3) {
+                stock.openingStrength = "weak_open";
+              } else {
+                stock.openingStrength = "neutral_open";
+              }
+            }
+          }
+
+          // 2. Late session activity: check 14:30-15:00 for significant movement
+          if (timeline.length >= 10) {
+            const lateSession = timeline.filter(t => {
+              const totalMin = parseInt(t.time.split(":")[0]) * 60 + parseInt(t.time.split(":")[1]);
+              return totalMin >= 870; // 14:30+
+            });
+            if (lateSession.length >= 3) {
+              const priceAt1430 = lateSession[0].price;
+              const lastLatePrice = lateSession[lateSession.length - 1].price;
+              if (priceAt1430 > 0) {
+                const lateChange = ((lastLatePrice - priceAt1430) / priceAt1430) * 100;
+                if (lateChange > 1) {
+                  stock.lateSessionActivity = "late_rally";
+                } else if (lateChange < -1) {
+                  stock.lateSessionActivity = "late_drop";
+                } else {
+                  stock.lateSessionActivity = "none";
+                }
+              }
+            }
+          }
+
+          // 3. Limit-up strength: if stock is near limit-up (涨幅≥8%)
+          if (stock.changePercent >= 8) {
+            let limitUpScore = 0;
+            // Factor 1: How close to actual limit-up (10% for main board, 20% for ST)
+            const limitUpPct = 10; // main board default
+            const closeness = Math.min(stock.changePercent / limitUpPct, 1);
+            limitUpScore += closeness * 40; // up to 40 points for closeness
+
+            // Factor 2: Time spent near limit-up (check timeline for prices near high)
+            if (timeline.length >= 5) {
+              const limitUpPrice = stock.prevClose * (1 + limitUpPct / 100);
+              const nearLimitUp = timeline.filter(t => t.price >= limitUpPrice * 0.98);
+              const nearRatio = nearLimitUp.length / timeline.length;
+              limitUpScore += nearRatio * 30; // up to 30 points
+            }
+
+            // Factor 3: Volume at high vs total
+            if (stock.high > 0 && stock.low > 0) {
+              const highVolRatio = (stock.high - stock.price) / (stock.high - stock.low + 0.01);
+              if (highVolRatio < 0.1) {
+                limitUpScore += 20; // price still near high = strong lock
+              } else if (highVolRatio < 0.3) {
+                limitUpScore += 10;
+              }
+            }
+
+            // Factor 4: Did it break limit-up and stay? Check high vs limitUpPrice
+            const limitUpPrice = stock.prevClose * (1 + limitUpPct / 100);
+            if (stock.high >= limitUpPrice * 0.995) {
+              limitUpScore += 10; // touched limit-up
+            }
+
+            stock.limitUpStrength = Math.max(0, Math.min(100, Math.round(limitUpScore)));
+          }
+
           // Analyze capital trend
           const capitalResult = analyzeCapitalTrend(stock.mainNetInflow, stock.amount);
           stock.capitalTrend = capitalResult.trend;
@@ -1695,6 +1819,42 @@ export async function GET(request: NextRequest) {
         const progPass = needProgressiveVol && s.progressiveVolScore >= progressiveVolThreshold;
         return pulsePass || volPass || progPass;
       });
+
+      // ── v5.0: Consecutive up days detection (uses 5-day K-line) ──
+      if (minConsecutiveUpDays > 0 && filtered.length > 0) {
+        const klineResults = new Map<string, number>();
+        const klineBatchSize = 5;
+        for (let i = 0; i < filtered.length; i += klineBatchSize) {
+          const batch = filtered.slice(i, i + klineBatchSize);
+          const klinePromises = batch.map(async (stock) => {
+            const klineData = await fetch5DayKline(stock.symbol);
+            const days = countConsecutiveUpDays(klineData);
+            klineResults.set(stock.symbol, days);
+            stock.consecutiveUpDays = days;
+          });
+          await Promise.allSettled(klinePromises);
+        }
+        // Filter by minimum consecutive up days
+        filtered = filtered.filter(s => {
+          const days = klineResults.get(s.symbol) ?? 0;
+          return days >= minConsecutiveUpDays;
+        });
+      }
+
+      // ── v5.0: Filter by limitUpStrength ──
+      if (minLimitUpStrength > 0) {
+        filtered = filtered.filter(s => s.limitUpStrength >= minLimitUpStrength);
+      }
+
+      // ── v5.0: Filter by openingStrength ──
+      if (openingStrengthFilter) {
+        filtered = filtered.filter(s => s.openingStrength === openingStrengthFilter);
+      }
+
+      // ── v5.0: Filter by lateSessionActivity ──
+      if (enableLateSessionFilter && lateSessionType) {
+        filtered = filtered.filter(s => s.lateSessionActivity === lateSessionType);
+      }
 
       // Step 4b: MA trend detection if enabled
       if (enableMATrend && filtered.length > 0) {
@@ -1919,6 +2079,53 @@ async function fetchDailyKline(symbol: string): Promise<{ close: number; date: s
   } catch {
     return [];
   }
+}
+
+/**
+ * Fetch 5-day K-line data for consecutive up days detection
+ * Uses EastMoney kline API to get the last 5 trading days
+ */
+async function fetch5DayKline(symbol: string): Promise<{ close: number; prevClose: number }[]> {
+  try {
+    const secId = symbol.startsWith("6") ? `1.${symbol}` : `0.${symbol}`;
+    const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57&klt=101&fqt=1&end=20500101&lmt=6`;
+    const resp = await fetch(url, {
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const klines = data?.data?.klines;
+    if (!Array.isArray(klines) || klines.length < 2) return [];
+
+    // Parse klines: "date,open,close,high,low,volume,amount,amplitude"
+    return klines.map((line: string, idx: number) => {
+      const parts = line.split(",");
+      const close = parseFloat(parts[2]) || 0;
+      // prevClose: for first entry use open as approximation; for others use previous close
+      const prevClose = idx > 0 ? parseFloat(klines[idx - 1].split(",")[2]) || 0 : parseFloat(parts[1]) || 0;
+      return { close, prevClose };
+    }).filter((d: { close: number }) => d.close > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Count consecutive trading days where close > prev close (going backward from most recent)
+ */
+function countConsecutiveUpDays(klineData: { close: number; prevClose: number }[]): number {
+  if (!klineData || klineData.length < 2) return 0;
+  let count = 0;
+  // Iterate from most recent day backward
+  for (let i = klineData.length - 1; i >= 1; i--) {
+    if (klineData[i].close > klineData[i].prevClose) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
 }
 
 /**
