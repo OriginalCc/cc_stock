@@ -447,6 +447,17 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return items.reduce((mx, d) => Math.max(mx, d.volume), 1);
   }, [items]);
 
+  // ── 5-day highest / lowest price ──
+  const { highestPrice, lowestPrice } = useMemo(() => {
+    if (items.length === 0) return { highestPrice: null, lowestPrice: null };
+    let hi = -Infinity, lo = Infinity;
+    for (const d of items) {
+      if (d.price > hi) hi = d.price;
+      if (d.price < lo) lo = d.price;
+    }
+    return { highestPrice: isFinite(hi) ? hi : null, lowestPrice: isFinite(lo) ? lo : null };
+  }, [items]);
+
   // Compute daily stats for the header summary
   const dailyStats = useMemo(() => {
     if (items.length === 0) return [];
@@ -570,6 +581,10 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
               />
               <Tooltip content={<FiveDayTooltip />} cursor={{ strokeDasharray: "3 3" }} wrapperStyle={{ background: "transparent", border: "none" }} />
               {refClose > 0 && <ReferenceLine y={refClose} stroke="#64748b" strokeDasharray="4 4" strokeWidth={0.8} />}
+              {/* Highest price dashed line */}
+              {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#ef4444" strokeDasharray="6 4" strokeWidth={1} />}
+              {/* Lowest price dashed line */}
+              {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#16a34a" strokeDasharray="6 4" strokeWidth={1} />}
               {/* Price area fill */}
               <Area
                 type="monotone"
@@ -587,6 +602,45 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
               {/* Price line */}
               <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} dot={false} isAnimationActive={false} />
               <Customized component={(props: any) => <DayBoundaryLines {...props} dayBoundaries={dayBoundaries} dayLabels={dayLabels} chartHeight={chartHeight} />} />
+              {/* Highest / Lowest price tags on Y-axis */}
+              <Customized component={(props: any) => {
+                const { yAxisMap } = props;
+                if (!yAxisMap || (highestPrice == null && lowestPrice == null)) return null;
+                const yAxis = Object.values(yAxisMap)[0] as any;
+                if (!yAxis) return null;
+                const yScale = yAxis.scale;
+                const chartRight = (yAxis.x || 0) + (yAxis.width || 0);
+                const els: React.ReactNode[] = [];
+                if (highestPrice != null) {
+                  const y = yScale(highestPrice);
+                  if (y != null && !isNaN(y)) {
+                    els.push(
+                      <g key="hi-tag">
+                        <polygon points={`${chartRight - 8},${y + 5} ${chartRight + 2},${y + 5} ${chartRight - 3},${y - 3}`} fill="#ef4444" />
+                        <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#ef4444" />
+                        <text x={chartRight + 32} y={y + 4} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="#ffffff">
+                          {highestPrice.toFixed(2)}
+                        </text>
+                      </g>
+                    );
+                  }
+                }
+                if (lowestPrice != null) {
+                  const y = yScale(lowestPrice);
+                  if (y != null && !isNaN(y)) {
+                    els.push(
+                      <g key="lo-tag">
+                        <polygon points={`${chartRight - 8},${y - 5} ${chartRight + 2},${y - 5} ${chartRight - 3},${y + 3}`} fill="#16a34a" />
+                        <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#16a34a" />
+                        <text x={chartRight + 32} y={y + 4} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="#ffffff">
+                          {lowestPrice.toFixed(2)}
+                        </text>
+                      </g>
+                    );
+                  }
+                }
+                return els.length > 0 ? <g>{els}</g> : null;
+              }} />
             </ComposedChart>
           </ResponsiveContainer>
         </CardContent>
