@@ -332,7 +332,7 @@ function VolumeBarShape(props: any) {
       y={y}
       width={width}
       height={height}
-      fill={isUp ? "rgba(239,68,68,0.35)" : "rgba(22,163,74,0.35)"}
+      fill={isUp ? "rgba(239,68,68,0.55)" : "rgba(22,163,74,0.55)"}
     />
   );
 }
@@ -484,7 +484,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
 
   // Volume chart height
   const volumeChartHeight = useMemo(() => {
-    return Math.max(60, Math.floor(chartHeight * 0.25));
+    return Math.max(90, Math.floor(chartHeight * 0.35));
   }, [chartHeight]);
 
   // XAxis tick interval
@@ -582,9 +582,9 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
               <Tooltip content={<FiveDayTooltip />} cursor={{ strokeDasharray: "3 3" }} wrapperStyle={{ background: "transparent", border: "none" }} />
               {refClose > 0 && <ReferenceLine y={refClose} stroke="#64748b" strokeDasharray="4 4" strokeWidth={0.8} />}
               {/* Highest price dashed line */}
-              {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#ef4444" strokeDasharray="6 4" strokeWidth={1} />}
+              {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#f87171" strokeDasharray="6 4" strokeWidth={0.8} />}
               {/* Lowest price dashed line */}
-              {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#16a34a" strokeDasharray="6 4" strokeWidth={1} />}
+              {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#4ade80" strokeDasharray="6 4" strokeWidth={0.8} />}
               {/* Price area fill */}
               <Area
                 type="monotone"
@@ -616,8 +616,8 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                   if (y != null && !isNaN(y)) {
                     els.push(
                       <g key="hi-tag">
-                        <polygon points={`${chartRight - 8},${y + 5} ${chartRight + 2},${y + 5} ${chartRight - 3},${y - 3}`} fill="#ef4444" />
-                        <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#ef4444" />
+                        <polygon points={`${chartRight - 8},${y + 5} ${chartRight + 2},${y + 5} ${chartRight - 3},${y - 3}`} fill="#f87171" />
+                        <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#f87171" fillOpacity={0.85} />
                         <text x={chartRight + 32} y={y + 4} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="#ffffff">
                           {highestPrice.toFixed(2)}
                         </text>
@@ -630,8 +630,8 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                   if (y != null && !isNaN(y)) {
                     els.push(
                       <g key="lo-tag">
-                        <polygon points={`${chartRight - 8},${y - 5} ${chartRight + 2},${y - 5} ${chartRight - 3},${y + 3}`} fill="#16a34a" />
-                        <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#16a34a" />
+                        <polygon points={`${chartRight - 8},${y - 5} ${chartRight + 2},${y - 5} ${chartRight - 3},${y + 3}`} fill="#4ade80" />
+                        <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#4ade80" fillOpacity={0.85} />
                         <text x={chartRight + 32} y={y + 4} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="#ffffff">
                           {lowestPrice.toFixed(2)}
                         </text>
