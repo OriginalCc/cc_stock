@@ -561,7 +561,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
             {quote && <span className="text-[10px] text-muted-foreground ml-auto">{quote.symbol} {quote.name}</span>}
           </div>
           <ResponsiveContainer width="100%" height={chartHeight}>
-            <ComposedChart data={items} margin={{ top: 4, right: 60, left: 0, bottom: 0 }}>
+            <ComposedChart data={items} syncId="5dayTimeline" margin={{ top: 4, right: 60, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} vertical={false} />
               <XAxis
                 dataKey="time"
@@ -653,7 +653,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
             <span className="text-[10px] text-muted-foreground">成交量</span>
           </div>
           <ResponsiveContainer width="100%" height={volumeChartHeight}>
-            <ComposedChart data={items} margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
+            <ComposedChart data={items} syncId="5dayTimeline" margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.2} vertical={false} />
               <XAxis
                 dataKey="time"
