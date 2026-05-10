@@ -96,9 +96,9 @@ function convertTo5DayTimeline(
   currentTimeline: TimelineItem[],
   quote: any,
   timelinePrevClose: number
-): { items: FiveDayTimelineItem[]; dayBoundaries: number[]; dayLabels: string[]; prevClose: number } {
+): { items: FiveDayTimelineItem[]; dayBoundaries: number[]; dayLabels: string[]; prevClose: number; firstDayRefClose: number } {
   if (klines.length === 0 && currentTimeline.length === 0) {
-    return { items: [], dayBoundaries: [], dayLabels: [], prevClose: 0 };
+    return { items: [], dayBoundaries: [], dayLabels: [], prevClose: 0, firstDayRefClose: 0 };
   }
 
   const items: FiveDayTimelineItem[] = [];
@@ -119,7 +119,22 @@ function convertTo5DayTimeline(
   const last5Dates = dates.slice(-5);
 
   // Determine prevClose for the earliest day
-  let prevClose = timelinePrevClose || quote?.prevClose || 0;
+  // If we have more than 5 dates, the close of the day before our 5-day window
+  // is the reference. Otherwise, fall back to quote's prevClose or first bar's open.
+  let prevClose = 0;
+  if (dates.length > 5) {
+    // The day before the 5-day window
+    const beforeFirstDate = dates[dates.length - 6];
+    const beforeKlines = dayMap.get(beforeFirstDate);
+    if (beforeKlines && beforeKlines.length > 0) {
+      prevClose = beforeKlines[beforeKlines.length - 1].close;
+    }
+  }
+  if (prevClose <= 0) {
+    prevClose = timelinePrevClose || quote?.prevClose || 0;
+  }
+  // Save the first day's reference close for the chart Y-axis center line
+  let firstDayRefClose = prevClose;
 
   // For each day, compute avgPrice (VWAP) and changePercent relative to prevClose
   const dayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -138,15 +153,15 @@ function convertTo5DayTimeline(
     // Use the open of first bar as reference if no prevClose
     const dayOpen = dayKlines[0].open;
     const refClose = prevClose > 0 ? prevClose : dayOpen;
+    // Save first day's reference
+    if (di === 0) firstDayRefClose = refClose;
 
     // Compute VWAP for the day
-    // NOTE: Sina K-line API returns per-bar volume (not cumulative), so we use k.volume directly
     let cumVol = 0;
     let cumAmt = 0;
 
     for (let i = 0; i < dayKlines.length; i++) {
       const k = dayKlines[i];
-      // Use volume directly (per-bar volume from Sina API)
       const barVol = Math.max(0, k.volume);
       cumVol += barVol;
       cumAmt += barVol * k.close;
@@ -210,7 +225,7 @@ function convertTo5DayTimeline(
     items.push(...beforeLastDay, ...liveItems);
   }
 
-  return { items, dayBoundaries, dayLabels, prevClose };
+  return { items, dayBoundaries, dayLabels, prevClose, firstDayRefClose };
 }
 
 // ── Tooltip ──
@@ -269,7 +284,7 @@ function PercentYTick(props: any) {
 // ── Day Boundary Lines ──
 
 function DayBoundaryLines(props: any) {
-  const { formattedGraphicalItems, dayBoundaries, dayLabels } = props;
+  const { formattedGraphicalItems, dayBoundaries, dayLabels, chartHeight } = props;
   if (!formattedGraphicalItems || dayBoundaries.length <= 1) return null;
 
   // Get x positions from the price line
@@ -284,7 +299,7 @@ function DayBoundaryLines(props: any) {
     if (idx < points.length && points[idx]) {
       const x = points[idx].x;
       result.push(
-        <line key={`day-boundary-${i}`} x1={x} y1={0} x2={x} y2="100%" stroke="#475569" strokeWidth={1} strokeDasharray="4 3" />,
+        <line key={`day-boundary-${i}`} x1={x} y1={0} x2={x} y2={chartHeight || "100%"} stroke="#475569" strokeWidth={1} strokeDasharray="4 3" />,
         <text key={`day-label-${i}`} x={x + 4} y={14} fontSize={9} fill="#94a3b8" fontWeight={500}>
           {dayLabels[i] || ""}
         </text>
@@ -305,20 +320,19 @@ function DayBoundaryLines(props: any) {
   return <g>{result}</g>;
 }
 
-// ── Volume Bar Shape (renders on separate YAxis at bottom) ──
+// ── Volume Bar Shape ──
 
 function VolumeBarShape(props: any) {
   const { x, y, width, height, payload } = props;
-  // With separate YAxis domain=[0, maxVolume*8], bars naturally appear at bottom 12.5%
   if (!height || Math.abs(height) < 0.3) return null;
-
+  const isUp = payload.changePercent >= 0;
   return (
     <rect
       x={x}
       y={y}
       width={width}
       height={height}
-      fill={payload.changePercent >= 0 ? "rgba(239,68,68,0.3)" : "rgba(22,163,74,0.3)"}
+      fill={isUp ? "rgba(239,68,68,0.35)" : "rgba(22,163,74,0.35)"}
     />
   );
 }
@@ -331,6 +345,32 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
   const fetchIdRef = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [chartHeight, setChartHeight] = useState(500);
+
+  // Auto-fit chart height to window
+  useEffect(() => {
+    const updateHeight = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      // Available height = viewport height - container top position - some bottom padding
+      const availableHeight = window.innerHeight - rect.top - 20;
+      // Price chart takes ~75% of available space, volume ~18%, gap ~7%
+      const priceH = Math.max(200, Math.floor(availableHeight * 0.75));
+      setChartHeight(priceH);
+    };
+
+    // Initial calculation
+    updateHeight();
+    // Recalculate on resize
+    window.addEventListener("resize", updateHeight);
+    // Also recalculate after a short delay (for layout settling)
+    const timer = setTimeout(updateHeight, 100);
+    return () => {
+      window.removeEventListener("resize", updateHeight);
+      clearTimeout(timer);
+    };
+  }, []);
 
   // Fetch 5-min K-line data with proper cleanup and retry
   const loadData = useCallback(async (sym: string) => {
@@ -366,36 +406,48 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
   const loading = fetching && !dataLoaded;
 
   // Convert to 5-day timeline format
-  const { items, dayBoundaries, dayLabels, prevClose } = useMemo(() => {
+  const { items, dayBoundaries, dayLabels, prevClose, firstDayRefClose } = useMemo(() => {
     if (kline5Min.length === 0 && timeline.length === 0) {
-      return { items: [], dayBoundaries: [], dayLabels: [], prevClose: 0 };
+      return { items: [], dayBoundaries: [], dayLabels: [], prevClose: 0, firstDayRefClose: 0 };
     }
     return convertTo5DayTimeline(kline5Min, timeline, quote, timelinePrevClose);
   }, [kline5Min, timeline, quote, timelinePrevClose]);
 
-  // Compute price range — find the first day's prevClose as the reference
-  const { minPrice, maxPrice, refClose: chartRefClose } = useMemo(() => {
-    if (items.length === 0) return { minPrice: 0, maxPrice: 100, refClose: 0 };
-    // Use the prevClose of the FIRST day as the chart reference line
-    const refClose = prevClose || items[0]?.price || 100;
+  // Compute price range — symmetric around first day's reference close
+  const { minPrice, maxPrice, refClose: chartRefClose, yTicks } = useMemo(() => {
+    if (items.length === 0) return { minPrice: 0, maxPrice: 100, refClose: 0, yTicks: undefined as number[] | undefined };
+
+    const refP = firstDayRefClose || items[0]?.price || 100;
+
+    // Compute symmetric range around the reference
     let maxDeviation = 0;
     for (const item of items) {
-      const dev = Math.abs(item.price - refClose);
+      const dev = Math.abs(item.price - refP);
       if (dev > maxDeviation) maxDeviation = dev;
     }
-    const padding = maxDeviation * 0.15 || refClose * 0.02;
-    return {
-      minPrice: refClose - maxDeviation - padding,
-      maxPrice: refClose + maxDeviation + padding,
-      refClose,
-    };
-  }, [items, prevClose]);
+    const padding = maxDeviation * 0.2 || refP * 0.02;
+    const minP = refP - maxDeviation - padding;
+    const maxP = refP + maxDeviation + padding;
+
+    // Generate symmetric ticks around refClose
+    const range = maxP - minP;
+    const step = range / 4;
+    const ticks = [
+      refP - 2 * step,
+      refP - step,
+      refP,
+      refP + step,
+      refP + 2 * step,
+    ];
+
+    return { minPrice: minP, maxPrice: maxP, refClose: refP, yTicks: ticks };
+  }, [items, firstDayRefClose]);
 
   const maxVolume = useMemo(() => {
     return items.reduce((mx, d) => Math.max(mx, d.volume), 1);
   }, [items]);
 
-  // Compute daily stats for the header summary (must be before early returns)
+  // Compute daily stats for the header summary
   const dailyStats = useMemo(() => {
     if (items.length === 0) return [];
     const stats: { date: string; label: string; open: number; close: number; change: number; high: number; low: number }[] = [];
@@ -419,50 +471,59 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return stats;
   }, [items, dayBoundaries, dayLabels, prevClose]);
 
+  // Volume chart height
+  const volumeChartHeight = useMemo(() => {
+    return Math.max(60, Math.floor(chartHeight * 0.25));
+  }, [chartHeight]);
+
+  // XAxis tick interval
+  const xTickInterval = useMemo(() => {
+    return Math.max(1, Math.floor(items.length / 12));
+  }, [items.length]);
+
+  // Bar size based on data density
+  const barSize = useMemo(() => {
+    if (items.length > 400) return 2;
+    if (items.length > 200) return 3;
+    return 4;
+  }, [items.length]);
+
   if (loading) {
     return (
-      <Card>
-        <CardContent className="pb-2 pt-4 px-2">
-          <div className="h-[480px] flex items-center justify-center">
-            <span className="text-sm text-muted-foreground animate-pulse">加载五日分时数据...</span>
-          </div>
-        </CardContent>
-      </Card>
+      <div ref={containerRef} className="flex items-center justify-center" style={{ height: `${Math.max(400, chartHeight + volumeChartHeight)}px` }}>
+        <span className="text-sm text-muted-foreground animate-pulse">加载五日分时数据...</span>
+      </div>
     );
   }
 
   if (items.length === 0) {
     return (
-      <Card>
-        <CardContent className="pb-2 pt-4 px-2">
-          <div className="h-[480px] flex flex-col items-center justify-center gap-3">
-            <span className="text-sm text-muted-foreground">
-              {fetchError || "暂无五日分时数据"}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs"
-              onClick={() => loadData(symbol)}
-              disabled={fetching}
-            >
-              <RefreshCw className={`h-3 w-3 mr-1 ${fetching ? "animate-spin" : ""}`} />
-              重新加载
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div ref={containerRef} className="flex flex-col items-center justify-center gap-3" style={{ height: `${Math.max(400, chartHeight + volumeChartHeight)}px` }}>
+        <span className="text-sm text-muted-foreground">
+          {fetchError || "暂无五日分时数据"}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-xs"
+          onClick={() => loadData(symbol)}
+          disabled={fetching}
+        >
+          <RefreshCw className={`h-3 w-3 mr-1 ${fetching ? "animate-spin" : ""}`} />
+          重新加载
+        </Button>
+      </div>
     );
   }
 
   const refClose = chartRefClose;
 
   return (
-    <div className="space-y-0">
+    <div ref={containerRef} className="flex flex-col gap-0">
       {/* 5-Day Daily Summary Bar */}
       {dailyStats.length > 0 && (
-        <Card className="py-0 mb-2">
-          <CardContent className="py-2 px-3">
+        <Card className="py-0 mb-1.5">
+          <CardContent className="py-1.5 px-3">
             <div className="flex items-center gap-3 overflow-x-auto">
               {dailyStats.map((ds, i) => {
                 const isUp = ds.change >= 0;
@@ -480,22 +541,23 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
           </CardContent>
         </Card>
       )}
-      {/* 5-Day Price + Volume Chart */}
-      <Card className="py-0">
+
+      {/* 5-Day Price Chart — fills most of the viewport */}
+      <Card className="py-0 flex-1">
         <CardContent className="pb-1 pt-1 px-2">
-          <div className="flex items-center gap-2 px-2 pt-2 pb-1">
+          <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5">
             <span className="text-xs font-medium text-muted-foreground">五日分时图</span>
             {quote && <span className="text-[10px] text-muted-foreground ml-auto">{quote.symbol} {quote.name}</span>}
           </div>
-          <ResponsiveContainer width="100%" height={400}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
             <ComposedChart data={items} margin={{ top: 4, right: 60, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} vertical={false} />
               <XAxis
                 dataKey="time"
-                tick={{ fontSize: 9 }}
+                tick={{ fontSize: 9, fill: "#64748b" }}
                 tickLine={false}
-                axisLine={false}
-                interval={Math.max(1, Math.floor(items.length / 10))}
+                axisLine={{ stroke: "#334155", strokeWidth: 0.5 }}
+                interval={xTickInterval}
               />
               <YAxis
                 domain={[minPrice, maxPrice]}
@@ -503,28 +565,85 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 axisLine={false}
                 width={65}
                 tick={<PercentYTick prevClose={refClose} />}
-                ticks={refClose > 0 ? [refClose - (maxPrice - minPrice) * 0.25, refClose - (maxPrice - minPrice) * 0.125, refClose, refClose + (maxPrice - minPrice) * 0.125, refClose + (maxPrice - minPrice) * 0.25] : undefined}
+                ticks={yTicks}
                 tickCount={5}
               />
               <Tooltip content={<FiveDayTooltip />} cursor={{ strokeDasharray: "3 3" }} wrapperStyle={{ background: "transparent", border: "none" }} />
-              {refClose > 0 && <ReferenceLine y={refClose} stroke="#94a3b8" strokeDasharray="4 4" strokeWidth={1} />}
-              {/* Volume bars at bottom — use YAxis with separate domain */}
+              {refClose > 0 && <ReferenceLine y={refClose} stroke="#64748b" strokeDasharray="4 4" strokeWidth={0.8} />}
+              {/* Price area fill */}
+              <Area
+                type="monotone"
+                dataKey="price"
+                stroke="none"
+                fill={(() => {
+                  const lastItem = items[items.length - 1];
+                  if (!lastItem) return "#ef4444";
+                  return lastItem.price >= refClose ? "rgba(239,68,68,0.06)" : "rgba(22,163,74,0.06)";
+                })()}
+                isAnimationActive={false}
+              />
+              {/* Avg price line */}
+              <Area type="monotone" dataKey="avgPrice" stroke="#eab308" strokeWidth={1} fill="none" dot={false} isAnimationActive={false} strokeDasharray="3 2" />
+              {/* Price line */}
+              <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} dot={false} isAnimationActive={false} />
+              <Customized component={(props: any) => <DayBoundaryLines {...props} dayBoundaries={dayBoundaries} dayLabels={dayLabels} chartHeight={chartHeight} />} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* 5-Day Volume Chart — separate chart at bottom */}
+      <Card className="py-0 mt-1">
+        <CardContent className="pb-1 pt-0 px-2">
+          <div className="flex items-center px-1 pt-0.5 pb-0">
+            <span className="text-[10px] text-muted-foreground">成交量</span>
+          </div>
+          <ResponsiveContainer width="100%" height={volumeChartHeight}>
+            <ComposedChart data={items} margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.2} vertical={false} />
+              <XAxis
+                dataKey="time"
+                tick={{ fontSize: 8, fill: "#64748b" }}
+                tickLine={false}
+                axisLine={{ stroke: "#334155", strokeWidth: 0.5 }}
+                interval={xTickInterval}
+              />
               <YAxis
-                yAxisId="volume"
-                domain={[0, maxVolume * 8]}
-                hide
+                domain={[0, maxVolume * 1.2]}
+                tickLine={false}
+                axisLine={false}
+                width={65}
+                tickFormatter={(v: number) => formatVolume(v)}
+                tick={{ fontSize: 8, fill: "#64748b" }}
+                tickCount={3}
+              />
+              <Tooltip
+                content={({ active, payload }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const data = payload[0]?.payload as FiveDayTimelineItem | undefined;
+                  if (!data) return null;
+                  const isUp = data.changePercent >= 0;
+                  return (
+                    <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
+                      <div className="font-medium text-foreground mb-1">{data.date} {data.time}</div>
+                      <div className="grid grid-cols-2 gap-y-0.5 gap-x-2">
+                        <span className="text-muted-foreground">成交量</span>
+                        <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+                        <span className="text-muted-foreground">价格</span>
+                        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                }}
+                cursor={{ strokeDasharray: "3 3" }}
+                wrapperStyle={{ background: "transparent", border: "none" }}
               />
               <Bar
-                yAxisId="volume"
                 dataKey="volume"
                 isAnimationActive={false}
-                barSize={items.length > 400 ? 2 : items.length > 200 ? 3 : 4}
-                fill="transparent"
+                barSize={barSize}
                 shape={(props: any) => <VolumeBarShape {...props} />}
               />
-              <Area type="monotone" dataKey="avgPrice" stroke="#eab308" strokeWidth={1} fill="none" dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} dot={false} isAnimationActive={false} />
-              <Customized component={(props: any) => <DayBoundaryLines {...props} dayBoundaries={dayBoundaries} dayLabels={dayLabels} />} />
             </ComposedChart>
           </ResponsiveContainer>
         </CardContent>
