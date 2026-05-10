@@ -359,7 +359,7 @@ function VolumeBarShape(props: any) {
 const MIN_VISIBLE_POINTS = 60;  // ~1 hour of 1-min data
 const ZOOM_STEP = 0.15;         // 15% zoom per scroll tick
 
-export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClose }: FiveDayTimelinePanelProps) {
+export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClose }: FiveDayTimelinePanelProps) {
   const [kline5Min, setKline5Min] = useState<KLine5Min[]>([]);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -798,4 +798,4 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
       </div>
     </div>
   );
-}
+});

@@ -55,7 +55,11 @@ export async function GET(request: NextRequest) {
 
     if (!includeQuote) {
       const result = await timelinePromise;
-      return NextResponse.json(result);
+      // Add browser cache headers for faster repeat visits
+      const maxAge = Math.min(Math.floor(cacheTTL / 1000), 30); // Cap at 30s for browser cache
+      return NextResponse.json(result, {
+        headers: { "Cache-Control": `public, max-age=${maxAge}, stale-while-revalidate=60` },
+      });
     }
 
     // Parallel fetch: timeline + quote
@@ -100,7 +104,9 @@ export async function GET(request: NextRequest) {
       } : null,
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: { "Cache-Control": `public, max-age=${Math.min(Math.floor(cacheTTL / 1000), 30)}, stale-while-revalidate=60` },
+    });
   } catch (error: any) {
     console.error("Timeline API error:", error);
     return NextResponse.json({ error: "获取分时数据失败", items: [], prevClose: 0 }, { status: 500 });

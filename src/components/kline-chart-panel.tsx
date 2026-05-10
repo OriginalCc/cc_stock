@@ -39,7 +39,7 @@ interface KLineChartPanelProps {
 
 // ── Component ──────────────────────────────────────────
 
-export function KLineChartPanel({
+export const KLineChartPanel = React.memo(function KLineChartPanel({
   allChartData,
   klineVisibleBars,
   setKlineVisibleBars,
@@ -716,4 +716,4 @@ export function KLineChartPanel({
       )}
     </div>
   );
-}
+});

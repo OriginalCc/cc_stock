@@ -852,7 +852,7 @@ function MiniPercentYTick(props: { x?: number; y?: number; payload?: { value?: n
 
 // ── Compact Mini Timeline Panel (for index/sector overview) ───
 
-export function MiniTimelinePanel({
+export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
   title,
   data,
   prevClose,
@@ -1110,7 +1110,7 @@ export function MiniTimelinePanel({
       </ResponsiveContainer>
     </div>
   );
-}
+});
 
 // ── 同花顺风格 分时图 (Unified Three-Panel) ──────────
 

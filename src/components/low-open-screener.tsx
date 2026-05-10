@@ -29,6 +29,7 @@ import {
   formatMarketCap, formatAmount, loadWatchlist, addToWatchlist,
   removeFromWatchlist, isInWatchlist, useAutoRefresh, isTradingHours,
 } from "@/lib/screener-shared";
+import { cachedFetch } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -278,8 +279,15 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
       if (f.includeSTAR) params.set("includeSTAR", "true");
       if (forceRefresh) params.set("refresh", "1");
 
-      const res = await fetch(`/api/stock/low-open?${params}`);
-      const data: LowOpenResult = await res.json();
+      const data: LowOpenResult = await cachedFetch<LowOpenResult>(
+        `low-open:${params.toString()}`,
+        async () => {
+          const res = await fetch(`/api/stock/low-open?${params}`);
+          if (!res.ok) throw new Error("查询失败");
+          return res.json();
+        },
+        forceRefresh ? 0 : 180_000
+      );
 
       if (data.success) {
         const fetchTime = new Date().toLocaleTimeString("zh-CN");

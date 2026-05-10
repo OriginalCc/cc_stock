@@ -77,6 +77,7 @@ import {
   type MiniTimelineResult,
   isTradingHours,
 } from "@/lib/screener-shared";
+import { cachedFetch } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -288,8 +289,15 @@ export function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
       if (f.enableSTAR) params.set("star", "true");
       if (forceRefresh) params.set("refresh", "1");
 
-      const res = await fetch(`/api/stock/intraday-screener?${params}`);
-      const data: IntradayScreenerResult = await res.json();
+      const data: IntradayScreenerResult = await cachedFetch<IntradayScreenerResult>(
+        `intraday-screener:${params.toString()}`,
+        async () => {
+          const res = await fetch(`/api/stock/intraday-screener?${params}`);
+          if (!res.ok) throw new Error("选股失败");
+          return res.json();
+        },
+        forceRefresh ? 0 : 180_000
+      );
 
       if (data.success) {
         const fetchTime = new Date().toLocaleTimeString("zh-CN");

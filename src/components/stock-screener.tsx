@@ -62,6 +62,7 @@ import {
 } from "lucide-react";
 
 import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoRefresh, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
+import { cachedFetch } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -660,8 +661,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
       if (f.enableLateSessionFilter) params.set("enableLateSessionFilter", "true");
       if (f.enableLateSessionFilter && f.lateSessionType) params.set("lateSessionType", f.lateSessionType);
       if (forceRefresh) params.set("refresh", "1");
-      const res = await fetch(`/api/stock/screener?${params}`);
-      const data: ScreenerResult = await res.json();
+      const data: ScreenerResult = await cachedFetch<ScreenerResult>(
+        `screener:${params.toString()}`,
+        async () => {
+          const res = await fetch(`/api/stock/screener?${params}`);
+          if (!res.ok) throw new Error("选股失败");
+          return res.json();
+        },
+        forceRefresh ? 0 : 180_000 // 3 min cache, 0 for force refresh
+      );
 
       if (data.success) {
         const fetchTime = new Date().toLocaleTimeString("zh-CN");

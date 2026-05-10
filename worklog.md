@@ -131,3 +131,27 @@ Stage Summary:
 - Adaptive cache TTL (5min outside trading hours) dramatically reduces API calls during off-hours
 - Client-side deferred rendering allows chart to paint first, signals overlay on next frame
 - All lint checks pass, page loads successfully
+
+---
+Task ID: 2
+Agent: main
+Task: Optimize loading speed of all pages
+
+Work Log:
+- Created unified client-side cache service (`/src/lib/client-cache.ts`) with SWR pattern, request deduplication, LRU eviction, and periodic cleanup
+- Optimized `useStockData` hook: removed `mounted` state gate that added a full render cycle delay, now reads localStorage synchronously via function initializer and fetches data immediately on mount
+- Added `cachedFetch` integration to useStockData for all API calls (quote, timeline, history), providing automatic request deduplication and cross-component caching
+- Replaced `setTimeout` delays with `requestIdleCallback` in page.tsx for index regime, sector data, and factor overrides fetching — these now start as soon as the browser is idle instead of waiting fixed 1-2 seconds
+- Added browser Cache-Control headers to timeline and quote API responses (`max-age=10-30, stale-while-revalidate=60`), enabling browser-level caching for faster repeat visits
+- Updated all 4 screener components (stock-screener, intraday-screener, early-trading-screener, low-open-screener) to use `cachedFetch` from client-cache module, providing instant cache display on tab switches and request deduplication
+- Added `React.memo` to heavy chart sub-components: `MiniTimelinePanel`, `KLineChartPanel`, `FiveDayTimelinePanel` — prevents unnecessary re-renders when parent state changes
+- Used `startTransition` for non-urgent state updates in useStockData to keep UI responsive
+- All lint checks pass, dev server runs correctly, API responses include proper cache headers
+
+Stage Summary:
+- New client-side cache service provides SWR pattern with automatic request deduplication and LRU eviction
+- Eliminated mounted gate in useStockData — data fetching starts immediately on first render
+- requestIdleCallback replaces setTimeout for deferred fetches — reduces perceived latency by ~1-2 seconds
+- Browser cache headers allow HTTP cache to serve stale data while revalidating
+- All screener pages now use unified cache — instant display when switching tabs
+- React.memo on chart components prevents wasted re-renders

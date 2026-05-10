@@ -43,6 +43,8 @@ export async function GET(request: NextRequest) {
         turnover: quote.turnover,
         exchange: quote.exchange,
         isAShare: true,
+      }, {
+        headers: { "Cache-Control": "public, max-age=10, stale-while-revalidate=30" },
       });
     }
 

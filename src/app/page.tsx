@@ -85,7 +85,7 @@ export default function StockTAssistant() {
   const [indexTimelineData, setIndexTimelineData] = useState<Record<IndexKey, { items: TimelineItem[]; prevClose: number }>>({ sz: { items: [], prevClose: 0 }, sh: { items: [], prevClose: 0 }, cyb: { items: [], prevClose: 0 } });
 
   useEffect(() => {
-    // Index data fetch - deferred 3s to avoid blocking initial critical path
+    // Index data fetch - use requestIdleCallback to avoid blocking initial critical path
     // Only fetch once on mount, no interval
     let cancelled = false;
     const fetchAllIndices = async () => {
@@ -105,9 +105,11 @@ export default function StockTAssistant() {
       setIndexRegimes(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newRegime = results[i].value!.regime; if (prev[key]?.regime !== newRegime.regime || prev[key]?.confidence !== newRegime.confidence) { next[key] = newRegime; changed = true; } } }); return changed ? next : prev; });
       setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
     };
-    // Delay index fetch by 1.5s so main stock data loads first (reduced from 3s for faster UX)
-    const timer = setTimeout(fetchAllIndices, 1500);
-    return () => { cancelled = true; clearTimeout(timer); };
+    // Use requestIdleCallback for non-blocking fetch (fallback to setTimeout for SSR compat)
+    const idleCb = (typeof requestIdleCallback !== "undefined")
+      ? requestIdleCallback(() => { if (!cancelled) fetchAllIndices(); }, { timeout: 500 })
+      : setTimeout(fetchAllIndices, 300);
+    return () => { cancelled = true; if (typeof idleCb === "number") clearTimeout(idleCb); else cancelIdleCallback(idleCb); };
   }, []);
 
   const szIndexRegime = indexRegimes[activeIndexKey];
@@ -155,21 +157,25 @@ export default function StockTAssistant() {
         if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
       }
     };
-    // Delay sector fetch by 2s to avoid blocking initial page load (reduced from 5s)
-    const initTimer = setTimeout(fetchSectorData, 2000);
-    // Sector refresh disabled - only fetch once after delay
-    // const timer = setInterval(fetchSectorData, 120000);
-    return () => { cancelled = true; clearTimeout(initTimer); abortCtrl?.abort(); };
+    // Use requestIdleCallback for non-blocking sector fetch (fallback to short setTimeout)
+    const idleCb = (typeof requestIdleCallback !== "undefined")
+      ? requestIdleCallback(() => { if (!cancelled) fetchSectorData(); }, { timeout: 800 })
+      : setTimeout(fetchSectorData, 500);
+    // Sector refresh disabled - only fetch once after idle
+    return () => { cancelled = true; if (typeof idleCb === "number") clearTimeout(idleCb); else cancelIdleCallback(idleCb); abortCtrl?.abort(); };
   }, [symbol, isAShareStock]);
 
   // ── DB Factor Overrides (deferred - not needed for initial render) ──
   const [factorOverrides, setFactorOverrides] = useState<FactorOverride[]>([]);
   useEffect(() => {
-    // Delay factor overrides fetch by 1s (reduced from 2s)
-    const timer = setTimeout(async () => {
+    // Use requestIdleCallback to fetch factor overrides without blocking initial render
+    const fetchFactors = async () => {
       try { const res = await fetch("/api/stock/strategy"); if (res.ok) { const data = await res.json(); if (data.dbFactors && Array.isArray(data.dbFactors)) startTransition(() => setFactorOverrides(buildFactorOverridesFromDB(data.dbFactors))); } } catch (e) { console.error("Failed to fetch factor overrides:", e); }
-    }, 1000);
-    return () => clearTimeout(timer);
+    };
+    const idleCb = (typeof requestIdleCallback !== "undefined")
+      ? requestIdleCallback(() => fetchFactors(), { timeout: 500 })
+      : setTimeout(fetchFactors, 200);
+    return () => { if (typeof idleCb === "number") clearTimeout(idleCb); else cancelIdleCallback(idleCb); };
   }, []);
 
   // ── Custom Factors ──

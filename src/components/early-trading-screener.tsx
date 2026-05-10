@@ -54,6 +54,7 @@ import {
   type MiniTimelineResult,
   WATCHLIST_CHANGED_EVENT,
 } from "@/lib/screener-shared";
+import { cachedFetch } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -363,8 +364,15 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
       if (f.enableSTAR) params.set("star", "true");
       if (forceRefresh) params.set("refresh", "1");
 
-      const res = await fetch(`/api/stock/early-screen?${params}`);
-      const data: EarlyScreenResult = await res.json();
+      const data: EarlyScreenResult = await cachedFetch<EarlyScreenResult>(
+        `early-screen:${params.toString()}`,
+        async () => {
+          const res = await fetch(`/api/stock/early-screen?${params}`);
+          if (!res.ok) throw new Error("选股失败");
+          return res.json();
+        },
+        forceRefresh ? 0 : 120_000
+      );
 
       if (data.success) {
         const fetchTime = new Date().toLocaleTimeString("zh-CN");

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, startTransition } from "react";
 import { isAShare } from "@/lib/ashare-api";
+import { getCachedData, setCacheData, cachedFetch } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -69,22 +70,47 @@ export interface TimelineItem {
 export type TimeInterval = "1m" | "5m" | "15m" | "30m" | "1h" | "1d" | "1wk";
 export type ChartMode = "5d-timeline" | "timeline" | "kline";
 
-// ── Hook ──────────────────────────────────────────────
+// ── Synchronous localStorage read (avoids hydration mismatch) ──
+// Read once at module level so the initial useState matches server render
 
 const LAST_STOCK_KEY = "lastSelectedStock";
-
 const LAST_CHART_MODE_KEY = "lastChartMode";
 
+function readInitialSymbol(): string {
+  if (typeof window === "undefined") return "600519";
+  try {
+    const saved = localStorage.getItem(LAST_STOCK_KEY);
+    if (saved && /^[0-9]{6}$/.test(saved)) return saved;
+  } catch {}
+  return "600519";
+}
+
+function readInitialChartMode(): ChartMode {
+  if (typeof window === "undefined") return "timeline";
+  try {
+    const saved = localStorage.getItem(LAST_CHART_MODE_KEY);
+    if (saved === "kline" || saved === "timeline" || saved === "5d-timeline") return saved;
+  } catch {}
+  return "timeline";
+}
+
+// ── Cache TTL constants ──
+const QUOTE_CACHE_TTL = 15_000; // 15s for quote data
+const TIMELINE_CACHE_TTL = 15_000; // 15s for timeline data
+const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
+
+// ── Hook ──────────────────────────────────────────────
+
 export function useStockData() {
-  // Initialize with default value to avoid hydration mismatch
-  // localStorage is read in useEffect after mount
-  const [symbol, setSymbol] = useState<string>("600519");
+  // Initialize from localStorage synchronously to avoid mount delay
+  // Use function initializer so it only reads once per mount
+  const [symbol, setSymbol] = useState<string>(readInitialSymbol);
   const [quote, setQuote] = useState<StockQuote | null>(null);
   const [history, setHistory] = useState<KLineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [timelinePrevClose, setTimelinePrevClose] = useState<number>(0);
   const [interval, setInterval_] = useState<TimeInterval>("1d");
-  const [chartMode, setChartMode] = useState<ChartMode>("timeline");
+  const [chartMode, setChartMode] = useState<ChartMode>(readInitialChartMode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [latestSignal, setLatestSignal] = useState<{
@@ -93,55 +119,72 @@ export function useStockData() {
     reason: string;
   } | null>(null);
 
-  const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const quoteTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Track initial fetch to prevent double-fetch
+  const initialFetchDone = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const checkAShare = useCallback((sym: string) => isAShare(sym), []);
 
-  // Fetch quote
+  // ── Fetch quote ──
   const fetchQuote = useCallback(async (sym: string) => {
     try {
       const isA = checkAShare(sym);
       const url = isA
         ? `/api/stock/ashare-quote?symbol=${encodeURIComponent(sym)}`
         : `/api/stock/quote?ticker=${encodeURIComponent(sym)}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (res.ok) {
-        const data = await res.json();
-        if (!data.error) {
-          setQuote(data);
-        }
-      }
+      const data = await cachedFetch<StockQuote>(
+        `quote:${sym}`,
+        async () => {
+          const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+          if (!res.ok) throw new Error("fetch failed");
+          const d = await res.json();
+          if (d.error) throw new Error(d.error);
+          return d;
+        },
+        QUOTE_CACHE_TTL
+      );
+      startTransition(() => setQuote(data));
     } catch (err) {
       // Silently ignore timeout errors for quote
     }
   }, [checkAShare]);
 
-  // Fetch timeline + quote in a single request (optimized for initial page load)
+  // ── Fetch timeline + quote in a single request (optimized for initial page load) ──
   const fetchTimelineWithQuote = useCallback(async (sym: string) => {
     if (!checkAShare(sym)) return;
     try {
-      const res = await fetch(
-        `/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}&includeQuote=true`,
-        { signal: AbortSignal.timeout(10000) }
+      const data = await cachedFetch<{
+        items: TimelineItem[];
+        prevClose: number;
+        quote?: StockQuote;
+        error?: string;
+      }>(
+        `timeline+quote:${sym}`,
+        async () => {
+          const res = await fetch(
+            `/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}&includeQuote=true`,
+            { signal: AbortSignal.timeout(10000) }
+          );
+          if (!res.ok) throw new Error("fetch failed");
+          return res.json();
+        },
+        TIMELINE_CACHE_TTL
       );
-      if (res.ok) {
-        const data = await res.json();
-        if (!data.error) {
+      if (!data.error) {
+        startTransition(() => {
           setTimeline(data.items || []);
           setTimelinePrevClose(data.prevClose || 0);
-          // Use the included quote data to avoid a separate fetch
           if (data.quote) {
             setQuote(data.quote);
           }
-        }
+        });
       }
     } catch (err) {
       console.error("Timeline+Quote fetch error:", err);
     }
   }, [checkAShare]);
 
-  // Fetch history with MACD
+  // ── Fetch history with MACD ──
   const fetchHistory = useCallback(async (sym: string, intv: TimeInterval) => {
     setLoading(true);
     setError(null);
@@ -150,19 +193,27 @@ export function useStockData() {
       const url = isA
         ? `/api/stock/ashare-history?symbol=${encodeURIComponent(sym)}&interval=${intv}&limit=300`
         : `/api/stock/history?symbol=${encodeURIComponent(sym)}&interval=${intv}&limit=300`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.error) {
-          setError(data.error);
-          setHistory([]);
-        } else {
+      const data = await cachedFetch<{
+        data: KLineItem[];
+        latestSignal?: { type: "buy" | "sell" | "hold"; strength: "strong" | "medium" | "weak"; reason: string } | null;
+        error?: string;
+      }>(
+        `history:${sym}:${intv}`,
+        async () => {
+          const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+          if (!res.ok) throw new Error("fetch failed");
+          return res.json();
+        },
+        HISTORY_CACHE_TTL
+      );
+      if (data.error) {
+        setError(data.error);
+        setHistory([]);
+      } else {
+        startTransition(() => {
           setHistory(data.data || []);
           setLatestSignal(data.latestSignal || null);
-        }
-      } else {
-        setError("获取历史数据失败");
-        setHistory([]);
+        });
       }
     } catch (err: any) {
       setError(err.message || "网络错误");
@@ -172,24 +223,38 @@ export function useStockData() {
     }
   }, [checkAShare]);
 
-  // Fetch timeline data (A-share only) — without quote, for refresh scenarios
+  // ── Fetch timeline data (A-share only) — without quote, for refresh scenarios ──
   const fetchTimeline = useCallback(async (sym: string) => {
     if (!checkAShare(sym)) return;
     try {
-      const res = await fetch(`/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}`, { signal: AbortSignal.timeout(10000) });
-      if (res.ok) {
-        const data = await res.json();
-        if (!data.error) {
+      const data = await cachedFetch<{
+        items: TimelineItem[];
+        prevClose: number;
+        error?: string;
+      }>(
+        `timeline:${sym}`,
+        async () => {
+          const res = await fetch(
+            `/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}`,
+            { signal: AbortSignal.timeout(10000) }
+          );
+          if (!res.ok) throw new Error("fetch failed");
+          return res.json();
+        },
+        TIMELINE_CACHE_TTL
+      );
+      if (!data.error) {
+        startTransition(() => {
           setTimeline(data.items || []);
           setTimelinePrevClose(data.prevClose || 0);
-        }
+        });
       }
     } catch (err) {
       console.error("Timeline fetch error:", err);
     }
   }, [checkAShare]);
 
-  // Search stocks
+  // ── Search stocks ──
   const searchStocks = useCallback(async (query: string): Promise<StockSearchResult[]> => {
     if (!query.trim()) return [];
     try {
@@ -204,10 +269,12 @@ export function useStockData() {
     return [];
   }, []);
 
-  // Select a stock
+  // ── Select a stock ──
   const selectStock = useCallback(
     (sym: string) => {
       setSymbol(sym);
+      // Abort previous requests
+      if (abortRef.current) abortRef.current.abort();
       // Persist last selected stock to localStorage
       try { localStorage.setItem(LAST_STOCK_KEY, sym); } catch {}
       // Use combined timeline+quote fetch for faster loading when in timeline mode
@@ -221,7 +288,7 @@ export function useStockData() {
     [fetchQuote, fetchHistory, fetchTimelineWithQuote, interval, checkAShare, chartMode]
   );
 
-  // Change interval
+  // ── Change interval ──
   const changeInterval = useCallback(
     (intv: TimeInterval) => {
       setInterval_(intv);
@@ -230,7 +297,7 @@ export function useStockData() {
     [fetchHistory, symbol]
   );
 
-  // Change chart mode
+  // ── Change chart mode ──
   const changeChartMode = useCallback(
     (mode: ChartMode) => {
       setChartMode(mode);
@@ -249,27 +316,13 @@ export function useStockData() {
     [fetchTimelineWithQuote, fetchHistory, symbol, checkAShare]
   );
 
-  // Read saved stock and chart mode from localStorage after mount (avoids hydration mismatch)
-  const [mounted, setMounted] = useState(false);
+  // ── Initial load: fetch immediately on mount (no mounted gate) ──
+  // The symbol and chartMode are already initialized from localStorage
+  // via the function initializer, so we can start fetching right away.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LAST_STOCK_KEY);
-      if (saved && /^[0-9]{6}$/.test(saved) && saved !== symbol) {
-        queueMicrotask(() => setSymbol(saved));
-      }
-    } catch {}
-    try {
-      const savedMode = localStorage.getItem(LAST_CHART_MODE_KEY);
-      if (savedMode === "kline" || savedMode === "timeline" || savedMode === "5d-timeline") {
-        queueMicrotask(() => setChartMode(savedMode));
-      }
-    } catch {}
-    queueMicrotask(() => setMounted(true));
-  }, []);
+    if (initialFetchDone.current) return;
+    initialFetchDone.current = true;
 
-  // Initial load (only after mount to use correct symbol from localStorage)
-  useEffect(() => {
-    if (!mounted) return;
     const currentMode = chartMode;
     if (checkAShare(symbol) && currentMode !== "kline") {
       // Combined timeline+quote fetch saves one network roundtrip on initial load
@@ -279,14 +332,7 @@ export function useStockData() {
       fetchQuote(symbol);
       fetchHistory(symbol, interval);
     }
-  }, [mounted]);
-
-  // Auto-refresh disabled - only refresh on user action or mount
-  // External APIs can be unreliable and may block the server
-  useEffect(() => {
-    // No auto-refresh intervals
-    return () => {};
-  }, [symbol, interval, fetchQuote, fetchHistory, fetchTimeline, checkAShare]);
+  }, []); // Empty deps - only run once on mount
 
   return {
     symbol,
