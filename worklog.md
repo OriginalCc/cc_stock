@@ -48,3 +48,29 @@ Stage Summary:
 - Each trading day gets exactly 242 data points → equal horizontal width (20% each)
 - API endpoint now supports scale parameter for flexibility
 - Chart renders ~1210 data points with thin bars (1px) for dense but clear display
+
+---
+Task ID: 3
+Agent: main
+Task: Optimize 5-day volume bars — bars were too crowded/touching each other
+
+Work Log:
+- Root cause: with ~1210 data points and barSize=1, volume bars fill the entire width with no gaps
+- Solution: aggregate volume into 5-minute bars while keeping 1-minute price line resolution
+  - Added `displayVolume` field to FiveDayTimelineItem — only non-zero at 5-minute boundaries
+  - For historical days: full 5-min volume kept at anchor slots, volume=0 for interpolated minutes
+  - For live day (padLiveTimelineTo1Min): aggregate 1-min volumes into 5-min buckets at boundary slots
+  - `volume` field still used for VWAP calculation accuracy
+  - `displayVolume` field used for chart Bar rendering
+- VolumeBarShape updated: checks displayVolume instead of volume, widens each bar (width * 4.2) to span its 5-slot window
+- Bar component uses dataKey="displayVolume" instead of "volume"
+- Increased barSize from 1→3 for proper bar rendering with gaps
+- Updated maxVolume calculation to use displayVolume
+- Updated daily stats and highest/lowest price to use all items (including interpolated)
+- Lint passes cleanly
+
+Stage Summary:
+- Volume bars now appear at 5-minute intervals with proper gaps between them
+- Price line still renders at 1-minute resolution for smooth appearance
+- Volume bars are wider (spanning ~5 data slots) and visually distinct
+- syncId crosshair still works perfectly (same data array for both charts)

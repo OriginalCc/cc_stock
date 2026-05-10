@@ -27,6 +27,7 @@ interface FiveDayTimelineItem extends TimelineItem {
   dayIndex: number;   // 0-4 for the 5 days
   dayLabel: string;   // "周一", "周二", etc.
   isDayStart: boolean; // first bar of a new trading day
+  displayVolume: number; // 5-min aggregated volume for chart display (only non-zero at 5-min boundaries)
 }
 
 interface FiveDayTimelinePanelProps {
@@ -180,7 +181,7 @@ function interpolateDayTo1Min(dayKlines: KLine5Min[]): MinuteBar[] {
   // Between anchors: linear interpolation
   for (let a = 0; a < anchors.length; a++) {
     const curr = anchors[a];
-    // Place the anchor point itself
+    // Place the anchor point itself — keep full 5-min volume at the anchor
     result[curr.slotIdx] = { time: FULL_DAY_SLOTS[curr.slotIdx], price: curr.price, volume: curr.volume };
 
     // Interpolate between current and next anchor
@@ -188,15 +189,12 @@ function interpolateDayTo1Min(dayKlines: KLine5Min[]): MinuteBar[] {
       const next = anchors[a + 1];
       const span = next.slotIdx - curr.slotIdx;
       if (span > 1) {
-        // Distribute volume evenly across the 5 minutes
-        const volPerMin = curr.volume / span;
+        // Interpolated minutes get volume=0 (volume is kept at the 5-min anchor)
         for (let j = curr.slotIdx + 1; j < next.slotIdx; j++) {
           const t = (j - curr.slotIdx) / span;
           const interpPrice = curr.price + (next.price - curr.price) * t;
-          result[j] = { time: FULL_DAY_SLOTS[j], price: interpPrice, volume: Math.round(volPerMin) };
+          result[j] = { time: FULL_DAY_SLOTS[j], price: interpPrice, volume: 0 };
         }
-        // The anchor point gets the original volume
-        result[curr.slotIdx].volume = Math.round(curr.volume - volPerMin * (span - 1));
       }
     }
   }
@@ -221,13 +219,36 @@ function padLiveTimelineTo1Min(timelineData: TimelineItem[]): MinuteBar[] {
     timeMap.set(t.time, { price: t.price, volume: t.volume });
   }
 
+  // Aggregate 1-minute volume into 5-minute buckets
+  // The display volume is the sum of 5 consecutive 1-min bars, placed at the 5-min boundary
+  const vol5Min = new Map<string, number>();
+  for (const slot of FULL_DAY_SLOTS) {
+    const bar = timeMap.get(slot);
+    if (bar && bar.volume > 0) {
+      // Find the 5-min boundary this slot belongs to
+      const [h, m] = slot.split(":").map(Number);
+      const totalMin = h * 60 + m;
+      // Map to 5-min boundary: e.g. 9:30→9:30, 9:31→9:30, 9:34→9:30, 9:35→9:35
+      const boundaryMin = Math.floor(totalMin / 5) * 5;
+      const bh = Math.floor(boundaryMin / 60);
+      const bm = boundaryMin % 60;
+      const boundaryKey = `${String(bh).padStart(2, "0")}:${String(bm).padStart(2, "0")}`;
+      vol5Min.set(boundaryKey, (vol5Min.get(boundaryKey) || 0) + bar.volume);
+    }
+  }
+
   let lastPrice = 0;
   const result: MinuteBar[] = [];
   for (const slot of FULL_DAY_SLOTS) {
     const bar = timeMap.get(slot);
     if (bar && bar.price > 0) {
       lastPrice = bar.price;
-      result.push({ time: slot, price: bar.price, volume: bar.volume });
+      // Display volume: only show at 5-min boundaries, 0 elsewhere
+      const [h, m] = slot.split(":").map(Number);
+      const totalMin = h * 60 + m;
+      const is5MinBoundary = totalMin % 5 === 0;
+      const dispVol = is5MinBoundary ? (vol5Min.get(slot) || 0) : 0;
+      result.push({ time: slot, price: bar.price, volume: dispVol });
     } else if (lastPrice > 0) {
       result.push({ time: slot, price: lastPrice, volume: 0 });
     } else {
@@ -330,6 +351,7 @@ function convertTo5DayTimeline(
         price,
         avgPrice,
         volume: barVol,
+        displayVolume: barVol, // volume is already 5-min aggregated at boundary slots
         changePercent: Number(changePercent.toFixed(2)),
         date: dateStr,
         dayIndex: di,
@@ -443,13 +465,15 @@ function DayBoundaryLines(props: any) {
 function VolumeBarShape(props: any) {
   const { x, y, width, height, payload } = props;
   if (!height || Math.abs(height) < 0.3) return null;
-  if (!payload.volume || payload.volume <= 0) return null;
+  if (!payload.displayVolume || payload.displayVolume <= 0) return null;
   const isUp = payload.changePercent >= 0;
+  // Make each 5-min bar wider to span its 5-slot window
+  const barWidth = Math.max(width * 4.2, width);
   return (
     <rect
       x={x}
       y={y}
-      width={width}
+      width={barWidth}
       height={height}
       fill={isUp ? "rgba(239,68,68,1)" : "rgba(22,163,74,1)"}
     />
@@ -530,20 +554,11 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
 
     const refP = firstDayRefClose || items[0]?.price || 100;
 
-    // Only consider items with real volume for range calculation
+    // Consider all items for range calculation (including interpolated)
     let maxDeviation = 0;
     for (const item of items) {
-      if (item.volume > 0) {
-        const dev = Math.abs(item.price - refP);
-        if (dev > maxDeviation) maxDeviation = dev;
-      }
-    }
-    if (maxDeviation === 0) {
-      // Fallback: use all items
-      for (const item of items) {
-        const dev = Math.abs(item.price - refP);
-        if (dev > maxDeviation) maxDeviation = dev;
-      }
+      const dev = Math.abs(item.price - refP);
+      if (dev > maxDeviation) maxDeviation = dev;
     }
     const padding = maxDeviation * 0.2 || refP * 0.02;
     const minP = refP - maxDeviation - padding;
@@ -563,23 +578,16 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
   }, [items, firstDayRefClose]);
 
   const maxVolume = useMemo(() => {
-    return items.reduce((mx, d) => Math.max(mx, d.volume), 1);
+    return items.reduce((mx, d) => Math.max(mx, d.displayVolume), 1);
   }, [items]);
 
-  // ── 5-day highest / lowest price (only from real data) ──
+  // ── 5-day highest / lowest price (from all data points, including interpolated) ──
   const { highestPrice, lowestPrice } = useMemo(() => {
     if (items.length === 0) return { highestPrice: null, lowestPrice: null };
     let hi = -Infinity, lo = Infinity;
     for (const d of items) {
-      if (d.volume <= 0) continue;
       if (d.price > hi) hi = d.price;
       if (d.price < lo) lo = d.price;
-    }
-    if (!isFinite(hi) || !isFinite(lo)) {
-      for (const d of items) {
-        if (d.price > hi) hi = d.price;
-        if (d.price < lo) lo = d.price;
-      }
     }
     return { highestPrice: isFinite(hi) ? hi : null, lowestPrice: isFinite(lo) ? lo : null };
   }, [items]);
@@ -593,7 +601,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
       const endIdx = di < dayBoundaries.length - 1 ? dayBoundaries[di + 1] : items.length;
       const dayItems = items.slice(startIdx, endIdx);
       if (dayItems.length === 0) continue;
-      const realItems = dayItems.filter(d => d.volume > 0);
+      const realItems = dayItems.filter(d => d.displayVolume > 0);
       const open = realItems.length > 0 ? realItems[0].price : dayItems[0].price;
       const close = realItems.length > 0 ? realItems[realItems.length - 1].price : dayItems[dayItems.length - 1].price;
       const high = realItems.reduce((mx, d) => Math.max(mx, d.price), open);
@@ -619,11 +627,12 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return Math.max(1, Math.floor(items.length / 14));
   }, [items.length]);
 
-  // Bar size — with ~1210 data points (5 days × 242 slots), use very thin bars
+  // Bar size — volume bars are at 5-min boundaries only (~240 visible bars)
+  // so we can use a slightly wider bar with gaps between them
   const barSize = useMemo(() => {
-    if (items.length > 1000) return 1;
-    if (items.length > 500) return 2;
-    return 3;
+    if (items.length > 1000) return 3;
+    if (items.length > 500) return 4;
+    return 5;
   }, [items.length]);
 
   if (loading) {
@@ -797,14 +806,14 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 content={({ active, payload }: any) => {
                   if (!active || !payload?.length) return null;
                   const data = payload[0]?.payload as FiveDayTimelineItem | undefined;
-                  if (!data || data.volume <= 0) return null;
+                  if (!data || data.displayVolume <= 0) return null;
                   const isUp = data.changePercent >= 0;
                   return (
                     <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">
                       <div className="font-medium text-foreground mb-1">{data.date} {data.time}</div>
                       <div className="grid grid-cols-2 gap-y-0.5 gap-x-2">
                         <span className="text-muted-foreground">成交量</span>
-                        <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+                        <span className="text-right font-mono">{formatVolume(data.displayVolume)}</span>
                         <span className="text-muted-foreground">价格</span>
                         <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2)}</span>
                       </div>
@@ -815,7 +824,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 wrapperStyle={{ background: "transparent", border: "none" }}
               />
               <Bar
-                dataKey="volume"
+                dataKey="displayVolume"
                 isAnimationActive={false}
                 barSize={barSize}
                 shape={(props: any) => <VolumeBarShape {...props} />}
