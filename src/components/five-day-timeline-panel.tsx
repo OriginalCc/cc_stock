@@ -484,7 +484,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
 
   // Volume chart height
   const volumeChartHeight = useMemo(() => {
-    return Math.max(120, Math.floor(chartHeight * 0.45));
+    return Math.max(165, Math.floor(chartHeight * 0.5));
   }, [chartHeight]);
 
   // XAxis tick interval
