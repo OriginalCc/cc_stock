@@ -497,7 +497,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const availableHeight = window.innerHeight - rect.top - 20;
-      const priceH = Math.max(200, Math.floor(availableHeight * 0.75));
+      const priceH = Math.max(250, Math.floor(availableHeight * 0.85));
       setChartHeight(priceH);
     };
 
@@ -619,7 +619,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
 
   // Volume chart height
   const volumeChartHeight = useMemo(() => {
-    return Math.max(165, Math.floor(chartHeight * 0.5));
+    return Math.max(150, Math.floor(chartHeight * 0.35));
   }, [chartHeight]);
 
   // XAxis tick interval — with ~1210 data points, show ~12-15 labels
@@ -732,7 +732,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 connectNulls={false}
               />
               <Area type="monotone" dataKey="avgPrice" stroke="#eab308" strokeWidth={1} fill="none" dot={false} isAnimationActive={false} strokeDasharray="3 2" connectNulls={false} />
-              <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} dot={false} isAnimationActive={false} connectNulls={false} />
+              <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
               <Customized component={(props: any) => <DayBoundaryLines {...props} dayBoundaries={dayBoundaries} dayLabels={dayLabels} chartHeight={chartHeight} />} />
               <Customized component={(props: any) => {
                 const { yAxisMap } = props;
