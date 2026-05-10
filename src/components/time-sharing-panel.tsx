@@ -1922,6 +1922,8 @@ export function TimeSharingPanel({
               if (level.name.includes("整数关")) return null;
               // Skip Fibonacci回撤位 (user requested to hide)
               if (level.name.startsWith("Fib")) return null;
+              // Skip 日内高/低 (replaced by dedicated highest/lowest markers with percentage)
+              if (level.name.startsWith("日内高") || level.name.startsWith("日内低")) return null;
               const isSupport = level.type === "support";
               const lineColor = isSupport ? "#16a34a" : "#dc2626";  // green-600 / red-600 (stronger)
               return (
