@@ -144,7 +144,7 @@ function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; 
   for (const item of formattedGraphicalItems) {
     if (item?.props?.points && Array.isArray(item.props.points)) {
       const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
-      if (stroke === "#eab308") continue;
+      if (stroke === "#eab308" || stroke === "#facc15") continue;
       if (priceLineData.length === 0) {
         priceLineData = item.props.points;
       }
@@ -308,7 +308,7 @@ function computeTimelineSignalElements(
     if (item?.props?.points && Array.isArray(item.props.points)) {
       const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
       // Skip avgPrice (yellow dashed) line
-      if (stroke === "#eab308") continue;
+      if (stroke === "#eab308" || stroke === "#facc15") continue;
       if (priceLineData.length === 0) {
         priceLineData = item.props.points;
       }
@@ -1047,7 +1047,7 @@ export function MiniTimelinePanel({
           <ReferenceLine yAxisId="price" y={prevClose} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 2" strokeWidth={0.4} />
           <Area yAxisId="price" type="monotone" dataKey="price" stroke="none" fill="#3b82f6" fillOpacity={0.06} connectNulls isAnimationActive={false} />
           <Line yAxisId="price" type="monotone" dataKey="price" stroke="#3b82f6" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
-          <Line yAxisId="price" type="monotone" dataKey="avgPrice" stroke="#eab308" dot={false} strokeWidth={0.6} strokeDasharray="3 2" connectNulls isAnimationActive={false} />
+          <Line yAxisId="price" type="monotone" dataKey="avgPrice" stroke="#facc15" dot={false} strokeWidth={1.0} strokeDasharray="4 2" connectNulls isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
 
@@ -1560,7 +1560,7 @@ export function TimeSharingPanel({
           <span className="text-muted-foreground">价格</span>
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-0.5 bg-yellow-500 rounded" style={{ borderBottom: "1px dashed #eab308" }} />
+          <span className="inline-block w-3 h-[1.5px] bg-yellow-400 rounded" style={{ borderBottom: "1.5px dashed #facc15" }} />
           <span className="text-muted-foreground">均价</span>
         </span>
         {prevDayMA5 != null && (
@@ -2039,10 +2039,10 @@ export function TimeSharingPanel({
               yAxisId="price"
               type="monotone"
               dataKey="avgPrice"
-              stroke="#eab308"
+              stroke="#facc15"
               dot={false}
-              strokeWidth={isZoomed ? 1.2 : 0.8}
-              strokeDasharray="3 2"
+              strokeWidth={isZoomed ? 1.8 : 1.3}
+              strokeDasharray="5 3"
               isAnimationActive={false}
             />
             {/* Crosshair vertical line - shared across panels */}
