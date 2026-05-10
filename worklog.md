@@ -22,3 +22,29 @@ Stage Summary:
 - Volume chart is a separate chart below at ~25% height
 - First day's prevClose is correctly computed from K-line data (day before 5-day window)
 - Y-axis is symmetric around the reference close with proper percentage ticks
+
+---
+Task ID: 2
+Agent: main
+Task: Change 5-day intraday chart to use 1-minute granularity and fix equal-width day distribution
+
+Work Log:
+- Investigated available APIs for 1-minute K-line data — Sina API only supports scale=5/15/30/60, Tencent only provides today's 1-min data, EastMoney kline API with klt=1 only returns today
+- Modified ashare-5min-kline API route to accept a `scale` parameter (supports 1, 5, 15, 30, 60)
+- Implemented interpolation approach: fetch 5-min K-line data, then interpolate to 1-minute granularity
+  - generateFullDayTimeSlots() creates 242 time slots per trading day (9:30-11:30 = 121, 13:00-15:00 = 121)
+  - interpolateDayTo1Min() linearly interpolates prices between 5-min anchor points, distributes volume evenly
+  - Each day is padded to exactly 242 data points regardless of how many actual bars it has
+  - For today (last day), uses live 1-minute timeline data directly, padded to 242 slots
+- This ensures every trading day gets exactly 1/5 of the chart width — fixing the Friday-too-wide issue
+- Updated bar size to be very thin (1px) for the ~1210 data points (5 days × 242)
+- Updated highest/lowest price calculation to only consider bars with real volume
+- Updated daily stats to use only real-volume bars for open/close/high/low
+- VolumeBarShape skips rendering for zero-volume padding bars
+- Lint passes cleanly
+
+Stage Summary:
+- 5-day chart now uses 1-minute granularity (interpolated from 5-min K-line for historical days, real 1-min for today)
+- Each trading day gets exactly 242 data points → equal horizontal width (20% each)
+- API endpoint now supports scale parameter for flexibility
+- Chart renders ~1210 data points with thin bars (1px) for dense but clear display

@@ -36,6 +36,37 @@ interface FiveDayTimelinePanelProps {
   timelinePrevClose: number;
 }
 
+// ── Constants ──
+
+/**
+ * Generate the full list of 1-minute time slots for a trading day.
+ * Returns ["09:30", "09:31", ..., "11:30", "13:00", "13:01", ..., "15:00"]
+ * Total: 242 slots (121 morning + 121 afternoon)
+ */
+function generateFullDayTimeSlots(): string[] {
+  const slots: string[] = [];
+  // Morning: 9:30 - 11:30
+  for (let h = 9; h <= 11; h++) {
+    const startMin = h === 9 ? 30 : 0;
+    const endMin = h === 11 ? 30 : 59;
+    for (let m = startMin; m <= endMin; m++) {
+      slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+  // Afternoon: 13:00 - 15:00
+  for (let h = 13; h <= 15; h++) {
+    const endMin = h === 15 ? 0 : 59;
+    for (let m = 0; m <= endMin; m++) {
+      slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+  return slots;
+}
+
+/** Pre-computed full day time slots — each day gets exactly this many data points */
+const FULL_DAY_SLOTS = generateFullDayTimeSlots(); // 242 slots
+const SLOTS_PER_DAY = FULL_DAY_SLOTS.length;
+
 // ── Data Fetching ──
 
 interface KLine5Min {
@@ -48,13 +79,12 @@ interface KLine5Min {
 }
 
 /**
- * Fetch 5-min K-line data using the lightweight dedicated endpoint.
- * Falls back to the full ashare-history endpoint if the lightweight one fails.
+ * Fetch 5-min K-line data, then we'll interpolate to 1-min granularity.
+ * This ensures each day has the same number of data points for equal width.
  */
 async function fetch5MinKLine(symbol: string, retryCount = 1): Promise<KLine5Min[]> {
   for (let attempt = 0; attempt <= retryCount; attempt++) {
     try {
-      // Use the lightweight endpoint first (no MACD/KDJ computation)
       const res = await fetch(
         `/api/stock/ashare-5min-kline?symbol=${encodeURIComponent(symbol)}&limit=250`,
         { signal: AbortSignal.timeout(10000) }
@@ -81,7 +111,6 @@ async function fetch5MinKLine(symbol: string, retryCount = 1): Promise<KLine5Min
       console.error(`5min-kline fetch attempt ${attempt + 1} failed:`, e);
     }
 
-    // Wait before retry (except on last attempt)
     if (attempt < retryCount) {
       await new Promise(r => setTimeout(r, 1500));
     }
@@ -89,7 +118,126 @@ async function fetch5MinKLine(symbol: string, retryCount = 1): Promise<KLine5Min
   return [];
 }
 
-// ── Helper: convert 5-min K-line to 5-day timeline format ──
+// ── Helper: parse "HH:MM" to total minutes from midnight ──
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// ── Helper: interpolate 5-min klines to 1-min data and pad to full day ──
+
+interface MinuteBar {
+  time: string;
+  price: number;
+  volume: number;
+}
+
+/**
+ * Given a day's 5-min K-line bars, interpolate to 1-minute granularity,
+ * then pad to FULL_DAY_SLOTS length so every day has the same data point count.
+ *
+ * Interpolation strategy:
+ * - Each 5-min bar is placed at its starting time slot
+ * - Between consecutive 5-min bars, we linearly interpolate the close price
+ * - Volume is distributed evenly across the 5 minutes
+ * - Before the first bar: use the first bar's open price, volume=0
+ * - After the last bar: use the last bar's close price, volume=0
+ */
+function interpolateDayTo1Min(dayKlines: KLine5Min[]): MinuteBar[] {
+  // Build a map: timeSlot → { price (close), volume }
+  const fiveMinMap = new Map<string, { price: number; volume: number; open: number }>();
+  for (const k of dayKlines) {
+    const timeStr = k.date.split(" ")[1]?.slice(0, 5) || "";
+    if (timeStr) {
+      fiveMinMap.set(timeStr, { price: k.close, volume: Math.max(0, k.volume), open: k.open });
+    }
+  }
+
+  // Get sorted 5-min anchor points with their slot indices
+  const anchors: { slotIdx: number; price: number; volume: number }[] = [];
+  for (let i = 0; i < FULL_DAY_SLOTS.length; i++) {
+    const slot = FULL_DAY_SLOTS[i];
+    const bar = fiveMinMap.get(slot);
+    if (bar) {
+      anchors.push({ slotIdx: i, price: bar.price, volume: bar.volume });
+    }
+  }
+
+  // If no anchors at all, return empty bars
+  if (anchors.length === 0) {
+    return FULL_DAY_SLOTS.map(slot => ({ time: slot, price: 0, volume: 0 }));
+  }
+
+  const result: MinuteBar[] = new Array(SLOTS_PER_DAY);
+
+  // Before first anchor: use first anchor's open price, volume=0
+  const firstAnchor = anchors[0];
+  for (let i = 0; i < firstAnchor.slotIdx; i++) {
+    result[i] = { time: FULL_DAY_SLOTS[i], price: fiveMinMap.get(FULL_DAY_SLOTS[firstAnchor.slotIdx])?.open ?? firstAnchor.price, volume: 0 };
+  }
+
+  // Between anchors: linear interpolation
+  for (let a = 0; a < anchors.length; a++) {
+    const curr = anchors[a];
+    // Place the anchor point itself
+    result[curr.slotIdx] = { time: FULL_DAY_SLOTS[curr.slotIdx], price: curr.price, volume: curr.volume };
+
+    // Interpolate between current and next anchor
+    if (a < anchors.length - 1) {
+      const next = anchors[a + 1];
+      const span = next.slotIdx - curr.slotIdx;
+      if (span > 1) {
+        // Distribute volume evenly across the 5 minutes
+        const volPerMin = curr.volume / span;
+        for (let j = curr.slotIdx + 1; j < next.slotIdx; j++) {
+          const t = (j - curr.slotIdx) / span;
+          const interpPrice = curr.price + (next.price - curr.price) * t;
+          result[j] = { time: FULL_DAY_SLOTS[j], price: interpPrice, volume: Math.round(volPerMin) };
+        }
+        // The anchor point gets the original volume
+        result[curr.slotIdx].volume = Math.round(curr.volume - volPerMin * (span - 1));
+      }
+    }
+  }
+
+  // After last anchor: use last anchor's price, volume=0
+  const lastAnchor = anchors[anchors.length - 1];
+  for (let i = lastAnchor.slotIdx + 1; i < SLOTS_PER_DAY; i++) {
+    result[i] = { time: FULL_DAY_SLOTS[i], price: lastAnchor.price, volume: 0 };
+  }
+
+  return result;
+}
+
+/**
+ * Given a day's 1-minute live timeline data, pad to FULL_DAY_SLOTS length.
+ * The timeline data is already at 1-minute granularity.
+ */
+function padLiveTimelineTo1Min(timelineData: TimelineItem[]): MinuteBar[] {
+  // Build a map: time → { price, volume }
+  const timeMap = new Map<string, { price: number; volume: number }>();
+  for (const t of timelineData) {
+    timeMap.set(t.time, { price: t.price, volume: t.volume });
+  }
+
+  let lastPrice = 0;
+  const result: MinuteBar[] = [];
+  for (const slot of FULL_DAY_SLOTS) {
+    const bar = timeMap.get(slot);
+    if (bar && bar.price > 0) {
+      lastPrice = bar.price;
+      result.push({ time: slot, price: bar.price, volume: bar.volume });
+    } else if (lastPrice > 0) {
+      result.push({ time: slot, price: lastPrice, volume: 0 });
+    } else {
+      result.push({ time: slot, price: 0, volume: 0 });
+    }
+  }
+  return result;
+}
+
+// ── Helper: convert to 5-day timeline format with equal-width days ──
 
 function convertTo5DayTimeline(
   klines: KLine5Min[],
@@ -100,10 +248,6 @@ function convertTo5DayTimeline(
   if (klines.length === 0 && currentTimeline.length === 0) {
     return { items: [], dayBoundaries: [], dayLabels: [], prevClose: 0, firstDayRefClose: 0 };
   }
-
-  const items: FiveDayTimelineItem[] = [];
-  const dayBoundaries: number[] = []; // indices where new days start
-  const dayLabels: string[] = [];
 
   // Group klines by date
   const dayMap = new Map<string, KLine5Min[]>();
@@ -119,11 +263,8 @@ function convertTo5DayTimeline(
   const last5Dates = dates.slice(-5);
 
   // Determine prevClose for the earliest day
-  // If we have more than 5 dates, the close of the day before our 5-day window
-  // is the reference. Otherwise, fall back to quote's prevClose or first bar's open.
   let prevClose = 0;
   if (dates.length > 5) {
-    // The day before the 5-day window
     const beforeFirstDate = dates[dates.length - 6];
     const beforeKlines = dayMap.get(beforeFirstDate);
     if (beforeKlines && beforeKlines.length > 0) {
@@ -133,116 +274,75 @@ function convertTo5DayTimeline(
   if (prevClose <= 0) {
     prevClose = timelinePrevClose || quote?.prevClose || 0;
   }
-  // Save the first day's reference close for the chart Y-axis center line
   let firstDayRefClose = prevClose;
 
-  // For each day, compute avgPrice (VWAP) and changePercent relative to prevClose
   const dayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+  // For each day, produce 1-minute bars (interpolated or live), then pad to SLOTS_PER_DAY
+  const items: FiveDayTimelineItem[] = [];
+  const dayBoundaries: number[] = [];
+  const dayLabels: string[] = [];
 
   for (let di = 0; di < last5Dates.length; di++) {
     const dateStr = last5Dates[di];
-    const dayKlines = dayMap.get(dateStr) || [];
-
-    if (dayKlines.length === 0) continue;
-
     dayBoundaries.push(items.length);
-    const d = new Date(dateStr + "T00:00:00"); // Avoid timezone issues
+    const d = new Date(dateStr + "T00:00:00");
     const dayLabel = dayNames[d.getDay()];
     dayLabels.push(`${dateStr.slice(5)} ${dayLabel}`);
 
-    // Use the open of first bar as reference if no prevClose
-    const dayOpen = dayKlines[0].open;
+    const isLastDay = di === last5Dates.length - 1;
+
+    // Get 1-minute bars for this day
+    let minuteBars: MinuteBar[];
+
+    if (isLastDay && currentTimeline.length > 0) {
+      // Last day: use live 1-minute timeline data (padded to full day)
+      minuteBars = padLiveTimelineTo1Min(currentTimeline);
+    } else {
+      // Historical day: interpolate 5-min klines to 1-min
+      const dayKlines = dayMap.get(dateStr) || [];
+      minuteBars = interpolateDayTo1Min(dayKlines);
+    }
+
+    // Compute reference close for this day
+    const dayOpen = minuteBars.length > 0 && minuteBars[0].price > 0
+      ? minuteBars[0].price
+      : (prevClose || 0);
     const refClose = prevClose > 0 ? prevClose : dayOpen;
-    // Save first day's reference
     if (di === 0) firstDayRefClose = refClose;
 
-    // Compute VWAP for the day
+    // Compute VWAP cumulatively across the day
     let cumVol = 0;
     let cumAmt = 0;
 
-    for (let i = 0; i < dayKlines.length; i++) {
-      const k = dayKlines[i];
-      const barVol = Math.max(0, k.volume);
-      cumVol += barVol;
-      cumAmt += barVol * k.close;
-      const avgPrice = cumVol > 0 ? cumAmt / cumVol : k.close;
-      const changePercent = refClose > 0 ? ((k.close - refClose) / refClose) * 100 : 0;
+    for (let ti = 0; ti < minuteBars.length; ti++) {
+      const bar = minuteBars[ti];
+      const price = bar.price || prevClose || refClose;
+      const barVol = bar.volume;
 
-      const timeStr = k.date.split(" ")[1]?.slice(0, 5) || "09:30";
+      cumVol += barVol;
+      cumAmt += barVol * price;
+      const avgPrice = cumVol > 0 ? cumAmt / cumVol : price;
+      const changePercent = refClose > 0 ? ((price - refClose) / refClose) * 100 : 0;
 
       items.push({
-        time: timeStr,
-        price: k.close,
+        time: bar.time,
+        price,
         avgPrice,
         volume: barVol,
         changePercent: Number(changePercent.toFixed(2)),
         date: dateStr,
         dayIndex: di,
         dayLabel,
-        isDayStart: i === 0,
+        isDayStart: ti === 0,
       });
     }
 
-    // Update prevClose for next day = last close of this day
-    prevClose = dayKlines[dayKlines.length - 1].close;
-  }
-
-  // If we have today's live timeline data, merge it for the last day
-  if (currentTimeline.length > 0 && last5Dates.length > 0) {
-    const todayStr = last5Dates[last5Dates.length - 1];
-    // Remove the last day's kline-based items and replace with live data
-    const lastDayStartIdx = dayBoundaries[dayBoundaries.length - 1];
-    // Keep items before the last day
-    const beforeLastDay = items.slice(0, lastDayStartIdx);
-
-    // Downsample 1-min timeline to 5-min intervals so the last day
-    // has the same data density as the other 4 days (~48 bars).
-    // Take the last bar in each 5-min window.
-    const sampled: TimelineItem[] = [];
-    for (let i = 0; i < currentTimeline.length; i++) {
-      const t = currentTimeline[i];
-      const [h, m] = t.time.split(":").map(Number);
-      const totalMin = h * 60 + m;
-      // Only keep bars at 5-minute boundaries (e.g. 09:30, 09:35, 09:40, …)
-      if (totalMin % 5 === 0) {
-        sampled.push(t);
-      }
+    // Update prevClose for next day = last price of this day
+    const lastBar = minuteBars[minuteBars.length - 1];
+    if (lastBar && lastBar.price > 0) {
+      prevClose = lastBar.price;
     }
-    // If sampling produced nothing (edge case), keep last bar of each 5-min window
-    const timelineSource = sampled.length > 0 ? sampled : currentTimeline;
-
-    // Rebuild last day with (downsampled) live timeline data
-    const liveItems: FiveDayTimelineItem[] = [];
-    let cumVol = 0;
-    let cumAmt = 0;
-    const refClose = beforeLastDay.length > 0
-      ? beforeLastDay[beforeLastDay.length - 1].price
-      : (quote?.prevClose || timelinePrevClose || currentTimeline[0]?.price || 0);
-
-    for (let i = 0; i < timelineSource.length; i++) {
-      const t = timelineSource[i];
-      // For sampled data, volume should represent the 5-min bar,
-      // but since we only have 1-min bars, we accumulate volume within
-      // the 5-min window. Reset cumulative when starting a new window.
-      // Actually, for simplicity we use per-bar volume from the sampled point.
-      cumVol += t.volume;
-      cumAmt += t.volume * t.price;
-      const avgPrice = cumVol > 0 ? cumAmt / cumVol : t.price;
-      const changePercent = refClose > 0 ? ((t.price - refClose) / refClose) * 100 : 0;
-
-      liveItems.push({
-        ...t,
-        date: todayStr,
-        dayIndex: last5Dates.length - 1,
-        dayLabel: dayLabels[dayLabels.length - 1]?.split(" ")[1] || "",
-        isDayStart: i === 0,
-        avgPrice,
-        changePercent: Number(changePercent.toFixed(2)),
-      });
-    }
-
-    items.length = 0;
-    items.push(...beforeLastDay, ...liveItems);
   }
 
   return { items, dayBoundaries, dayLabels, prevClose, firstDayRefClose };
@@ -307,7 +407,6 @@ function DayBoundaryLines(props: any) {
   const { formattedGraphicalItems, dayBoundaries, dayLabels, chartHeight } = props;
   if (!formattedGraphicalItems || dayBoundaries.length <= 1) return null;
 
-  // Get x positions from the price line
   const priceLine = formattedGraphicalItems?.[0];
   if (!priceLine?.props?.points) return null;
 
@@ -327,7 +426,6 @@ function DayBoundaryLines(props: any) {
     }
   }
 
-  // Also add the first day label
   if (dayBoundaries.length > 0 && dayBoundaries[0] < points.length && points[dayBoundaries[0]]) {
     const x = points[dayBoundaries[0]].x;
     result.push(
@@ -345,6 +443,7 @@ function DayBoundaryLines(props: any) {
 function VolumeBarShape(props: any) {
   const { x, y, width, height, payload } = props;
   if (!height || Math.abs(height) < 0.3) return null;
+  if (!payload.volume || payload.volume <= 0) return null;
   const isUp = payload.changePercent >= 0;
   return (
     <rect
@@ -373,18 +472,13 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     const updateHeight = () => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      // Available height = viewport height - container top position - some bottom padding
       const availableHeight = window.innerHeight - rect.top - 20;
-      // Price chart takes ~75% of available space, volume ~18%, gap ~7%
       const priceH = Math.max(200, Math.floor(availableHeight * 0.75));
       setChartHeight(priceH);
     };
 
-    // Initial calculation
     updateHeight();
-    // Recalculate on resize
     window.addEventListener("resize", updateHeight);
-    // Also recalculate after a short delay (for layout settling)
     const timer = setTimeout(updateHeight, 100);
     return () => {
       window.removeEventListener("resize", updateHeight);
@@ -392,7 +486,6 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     };
   }, []);
 
-  // Fetch 5-min K-line data with proper cleanup and retry
   const loadData = useCallback(async (sym: string) => {
     const fetchId = ++fetchIdRef.current;
     setFetching(true);
@@ -400,7 +493,6 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
 
     try {
       const data = await fetch5MinKLine(sym, 1);
-      // Check if this fetch is still current
       if (fetchId !== fetchIdRef.current) return;
       setKline5Min(data);
       setDataLoaded(true);
@@ -417,7 +509,6 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     }
   }, []);
 
-  // Initial fetch on mount and symbol change
   useEffect(() => {
     if (!symbol) return;
     loadData(symbol);
@@ -425,7 +516,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
 
   const loading = fetching && !dataLoaded;
 
-  // Convert to 5-day timeline format
+  // Convert to 5-day timeline format with 1-min interpolation and equal-width padding
   const { items, dayBoundaries, dayLabels, prevClose, firstDayRefClose } = useMemo(() => {
     if (kline5Min.length === 0 && timeline.length === 0) {
       return { items: [], dayBoundaries: [], dayLabels: [], prevClose: 0, firstDayRefClose: 0 };
@@ -439,17 +530,25 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
 
     const refP = firstDayRefClose || items[0]?.price || 100;
 
-    // Compute symmetric range around the reference
+    // Only consider items with real volume for range calculation
     let maxDeviation = 0;
     for (const item of items) {
-      const dev = Math.abs(item.price - refP);
-      if (dev > maxDeviation) maxDeviation = dev;
+      if (item.volume > 0) {
+        const dev = Math.abs(item.price - refP);
+        if (dev > maxDeviation) maxDeviation = dev;
+      }
+    }
+    if (maxDeviation === 0) {
+      // Fallback: use all items
+      for (const item of items) {
+        const dev = Math.abs(item.price - refP);
+        if (dev > maxDeviation) maxDeviation = dev;
+      }
     }
     const padding = maxDeviation * 0.2 || refP * 0.02;
     const minP = refP - maxDeviation - padding;
     const maxP = refP + maxDeviation + padding;
 
-    // Generate symmetric ticks around refClose
     const range = maxP - minP;
     const step = range / 4;
     const ticks = [
@@ -467,13 +566,20 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return items.reduce((mx, d) => Math.max(mx, d.volume), 1);
   }, [items]);
 
-  // ── 5-day highest / lowest price ──
+  // ── 5-day highest / lowest price (only from real data) ──
   const { highestPrice, lowestPrice } = useMemo(() => {
     if (items.length === 0) return { highestPrice: null, lowestPrice: null };
     let hi = -Infinity, lo = Infinity;
     for (const d of items) {
+      if (d.volume <= 0) continue;
       if (d.price > hi) hi = d.price;
       if (d.price < lo) lo = d.price;
+    }
+    if (!isFinite(hi) || !isFinite(lo)) {
+      for (const d of items) {
+        if (d.price > hi) hi = d.price;
+        if (d.price < lo) lo = d.price;
+      }
     }
     return { highestPrice: isFinite(hi) ? hi : null, lowestPrice: isFinite(lo) ? lo : null };
   }, [items]);
@@ -487,10 +593,11 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
       const endIdx = di < dayBoundaries.length - 1 ? dayBoundaries[di + 1] : items.length;
       const dayItems = items.slice(startIdx, endIdx);
       if (dayItems.length === 0) continue;
-      const open = dayItems[0].price;
-      const close = dayItems[dayItems.length - 1].price;
-      const high = dayItems.reduce((mx, d) => Math.max(mx, d.price), open);
-      const low = dayItems.reduce((mn, d) => Math.min(mn, d.price), open);
+      const realItems = dayItems.filter(d => d.volume > 0);
+      const open = realItems.length > 0 ? realItems[0].price : dayItems[0].price;
+      const close = realItems.length > 0 ? realItems[realItems.length - 1].price : dayItems[dayItems.length - 1].price;
+      const high = realItems.reduce((mx, d) => Math.max(mx, d.price), open);
+      const low = realItems.reduce((mn, d) => Math.min(mn, d.price), open);
       const refP = di > 0 ? stats[di - 1].close : (prevClose || open);
       const change = refP > 0 ? ((close - refP) / refP) * 100 : 0;
       stats.push({
@@ -507,16 +614,16 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
     return Math.max(165, Math.floor(chartHeight * 0.5));
   }, [chartHeight]);
 
-  // XAxis tick interval
+  // XAxis tick interval — with ~1210 data points, show ~12-15 labels
   const xTickInterval = useMemo(() => {
-    return Math.max(1, Math.floor(items.length / 12));
+    return Math.max(1, Math.floor(items.length / 14));
   }, [items.length]);
 
-  // Bar size based on data density
+  // Bar size — with ~1210 data points (5 days × 242 slots), use very thin bars
   const barSize = useMemo(() => {
-    if (items.length > 400) return 2;
-    if (items.length > 200) return 3;
-    return 4;
+    if (items.length > 1000) return 1;
+    if (items.length > 500) return 2;
+    return 3;
   }, [items.length]);
 
   if (loading) {
@@ -573,7 +680,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
         </Card>
       )}
 
-      {/* 5-Day Price Chart — fills most of the viewport */}
+      {/* 5-Day Price Chart */}
       <Card className="py-0 flex-1">
         <CardContent className="pb-1 pt-1 px-2">
           <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5">
@@ -601,11 +708,8 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
               />
               <Tooltip content={<FiveDayTooltip />} cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "4 2" }} wrapperStyle={{ background: "transparent", border: "none" }} />
               {refClose > 0 && <ReferenceLine y={refClose} stroke="#64748b" strokeDasharray="4 4" strokeWidth={0.8} />}
-              {/* Highest price dashed line */}
               {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#f87171" strokeDasharray="6 4" strokeWidth={0.8} />}
-              {/* Lowest price dashed line */}
               {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#4ade80" strokeDasharray="6 4" strokeWidth={0.8} />}
-              {/* Price area fill */}
               <Area
                 type="monotone"
                 dataKey="price"
@@ -616,13 +720,11 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                   return lastItem.price >= refClose ? "rgba(239,68,68,0.06)" : "rgba(22,163,74,0.06)";
                 })()}
                 isAnimationActive={false}
+                connectNulls={false}
               />
-              {/* Avg price line */}
-              <Area type="monotone" dataKey="avgPrice" stroke="#eab308" strokeWidth={1} fill="none" dot={false} isAnimationActive={false} strokeDasharray="3 2" />
-              {/* Price line */}
-              <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} dot={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="avgPrice" stroke="#eab308" strokeWidth={1} fill="none" dot={false} isAnimationActive={false} strokeDasharray="3 2" connectNulls={false} />
+              <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} dot={false} isAnimationActive={false} connectNulls={false} />
               <Customized component={(props: any) => <DayBoundaryLines {...props} dayBoundaries={dayBoundaries} dayLabels={dayLabels} chartHeight={chartHeight} />} />
-              {/* Highest / Lowest price tags on Y-axis */}
               <Customized component={(props: any) => {
                 const { yAxisMap } = props;
                 if (!yAxisMap || (highestPrice == null && lowestPrice == null)) return null;
@@ -666,7 +768,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
         </CardContent>
       </Card>
 
-      {/* 5-Day Volume Chart — separate chart at bottom */}
+      {/* 5-Day Volume Chart */}
       <Card className="py-0 mt-1">
         <CardContent className="pb-1 pt-0 px-2">
           <div className="flex items-center px-1 pt-0.5 pb-0">
@@ -695,7 +797,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 content={({ active, payload }: any) => {
                   if (!active || !payload?.length) return null;
                   const data = payload[0]?.payload as FiveDayTimelineItem | undefined;
-                  if (!data) return null;
+                  if (!data || data.volume <= 0) return null;
                   const isUp = data.changePercent >= 0;
                   return (
                     <div className="bg-card border border-border rounded-lg p-2 shadow-xl text-xs">

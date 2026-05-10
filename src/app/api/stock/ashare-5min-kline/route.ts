@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAShareKLine, isAShare } from "@/lib/ashare-api";
 
 /**
- * Lightweight 5-minute K-line endpoint for 5-day intraday chart.
+ * Lightweight K-line endpoint for intraday charts.
  * Returns ONLY raw OHLCV data (no MACD/KDJ/MA computation) for fast response.
+ * Supports scale parameter: 1, 5, 15, 30, 60 (minutes).
  */
 export async function GET(request: NextRequest) {
   const symbol = request.nextUrl.searchParams.get("symbol") || "";
+  const scale = parseInt(request.nextUrl.searchParams.get("scale") || "5", 10);
   const limit = parseInt(request.nextUrl.searchParams.get("limit") || "250", 10);
 
   if (!symbol) {
@@ -17,8 +19,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "仅支持A股" }, { status: 400 });
   }
 
+  // Validate scale
+  const validScales = [1, 5, 15, 30, 60];
+  const safeScale = validScales.includes(scale) ? scale : 5;
+
   try {
-    const history = await getAShareKLine(symbol, 5, limit);
+    const history = await getAShareKLine(symbol, safeScale, limit);
 
     // Return lightweight data — only date, OHLCV
     const data = history.map((item) => ({
@@ -32,11 +38,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       symbol,
+      scale: safeScale,
       count: data.length,
       data,
     });
   } catch (error: any) {
-    console.error("5min-kline API error:", error);
-    return NextResponse.json({ error: "获取5分钟K线数据失败" }, { status: 500 });
+    console.error("kline API error:", error);
+    return NextResponse.json({ error: `获取${safeScale}分钟K线数据失败` }, { status: 500 });
   }
 }
