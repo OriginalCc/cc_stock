@@ -716,7 +716,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                       els.push(
                         <g key="hi-tag">
                           <polygon points={`${chartRight - 8},${y + 5} ${chartRight + 2},${y + 5} ${chartRight - 3},${y - 3}`} fill="#ef4444" />
-                          <rect x={chartRight + 1} y={y - 17} width={76} height={34} rx={3} fill="#ef4444" fillOpacity={0.3} />
+                          <rect x={chartRight + 1} y={y - 17} width={76} height={34} rx={3} fill="#ef4444" fillOpacity={0.5} />
                           <text x={chartRight + 39} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{highestPrice.toFixed(2)}</text>
                           <text x={chartRight + 39} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">+{pct.toFixed(2)}%</text>
                         </g>
@@ -730,7 +730,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                       els.push(
                         <g key="lo-tag">
                           <polygon points={`${chartRight - 8},${y - 5} ${chartRight + 2},${y - 5} ${chartRight - 3},${y + 3}`} fill="#22c55e" />
-                          <rect x={chartRight + 1} y={y - 17} width={76} height={34} rx={3} fill="#22c55e" fillOpacity={0.3} />
+                          <rect x={chartRight + 1} y={y - 17} width={76} height={34} rx={3} fill="#22c55e" fillOpacity={0.5} />
                           <text x={chartRight + 39} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{lowestPrice.toFixed(2)}</text>
                           <text x={chartRight + 39} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">{pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</text>
                         </g>
