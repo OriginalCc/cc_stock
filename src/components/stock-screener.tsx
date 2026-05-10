@@ -134,7 +134,7 @@ interface ScreenerResult {
   cached?: boolean;
 }
 
-type SortField = "compositeScore" | "pulseScore" | "changePercent" | "marketCap" | "turnover" | "amplitude" | "mainNetInflow" | "volumeSurgeScore" | "progressiveVolScore" | "reliabilityScore";
+type SortField = "compositeScore" | "pulseScore" | "changePercent" | "marketCap" | "turnover" | "amplitude" | "mainNetInflow" | "volumeSurgeScore" | "progressiveVolScore" | "reliabilityScore" | "pulseDeclineScore" | "volumeDeclineScore";
 type SortOrder = "asc" | "desc";
 
 // ── Helper Functions ───────────────────────────────────
@@ -257,6 +257,11 @@ function getReliabilityLabel(score: number): string {
 }
 
 function getCompositeScoreColor(score: number): string {
+  // Negative scores (bearish)
+  if (score < -30) return "text-green-600";
+  if (score < -10) return "text-green-500";
+  if (score < 0) return "text-emerald-400";
+  // Positive scores (bullish)
   if (score >= 80) return "text-red-500";
   if (score >= 65) return "text-orange-500";
   if (score >= 50) return "text-yellow-500";
@@ -266,6 +271,11 @@ function getCompositeScoreColor(score: number): string {
 }
 
 function getCompositeScoreBg(score: number): string {
+  // Negative scores (bearish)
+  if (score < -30) return "bg-green-500/10 border-green-500/30";
+  if (score < -10) return "bg-green-500/8 border-green-500/20";
+  if (score < 0) return "bg-emerald-500/8 border-emerald-500/20";
+  // Positive scores (bullish)
   if (score >= 80) return "bg-red-500/10 border-red-500/30";
   if (score >= 65) return "bg-orange-500/10 border-orange-500/30";
   if (score >= 50) return "bg-yellow-500/10 border-yellow-500/30";
@@ -275,12 +285,17 @@ function getCompositeScoreBg(score: number): string {
 }
 
 function getCompositeLabel(score: number): string {
+  // Negative scores (bearish)
+  if (score < -30) return "看空";
+  if (score < -10) return "偏空";
+  if (score < 0) return "弱势";
+  // Positive scores (bullish)
   if (score >= 80) return "极佳";
   if (score >= 65) return "优秀";
   if (score >= 50) return "良好";
   if (score >= 35) return "一般";
   if (score >= 20) return "偏弱";
-  return "弱势";
+  return "中性";
 }
 
 function getVwapPositionLabel(pos: string): { text: string; color: string } {
@@ -2272,8 +2287,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
               {statsExpanded && result.filteredCount > 0 && (() => {
                 const pulseStats = computeScreenerStats(result.stocks.map(s => s.pulseScore));
                 const progVolStats = computeScreenerStats(result.stocks.map(s => s.progressiveVolScore));
-                const pulseDeclineStats = computeScreenerStats(result.stocks.map(s => s.pulseDeclineScore));
-                const volumeDeclineStats = computeScreenerStats(result.stocks.map(s => s.volumeDeclineScore));
+                const pulseDeclineStats = computeScreenerStats(result.stocks.map(s => Math.abs(s.pulseDeclineScore)));
+                const volumeDeclineStats = computeScreenerStats(result.stocks.map(s => Math.abs(s.volumeDeclineScore)));
                 const evalCounts: Record<string, number> = {};
                 const evalLabels = ["强势续涨", "温和看多", "震荡整理", "弱势回调", "拉高出货", "观望等待"];
                 result.stocks.forEach(s => {
@@ -2765,7 +2780,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         </TableCell>
                         {/* 脉冲下跌 */}
                         <TableCell className="py-2">
-                          {stock.pulseDeclineScore > 0 ? (
+                          {stock.pulseDeclineScore < 0 ? (
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -2773,20 +2788,20 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                                     <Badge
                                       variant="outline"
                                       className={`text-xs py-0 px-1.5 font-mono ${
-                                        stock.pulseDeclineScore >= 50 ? "bg-green-500/15 border-green-500/40 text-green-600" :
-                                        stock.pulseDeclineScore >= 30 ? "bg-green-500/10 border-green-500/30 text-green-500" :
-                                        stock.pulseDeclineScore >= 15 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" :
+                                        Math.abs(stock.pulseDeclineScore) >= 50 ? "bg-green-500/15 border-green-500/40 text-green-600" :
+                                        Math.abs(stock.pulseDeclineScore) >= 30 ? "bg-green-500/10 border-green-500/30 text-green-500" :
+                                        Math.abs(stock.pulseDeclineScore) >= 15 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" :
                                         "bg-gray-500/10 border-gray-500/30 text-gray-400"
                                       } border`}
                                     >
                                       {stock.pulseDeclineScore}
                                     </Badge>
                                     <span className={`text-[10px] ${
-                                      stock.pulseDeclineScore >= 50 ? "text-green-600 font-medium" :
-                                      stock.pulseDeclineScore >= 30 ? "text-green-500" :
+                                      Math.abs(stock.pulseDeclineScore) >= 50 ? "text-green-600 font-medium" :
+                                      Math.abs(stock.pulseDeclineScore) >= 30 ? "text-green-500" :
                                       "text-emerald-400"
                                     }`}>
-                                      {stock.pulseDeclineScore >= 50 ? "强" : stock.pulseDeclineScore >= 30 ? "中" : stock.pulseDeclineScore >= 15 ? "弱" : ""}
+                                      {Math.abs(stock.pulseDeclineScore) >= 50 ? "强" : Math.abs(stock.pulseDeclineScore) >= 30 ? "中" : Math.abs(stock.pulseDeclineScore) >= 15 ? "弱" : ""}
                                     </span>
                                   </div>
                                 </TooltipTrigger>
@@ -2801,7 +2816,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                         </TableCell>
                         {/* 放量下跌 */}
                         <TableCell className="py-2">
-                          {stock.volumeDeclineScore > 0 ? (
+                          {stock.volumeDeclineScore < 0 ? (
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -2809,25 +2824,25 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                                     <Badge
                                       variant="outline"
                                       className={`text-xs py-0 px-1.5 font-mono ${
-                                        stock.volumeDeclineScore >= 50 ? "bg-green-500/15 border-green-500/40 text-green-600" :
-                                        stock.volumeDeclineScore >= 30 ? "bg-green-500/10 border-green-500/30 text-green-500" :
-                                        stock.volumeDeclineScore >= 15 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" :
+                                        Math.abs(stock.volumeDeclineScore) >= 50 ? "bg-green-500/15 border-green-500/40 text-green-600" :
+                                        Math.abs(stock.volumeDeclineScore) >= 30 ? "bg-green-500/10 border-green-500/30 text-green-500" :
+                                        Math.abs(stock.volumeDeclineScore) >= 15 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" :
                                         "bg-gray-500/10 border-gray-500/30 text-gray-400"
                                       } border`}
                                     >
                                       {stock.volumeDeclineScore}
                                     </Badge>
                                     <span className={`text-[10px] ${
-                                      stock.volumeDeclineScore >= 50 ? "text-green-600 font-medium" :
-                                      stock.volumeDeclineScore >= 30 ? "text-green-500" :
+                                      Math.abs(stock.volumeDeclineScore) >= 50 ? "text-green-600 font-medium" :
+                                      Math.abs(stock.volumeDeclineScore) >= 30 ? "text-green-500" :
                                       "text-emerald-400"
                                     }`}>
-                                      {stock.volumeDeclineScore >= 50 ? "强" : stock.volumeDeclineScore >= 30 ? "中" : stock.volumeDeclineScore >= 15 ? "弱" : ""}
+                                      {Math.abs(stock.volumeDeclineScore) >= 50 ? "强" : Math.abs(stock.volumeDeclineScore) >= 30 ? "中" : Math.abs(stock.volumeDeclineScore) >= 15 ? "弱" : ""}
                                     </span>
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="max-w-xs text-xs">
-                                  📉 放量下跌: {stock.volumeDeclineDetail}
+                                  🔽 放量下跌: {stock.volumeDeclineDetail}
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
@@ -2950,15 +2965,16 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                                 <span className="truncate block">
                                   {stock.resonanceTags && <span className="text-rose-500 font-medium">🎯{stock.resonanceTags} </span>}
                                   {stock.compositeScore > 0 && <span className="text-emerald-500">🛡{stock.compositeDetail}</span>}
-                                  {stock.compositeScore > 0 && (stock.pulseScore > 0 || stock.volumeSurgeScore > 0 || stock.progressiveVolScore > 0) && " | "}
+                                  {stock.compositeScore < 0 && <span className="text-green-600">⚠️{stock.compositeDetail}</span>}
+                                  {(stock.compositeScore > 0 || stock.compositeScore < 0) && (stock.pulseScore > 0 || stock.volumeSurgeScore > 0 || stock.progressiveVolScore > 0 || stock.pulseDeclineScore < 0 || stock.volumeDeclineScore < 0) && " | "}
                                   {stock.pulseScore > 0 && <span className="text-amber-500">⚡{stock.pulseDetail}</span>}
                                   {stock.pulseScore > 0 && (stock.volumeSurgeScore > 0 || stock.progressiveVolScore > 0) && " | "}
                                   {stock.volumeSurgeScore > 0 && <span className="text-blue-500">📊{stock.volumeSurgeDetail}</span>}
                                   {stock.volumeSurgeScore > 0 && stock.progressiveVolScore > 0 && " | "}
                                   {stock.progressiveVolScore > 0 && <span className="text-purple-500">📈{stock.progressiveVolDetail}</span>}
-                                  {stock.pulseDeclineScore > 0 && <span className="text-green-600">📉{stock.pulseDeclineDetail}</span>}
-                                  {stock.pulseDeclineScore > 0 && stock.volumeDeclineScore > 0 && " | "}
-                                  {stock.volumeDeclineScore > 0 && <span className="text-green-500">🔽{stock.volumeDeclineDetail}</span>}
+                                  {stock.pulseDeclineScore < 0 && <span className="text-green-600">📉{stock.pulseDeclineDetail}</span>}
+                                  {stock.pulseDeclineScore < 0 && stock.volumeDeclineScore < 0 && " | "}
+                                  {stock.volumeDeclineScore < 0 && <span className="text-green-500">🔽{stock.volumeDeclineDetail}</span>}
                                   {stock.vwapPosition && stock.vwapPosition !== "no_data" && <span className="text-teal-500"> 📏{getVwapPositionLabel(stock.vwapPosition).text}</span>}
                                   {stock.capitalTrend && stock.capitalTrend !== "neutral" && <span className={getCapitalTrendLabel(stock.capitalTrend).color}> {getCapitalTrendLabel(stock.capitalTrend).icon}{getCapitalTrendLabel(stock.capitalTrend).text}</span>}
                                   {stock.compositeScore === 0 && stock.pulseScore === 0 && stock.volumeSurgeScore === 0 && stock.progressiveVolScore === 0 && stock.pulseDeclineScore === 0 && stock.volumeDeclineScore === 0 && "无信号"}
@@ -2967,11 +2983,12 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                               <TooltipContent side="top" className="text-xs max-w-[350px]">
                                 {stock.resonanceTags && <div className="text-rose-500 font-medium">🎯 共振: {stock.resonanceTags}</div>}
                                 {stock.compositeScore > 0 && <div>🛡 综合: {stock.compositeDetail}</div>}
+                                {stock.compositeScore < 0 && <div className="text-green-600">⚠️ 综合(偏空): {stock.compositeDetail}</div>}
                                 {stock.pulseScore > 0 && <div>⚡ 脉冲: {stock.pulseDetail}</div>}
                                 {stock.volumeSurgeScore > 0 && <div>📊 放量拉升: {stock.volumeSurgeDetail}</div>}
                                 {stock.progressiveVolScore > 0 && <div>📈 递增: {stock.progressiveVolDetail}</div>}
-                                {stock.pulseDeclineScore > 0 && <div className="text-green-600">📉 脉冲下跌: {stock.pulseDeclineDetail}</div>}
-                                {stock.volumeDeclineScore > 0 && <div className="text-green-500">🔽 放量下跌: {stock.volumeDeclineDetail}</div>}
+                                {stock.pulseDeclineScore < 0 && <div className="text-green-600">📉 脉冲下跌: {stock.pulseDeclineDetail} ({stock.pulseDeclineScore}分)</div>}
+                                {stock.volumeDeclineScore < 0 && <div className="text-green-500">🔽 放量下跌: {stock.volumeDeclineDetail} ({stock.volumeDeclineScore}分)</div>}
                                 {stock.vwapPosition && stock.vwapPosition !== "no_data" && <div>📏 均价线: {stock.vwapPositionDetail}</div>}
                                 {stock.capitalTrend && stock.capitalTrend !== "neutral" && <div>💰 资金: {stock.capitalTrendDetail}</div>}
                               </TooltipContent>

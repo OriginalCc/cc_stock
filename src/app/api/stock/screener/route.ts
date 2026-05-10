@@ -1496,21 +1496,23 @@ function evaluateStock(stock: ScreenerStock): { label: string; detail: string } 
     bearishScore += 1; reasons.push("小盘易操控");
   }
 
-  // 9. Pulse decline signal (脉冲下跌)
-  if (stock.pulseDeclineScore >= 50) {
+  // 9. Pulse decline signal (脉冲下跌) — score is now negative
+  const pdAbs = Math.abs(stock.pulseDeclineScore);
+  if (pdAbs >= 50) {
     bearishScore += 3; reasons.push("强脉冲下跌");
-  } else if (stock.pulseDeclineScore >= 30) {
+  } else if (pdAbs >= 30) {
     bearishScore += 2; reasons.push("脉冲下跌");
-  } else if (stock.pulseDeclineScore >= 15) {
+  } else if (pdAbs >= 15) {
     bearishScore += 1; reasons.push("轻微脉冲下跌");
   }
 
-  // 10. Volume decline signal (放量下跌)
-  if (stock.volumeDeclineScore >= 50) {
+  // 10. Volume decline signal (放量下跌) — score is now negative
+  const vdAbs = Math.abs(stock.volumeDeclineScore);
+  if (vdAbs >= 50) {
     bearishScore += 3; reasons.push("强放量下跌");
-  } else if (stock.volumeDeclineScore >= 30) {
+  } else if (vdAbs >= 30) {
     bearishScore += 2; reasons.push("放量下跌");
-  } else if (stock.volumeDeclineScore >= 15) {
+  } else if (vdAbs >= 15) {
     bearishScore += 1; reasons.push("轻微放量下跌");
   }
 
@@ -1680,6 +1682,8 @@ function calculateCompositeScore(
   evaluation: string,
   capitalTrend: string,
   vwapPosition: string,
+  pulseDeclineScore?: number,
+  volumeDeclineScore?: number,
 ): { score: number; detail: string } {
   // Normalize evaluation to a 0-100 score
   const evalScoreMap: Record<string, number> = {
@@ -1713,8 +1717,8 @@ function calculateCompositeScore(
   };
   const vwapScore = vwapScoreMap[vwapPosition] ?? 50;
 
-  // Calculate weighted score
-  const weightedScore =
+  // Calculate bullish weighted score (0-100 range)
+  const bullishScore =
     pulseScore * 0.20 +
     volumeSurgeScore * 0.20 +
     progressiveVolScore * 0.15 +
@@ -1722,7 +1726,16 @@ function calculateCompositeScore(
     capitalScore * 0.15 +
     vwapScore * 0.15;
 
-  const score = Math.max(0, Math.min(100, Math.round(weightedScore * 10) / 10));
+  // Calculate bearish deduction from decline indicators
+  // pulseDeclineScore and volumeDeclineScore are negative (e.g. -30)
+  // We take their absolute value and apply a deduction weight
+  const declineDeduction =
+    Math.abs(pulseDeclineScore ?? 0) * 0.15 +
+    Math.abs(volumeDeclineScore ?? 0) * 0.15;
+
+  // Final composite: bullish - bearish, clamped to -100~100
+  const compositeValue = bullishScore - declineDeduction;
+  const score = Math.max(-100, Math.min(100, Math.round(compositeValue * 10) / 10));
 
   // Build detail string
   const details: string[] = [];
@@ -1732,6 +1745,11 @@ function calculateCompositeScore(
   details.push(`评估${evalScore}`);
   details.push(`资金${capitalScore}`);
   details.push(`均价${vwapScore}`);
+  // Show decline deductions
+  const pdScore = pulseDeclineScore ?? 0;
+  const vdScore = volumeDeclineScore ?? 0;
+  if (pdScore < 0) details.push(`脉冲下跌${pdScore}`);
+  if (vdScore < 0) details.push(`放量下跌${vdScore}`);
 
   return { score, detail: details.join("/") };
 }
@@ -1806,23 +1824,27 @@ function detectResonance(
   }
 
   // ── 下跌共振标签 ──
+  // 注意: pulseDeclineScore 和 volumeDeclineScore 现在是负数，用绝对值比较
+  const pdAbs = Math.abs(pulseDeclineScore ?? 0);
+  const vdAbs = Math.abs(volumeDeclineScore ?? 0);
+
   // 脉冲下跌+放量下跌共振
-  if ((pulseDeclineScore ?? 0) >= 40 && (volumeDeclineScore ?? 0) >= 40) {
+  if (pdAbs >= 40 && vdAbs >= 40) {
     tags.push("脉冲放量下跌共振");
   }
 
   // 脉冲下跌+资金流出共振
-  if ((pulseDeclineScore ?? 0) >= 30 && capitalTrend.includes("outflow")) {
+  if (pdAbs >= 30 && capitalTrend.includes("outflow")) {
     tags.push("脉冲下跌资金共振");
   }
 
   // 放量下跌+均线下方共振
-  if ((volumeDeclineScore ?? 0) >= 30 && (vwapPosition === "below_vwap" || vwapPosition === "cross_down")) {
+  if (vdAbs >= 30 && (vwapPosition === "below_vwap" || vwapPosition === "cross_down")) {
     tags.push("放量下跌均线共振");
   }
 
   // 弱开盘+下跌共振
-  if (openingStrength === "weak_open" && ((pulseDeclineScore ?? 0) >= 30 || (volumeDeclineScore ?? 0) >= 30)) {
+  if (openingStrength === "weak_open" && (pdAbs >= 30 || vdAbs >= 30)) {
     tags.push("弱开下跌共振");
   }
 
@@ -2115,7 +2137,7 @@ export async function GET(request: NextRequest) {
             stock.pulseDetail = pulseResult.detail;
             // Also detect pulse decline alongside pulse surge
             const pulseDeclineResult = detectPulseDecline(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
-            stock.pulseDeclineScore = pulseDeclineResult.score;
+            stock.pulseDeclineScore = -pulseDeclineResult.score; // 下跌指标为负分
             stock.pulseDeclineDetail = pulseDeclineResult.detail;
           }
           if (needVolumeSurge) {
@@ -2124,7 +2146,7 @@ export async function GET(request: NextRequest) {
             stock.volumeSurgeDetail = volResult.detail;
             // Also detect volume decline alongside volume surge
             const volDeclineResult = detectVolumeDecline(timeline, stock.prevClose, stock.open, pulseTimeStart, pulseTimeEnd);
-            stock.volumeDeclineScore = volDeclineResult.score;
+            stock.volumeDeclineScore = -volDeclineResult.score; // 下跌指标为负分
             stock.volumeDeclineDetail = volDeclineResult.detail;
           }
           if (needProgressiveVol) {
@@ -2237,6 +2259,7 @@ export async function GET(request: NextRequest) {
           const compResult = calculateCompositeScore(
             stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
             stock.evaluation, stock.capitalTrend, stock.vwapPosition,
+            stock.pulseDeclineScore, stock.volumeDeclineScore,
           );
           stock.compositeScore = compResult.score;
           stock.compositeDetail = compResult.detail;
@@ -2394,6 +2417,7 @@ export async function GET(request: NextRequest) {
         const compResult = calculateCompositeScore(
           stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
           stock.evaluation, stock.capitalTrend, stock.vwapPosition,
+          stock.pulseDeclineScore, stock.volumeDeclineScore,
         );
         stock.compositeScore = compResult.score;
         stock.compositeDetail = compResult.detail;
@@ -2443,6 +2467,7 @@ export async function GET(request: NextRequest) {
       const compResult = calculateCompositeScore(
         stock.pulseScore, stock.volumeSurgeScore, stock.progressiveVolScore,
         stock.evaluation, stock.capitalTrend, stock.vwapPosition,
+        stock.pulseDeclineScore, stock.volumeDeclineScore,
       );
       stock.compositeScore = compResult.score;
       stock.compositeDetail = compResult.detail;
