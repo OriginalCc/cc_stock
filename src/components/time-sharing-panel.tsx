@@ -180,7 +180,173 @@ function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; 
 // ── Render a single Pulse/Volume marker as prominent SVG ──
 // v2: Much more prominent than before — larger markers, bolder labels, white glow
 
-function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker, idx: number): React.ReactNode {
+// ── Compute label positioning info for a single PV marker ──
+
+interface PvLabelLayout {
+  isAbove: boolean;      // label is above the price point
+  labelY: number;        // vertical center-ish of the pill
+  pillW: number;
+  pillH: number;
+  displayLabel: string;
+}
+
+function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): PvLabelLayout {
+  const isPulse = marker.type === "pulse";
+  const isProgressiveVol = marker.type === "progressive_vol";
+  const isAbove = isPulse || isProgressiveVol;
+
+  const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
+  const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
+
+  const estimatedCharWidth = 7.5;
+  const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = 16;
+
+  const labelY = isAbove ? y - 26 : y + 14;
+
+  return { isAbove, labelY, pillW, pillH, displayLabel };
+}
+
+// ── Compute bounding rect of a label pill ──
+
+function computePvLabelRect(x: number, layout: PvLabelLayout): { x: number; y: number; width: number; height: number } {
+  if (layout.isAbove) {
+    return {
+      x: x - layout.pillW / 2,
+      y: layout.labelY - layout.pillH / 2 - 2,
+      width: layout.pillW,
+      height: layout.pillH,
+    };
+  } else {
+    return {
+      x: x - layout.pillW / 2,
+      y: layout.labelY - 2,
+      width: layout.pillW,
+      height: layout.pillH,
+    };
+  }
+}
+
+// ── Resolve label overlaps by shifting labels vertically ──
+
+interface PlacedLabel {
+  idx: number;
+  x: number;         // marker x
+  y: number;         // marker y (price point)
+  marker: PulseVolumeMarker;
+  layout: PvLabelLayout;
+  adjustedLabelY: number; // may be shifted for overlap avoidance
+}
+
+function resolvePvLabelOverlaps(
+  markerPoints: { x: number; y: number; marker: PulseVolumeMarker }[],
+): PlacedLabel[] {
+  if (markerPoints.length === 0) return [];
+
+  // Step 1: Compute default layouts
+  const placed: PlacedLabel[] = markerPoints.map((pt, idx) => {
+    const layout = computePvLabelLayout(pt.x, pt.y, pt.marker);
+    return { idx, x: pt.x, y: pt.y, marker: pt.marker, layout, adjustedLabelY: layout.labelY };
+  });
+
+  // Step 2: Compute label rects and resolve overlaps
+  // Sort by x to make overlap detection efficient
+  placed.sort((a, b) => a.x - b.x);
+
+  const GAP = 3; // minimum gap between labels
+  const placedRects: { x: number; y: number; width: number; height: number }[] = [];
+
+  for (const p of placed) {
+    let rect = computePvLabelRect(p.x, { ...p.layout, labelY: p.adjustedLabelY });
+
+    // Try placing at default position first
+    let overlapFound = true;
+    let attempts = 0;
+    const maxAttempts = 8;
+
+    while (overlapFound && attempts < maxAttempts) {
+      overlapFound = false;
+      for (const pr of placedRects) {
+        // Check if this rect overlaps with any placed rect
+        if (
+          rect.x < pr.x + pr.width + GAP &&
+          rect.x + rect.width + GAP > pr.x &&
+          rect.y < pr.y + pr.height + GAP &&
+          rect.y + rect.height + GAP > pr.y
+        ) {
+          overlapFound = true;
+          // Shift label further away from the price point
+          if (p.layout.isAbove) {
+            p.adjustedLabelY -= 18; // shift up more
+          } else {
+            p.adjustedLabelY += 18; // shift down more
+          }
+          rect = computePvLabelRect(p.x, { ...p.layout, labelY: p.adjustedLabelY });
+          break;
+        }
+      }
+      attempts++;
+    }
+
+    // If still overlapping after max attempts, try horizontal shift instead
+    if (overlapFound) {
+      // Reset vertical position to default
+      p.adjustedLabelY = p.layout.labelY;
+      rect = computePvLabelRect(p.x, { ...p.layout, labelY: p.adjustedLabelY });
+
+      // Try shifting right
+      const shiftedRight = { ...rect, x: rect.x + rect.width * 0.7 };
+      let rightOk = true;
+      for (const pr of placedRects) {
+        if (
+          shiftedRight.x < pr.x + pr.width + GAP &&
+          shiftedRight.x + shiftedRight.width + GAP > pr.x &&
+          shiftedRight.y < pr.y + pr.height + GAP &&
+          shiftedRight.y + shiftedRight.height + GAP > pr.y
+        ) {
+          rightOk = false;
+          break;
+        }
+      }
+      if (rightOk) {
+        rect = shiftedRight;
+      } else {
+        // Try shifting left
+        const shiftedLeft = { ...rect, x: rect.x - rect.width * 0.7 };
+        let leftOk = true;
+        for (const pr of placedRects) {
+          if (
+            shiftedLeft.x < pr.x + pr.width + GAP &&
+            shiftedLeft.x + shiftedLeft.width + GAP > pr.x &&
+            shiftedLeft.y < pr.y + pr.height + GAP &&
+            shiftedLeft.y + shiftedLeft.height + GAP > pr.y
+          ) {
+            leftOk = false;
+            break;
+          }
+        }
+        if (leftOk) {
+          rect = shiftedLeft;
+        }
+      }
+    }
+
+    placedRects.push(rect);
+  }
+
+  return placed;
+}
+
+// ── Render a single Pulse/Volume marker as prominent SVG ──
+// v3: Accepts optional adjustedLabelY for overlap avoidance
+
+function renderPulseVolumeMarker(
+  x: number,
+  y: number,
+  marker: PulseVolumeMarker,
+  idx: number,
+  adjustedLabelY?: number,
+): React.ReactNode {
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
   const isPulseDecline = marker.type === "pulse_decline";
@@ -189,42 +355,41 @@ function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker
 
   // Color schemes — brighter & more saturated for visibility
   // Decline markers use green tones (bearish in Chinese markets)
-  let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string, labelY: number;
+  let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
+  const isAbove = isPulse || isProgressiveVol;
+  const defaultLabelY = isAbove ? y - 26 : y + 14;
+  const labelY = adjustedLabelY ?? defaultLabelY;
+
   if (isPulse) {
     bgColor = "rgba(245, 158, 11, 0.25)";
     borderColor = "rgba(245, 158, 11, 0.85)";
     textColor = "#b45309";
     iconColor = "#f59e0b";
     glowColor = "rgba(245, 158, 11, 0.35)";
-    labelY = y - 26;
   } else if (isProgressiveVol) {
     bgColor = "rgba(16, 185, 129, 0.25)";
     borderColor = "rgba(16, 185, 129, 0.85)";
     textColor = "#047857";
     iconColor = "#10b981";
     glowColor = "rgba(16, 185, 129, 0.35)";
-    labelY = y - 26;
   } else if (isPulseDecline) {
     bgColor = "rgba(22, 163, 74, 0.25)";
     borderColor = "rgba(22, 163, 74, 0.85)";
     textColor = "#166534";
     iconColor = "#16a34a";
     glowColor = "rgba(22, 163, 74, 0.35)";
-    labelY = y + 14;
   } else if (isVolumeDecline) {
     bgColor = "rgba(34, 197, 94, 0.25)";
     borderColor = "rgba(34, 197, 94, 0.85)";
     textColor = "#15803d";
     iconColor = "#22c55e";
     glowColor = "rgba(34, 197, 94, 0.35)";
-    labelY = y + 14;
   } else {
     bgColor = "rgba(6, 182, 212, 0.25)";
     borderColor = "rgba(6, 182, 212, 0.85)";
     textColor = "#0e7490";
     iconColor = "#06b6d4";
     glowColor = "rgba(6, 182, 212, 0.35)";
-    labelY = y + 14;
   }
 
   // Format amount for display
@@ -265,21 +430,21 @@ function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker
       </text>
       {/* White glow behind label pill for readability */}
       <rect
-        x={x - pillW / 2 - 1.5} y={((isPulse || isProgressiveVol) ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
+        x={x - pillW / 2 - 1.5} y={(isAbove ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
         width={pillW + 3} height={pillH + 3}
         rx={pillRx + 1} ry={pillRx + 1}
         fill="white" fillOpacity={0.85}
       />
       {/* Label background pill */}
       <rect
-        x={x - pillW / 2} y={(isPulse || isProgressiveVol) ? labelY - pillH / 2 - 2 : labelY - 2}
+        x={x - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
         fill={bgColor} stroke={borderColor} strokeWidth={1}
       />
       {/* Label text — larger & bolder */}
       <text
-        x={x} y={(isPulse || isProgressiveVol) ? labelY + 1 : labelY + 7}
+        x={x} y={isAbove ? labelY + 1 : labelY + 7}
         textAnchor="middle" dominantBaseline="middle"
         fontSize={9} fontWeight={700} fill={textColor}
       >
@@ -302,9 +467,12 @@ function PulseVolumeRenderer(props: any) {
   const markerPoints = extractPulseVolumePoints(formattedGraphicalItems);
   if (markerPoints.length === 0) return null;
 
+  // Resolve label overlaps
+  const placedLabels = resolvePvLabelOverlaps(markerPoints);
+
   return (
     <g className="pulse-volume-markers">
-      {markerPoints.map(({ x, y, marker }, idx) => renderPulseVolumeMarker(x, y, marker, idx))}
+      {placedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY))}
     </g>
   );
 }
@@ -798,6 +966,9 @@ function CombinedChartOverlay(props: any) {
   // Compute PV marker points (screener markers)
   const pvPoints = extractPulseVolumePoints(formattedGraphicalItems);
 
+  // Resolve PV label overlaps
+  const pvPlacedLabels = pvPoints.length > 0 ? resolvePvLabelOverlaps(pvPoints) : [];
+
   if (!signalResult && pvPoints.length === 0) return null;
 
   return (
@@ -805,9 +976,9 @@ function CombinedChartOverlay(props: any) {
       {/* Layer 1 (bottom): 分时因子 signal markers & labels */}
       {signalResult?.signalElements}
       {/* Layer 2 (middle): 选股标记 pulse/volume markers — ON TOP of factor signals */}
-      {pvPoints.length > 0 && (
+      {pvPlacedLabels.length > 0 && (
         <g className="pulse-volume-markers">
-          {pvPoints.map(({ x, y, marker }, idx) => renderPulseVolumeMarker(x, y, marker, idx))}
+          {pvPlacedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY))}
         </g>
       )}
       {/* Layer 3 (top): Expanded bubbles — interactive, must be on top for usability */}
