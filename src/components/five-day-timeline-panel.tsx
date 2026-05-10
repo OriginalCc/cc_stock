@@ -698,7 +698,7 @@ export function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClos
                 {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#ef4444" strokeDasharray="8 4" strokeWidth={1.8} />}
                 {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#22c55e" strokeDasharray="8 4" strokeWidth={1.8} />}
                 <Area type="monotone" dataKey="price" stroke="none" fill={(() => { const last = visibleItems[visibleItems.length - 1]; return last?.price >= refClose ? "rgba(239,68,68,0.06)" : "rgba(22,163,74,0.06)"; })()} isAnimationActive={false} connectNulls={false} />
-                <Line type="monotone" dataKey="avgPrice" stroke="#facc15" strokeWidth={1.5} fill="none" dot={false} isAnimationActive={false} strokeDasharray="5 3" connectNulls={false} />
+                <Line type="monotone" dataKey="avgPrice" stroke="#ca8a04" strokeWidth={1.5} fill="none" dot={false} isAnimationActive={false} strokeDasharray="5 3" connectNulls={false} />
                 <Line type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
                 <Customized component={(props: any) => <DayBoundaryLines {...props} dayBoundaries={visibleDayBoundaries} dayLabels={dayLabels} chartHeight={chartHeight} />} />
                 <Customized component={(props: any) => {
