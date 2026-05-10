@@ -39,6 +39,7 @@ export interface PulseVolumeMarker {
   score: number;
   label: string;
   detail: string;
+  amount: number; // 成交金额（元），成交量(手) × 价格 × 100
 }
 
 export type IndexKey = "sz" | "sh" | "cyb";
@@ -575,12 +576,16 @@ export function detectPulseVolumeMarkers(
       if (pullbackRate >= 0.3 && peakIdx < session.length - 2) details.push(`回落${pullbackRate.toFixed(1)}%`);
       if (volRatio >= 1.5) details.push(`放量${volRatio.toFixed(1)}x`);
 
+      // 计算脉冲窗口成交金额 (surgeStartIdx ~ surgeEndIdx)
+      const pulseAmount = session.slice(surgeStartIdx, surgeEndIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+
       markers.push({
         time: peakTime,
         type: "pulse",
         score: pulseScore,
         label: pulseScore >= 50 ? `强脉冲 ${pulseScore}分` : pulseScore >= 30 ? `脉冲 ${pulseScore}分` : `微脉冲 ${pulseScore}分`,
         detail: details.length > 0 ? details.join("，") : "轻微脉冲",
+        amount: pulseAmount,
       });
     }
   }
@@ -682,6 +687,7 @@ export function detectPulseVolumeMarkers(
         score: volSurgeScore,
         label: volSurgeScore >= 50 ? `强放量拉升 ${volSurgeScore}分` : volSurgeScore >= 30 ? `放量拉升 ${volSurgeScore}分` : `轻微放量拉升 ${volSurgeScore}分`,
         detail: details.length > 0 ? details.join("，") : "轻微放量拉升",
+        amount: increments[maxVolIdx] ? increments[maxVolIdx].price * increments[maxVolIdx].vol * 100 : 0,
       });
     }
   }
@@ -823,6 +829,7 @@ export function detectPulseVolumeMarkers(
           score: progScore,
           label: progScore >= 50 ? `强递增 ${progScore}分` : progScore >= 30 ? `递增 ${progScore}分` : `微递增 ${progScore}分`,
           detail: details.length > 0 ? details.join("，") : (progScore > 0 ? "轻微递增" : "无明显递增放量"),
+          amount: (() => { let s = 0; for (let i = bestSeq.startIdx; i < bestSeq.startIdx + bestSeq.length; i++) s += session[i].price * session[i].volume * 100; return s; })(),
         });
       }
     }
@@ -905,12 +912,16 @@ export function detectPulseVolumeMarkers(
       if (reboundRate >= 0.3 && troughIdx < session.length - 2) details.push(`探底回升${reboundRate.toFixed(1)}%`);
       if (volRatio >= 1.5) details.push(`放量砸盘${volRatio.toFixed(1)}x`);
 
+      // 计算脉冲下跌窗口成交金额 (dropStartIdx ~ dropEndIdx)
+      const pulseDeclineAmount = session.slice(dropStartIdx, dropEndIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+
       markers.push({
         time: troughTime,
         type: "pulse_decline",
         score: negativeScore,
         label: declineScore >= 50 ? `强脉冲下跌 ${negativeScore}分` : declineScore >= 30 ? `脉冲下跌 ${negativeScore}分` : `微脉冲下跌 ${negativeScore}分`,
         detail: details.length > 0 ? details.join("，") : "轻微下跌脉冲",
+        amount: pulseDeclineAmount,
       });
     }
   }
@@ -1036,6 +1047,7 @@ export function detectPulseVolumeMarkers(
         score: negativeScore,
         label: volDeclineScore >= 50 ? `强放量下跌 ${negativeScore}分` : volDeclineScore >= 30 ? `放量下跌 ${negativeScore}分` : `轻微放量下跌 ${negativeScore}分`,
         detail: details.length > 0 ? details.join("，") : "轻微放量下跌",
+        amount: increments[maxVolIdx] ? increments[maxVolIdx].price * increments[maxVolIdx].vol * 100 : 0,
       });
     }
   }

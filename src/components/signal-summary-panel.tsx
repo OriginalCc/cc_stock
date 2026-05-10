@@ -3,6 +3,7 @@
 import React from "react";
 import type { KLineItem, ChartMode } from "@/hooks/use-stock-data";
 import type { TSignal, PulseVolumeMarker } from "@/lib/chart-shared";
+import { formatAmount } from "@/lib/chart-shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -126,6 +127,7 @@ export function SignalSummaryPanel({
                     {m.type === "pulse" ? <Zap className="w-3 h-3" /> : m.type === "pulse_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "volume_decline" ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
                     <span className="font-mono">{m.time}</span>
                     <span className="font-medium">{m.label}</span>
+                    {m.amount > 0 && <span className="font-mono text-muted-foreground">¥{formatAmount(m.amount)}</span>}
                     <span className="text-muted-foreground">{m.detail}</span>
                   </div>
                 ))}

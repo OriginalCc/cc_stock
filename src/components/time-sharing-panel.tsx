@@ -227,7 +227,13 @@ function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker
     labelY = y + 14;
   }
 
-  const pillW = 84;
+  // Format amount for display
+  const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
+  const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
+
+  // Dynamic pill width based on label length
+  const estimatedCharWidth = 7.5;
+  const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
   const pillH = 16;
   const pillRx = 4;
 
@@ -277,7 +283,7 @@ function renderPulseVolumeMarker(x: number, y: number, marker: PulseVolumeMarker
         textAnchor="middle" dominantBaseline="middle"
         fontSize={9} fontWeight={700} fill={textColor}
       >
-        {marker.label}
+        {displayLabel}
       </text>
     </g>
   );
