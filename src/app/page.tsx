@@ -11,6 +11,7 @@ const IntradayScreener = dynamic(() => import("@/components/intraday-screener").
 const LimitUpAnalysis = dynamic(() => import("@/components/limit-up-analysis").then(m => ({ default: m.LimitUpAnalysis })), { ssr: false });
 const EarlyTradingScreener = dynamic(() => import("@/components/early-trading-screener").then(m => ({ default: m.EarlyTradingScreener })), { ssr: false });
 const LowOpenScreener = dynamic(() => import("@/components/low-open-screener").then(m => ({ default: m.LowOpenScreener })), { ssr: false });
+const SectorRotationPanel = dynamic(() => import("@/components/sector-rotation-panel").then(m => ({ default: m.SectorRotationPanel })), { ssr: false });
 const StrategyAdminPanel = dynamic(() => import("@/components/strategy-admin-panel").then(m => ({ default: m.StrategyAdminPanel })), { ssr: false });
 const TimeSharingPanel = dynamic(() => import("@/components/time-sharing-panel").then(m => ({ default: m.TimeSharingPanel })), {
   ssr: false,
@@ -39,7 +40,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, TrendingUp, TrendingDown, Activity, ArrowUpRight, ArrowDownRight,
   X, Clock, Zap, LineChart, CandlestickChart, GitBranch, Filter,
-  Star, Bell, BellOff, Volume2, Newspaper, CalendarDays,
+  Star, Bell, BellOff, Volume2, Newspaper, CalendarDays, Flame,
 } from "lucide-react";
 
 export default function StockTAssistant() {
@@ -49,7 +50,7 @@ export default function StockTAssistant() {
     searchStocks, isAShare: isAShareStock,
   } = useStockData();
 
-  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "intraday-screener" | "early-screen" | "limit-up" | "low-open">("t-assistant");
+  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "intraday-screener" | "sector-rotation" | "early-screen" | "limit-up" | "low-open">("t-assistant");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
   const [showSearch, setShowSearch] = useState(false);
@@ -476,11 +477,12 @@ export default function StockTAssistant() {
               <h1 className="text-lg font-bold hidden sm:block">做T助手</h1>
               <Badge variant="outline" className="text-xs hidden sm:flex">A股</Badge>
               <div className="flex items-center border border-border rounded-md overflow-hidden ml-1">
-                {(["t-assistant", "screener", "intraday-screener", "early-screen", "low-open", "limit-up"] as const).map((mode) => (
+                {(["t-assistant", "screener", "intraday-screener", "sector-rotation", "early-screen", "low-open", "limit-up"] as const).map((mode) => (
                   <button key={mode} onClick={() => setPageMode(mode)} className={`px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${pageMode === mode ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}>
                     {mode === "t-assistant" && "做T"}
                     {mode === "screener" && <><Filter className="w-3 h-3" />选股</>}
                     {mode === "intraday-screener" && <><Activity className="w-3 h-3" />分时选股</>}
+                    {mode === "sector-rotation" && <><Flame className="w-3 h-3" />轮动</>}
                     {mode === "early-screen" && <><Clock className="w-3 h-3" />早盘选股</>}
                     {mode === "low-open" && <><TrendingDown className="w-3 h-3" />低开</>}
                     {mode === "limit-up" && <><TrendingUp className="w-3 h-3" />涨停</>}
@@ -515,7 +517,7 @@ export default function StockTAssistant() {
       </header>
       {showSearch && (<div className="fixed inset-0 z-40" onClick={() => setShowSearch(false)} />)}
       <main className="flex-1 max-w-[1400px] mx-auto w-full px-4 py-4">
-        {pageMode === "screener" ? (<StockScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "intraday-screener" ? (<IntradayScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "early-screen" ? (<EarlyTradingScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "low-open" ? (<LowOpenScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "limit-up" ? (<LimitUpAnalysis onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : (
+        {pageMode === "screener" ? (<StockScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "intraday-screener" ? (<IntradayScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "sector-rotation" ? (<SectorRotationPanel onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "early-screen" ? (<EarlyTradingScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "low-open" ? (<LowOpenScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "limit-up" ? (<LimitUpAnalysis onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : (
         <>
         {/* Stock Info Bar */}
         <Card className={`mb-4 transition-all ${flashSignal === 'buy' ? 'animate-flash-green' : flashSignal ? 'animate-flash-red' : ''}`}>

@@ -69,3 +69,29 @@ model StrategyConfig {
 
   @@unique([indicatorKey, paramKey]) // 每个指标+参数组合唯一
 }
+
+// ── 板块轮动预测记录 ────────────────────────────────────
+
+model SectorPredictionRecord {
+  id              String   @id @default(cuid())
+  predictDate     String                      // 预测日期 YYYY-MM-DD (预测当日)
+  sectorCode      String                      // 板块代码 e.g. "BK0896"
+  sectorName      String                      // 板块名称 e.g. "白酒"
+  category        String                      // 预测类型: capital_gathering | pullback_recovery | momentum_shift | adjacent_chain
+  categoryLabel   String                      // 预测类型标签: 资金蓄势 | 回调企稳 | 动能切换 | 产业链联动
+  score           Int                         // 预测分数 0-100
+  reasons         String                      // 预测理由 (JSON array string)
+  predictChange   Float                       // 预测当日涨跌幅%
+  mainNetInflow   Float                       // 预测当日主力净流入
+  turnover        Float                       // 预测当日换手率
+  // ── 次日验证结果 ──
+  actualChange    Float?                      // 次日实际涨跌幅%
+  actualMainNet   Float?                      // 次日实际主力净流入
+  isVerified      Boolean  @default(false)    // 是否已验证
+  verifiedAt      DateTime?                   // 验证时间
+  // ── 评价 ──
+  isCorrect       Boolean?                    // 预测是否正确 (次日涨跌幅>0视为正确)
+  createdAt       DateTime @default(now())
+
+  @@unique([predictDate, sectorCode]) // 同一天同一板块只记录一次
+}
