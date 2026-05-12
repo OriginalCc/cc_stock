@@ -155,3 +155,28 @@ Stage Summary:
 - Browser cache headers allow HTTP cache to serve stale data while revalidating
 - All screener pages now use unified cache — instant display when switching tabs
 - React.memo on chart components prevents wasted re-renders
+
+---
+Task ID: 3
+Agent: main
+Task: Fix data synchronization issues - prediction data being overwritten, verification not working properly, no auto-verification
+
+Work Log:
+- Analyzed the full data flow: sector rotation → auto-save predictions → prediction history → verification
+- Identified root cause 1: prediction records were being overwritten on every 30-second refresh (score, predictChange, mainNetInflow, turnover all updated to current market data, destroying the original prediction snapshot)
+- Identified root cause 2: verification logic verified ALL unverified predictions with today's data, even predictions from days ago where today is NOT the "next trading day"
+- Identified root cause 3: no automatic verification - required manual user click
+- Fixed prediction-history route.ts POST handler: when prediction already exists, only update the `reasons` field (stocks data). Never overwrite score, predictChange, mainNetInflow, turnover
+- Added helper functions: getPreviousTradingDay() and isWeekday() for proper trading day calculation
+- Rewrote verifyPredictions(): now distinguishes between "timely" (previous trading day) and "overdue" (older) predictions, returns detailed verification stats including overdue count
+- Increased EastMoney API page size from 100 to 300 for better sector coverage during verification
+- Fixed sector-rotation-panel auto-save: changed prediction key from code:score to just code (score changes with market), added savedDateRef to track save date, prevents re-saving same predictions on same day
+- Added auto-verification: PredictionHistoryTab now automatically verifies unverified predictions on mount
+- Added visual sync indicators: "同步中" badge during data loading, timestamp display, "待验证" count badge in stats and action bar
+- All lint checks pass, API endpoints verified working
+
+Stage Summary:
+- Prediction data is now preserved as a snapshot when first saved — no more overwriting with current market data
+- Verification now correctly identifies previous trading day predictions and flags overdue verifications
+- Auto-verification runs on page load — no manual action needed
+- Visual indicators show sync status, pending verification count, and data freshness

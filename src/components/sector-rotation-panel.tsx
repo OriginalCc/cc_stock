@@ -626,6 +626,7 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
   const [stats, setStats] = useState<PredictionHistoryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
+  const [autoVerified, setAutoVerified] = useState(false);
   const [filterDate, setFilterDate] = useState<string>("");
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -652,19 +653,42 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  const handleVerify = useCallback(async () => {
-    setVerifying(true);
+  const handleVerify = useCallback(async (silent: boolean = false) => {
+    if (!silent) setVerifying(true);
     try {
       const res = await fetch("/api/stock/prediction-history?action=verify", { method: "POST", signal: AbortSignal.timeout(30000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      if (json.success) await fetchHistory();
+      if (json.success && json.verified > 0) await fetchHistory();
+      return json;
     } catch (e: any) {
       console.error("Verify predictions error:", e);
+      return null;
     } finally {
       setVerifying(false);
     }
   }, [fetchHistory]);
+
+  // ── Auto-verify on mount: check for unverified predictions and verify them ──
+  useEffect(() => {
+    if (autoVerified) return;
+    const autoVerify = async () => {
+      // Check if there are unverified records (excluding today's)
+      const unverifiedCount = records.filter(r => !r.isVerified).length;
+      if (unverifiedCount > 0) {
+        const result = await handleVerify(true);
+        if (result?.verified > 0) {
+          // Re-fetch history to show updated data
+          await fetchHistory();
+        }
+      }
+      setAutoVerified(true);
+    };
+    // Only auto-verify after initial load completes and we have records
+    if (!loading && records.length > 0) {
+      autoVerify();
+    }
+  }, [loading, records, autoVerified, handleVerify, fetchHistory]);
 
   const toggleRow = useCallback((id: string) => {
     setExpandedRows(prev => {
@@ -700,7 +724,7 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
     <div className="space-y-4">
       {/* Stats Summary */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div className="border rounded-lg p-3 bg-card">
             <div className="text-xs text-muted-foreground mb-1">已验证数</div>
             <div className="text-2xl font-bold">{stats.totalVerified}</div>
@@ -719,6 +743,12 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
             <div className="text-xs text-muted-foreground mb-1">次日平均涨幅</div>
             <div className={`text-2xl font-bold ${getChangeColor(stats.avgActualChange)}`}>
               {stats.avgActualChange >= 0 ? "+" : ""}{stats.avgActualChange.toFixed(2)}%
+            </div>
+          </div>
+          <div className="border rounded-lg p-3 bg-card">
+            <div className="text-xs text-muted-foreground mb-1">待验证</div>
+            <div className={`text-2xl font-bold ${records.filter(r => !r.isVerified).length > 0 ? "text-amber-500" : "text-muted-foreground"}`}>
+              {records.filter(r => !r.isVerified).length}
             </div>
           </div>
         </div>
@@ -773,13 +803,19 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
             ))}
           </select>
           <span className="text-xs text-muted-foreground">共 {filteredRecords.length} 条记录</span>
+          {records.filter(r => !r.isVerified).length > 0 && (
+            <Badge variant="outline" className="text-[10px] py-0 px-1.5 gap-1 bg-amber-500/5 border-amber-500/20 text-amber-600 dark:text-amber-300">
+              <Clock className="w-3 h-3" />
+              {records.filter(r => !r.isVerified).length} 条待验证
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="text-xs" onClick={fetchHistory} disabled={loading}>
             <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />
             刷新
           </Button>
-          <Button variant="default" size="sm" className="text-xs" onClick={handleVerify} disabled={verifying}>
+          <Button variant="default" size="sm" className="text-xs" onClick={() => handleVerify(false)} disabled={verifying}>
             {verifying ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1" />}
             验证历史预测
           </Button>
@@ -975,6 +1011,7 @@ export function SectorRotationPanel({ onSelectStock }: SectorRotationPanelProps)
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const savedPredictionsRef = useRef<string>("");
+  const savedDateRef = useRef<string>(""); // Track which date we've saved for
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {
@@ -995,12 +1032,20 @@ export function SectorRotationPanel({ onSelectStock }: SectorRotationPanelProps)
   }, []);
 
   // Auto-save predictions when data changes
+  // Only save ONCE per day — subsequent refreshes just update the stocks list (reasons field)
   useEffect(() => {
     if (!data?.predictions || data.predictions.length === 0) return;
 
-    // Create a hash to avoid re-saving the same predictions
-    const predictionKey = data.predictions.map(p => `${p.code}:${p.score}`).join("|");
-    if (savedPredictionsRef.current === predictionKey) return;
+    // Get today's date string
+    const now = new Date();
+    const chinaOffset = 8 * 60;
+    const chinaTime = new Date(now.getTime() + (chinaOffset + now.getTimezoneOffset()) * 60000);
+    const todayStr = chinaTime.toISOString().split("T")[0];
+
+    // If we've already saved for today with these predictions, skip
+    // Use code-based key (not score-based, since score changes with market)
+    const predictionKey = data.predictions.map(p => p.code).sort().join("|");
+    if (savedPredictionsRef.current === predictionKey && savedDateRef.current === todayStr) return;
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
@@ -1042,6 +1087,7 @@ export function SectorRotationPanel({ onSelectStock }: SectorRotationPanelProps)
 
         if (res.ok) {
           savedPredictionsRef.current = predictionKey;
+          savedDateRef.current = todayStr;
         }
       } catch (e) {
         console.error("Auto-save predictions error:", e);
@@ -1131,6 +1177,17 @@ export function SectorRotationPanel({ onSelectStock }: SectorRotationPanelProps)
           )}
         </div>
         <div className="flex items-center gap-2">
+          {data.timestamp && (
+            <span className="text-xs text-muted-foreground">
+              {new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 更新
+            </span>
+          )}
+          {loading && (
+            <Badge variant="outline" className="text-xs py-0 px-1.5 gap-1 bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-300">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              同步中
+            </Badge>
+          )}
           <Button variant="ghost" size="sm" onClick={() => fetchData(true)} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} />
             刷新
