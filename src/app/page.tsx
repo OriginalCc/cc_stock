@@ -520,19 +520,20 @@ export default function StockTAssistant() {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <div className="hidden lg:flex items-center gap-1">
                 {menuStocks.map((s) => (<Button key={s.symbol} variant={mounted && symbol === s.symbol ? "default" : "ghost"} size="sm" className="h-7 text-xs px-2" onClick={() => handleSelectStock(s.symbol)}>{s.name}</Button>))}
               </div>
+              <div className="w-px h-5 bg-border hidden lg:block" />
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="h-7 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground"
+                className="h-7 text-xs px-2.5 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
                 onClick={() => setShowPasswordDialog(true)}
                 title="密码管理"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">密码</span>
+                密码管理
               </Button>
             </div>
           </div>
