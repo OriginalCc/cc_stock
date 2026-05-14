@@ -180,3 +180,27 @@ Stage Summary:
 - Verification now correctly identifies previous trading day predictions and flags overdue verifications
 - Auto-verification runs on page load — no manual action needed
 - Visual indicators show sync status, pending verification count, and data freshness
+
+---
+Task ID: 4
+Agent: main
+Task: Change timeline (分时图) refresh interval to 1 second
+
+Work Log:
+- Updated useStockData hook: added auto-refresh timer with 1s interval (TIMELINE_REFRESH_INTERVAL = 1000)
+- Auto-refresh only activates during trading hours (9:25-15:05 China time, weekdays)
+- Respects page visibility (skips refresh when tab is hidden)
+- Skips refresh in kline mode (only needed for timeline/5d-timeline modes)
+- Uses combined timeline+quote fetch for efficiency (single request per tick)
+- Updated client-side cache TTL from 15s to 1s for both quote and timeline data
+- Updated server-side timeline API cache from 10s to 3s during trading hours
+- Updated server-side quote API cache from 10s to 3s
+- Set browser Cache-Control max-age=0 during trading hours (was 10s) to prevent browser cache blocking 1s refresh
+- Updated UI label from "实时刷新 3s" to "实时刷新 1s"
+- All lint checks pass, API endpoints verified working
+
+Stage Summary:
+- Timeline now auto-refreshes every 1 second during trading hours
+- Server-side 3s cache provides deduplication while allowing near-real-time data
+- Browser HTTP cache disabled during trading (max-age=0) to ensure fresh data
+- Non-trading hours still use 5-minute cache to minimize unnecessary API calls

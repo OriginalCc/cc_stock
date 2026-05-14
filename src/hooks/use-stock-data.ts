@@ -95,9 +95,12 @@ function readInitialChartMode(): ChartMode {
 }
 
 // ── Cache TTL constants ──
-const QUOTE_CACHE_TTL = 15_000; // 15s for quote data
-const TIMELINE_CACHE_TTL = 15_000; // 15s for timeline data
+const QUOTE_CACHE_TTL = 1_000; // 1s for quote data (real-time refresh)
+const TIMELINE_CACHE_TTL = 1_000; // 1s for timeline data (real-time refresh)
 const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
+
+// ── Auto-refresh interval ──
+const TIMELINE_REFRESH_INTERVAL = 1_000; // 1s for timeline/quote auto-refresh during trading hours
 
 // ── Hook ──────────────────────────────────────────────
 
@@ -122,6 +125,7 @@ export function useStockData() {
   // Track initial fetch to prevent double-fetch
   const initialFetchDone = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const checkAShare = useCallback((sym: string) => isAShare(sym), []);
 
@@ -333,6 +337,50 @@ export function useStockData() {
       fetchHistory(symbol, interval);
     }
   }, []); // Empty deps - only run once on mount
+
+  // ── Auto-refresh: 1s interval for timeline/quote during trading hours ──
+  useEffect(() => {
+    // Only auto-refresh when in timeline mode for A-share stocks
+    if (chartMode === "kline") return;
+    if (!checkAShare(symbol)) return;
+
+    const isTradingHours = () => {
+      const now = new Date();
+      const chinaOffset = 8 * 60;
+      const chinaTime = new Date(now.getTime() + (chinaOffset + now.getTimezoneOffset()) * 60000);
+      const h = chinaTime.getHours();
+      const m = chinaTime.getMinutes();
+      const timeNum = h * 100 + m;
+      const day = chinaTime.getDay();
+      // Weekend check
+      if (day === 0 || day === 6) return false;
+      // Trading hours: 9:25 - 15:05
+      return timeNum >= 925 && timeNum <= 1505;
+    };
+
+    const tick = () => {
+      if (document.hidden) return; // Don't refresh when tab is not visible
+      if (!isTradingHours()) return; // Only refresh during trading hours
+
+      const currentMode = chartMode;
+      if (currentMode === "timeline" || currentMode === "5d-timeline") {
+        // Refresh timeline + quote together (single request)
+        fetchTimelineWithQuote(symbol);
+      } else {
+        fetchQuote(symbol);
+      }
+    };
+
+    // Start auto-refresh timer
+    refreshTimerRef.current = setInterval(tick, TIMELINE_REFRESH_INTERVAL);
+
+    return () => {
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, [symbol, chartMode, checkAShare, fetchTimelineWithQuote, fetchQuote]);
 
   return {
     symbol,

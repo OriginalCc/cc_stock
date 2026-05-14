@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       const quote = await fetchGuarded(
         `quote:${symbol}`,
         async (_signal) => getAShareQuote(symbol),
-        10000 // 10s cache — quote data changes frequently during trading
+        3000 // 3s cache — supports 1s client-side refresh
       );
       if (!quote) {
         return NextResponse.json({ error: "未找到A股数据" }, { status: 404 });
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         exchange: quote.exchange,
         isAShare: true,
       }, {
-        headers: { "Cache-Control": "public, max-age=10, stale-while-revalidate=30" },
+        headers: { "Cache-Control": "public, max-age=0, stale-while-revalidate=30" },
       });
     }
 

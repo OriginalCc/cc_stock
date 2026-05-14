@@ -4,7 +4,7 @@ import { fetchGuarded } from "@/lib/fetch-guard";
 
 /**
  * Determine cache TTL based on trading status:
- * - During trading hours: 10s (data changes every minute)
+ * - During trading hours: 3s (supports 1s client-side refresh)
  * - Outside trading hours: 300s (data is static)
  */
 function getTimelineCacheTTL(): number {
@@ -20,7 +20,7 @@ function getTimelineCacheTTL(): number {
   const isMorningSession = (chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35);
   const isAfternoonSession = (chinaHour === 13) || (chinaHour === 14) || (chinaHour === 15 && chinaMinute <= 5);
 
-  if (isMorningSession || isAfternoonSession) return 10000; // 10s during trading
+  if (isMorningSession || isAfternoonSession) return 3000; // 3s during trading (1s client refresh)
   return 300000; // 5 min outside trading hours
 }
 
@@ -55,8 +55,9 @@ export async function GET(request: NextRequest) {
 
     if (!includeQuote) {
       const result = await timelinePromise;
-      // Add browser cache headers for faster repeat visits
-      const maxAge = Math.min(Math.floor(cacheTTL / 1000), 30); // Cap at 30s for browser cache
+      // Browser cache: 0 during trading (1s refresh), otherwise match server TTL
+      const isTrading = cacheTTL <= 3000;
+      const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
       return NextResponse.json(result, {
         headers: { "Cache-Control": `public, max-age=${maxAge}, stale-while-revalidate=60` },
       });
@@ -104,8 +105,11 @@ export async function GET(request: NextRequest) {
       } : null,
     };
 
+    // Browser cache: 0 during trading (1s refresh), otherwise match server TTL
+    const isTrading = cacheTTL <= 3000;
+    const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
     return NextResponse.json(response, {
-      headers: { "Cache-Control": `public, max-age=${Math.min(Math.floor(cacheTTL / 1000), 30)}, stale-while-revalidate=60` },
+      headers: { "Cache-Control": `public, max-age=${maxAge}, stale-while-revalidate=60` },
     });
   } catch (error: any) {
     console.error("Timeline API error:", error);
