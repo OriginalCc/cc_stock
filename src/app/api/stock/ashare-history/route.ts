@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
         interval,
         data: [],
         latestSignal: null,
+      }, {
+        headers: { 'Cache-Control': 'public, max-age=30, s-maxage=30' },
       });
     }
 
@@ -88,6 +90,8 @@ export async function GET(request: NextRequest) {
       count: combinedData.length,
       data: combinedData,
       latestSignal,
+    }, {
+      headers: { 'Cache-Control': 'public, max-age=30, s-maxage=30' },
     });
   } catch (error: any) {
     console.error("History API error:", error);

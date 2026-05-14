@@ -47,7 +47,7 @@ interface SignalSummaryPanelProps {
 
 // ── Component ──────────────────────────────────────────
 
-export function SignalSummaryPanel({
+export const SignalSummaryPanel = React.memo(function SignalSummaryPanel({
   chartMode,
   chartData,
   liveTimeline,
@@ -328,4 +328,4 @@ export function SignalSummaryPanel({
       </CardContent>
     </Card>
   );
-}
+});

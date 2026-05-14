@@ -1309,7 +1309,7 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
 
 // ── 同花顺风格 分时图 (Unified Three-Panel) ──────────
 
-export function TimeSharingPanel({
+export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   data,
   prevClose,
   symbol,
@@ -2416,4 +2416,4 @@ export function TimeSharingPanel({
       </div>
     </div>
   );
-}
+});

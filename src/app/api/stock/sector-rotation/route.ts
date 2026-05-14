@@ -390,7 +390,9 @@ export async function GET(request: NextRequest) {
 
   // Check cache
   if (!refresh && cachedRotation && Date.now() - cachedRotation.timestamp < CACHE_TTL) {
-    return NextResponse.json(cachedRotation.data);
+    return NextResponse.json(cachedRotation.data, {
+      headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' },
+    });
   }
 
   try {
@@ -457,7 +459,9 @@ export async function GET(request: NextRequest) {
     // Update cache
     cachedRotation = { data: result, timestamp: Date.now() };
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' },
+    });
   } catch (error: any) {
     console.error("Sector rotation API error:", error);
     return NextResponse.json(

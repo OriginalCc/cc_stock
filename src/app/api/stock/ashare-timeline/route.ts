@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
       const isTrading = cacheTTL <= 1000;
       const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
       return NextResponse.json(result, {
-        headers: { "Cache-Control": `public, max-age=${maxAge}, stale-while-revalidate=60` },
+        headers: { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` },
       });
     }
 
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
     const isTrading = cacheTTL <= 1000;
     const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
     return NextResponse.json(response, {
-      headers: { "Cache-Control": `public, max-age=${maxAge}, stale-while-revalidate=60` },
+      headers: { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` },
     });
   } catch (error: any) {
     console.error("Timeline API error:", error);

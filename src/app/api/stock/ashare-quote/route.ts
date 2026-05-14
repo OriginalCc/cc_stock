@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         exchange: quote.exchange,
         isAShare: true,
       }, {
-        headers: { "Cache-Control": "public, max-age=0, stale-while-revalidate=30" },
+        headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
       });
     }
 
@@ -53,7 +53,9 @@ export async function GET(request: NextRequest) {
     if (!quote) {
       return NextResponse.json({ error: "未找到股票数据" }, { status: 404 });
     }
-    return NextResponse.json({ ...quote, isAShare: false });
+    return NextResponse.json({ ...quote, isAShare: false }, {
+      headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
+    });
   } catch (error: any) {
     console.error("Quote API error:", error);
     return NextResponse.json({ error: "获取行情失败" }, { status: 500 });

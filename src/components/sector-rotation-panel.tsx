@@ -1002,7 +1002,7 @@ interface SectorRotationPanelProps {
   onSelectStock?: (symbol: string) => void;
 }
 
-export function SectorRotationPanel({ onSelectStock }: SectorRotationPanelProps) {
+export const SectorRotationPanel = React.memo(function SectorRotationPanel({ onSelectStock }: SectorRotationPanelProps) {
   const [data, setData] = useState<SectorRotationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1340,4 +1340,4 @@ export function SectorRotationPanel({ onSelectStock }: SectorRotationPanelProps)
       {activeTab === "history" && <PredictionHistoryTab onSelectStock={onSelectStock} />}
     </div>
   );
-}
+});

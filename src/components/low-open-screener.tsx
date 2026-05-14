@@ -194,7 +194,7 @@ interface LowOpenScreenerProps {
   onSelectStock?: (symbol: string) => void;
 }
 
-export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
+export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
   const [result, setResult] = useState<LowOpenResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -897,4 +897,4 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
       </Card>
     </div>
   );
-}
+});

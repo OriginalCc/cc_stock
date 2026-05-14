@@ -868,7 +868,7 @@ function SectorCard({
 
 // ── Main Component ─────────────────────────────────────
 
-export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
+export const LimitUpAnalysis = React.memo(function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
   const [result, setResult] = useState<LimitUpResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1179,4 +1179,4 @@ export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
       )}
     </div>
   );
-}
+});

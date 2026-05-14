@@ -1921,7 +1921,9 @@ export async function GET(request: NextRequest) {
   if (!forceRefresh) {
     const cached = screenerCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return NextResponse.json({ ...cached.data, cached: true });
+      return NextResponse.json({ ...cached.data, cached: true }, {
+        headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' },
+      });
     }
   }
 
@@ -2379,7 +2381,9 @@ export async function GET(request: NextRequest) {
       // Store in server cache
       screenerCache.set(cacheKey, { data: result, timestamp: Date.now() });
 
-      return NextResponse.json(result);
+      return NextResponse.json(result, {
+        headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' },
+      });
     }
 
     // Evaluate all candidates without pulse detection
@@ -2452,7 +2456,9 @@ export async function GET(request: NextRequest) {
       };
 
       screenerCache.set(cacheKey, { data: maResult, timestamp: Date.now() });
-      return NextResponse.json(maResult);
+      return NextResponse.json(maResult, {
+        headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' },
+      });
     }
 
     for (const stock of candidates) {
@@ -2504,7 +2510,9 @@ export async function GET(request: NextRequest) {
     // Store in server cache
     screenerCache.set(cacheKey, { data: result, timestamp: Date.now() });
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' },
+    });
 
   } catch (error: any) {
     console.error("Screener API error:", error);

@@ -116,7 +116,7 @@ const SCREENER_TYPE_LABELS: Record<string, string> = {
 
 // ── Component ──────────────────────────────────────────
 
-export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbol: string) => void }) {
+export const ScreenerHistoryPanel = React.memo(function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbol: string) => void }) {
   const [records, setRecords] = useState<HistoryRecord[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [sectorStats, setSectorStats] = useState<Record<string, SectorStat>>({});
@@ -638,7 +638,7 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
       )}
     </div>
   );
-}
+});
 
 // ── Record Card ────────────────────────────────────────
 

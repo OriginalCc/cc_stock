@@ -539,7 +539,7 @@ interface StockScreenerProps {
   onSelectStock?: (symbol: string) => void;
 }
 
-export function StockScreener({ onSelectStock }: StockScreenerProps) {
+export const StockScreener = React.memo(function StockScreener({ onSelectStock }: StockScreenerProps) {
   const [result, setResult] = useState<ScreenerResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3854,4 +3854,4 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
       </Card>
     </div>
   );
-}
+});

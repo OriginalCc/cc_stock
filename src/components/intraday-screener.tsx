@@ -226,7 +226,7 @@ interface IntradayScreenerProps {
   onSelectStock?: (symbol: string) => void;
 }
 
-export function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
+export const IntradayScreener = React.memo(function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
   const [result, setResult] = useState<IntradayScreenerResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1412,4 +1412,4 @@ export function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
       )}
     </div>
   );
-}
+});

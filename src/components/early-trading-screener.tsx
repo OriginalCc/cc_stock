@@ -273,7 +273,7 @@ interface EarlyTradingScreenerProps {
   onSelectStock?: (symbol: string) => void;
 }
 
-export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProps) {
+export const EarlyTradingScreener = React.memo(function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProps) {
   const [result, setResult] = useState<EarlyScreenResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1416,4 +1416,4 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
       )}
     </div>
   );
-}
+});

@@ -41,7 +41,7 @@ interface NewsAnalysisPanelProps {
 
 // ── Component ──────────────────────────────────────────
 
-export function NewsAnalysisPanel({
+export const NewsAnalysisPanel = React.memo(function NewsAnalysisPanel({
   symbol,
   stockName,
   isAShare,
@@ -1040,4 +1040,4 @@ export function NewsAnalysisPanel({
       </CardContent>
     </Card>
   );
-}
+});
