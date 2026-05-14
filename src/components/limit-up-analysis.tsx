@@ -55,6 +55,7 @@ import {
   isTradingHours,
   useAutoSaveScreener,
 } from "@/lib/screener-shared";
+import { cachedFetch } from "@/lib/client-cache";
 
 // ── Types (matching API response) ─────────────────────
 
@@ -106,17 +107,6 @@ interface LimitUpResult {
 interface LimitUpAnalysisProps {
   onSelectStock?: (symbol: string) => void;
 }
-
-// ── Module-level client cache (persists across tab switches) ────────
-
-interface ClientCacheEntry {
-  result: LimitUpResult;
-  lastFetchTime: string;
-  timestamp: number;
-}
-
-const CLIENT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes – matches server cache
-let clientCache: ClientCacheEntry | null = null;
 
 // ── Helper Functions ───────────────────────────────────
 
@@ -880,11 +870,12 @@ function SectorCard({
 // ── Main Component ─────────────────────────────────────
 
 export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
-  const [result, setResult] = useState<LimitUpResult | null>(clientCache?.result ?? null);
+  const [result, setResult] = useState<LimitUpResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastFetchTime, setLastFetchTime] = useState<string>(clientCache?.lastFetchTime ?? "");
-  const [isFromCache, setIsFromCache] = useState(!!clientCache);
+  const [lastFetchTime, setLastFetchTime] = useState<string>("");
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [lastFetchTimestamp, setLastFetchTimestamp] = useState(0);
   // Tick state to force re-renders for cache countdown
   const [cacheTick, setCacheTick] = useState(0);
 
@@ -931,16 +922,22 @@ export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
     try {
       const params = new URLSearchParams();
       if (forceRefresh) params.set("refresh", "1");
-      const res = await fetch(`/api/stock/limit-up?${params}`);
-      const data: LimitUpResult = await res.json();
+      const data: LimitUpResult = await cachedFetch<LimitUpResult>(
+        `limit-up:${params.toString()}`,
+        async () => {
+          const res = await fetch(`/api/stock/limit-up?${params}`);
+          if (!res.ok) throw new Error("涨停分析失败");
+          return res.json();
+        },
+        forceRefresh ? 0 : 300_000 // 5 min cache
+      );
 
       if (data.success) {
         const fetchTime = new Date().toLocaleTimeString("zh-CN");
         setResult(data);
         setLastFetchTime(fetchTime);
         setIsFromCache(!!data.cached);
-        // Update client cache
-        clientCache = { result: data, lastFetchTime: fetchTime, timestamp: Date.now() };
+        setLastFetchTimestamp(Date.now());
       } else {
         setError(data.error || "涨停分析失败");
       }
@@ -952,23 +949,17 @@ export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
     }
   }, []);
 
-  // Auto-fetch on mount: use cache if fresh, otherwise fetch
+  // Auto-fetch on mount: cachedFetch returns cached data if fresh
   useEffect(() => {
-    if (clientCache && Date.now() - clientCache.timestamp < CLIENT_CACHE_TTL) {
-      setResult(clientCache.result);
-      setLastFetchTime(clientCache.lastFetchTime);
-      setIsFromCache(true);
-    } else {
-      fetchData();
-    }
+    fetchData();
   }, [fetchData]);
 
-  // Tick every second for cache countdown display
+  // Tick every 5 seconds for cache countdown display
   useEffect(() => {
-    if (!clientCache || !isFromCache) return;
+    if (!lastFetchTimestamp || !isFromCache) return;
     const interval = setInterval(() => {
       setCacheTick((t) => t + 1);
-    }, 1000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [isFromCache]);
 
@@ -979,11 +970,11 @@ export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
 
   // ── Cache remaining seconds ───────────────────────────
   const cacheRemaining = useMemo(() => {
-    // cacheTick ensures re-evaluation every second
+    // cacheTick ensures re-evaluation every 5 seconds
     void cacheTick;
-    if (!clientCache) return 0;
-    const elapsed = Date.now() - clientCache.timestamp;
-    return Math.max(0, Math.ceil((CLIENT_CACHE_TTL - elapsed) / 1000));
+    if (!lastFetchTimestamp) return 0;
+    const elapsed = Date.now() - lastFetchTimestamp;
+    return Math.max(0, Math.ceil((300_000 - elapsed) / 1000));
   }, [cacheTick]);
 
   // ── Overall statistics ────────────────────────────────

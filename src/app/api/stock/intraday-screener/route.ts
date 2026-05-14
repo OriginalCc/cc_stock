@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCachedTimeline, setCachedTimeline } from "@/lib/server-timeline-cache";
 
 /**
  * Intraday Screener API (分时智能选股)
@@ -238,6 +239,10 @@ async function fetchMultiSector(pageSize: number): Promise<any[]> {
 // ── Fetch 1-minute timeline data ───────────────────────
 
 async function getStockTimeline(symbol: string): Promise<{ time: string; price: number; volume: number; avgPrice?: number }[]> {
+  // Check shared cache first
+  const cached = getCachedTimeline(symbol);
+  if (cached) return cached;
+
   try {
     let sinaSymbol: string;
     if (symbol.startsWith("6")) {
@@ -287,6 +292,10 @@ async function getStockTimeline(symbol: string): Promise<{ time: string; price: 
       prevCumVol = cumVol;
     }
 
+    // Store in shared cache after successful fetch
+    if (items.length > 0) {
+      setCachedTimeline(symbol, items);
+    }
     return items;
   } catch (e) {
     return [];
@@ -1087,7 +1096,7 @@ export async function GET(request: NextRequest) {
     if (candidates.length > 0) {
       let earlyDataCount = 0;
 
-      const batchSize = 5;
+      const batchSize = 10;
       for (let i = 0; i < candidates.length; i += batchSize) {
         const batch = candidates.slice(i, i + batchSize);
         const timelinePromises = batch.map(async (stock) => {

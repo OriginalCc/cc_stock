@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCachedTimeline, setCachedTimeline } from "@/lib/server-timeline-cache";
 
 /**
  * Stock Screener API
@@ -345,6 +346,10 @@ async function getSectorStocks(sectorCode: string, pageSize: number = 200): Prom
  * Fetch 1-minute timeline data for pulse detection
  */
 async function getStockTimeline(symbol: string): Promise<{ time: string; price: number; volume: number }[]> {
+  // Check shared cache first
+  const cached = getCachedTimeline(symbol);
+  if (cached) return cached;
+
   try {
     // Convert to Sina format
     let sinaSymbol: string;
@@ -370,7 +375,7 @@ async function getStockTimeline(symbol: string): Promise<{ time: string; price: 
     const stockData = data?.data?.[sinaSymbol]?.data?.data;
     if (!Array.isArray(stockData)) return [];
 
-    return stockData
+    const result = stockData
       .filter((entry: any) => typeof entry === "string")
       .map((entry: string) => {
         const parts = entry.split(" ");
@@ -386,6 +391,12 @@ async function getStockTimeline(symbol: string): Promise<{ time: string; price: 
         };
       })
       .filter(Boolean) as { time: string; price: number; volume: number }[];
+
+    // Store in shared cache after successful fetch
+    if (result.length > 0) {
+      setCachedTimeline(symbol, result);
+    }
+    return result;
   } catch (e) {
     return [];
   }
@@ -2126,7 +2137,7 @@ export async function GET(request: NextRequest) {
     const needProgressiveVol = enableProgressiveVol;
     if ((needPulse || needVolumeSurge || needProgressiveVol) && candidates.length > 0) {
       // Fetch timeline data in batches (concurrent with limit)
-      const batchSize = 5;
+      const batchSize = 10;
       for (let i = 0; i < candidates.length; i += batchSize) {
         const batch = candidates.slice(i, i + batchSize);
         const timelinePromises = batch.map(async (stock) => {

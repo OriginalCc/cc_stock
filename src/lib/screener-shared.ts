@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef, useCallback } from "react";
+import { cachedFetch } from "@/lib/client-cache";
 
 // ═══════════════════════════════════════════════════════════
 // 1. Watchlist / Favorites System
@@ -392,58 +393,63 @@ export interface MiniTimelineResult {
 export async function fetchMiniTimeline(
   symbol: string,
 ): Promise<MiniTimelineResult> {
-  try {
-    const res = await fetch(
-      `/api/stock/ashare-timeline?symbol=${encodeURIComponent(symbol)}`,
-      { cache: "no-store" },
-    );
+  return cachedFetch<MiniTimelineResult>(
+    `mini-timeline:${symbol}`,
+    async () => {
+      try {
+        const res = await fetch(
+          `/api/stock/ashare-timeline?symbol=${encodeURIComponent(symbol)}`,
+        );
 
-    if (!res.ok) return { items: [], prevClose: 0 };
+        if (!res.ok) return { items: [], prevClose: 0 };
 
-    const data = await res.json();
-    const rawItems: { time: string; price: number; avgPrice: number; volume: number; changePercent: number }[] =
-      data?.items ?? [];
-    const prevClose: number = data?.prevClose ?? 0;
+        const data = await res.json();
+        const rawItems: { time: string; price: number; avgPrice: number; volume: number; changePercent: number }[] =
+          data?.items ?? [];
+        const prevClose: number = data?.prevClose ?? 0;
 
-    if (rawItems.length === 0) return { items: [], prevClose };
+        if (rawItems.length === 0) return { items: [], prevClose };
 
-    // Downsample: pick every Nth point so we have at most ~30 points
-    const maxPoints = 30;
-    const step = rawItems.length <= maxPoints ? 1 : Math.ceil(rawItems.length / maxPoints);
+        // Downsample: pick every Nth point so we have at most ~30 points
+        const maxPoints = 30;
+        const step = rawItems.length <= maxPoints ? 1 : Math.ceil(rawItems.length / maxPoints);
 
-    const items: MiniTimelineItem[] = [];
-    for (let i = 0; i < rawItems.length; i += step) {
-      const item = rawItems[i];
-      items.push({
-        time: item.time,
-        price: Number(item.price.toFixed(2)),
-        avgPrice: Number((item.avgPrice ?? item.price).toFixed(2)),
-        volume: item.volume ?? 0,
-        changePercent: Number(
-          (item.changePercent ?? (prevClose > 0 ? ((item.price - prevClose) / prevClose) * 100 : 0)).toFixed(2),
-        ),
-      });
-    }
+        const items: MiniTimelineItem[] = [];
+        for (let i = 0; i < rawItems.length; i += step) {
+          const item = rawItems[i];
+          items.push({
+            time: item.time,
+            price: Number(item.price.toFixed(2)),
+            avgPrice: Number((item.avgPrice ?? item.price).toFixed(2)),
+            volume: item.volume ?? 0,
+            changePercent: Number(
+              (item.changePercent ?? (prevClose > 0 ? ((item.price - prevClose) / prevClose) * 100 : 0)).toFixed(2),
+            ),
+          });
+        }
 
-    // Always include the last data point for accuracy
-    const lastRaw = rawItems[rawItems.length - 1];
-    if (items.length > 0 && items[items.length - 1].time !== lastRaw.time) {
-      items.push({
-        time: lastRaw.time,
-        price: Number(lastRaw.price.toFixed(2)),
-        avgPrice: Number((lastRaw.avgPrice ?? lastRaw.price).toFixed(2)),
-        volume: lastRaw.volume ?? 0,
-        changePercent: Number(
-          (lastRaw.changePercent ?? (prevClose > 0 ? ((lastRaw.price - prevClose) / prevClose) * 100 : 0)).toFixed(2),
-        ),
-      });
-    }
+        // Always include the last data point for accuracy
+        const lastRaw = rawItems[rawItems.length - 1];
+        if (items.length > 0 && items[items.length - 1].time !== lastRaw.time) {
+          items.push({
+            time: lastRaw.time,
+            price: Number(lastRaw.price.toFixed(2)),
+            avgPrice: Number((lastRaw.avgPrice ?? lastRaw.price).toFixed(2)),
+            volume: lastRaw.volume ?? 0,
+            changePercent: Number(
+              (lastRaw.changePercent ?? (prevClose > 0 ? ((lastRaw.price - prevClose) / prevClose) * 100 : 0)).toFixed(2),
+            ),
+          });
+        }
 
-    return { items, prevClose };
-  } catch (err) {
-    console.error("fetchMiniTimeline error:", err);
-    return { items: [], prevClose: 0 };
-  }
+        return { items, prevClose };
+      } catch (err) {
+        console.error("fetchMiniTimeline error:", err);
+        return { items: [], prevClose: 0 };
+      }
+    },
+    60_000, // 1 min cache
+  );
 }
 
 // ═══════════════════════════════════════════════════════════

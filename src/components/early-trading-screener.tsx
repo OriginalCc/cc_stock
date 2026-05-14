@@ -55,7 +55,7 @@ import {
   type MiniTimelineResult,
   WATCHLIST_CHANGED_EVENT,
 } from "@/lib/screener-shared";
-import { cachedFetch } from "@/lib/client-cache";
+import { fetchWithSWR } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -157,17 +157,6 @@ const DEFAULT_FILTERS: ScreenerFilters = {
   enableChiNext: false,
   enableSTAR: false,
 };
-
-// ── Module-level client cache ──────────────────────────
-
-interface ClientCacheEntry {
-  result: EarlyScreenResult;
-  lastFetchTime: string;
-  timestamp: number;
-  filters: ScreenerFilters;
-}
-const CLIENT_CACHE_TTL = 2 * 60 * 1000;
-let clientCache: ClientCacheEntry | null = null;
 
 // ── Helper functions (local-only, not duplicated in shared) ──
 
@@ -286,16 +275,17 @@ interface EarlyTradingScreenerProps {
 }
 
 export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProps) {
-  const [result, setResult] = useState<EarlyScreenResult | null>(clientCache?.result ?? null);
+  const [result, setResult] = useState<EarlyScreenResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("earlyCompositeScore");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
-  const [lastFetchTime, setLastFetchTime] = useState<string>(clientCache?.lastFetchTime ?? "");
-  const [isFromCache, setIsFromCache] = useState(!!clientCache);
+  const [lastFetchTime, setLastFetchTime] = useState<string>("");
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [lastFetchTimestamp, setLastFetchTimestamp] = useState(0);
 
   // Filter states
-  const [filters, setFilters] = useState<ScreenerFilters>(clientCache?.filters ?? DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   // ── Watchlist state ──
@@ -310,7 +300,7 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
   // Countdown timer
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timer = setInterval(() => setCurrentTime(new Date()), 5000);
     return () => clearInterval(timer);
   }, []);
 
@@ -365,22 +355,23 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
       if (f.enableSTAR) params.set("star", "true");
       if (forceRefresh) params.set("refresh", "1");
 
-      const data: EarlyScreenResult = await cachedFetch<EarlyScreenResult>(
+      const { data, fromCache } = await fetchWithSWR<EarlyScreenResult>(
         `early-screen:${params.toString()}`,
         async () => {
           const res = await fetch(`/api/stock/early-screen?${params}`);
           if (!res.ok) throw new Error("选股失败");
           return res.json();
         },
-        forceRefresh ? 0 : 120_000
+        120_000, // 2 min TTL
+        { forceRefresh }
       );
 
       if (data.success) {
         const fetchTime = new Date().toLocaleTimeString("zh-CN");
         setResult(data);
         setLastFetchTime(fetchTime);
-        setIsFromCache(!!data.cached);
-        clientCache = { result: data, lastFetchTime: fetchTime, timestamp: Date.now(), filters: f };
+        setIsFromCache(fromCache);
+        setLastFetchTimestamp(Date.now());
       } else {
         setError(data.error || "选股失败");
       }
@@ -391,19 +382,9 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
     }
   }, [filters]);
 
-  // Auto-fetch on mount
+  // Auto-fetch on mount: fetchWithSWR returns cached data instantly
   useEffect(() => {
-    if (clientCache) {
-      setResult(clientCache.result);
-      setLastFetchTime(clientCache.lastFetchTime);
-      setFilters(clientCache.filters);
-      setIsFromCache(true);
-      if (Date.now() - clientCache.timestamp >= CLIENT_CACHE_TTL) {
-        fetchData(false, clientCache.filters);
-      }
-    } else {
-      fetchData();
-    }
+    fetchData();
   }, []);
 
   // ── Handle timeline popup fetch ──
@@ -524,12 +505,14 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
     fetchData(true);
   };
 
-  const filtersChanged = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
+  const filtersChanged = useMemo(() => {
+    return JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
+  }, [filters]);
 
   const cacheRemaining = useMemo(() => {
-    if (!clientCache) return 0;
-    const elapsed = Date.now() - clientCache.timestamp;
-    return Math.max(0, Math.ceil((CLIENT_CACHE_TTL - elapsed) / 1000));
+    if (!lastFetchTimestamp) return 0;
+    const elapsed = Date.now() - lastFetchTimestamp;
+    return Math.max(0, Math.ceil((120_000 - elapsed) / 1000));
   }, [lastFetchTime, isFromCache]);
 
   // Time to optimal screening

@@ -62,7 +62,7 @@ import {
 } from "lucide-react";
 
 import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoRefresh, useAutoSaveScreener, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
-import { cachedFetch } from "@/lib/client-cache";
+import { fetchWithSWR } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -443,18 +443,6 @@ function saveCustomPresets(presets: CustomPreset[]): void {
   }
 }
 
-// ── Module-level client cache (persists across tab switches) ────────
-
-interface ClientCacheEntry {
-  result: ScreenerResult;
-  lastFetchTime: string;
-  timestamp: number;
-  filters: ScreenerFilters;
-}
-const CLIENT_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
-
-let clientCache: ClientCacheEntry | null = null;
-
 // ── Filter State Type ──────────────────────────────────
 
 interface ScreenerFilters {
@@ -552,18 +540,19 @@ interface StockScreenerProps {
 }
 
 export function StockScreener({ onSelectStock }: StockScreenerProps) {
-  const [result, setResult] = useState<ScreenerResult | null>(clientCache?.result ?? null);
+  const [result, setResult] = useState<ScreenerResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("compositeScore");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
-  const [lastFetchTime, setLastFetchTime] = useState<string>(clientCache?.lastFetchTime ?? "");
-  const [isFromCache, setIsFromCache] = useState(!!clientCache);
+  const [lastFetchTime, setLastFetchTime] = useState<string>("");
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [lastFetchTimestamp, setLastFetchTimestamp] = useState(0);
 
   // Filter states
-  const [filters, setFilters] = useState<ScreenerFilters>(clientCache?.filters ?? DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [sectorInput, setSectorInput] = useState(clientCache?.filters.sector ?? "通信");
+  const [sectorInput, setSectorInput] = useState(DEFAULT_FILTERS.sector);
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const sectorDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -680,23 +669,23 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
       if (f.enableLateSessionFilter) params.set("enableLateSessionFilter", "true");
       if (f.enableLateSessionFilter && f.lateSessionType) params.set("lateSessionType", f.lateSessionType);
       if (forceRefresh) params.set("refresh", "1");
-      const data: ScreenerResult = await cachedFetch<ScreenerResult>(
+      const { data, fromCache } = await fetchWithSWR<ScreenerResult>(
         `screener:${params.toString()}`,
         async () => {
           const res = await fetch(`/api/stock/screener?${params}`);
           if (!res.ok) throw new Error("选股失败");
           return res.json();
         },
-        forceRefresh ? 0 : 180_000 // 3 min cache, 0 for force refresh
+        180_000, // 3 min TTL
+        { forceRefresh }
       );
 
       if (data.success) {
         const fetchTime = new Date().toLocaleTimeString("zh-CN");
         setResult(data);
         setLastFetchTime(fetchTime);
-        setIsFromCache(!!data.cached);
-        // Update client cache
-        clientCache = { result: data, lastFetchTime: fetchTime, timestamp: Date.now(), filters: f };
+        setIsFromCache(fromCache);
+        setLastFetchTimestamp(Date.now());
       } else {
         setError(data.error || "选股失败");
       }
@@ -707,25 +696,10 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     }
   }, [filters]);
 
-  // Auto-fetch on mount: always restore cache immediately,
-  // then silently refresh in background if cache is stale
+  // Auto-fetch on mount: fetchWithSWR returns cached data instantly
+  // and revalidates in background if stale
   useEffect(() => {
-    if (clientCache) {
-      // Always restore from cache first (instant display)
-      setResult(clientCache.result);
-      setLastFetchTime(clientCache.lastFetchTime);
-      setFilters(clientCache.filters);
-      setSectorInput(clientCache.filters.sector);
-      setIsFromCache(true);
-
-      // If cache is stale, silently refresh in background
-      if (Date.now() - clientCache.timestamp >= CLIENT_CACHE_TTL) {
-        fetchScreenerData(false, clientCache.filters);
-      }
-    } else {
-      // No cache at all, fetch fresh data
-      fetchScreenerData();
-    }
+    fetchScreenerData();
   }, []);
 
   // Sort stocks
@@ -833,13 +807,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   };
 
   // Check if filters have changed from defaults
-  const filtersChanged = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
+  const filtersChanged = useMemo(() => {
+    return JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
+  }, [filters]);
 
   // Compute cache remaining time for display
-  const cacheRemaining = React.useMemo(() => {
-    if (!clientCache) return 0;
-    const elapsed = Date.now() - clientCache.timestamp;
-    return Math.max(0, Math.ceil((CLIENT_CACHE_TTL - elapsed) / 1000));
+  const cacheRemaining = useMemo(() => {
+    if (!lastFetchTimestamp) return 0;
+    const elapsed = Date.now() - lastFetchTimestamp;
+    return Math.max(0, Math.ceil((180_000 - elapsed) / 1000));
   }, [lastFetchTime, isFromCache]);
 
   // ── Strategy Panel: fetch data on first expand ──

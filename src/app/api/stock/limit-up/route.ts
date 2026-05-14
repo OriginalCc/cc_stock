@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCachedTimeline, setCachedTimeline } from "@/lib/server-timeline-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -273,6 +274,10 @@ interface TimelinePoint {
 }
 
 async function getStockTimeline(symbol: string): Promise<TimelinePoint[]> {
+  // Check shared cache first
+  const cached = getCachedTimeline(symbol);
+  if (cached) return cached;
+
   try {
     // Convert to Sina/Tencent format
     let sinaSymbol: string;
@@ -298,7 +303,7 @@ async function getStockTimeline(symbol: string): Promise<TimelinePoint[]> {
     const stockData = data?.data?.[sinaSymbol]?.data?.data;
     if (!Array.isArray(stockData)) return [];
 
-    return stockData
+    const result = stockData
       .filter((entry: any) => typeof entry === "string")
       .map((entry: string) => {
         const parts = entry.split(" ");
@@ -314,6 +319,12 @@ async function getStockTimeline(symbol: string): Promise<TimelinePoint[]> {
         };
       })
       .filter(Boolean) as TimelinePoint[];
+
+    // Store in shared cache after successful fetch
+    if (result.length > 0) {
+      setCachedTimeline(symbol, result);
+    }
+    return result;
   } catch (error) {
     return [];
   }
@@ -746,7 +757,7 @@ export async function GET(req: NextRequest) {
 
         // ── Step 3: Technical analysis for each limit-up stock ──
         const limitUpStocks: LimitUpStock[] = [];
-        const batchSize = 5;
+        const batchSize = 10;
 
         for (let i = 0; i < limitUpRaw.length; i += batchSize) {
           const batch = limitUpRaw.slice(i, i + batchSize);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ import {
   removeFromWatchlist, isInWatchlist, useAutoRefresh, isTradingHours,
   useAutoSaveScreener,
 } from "@/lib/screener-shared";
-import { cachedFetch } from "@/lib/client-cache";
+import { fetchWithSWR } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -158,17 +158,6 @@ function getRecoveryScoreBg(score: number): string {
   return "bg-gray-500/10 border-gray-500/30";
 }
 
-// ── Module-level client cache ──────────────────────────
-
-interface ClientCacheEntry {
-  result: LowOpenResult;
-  lastFetchTime: string;
-  timestamp: number;
-  filters: LowOpenFilters;
-}
-const CLIENT_CACHE_TTL = 3 * 60 * 1000;
-let clientCache: ClientCacheEntry | null = null;
-
 // ── Filter State ───────────────────────────────────────
 
 interface LowOpenFilters {
@@ -206,18 +195,19 @@ interface LowOpenScreenerProps {
 }
 
 export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
-  const [result, setResult] = useState<LowOpenResult | null>(clientCache?.result ?? null);
+  const [result, setResult] = useState<LowOpenResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("recoveryScore");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
-  const [lastFetchTime, setLastFetchTime] = useState<string>(clientCache?.lastFetchTime ?? "");
-  const [isFromCache, setIsFromCache] = useState(!!clientCache);
+  const [lastFetchTime, setLastFetchTime] = useState<string>("");
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [lastFetchTimestamp, setLastFetchTimestamp] = useState(0);
 
   // Filter states
-  const [filters, setFilters] = useState<LowOpenFilters>(clientCache?.filters ?? DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<LowOpenFilters>(DEFAULT_FILTERS);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [sectorInput, setSectorInput] = useState(clientCache?.filters.sector ?? "");
+  const [sectorInput, setSectorInput] = useState("");
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const sectorDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -280,22 +270,23 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
       if (f.includeSTAR) params.set("includeSTAR", "true");
       if (forceRefresh) params.set("refresh", "1");
 
-      const data: LowOpenResult = await cachedFetch<LowOpenResult>(
+      const { data, fromCache } = await fetchWithSWR<LowOpenResult>(
         `low-open:${params.toString()}`,
         async () => {
           const res = await fetch(`/api/stock/low-open?${params}`);
           if (!res.ok) throw new Error("查询失败");
           return res.json();
         },
-        forceRefresh ? 0 : 180_000
+        180_000, // 3 min TTL
+        { forceRefresh }
       );
 
       if (data.success) {
         const fetchTime = new Date().toLocaleTimeString("zh-CN");
         setResult(data);
         setLastFetchTime(fetchTime);
-        setIsFromCache(!!data.cached);
-        clientCache = { result: data, lastFetchTime: fetchTime, timestamp: Date.now(), filters: f };
+        setIsFromCache(fromCache);
+        setLastFetchTimestamp(Date.now());
       } else {
         setError(data.error || "查询失败");
       }
@@ -306,20 +297,9 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
     }
   }, [filters]);
 
-  // Auto-fetch on mount
+  // Auto-fetch on mount: fetchWithSWR returns cached data instantly
   useEffect(() => {
-    if (clientCache) {
-      setResult(clientCache.result);
-      setLastFetchTime(clientCache.lastFetchTime);
-      setFilters(clientCache.filters);
-      setSectorInput(clientCache.filters.sector);
-      setIsFromCache(true);
-      if (Date.now() - clientCache.timestamp >= CLIENT_CACHE_TTL) {
-        fetchData(false, clientCache.filters);
-      }
-    } else {
-      fetchData();
-    }
+    fetchData();
   }, []);
 
   // Sorted stocks
@@ -379,12 +359,14 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
     setSectorInput("");
   };
 
-  const filtersChanged = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
+  const filtersChanged = useMemo(() => {
+    return JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
+  }, [filters]);
 
-  const cacheRemaining = React.useMemo(() => {
-    if (!clientCache) return 0;
-    const elapsed = Date.now() - clientCache.timestamp;
-    return Math.max(0, Math.ceil((CLIENT_CACHE_TTL - elapsed) / 1000));
+  const cacheRemaining = useMemo(() => {
+    if (!lastFetchTimestamp) return 0;
+    const elapsed = Date.now() - lastFetchTimestamp;
+    return Math.max(0, Math.ceil((180_000 - elapsed) / 1000));
   }, [lastFetchTime, isFromCache]);
 
   // ── Pattern distribution stats ──
