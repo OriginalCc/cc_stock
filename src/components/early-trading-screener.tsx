@@ -47,7 +47,6 @@ import {
   removeFromWatchlist,
   isInWatchlist,
   type WatchlistItem,
-  useAutoRefresh,
   useAutoSaveScreener,
   computeScreenerStats,
   getTradingPhaseInfo,
@@ -321,10 +320,7 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
     };
   }, []);
 
-  // ── Auto-refresh during trading hours ──
-  // Early screener is especially active during 9:30-10:30 golden window
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  useAutoRefresh(() => fetchData(false), autoRefreshEnabled);
+  // No auto-refresh – 1 hour cache, only refresh on button click
 
   // Check if currently in golden screening window (9:30-10:30)
   const isInGoldenWindow = useMemo(() => {
@@ -362,7 +358,7 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
           if (!res.ok) throw new Error("选股失败");
           return res.json();
         },
-        120_000, // 2 min TTL
+        3_600_000, // 1 hour TTL – click refresh to update
         { forceRefresh }
       );
 
@@ -570,31 +566,7 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
               </Badge>
             </CardTitle>
             <div className="flex items-center gap-2">
-              {/* Auto-refresh indicator */}
-              {autoRefreshEnabled && (
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] h-5 px-1.5 gap-1 cursor-pointer ${
-                    isInGoldenWindow
-                      ? "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 animate-pulse"
-                      : "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                  }`}
-                  onClick={() => setAutoRefreshEnabled(false)}
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  {isInGoldenWindow ? "黄金窗口自动刷新中" : "自动刷新"}
-                </Badge>
-              )}
-              {!autoRefreshEnabled && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] h-5 px-1.5 gap-1 cursor-pointer bg-muted/50 border-border text-muted-foreground"
-                  onClick={() => setAutoRefreshEnabled(true)}
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  开启自动刷新
-                </Badge>
-              )}
+              {/* Cache indicator */}
               {isFromCache && cacheRemaining > 0 && (
                 <Badge variant="outline" className="text-xs py-0 px-1.5 gap-1 bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-300">
                   <Database className="w-3 h-3" />

@@ -51,7 +51,6 @@ import {
   removeFromWatchlist,
   isInWatchlist,
   type WatchlistItem,
-  useAutoRefresh,
   isTradingHours,
   useAutoSaveScreener,
 } from "@/lib/screener-shared";
@@ -929,7 +928,7 @@ export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
           if (!res.ok) throw new Error("涨停分析失败");
           return res.json();
         },
-        forceRefresh ? 0 : 300_000 // 5 min cache
+        forceRefresh ? 0 : 3_600_000 // 1 hour cache – click refresh to update
       );
 
       if (data.success) {
@@ -963,10 +962,7 @@ export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
     return () => clearInterval(interval);
   }, [isFromCache]);
 
-  // ── Auto-refresh during trading hours ────────────────
-  useAutoRefresh(() => {
-    fetchData(false);
-  }, autoRefreshEnabled);
+  // No auto-refresh – 1 hour cache, only refresh on button click
 
   // ── Cache remaining seconds ───────────────────────────
   const cacheRemaining = useMemo(() => {
@@ -1054,30 +1050,7 @@ export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {/* Auto-refresh toggle */}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={autoRefreshEnabled ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setAutoRefreshEnabled((v) => !v)}
-                      className={`h-7 text-xs gap-1 ${autoRefreshEnabled ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
-                    >
-                      <Activity className="w-3 h-3" />
-                      {autoRefreshEnabled ? "自动刷新" : "手动"}
-                      {autoRefreshEnabled && isTradingHours() && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-300 animate-pulse" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {autoRefreshEnabled
-                      ? "交易时段自动每分钟刷新数据"
-                      : "点击开启交易时段自动刷新"}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              {/* Cache indicator */}
 
               {isFromCache && cacheRemaining > 0 && (
                 <Badge

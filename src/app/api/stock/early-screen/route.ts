@@ -23,7 +23,7 @@ import { getCachedTimeline, setCachedTimeline } from "@/lib/server-timeline-cach
 
 // ── Server-side Cache ───────────────────────────────────
 const earlyScreenCache = new Map<string, { data: EarlyScreenResult; timestamp: number }>();
-const CACHE_TTL = 2 * 60 * 1000; // 2 minutes (shorter for early trading)
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour – only refresh when user clicks refresh button
 
 // ── Types ──────────────────────────────────────────────
 

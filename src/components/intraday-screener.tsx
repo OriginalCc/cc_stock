@@ -71,7 +71,6 @@ import {
   removeFromWatchlist,
   isInWatchlist,
   type WatchlistItem,
-  useAutoRefresh,
   useAutoSaveScreener,
   computeScreenerStats,
   fetchMiniTimeline,
@@ -248,7 +247,7 @@ export function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
 
   // Auto-refresh state
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false); // kept for UI compatibility
 
   // Stats section state
   const [statsExpanded, setStatsExpanded] = useState(false);
@@ -287,7 +286,7 @@ export function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
           if (!res.ok) throw new Error("选股失败");
           return res.json();
         },
-        180_000, // 3 min TTL
+        3_600_000, // 1 hour TTL – click refresh to update
         { forceRefresh }
       );
 
@@ -315,8 +314,7 @@ export function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
     return () => window.removeEventListener("screener-watchlist-changed", handler);
   }, []);
 
-  // Auto-refresh hook
-  useAutoRefresh(() => fetchData(true), autoRefresh);
+  // No auto-refresh – 1 hour cache, only refresh on button click
 
   // Auto-fetch on mount: fetchWithSWR returns cached data instantly
   useEffect(() => {
@@ -580,30 +578,6 @@ export function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
               {lastFetchTime && (
                 <span className="text-xs text-muted-foreground">更新于 {lastFetchTime}</span>
               )}
-              {/* Auto-refresh toggle */}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={autoRefresh ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setAutoRefresh(!autoRefresh)}
-                      className="h-7 text-xs gap-1"
-                    >
-                      <div className="relative">
-                        <Zap className="w-3 h-3" />
-                        {autoRefresh && (
-                          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                        )}
-                      </div>
-                      自动
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">
-                    {autoRefresh ? "交易时间自动刷新已开启" : "点击开启交易时间自动刷新"}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
               <Button
                 variant="outline"
                 size="sm"

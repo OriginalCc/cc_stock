@@ -21,7 +21,7 @@ import { getCachedTimeline, setCachedTimeline } from "@/lib/server-timeline-cach
 // Cache screener results to avoid re-running the full pipeline on every request.
 // Key: query params string, Value: { data: ScreenerResult, timestamp }
 const screenerCache = new Map<string, { data: ScreenerResult; timestamp: number }>();
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes – balance freshness vs cost
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour – only refresh when user clicks refresh button
 
 /**
  * Build a cache key from query parameters

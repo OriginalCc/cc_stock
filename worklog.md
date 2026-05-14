@@ -99,3 +99,22 @@ Work Log:
 
 Stage Summary:
 - 选股页面加载速度优化完成，涵盖服务端+客户端+共享缓存三个层面
+
+---
+Task ID: 5
+Agent: main
+Task: 选股页面默认缓存1小时，点击刷新才刷新
+
+Work Log:
+- 客户端5个选股组件的 fetchWithSWR/cachedFetch TTL 从2-5分钟改为1小时 (3_600_000ms)
+- 移除5个组件的 useAutoRefresh 自动刷新钩子（不再交易时段自动刷新）
+- 移除自动刷新按钮UI（智能选股、分时选股、早盘选股、低开选股、涨停分析）
+- 保留手动刷新按钮，点击时传 refresh=1 绕过缓存
+- 服务端5个API路由的 CACHE_TTL 从2-5分钟改为1小时 (60*60*1000)
+- 清理未使用的 useAutoRefresh import、autoRefreshEnabled/pageVisible 状态、visibility effect
+- lint 通过
+
+Stage Summary:
+- 选股结果客户端+服务端均默认缓存1小时
+- 取消自动刷新，只能通过刷新按钮手动更新
+- 刷新按钮点击时传 refresh=1 参数，服务端绕过缓存重新获取数据

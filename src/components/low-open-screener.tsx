@@ -27,7 +27,7 @@ import {
 
 import {
   formatMarketCap, formatAmount, loadWatchlist, addToWatchlist,
-  removeFromWatchlist, isInWatchlist, useAutoRefresh, isTradingHours,
+  removeFromWatchlist, isInWatchlist, isTradingHours,
   useAutoSaveScreener,
 } from "@/lib/screener-shared";
 import { fetchWithSWR } from "@/lib/client-cache";
@@ -214,9 +214,7 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
   // Watchlist
   const [watchlist, setWatchlist] = useState<ReturnType<typeof loadWatchlist>>([]);
 
-  // Auto-refresh
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  const [pageVisible, setPageVisible] = useState(true);
+  // Auto-refresh state (disabled – 1 hour cache, manual refresh only)
 
   // Load watchlist on mount
   useEffect(() => { setWatchlist(loadWatchlist()); }, []);
@@ -226,17 +224,7 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
     return () => window.removeEventListener("screener-watchlist-changed", handler);
   }, []);
 
-  // Track page visibility
-  useEffect(() => {
-    const handleVisibility = () => setPageVisible(!document.hidden);
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, []);
-
-  // Auto-refresh during trading hours
-  useAutoRefresh(() => {
-    if (!loading) fetchData(false);
-  }, autoRefreshEnabled && pageVisible);
+  // No auto-refresh – 1 hour cache, only refresh on button click
 
   // Close sector dropdown on outside click
   useEffect(() => {
@@ -277,7 +265,7 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
           if (!res.ok) throw new Error("查询失败");
           return res.json();
         },
-        180_000, // 3 min TTL
+        3_600_000, // 1 hour TTL – click refresh to update
         { forceRefresh }
       );
 
@@ -400,26 +388,6 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
               {lastFetchTime && (
                 <span className="text-xs text-muted-foreground">更新于 {lastFetchTime}</span>
               )}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={autoRefreshEnabled ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
-                      className="h-7 text-xs gap-1 relative"
-                    >
-                      <Clock className="w-3 h-3" />
-                      {autoRefreshEnabled && isTradingHours() && (
-                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">
-                    {autoRefreshEnabled ? "自动刷新已开启" : "自动刷新已关闭"}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
               <Button
                 variant="outline"
                 size="sm"

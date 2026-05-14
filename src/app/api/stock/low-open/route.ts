@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // ── Server-side Cache ───────────────────────────────────
 const lowOpenCache = new Map<string, { data: LowOpenResult; timestamp: number }>();
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour – only refresh when user clicks refresh button
 
 // ── Types ──────────────────────────────────────────────
 

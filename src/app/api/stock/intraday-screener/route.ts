@@ -27,7 +27,7 @@ import { getCachedTimeline, setCachedTimeline } from "@/lib/server-timeline-cach
 
 // ── Server-side Cache ───────────────────────────────────
 const screenerCache = new Map<string, { data: IntradayScreenerResult; timestamp: number }>();
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour – only refresh when user clicks refresh button
 
 // ── Types ──────────────────────────────────────────────
 

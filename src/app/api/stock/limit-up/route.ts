@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 // ── Server-side Cache ───────────────────────────────────
 const cache = new Map<string, { data: LimitUpResult; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour – only refresh when user clicks refresh button
 
 function getTodayKey(): string {
   const now = new Date();

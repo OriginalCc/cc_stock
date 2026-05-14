@@ -61,7 +61,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoRefresh, useAutoSaveScreener, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
+import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoSaveScreener, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
 import { fetchWithSWR } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
@@ -575,9 +575,8 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   // Watchlist state
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
 
-  // Auto-refresh state
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  const [pageVisible, setPageVisible] = useState(true);
+  // Auto-refresh state (disabled – 1 hour cache, manual refresh only)
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
 
   // Stats expanded state
   const [statsExpanded, setStatsExpanded] = useState(false);
@@ -599,17 +598,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     return () => window.removeEventListener("screener-watchlist-changed", handler);
   }, []);
 
-  // Track page visibility for auto-refresh
-  useEffect(() => {
-    const handleVisibility = () => setPageVisible(!document.hidden);
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, []);
-
-  // Auto-refresh during trading hours
-  useAutoRefresh(() => {
-    if (!loading) fetchScreenerData(false);
-  }, autoRefreshEnabled && pageVisible);
+  // No auto-refresh – 1 hour cache, only refresh on button click
 
   // Close sector dropdown on outside click
   useEffect(() => {
@@ -676,7 +665,7 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
           if (!res.ok) throw new Error("选股失败");
           return res.json();
         },
-        180_000, // 3 min TTL
+        3_600_000, // 1 hour TTL – click refresh to update
         { forceRefresh }
       );
 
@@ -915,26 +904,6 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
                   更新于 {lastFetchTime}
                 </span>
               )}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={autoRefreshEnabled ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
-                      className="h-7 text-xs gap-1 relative"
-                    >
-                      <Clock className="w-3 h-3" />
-                      {autoRefreshEnabled && isTradingHours() && (
-                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">
-                    {autoRefreshEnabled ? "自动刷新已开启（交易时段每分钟刷新）" : "自动刷新已关闭，点击开启"}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
               <Button
                 variant="outline"
                 size="sm"
