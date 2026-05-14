@@ -53,6 +53,7 @@ import {
   type WatchlistItem,
   useAutoRefresh,
   isTradingHours,
+  useAutoSaveScreener,
 } from "@/lib/screener-shared";
 
 // ── Types (matching API response) ─────────────────────
@@ -992,6 +993,15 @@ export function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
   );
 
   const totalLimitUpCount = allStocks.length;
+
+  // Auto-save screener results for historical verification
+  useAutoSaveScreener(
+    allStocks,
+    "limit_up",
+    "涨停分析",
+    {},
+    allStocks.length > 0
+  );
 
   // ── Render ────────────────────────────────────────────
 

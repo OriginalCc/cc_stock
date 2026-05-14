@@ -95,3 +95,30 @@ model SectorPredictionRecord {
 
   @@unique([predictDate, sectorCode]) // 同一天同一板块只记录一次
 }
+
+// ── 历史选股验证记录 ────────────────────────────────────
+
+model ScreenerHistoryRecord {
+  id                String   @id @default(cuid())
+  recordDate        String                     // 选股日期 YYYY-MM-DD
+  recordTime        String                     // 选股时间 HH:mm (整点/半点)
+  screenerType      String   @default("stock") // 选股类型: stock | intraday | early | low_open | limit_up
+  sectorName        String                     // 板块名/选股策略名
+  stockCount        Int                        // 选出股票数量
+  stocksJson        String                     // JSON array of stocks
+  filtersJson       String   @default("{}")    // JSON 筛选条件
+  // ── 次日验证 ──
+  avgNextDayChange  Float    @default(0)       // 次日平均涨跌幅%
+  nextDayChangesJson String  @default("{}")    // JSON Record<symbol, change>
+  isVerified        Boolean  @default(false)   // 是否已验证
+  verifiedAt        DateTime?
+  // ── 多日验证 ──
+  day3ChangesJson   String   @default("{}")    // JSON Record<symbol, change> 3日后涨幅
+  day5ChangesJson   String   @default("{}")    // JSON Record<symbol, change> 5日后涨幅
+  avgDay3Change     Float    @default(0)       // 3日平均涨幅
+  avgDay5Change     Float    @default(0)       // 5日平均涨幅
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([recordDate, recordTime, sectorName]) // 同一天同一时间同一板块只记录一次
+}

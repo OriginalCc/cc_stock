@@ -61,7 +61,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoRefresh, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
+import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoRefresh, useAutoSaveScreener, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
 import { cachedFetch } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
@@ -621,6 +621,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
   useAutoRefresh(() => {
     if (!loading) fetchScreenerData(false);
   }, autoRefreshEnabled && pageVisible);
+
+  // Auto-save screener results for historical verification
+  useAutoSaveScreener(
+    sortedStocks,
+    "stock",
+    filters.sector || "全市场",
+    filters,
+    sortedStocks.length > 0
+  );
 
   // Close sector dropdown on outside click
   useEffect(() => {

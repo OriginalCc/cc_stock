@@ -445,3 +445,130 @@ export async function fetchMiniTimeline(
     return { items: [], prevClose: 0 };
   }
 }
+
+// ═══════════════════════════════════════════════════════════
+// 5. Screener Auto-Save to History
+// ═══════════════════════════════════════════════════════════
+
+/** Auto-save interval: save every 30 minutes during trading hours */
+const AUTO_SAVE_INTERVAL = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Save screener results to the database for historical verification.
+ * Called automatically by each screener component at regular intervals.
+ *
+ * @param stocks - Array of stock results from the screener
+ * @param screenerType - Type of screener: "stock" | "intraday" | "early" | "low_open" | "limit_up"
+ * @param sectorName - Name of the sector or strategy used
+ * @param filters - Filter parameters used for this screening
+ */
+export async function saveScreenerResults(
+  stocks: Array<{ symbol: string; name: string; price?: number; changePercent?: number; compositeScore?: number; evaluation?: string; pulseScore?: number; volumeSurgeScore?: number; reliabilityScore?: number; [key: string]: any }>,
+  screenerType: string,
+  sectorName: string,
+  filters: Record<string, any> = {},
+): Promise<void> {
+  if (!stocks || stocks.length === 0) return;
+
+  const now = new Date();
+  const chinaTime = new Date(now.getTime() + (8 * 60 + now.getTimezoneOffset()) * 60000);
+  const recordDate = chinaTime.toISOString().split("T")[0];
+  const h = chinaTime.getHours();
+  const m = chinaTime.getMinutes();
+  const recordTime = m >= 30 ? `${String(h).padStart(2, "0")}:30` : `${String(h).padStart(2, "0")}:00`;
+
+  // Also save to localStorage for manual save button in ScreenerHistoryPanel
+  try {
+    localStorage.setItem("screener-last-result", JSON.stringify({
+      stocks,
+      screenerType,
+      sector: sectorName,
+      filters,
+    }));
+  } catch {}
+
+  // Save to database
+  const stocksToSave = stocks.map((s) => ({
+    symbol: s.symbol,
+    name: s.name,
+    price: s.price ?? 0,
+    changePercent: s.changePercent ?? 0,
+    compositeScore: s.compositeScore,
+    evaluation: s.evaluation,
+    pulseScore: s.pulseScore,
+    volumeSurgeScore: s.volumeSurgeScore,
+    reliabilityScore: s.reliabilityScore,
+  }));
+
+  try {
+    await fetch("/api/stock/screener-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "save",
+        records: [{
+          recordDate,
+          recordTime,
+          screenerType,
+          sectorName,
+          stockCount: stocksToSave.length,
+          stocksJson: JSON.stringify(stocksToSave),
+          filtersJson: JSON.stringify(filters),
+        }],
+      }),
+    });
+  } catch (e) {
+    console.error("Auto-save screener results error:", e);
+  }
+}
+
+/**
+ * React hook: auto-save screener results at regular intervals during trading hours.
+ * Each screener component should call this with its current results.
+ *
+ * @param stocks - Current screener results
+ * @param screenerType - Type of screener
+ * @param sectorName - Sector or strategy name
+ * @param filters - Filters used
+ * @param enabled - Whether auto-save is enabled (typically true when screener has results)
+ */
+export function useAutoSaveScreener(
+  stocks: Array<{ symbol: string; name: string; price?: number; changePercent?: number; compositeScore?: number; evaluation?: string; pulseScore?: number; volumeSurgeScore?: number; reliabilityScore?: number; [key: string]: any }> | undefined,
+  screenerType: string,
+  sectorName: string,
+  filters: Record<string, any> = {},
+  enabled: boolean = true,
+): void {
+  const lastSaveRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!enabled || !stocks || stocks.length === 0) return;
+
+    const checkAndSave = () => {
+      if (!isTradingHours()) return;
+      const now = Date.now();
+      if (now - lastSaveRef.current < AUTO_SAVE_INTERVAL) return;
+      lastSaveRef.current = now;
+      saveScreenerResults(stocks, screenerType, sectorName, filters);
+    };
+
+    // Initial save with a short delay (don't block initial render)
+    const initialTimer = setTimeout(() => {
+      if (stocks && stocks.length > 0) {
+        const now = Date.now();
+        if (now - lastSaveRef.current >= AUTO_SAVE_INTERVAL) {
+          lastSaveRef.current = now;
+          saveScreenerResults(stocks, screenerType, sectorName, filters);
+        }
+      }
+    }, 5000);
+
+    // Check every 60 seconds
+    const checkTimer = setInterval(checkAndSave, 60_000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(checkTimer);
+    };
+  }, [stocks, screenerType, sectorName, enabled]);
+}

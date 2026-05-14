@@ -48,6 +48,7 @@ import {
   isInWatchlist,
   type WatchlistItem,
   useAutoRefresh,
+  useAutoSaveScreener,
   computeScreenerStats,
   getTradingPhaseInfo,
   fetchMiniTimeline,
@@ -456,6 +457,15 @@ export function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProp
     });
     return stocks;
   }, [result?.stocks, sortField, sortOrder]);
+
+  // Auto-save screener results for historical verification
+  useAutoSaveScreener(
+    sortedStocks,
+    "early",
+    filters.strategy || "综合策略",
+    filters,
+    sortedStocks.length > 0
+  );
 
   // ── Compute stats summary ──
   const screenerStats = useMemo(() => {

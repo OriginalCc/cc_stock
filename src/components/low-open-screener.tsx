@@ -28,6 +28,7 @@ import {
 import {
   formatMarketCap, formatAmount, loadWatchlist, addToWatchlist,
   removeFromWatchlist, isInWatchlist, useAutoRefresh, isTradingHours,
+  useAutoSaveScreener,
 } from "@/lib/screener-shared";
 import { cachedFetch } from "@/lib/client-cache";
 
@@ -246,6 +247,15 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
   useAutoRefresh(() => {
     if (!loading) fetchData(false);
   }, autoRefreshEnabled && pageVisible);
+
+  // Auto-save screener results for historical verification
+  useAutoSaveScreener(
+    sortedStocks,
+    "low_open",
+    filters.sector || "全市场",
+    filters,
+    sortedStocks.length > 0
+  );
 
   // Close sector dropdown on outside click
   useEffect(() => {

@@ -72,6 +72,7 @@ import {
   isInWatchlist,
   type WatchlistItem,
   useAutoRefresh,
+  useAutoSaveScreener,
   computeScreenerStats,
   fetchMiniTimeline,
   type MiniTimelineResult,
@@ -353,6 +354,15 @@ export function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
     });
     return stocks;
   }, [result?.stocks, sortField, sortOrder]);
+
+  // Auto-save screener results for historical verification
+  useAutoSaveScreener(
+    sortedStocks,
+    "intraday",
+    filters.strategy || "综合策略",
+    filters,
+    sortedStocks.length > 0
+  );
 
   // Compute stats
   const screenerStats = useMemo(() => {

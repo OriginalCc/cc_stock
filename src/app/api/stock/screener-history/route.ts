@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getAShareQuote, getAShareKLine } from "@/lib/ashare-api";
+import { getAShareKLine } from "@/lib/ashare-api";
 
 // GET: Fetch screener history records with stats
 export async function GET(request: NextRequest) {
@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
     const days = parseInt(request.nextUrl.searchParams.get("days") || "30");
     const page = parseInt(request.nextUrl.searchParams.get("page") || "1");
     const pageSize = parseInt(request.nextUrl.searchParams.get("pageSize") || "100");
-    const sector = request.nextUrl.searchParams.get("sector") || ""; // filter by sector
+    const sector = request.nextUrl.searchParams.get("sector") || "";
+    const screenerType = request.nextUrl.searchParams.get("screenerType") || "";
 
     const where: any = {
       recordDate: {
@@ -17,6 +18,9 @@ export async function GET(request: NextRequest) {
     };
     if (sector) {
       where.sectorName = sector;
+    }
+    if (screenerType) {
+      where.screenerType = screenerType;
     }
 
     const records = await db.screenerHistoryRecord.findMany({
@@ -34,81 +38,98 @@ export async function GET(request: NextRequest) {
       verifiedRecords.length > 0
         ? verifiedRecords.reduce((sum, r) => sum + r.avgNextDayChange, 0) / verifiedRecords.length
         : 0;
+    const avgDay3Change =
+      verifiedRecords.length > 0
+        ? verifiedRecords.reduce((sum, r) => sum + r.avgDay3Change, 0) / verifiedRecords.length
+        : 0;
+    const avgDay5Change =
+      verifiedRecords.length > 0
+        ? verifiedRecords.reduce((sum, r) => sum + r.avgDay5Change, 0) / verifiedRecords.length
+        : 0;
     const positiveCount = verifiedRecords.filter((r) => r.avgNextDayChange > 0).length;
+    const day3PositiveCount = verifiedRecords.filter((r) => r.avgDay3Change > 0).length;
+    const day5PositiveCount = verifiedRecords.filter((r) => r.avgDay5Change > 0).length;
     const accuracy = verifiedRecords.length > 0 ? (positiveCount / verifiedRecords.length) * 100 : 0;
 
     // Parse stocks from JSON for each record
     const parsedRecords = records.map((r) => {
       let nextDayChanges: Record<string, number> = {};
+      let day3Changes: Record<string, number> = {};
+      let day5Changes: Record<string, number> = {};
       try {
-        if (r.nextDayChangesJson) {
-          nextDayChanges = JSON.parse(r.nextDayChangesJson);
-        }
+        if (r.nextDayChangesJson) nextDayChanges = JSON.parse(r.nextDayChangesJson);
+      } catch {}
+      try {
+        if (r.day3ChangesJson) day3Changes = JSON.parse(r.day3ChangesJson);
+      } catch {}
+      try {
+        if (r.day5ChangesJson) day5Changes = JSON.parse(r.day5ChangesJson);
       } catch {}
       return {
         ...r,
         stocks: JSON.parse(r.stocksJson),
         filters: JSON.parse(r.filtersJson),
         nextDayChanges,
+        day3Changes,
+        day5Changes,
       };
     });
 
-    // ── Stats by date ──
-    const dateStats: Record<string, { count: number; verified: number; avgChange: number; positive: number }> = {};
-    for (const r of parsedRecords) {
-      if (!dateStats[r.recordDate]) {
-        dateStats[r.recordDate] = { count: 0, verified: 0, avgChange: 0, positive: 0 };
-      }
-      dateStats[r.recordDate].count++;
-      if (r.isVerified) {
-        dateStats[r.recordDate].verified++;
-        dateStats[r.recordDate].avgChange += r.avgNextDayChange;
-        if (r.avgNextDayChange > 0) dateStats[r.recordDate].positive++;
-      }
-    }
-    for (const ds of Object.values(dateStats)) {
-      if (ds.verified > 0) {
-        ds.avgChange = ds.avgChange / ds.verified;
-      }
-    }
-
-    // ── Stats by sector (all records, not just current page) ──
+    // ── Stats by screener type ──
     const allRecords = await db.screenerHistoryRecord.findMany({
       where: { recordDate: { gte: getDateNDaysAgo(days) } },
-      select: { sectorName: true, avgNextDayChange: true, isVerified: true, stockCount: true },
+      select: {
+        sectorName: true,
+        screenerType: true,
+        avgNextDayChange: true,
+        avgDay3Change: true,
+        avgDay5Change: true,
+        isVerified: true,
+        stockCount: true,
+      },
     });
-    const sectorStats: Record<string, { count: number; verified: number; avgChange: number; positive: number; totalStocks: number }> = {};
+
+    // ── Stats by sector ──
+    const sectorStats: Record<string, { count: number; verified: number; avgChange: number; avgDay3: number; avgDay5: number; positive: number; day3Positive: number; day5Positive: number; totalStocks: number }> = {};
     for (const r of allRecords) {
       if (!sectorStats[r.sectorName]) {
-        sectorStats[r.sectorName] = { count: 0, verified: 0, avgChange: 0, positive: 0, totalStocks: 0 };
+        sectorStats[r.sectorName] = { count: 0, verified: 0, avgChange: 0, avgDay3: 0, avgDay5: 0, positive: 0, day3Positive: 0, day5Positive: 0, totalStocks: 0 };
       }
       sectorStats[r.sectorName].count++;
       sectorStats[r.sectorName].totalStocks += r.stockCount;
       if (r.isVerified) {
         sectorStats[r.sectorName].verified++;
         sectorStats[r.sectorName].avgChange += r.avgNextDayChange;
+        sectorStats[r.sectorName].avgDay3 += r.avgDay3Change;
+        sectorStats[r.sectorName].avgDay5 += r.avgDay5Change;
         if (r.avgNextDayChange > 0) sectorStats[r.sectorName].positive++;
+        if (r.avgDay3Change > 0) sectorStats[r.sectorName].day3Positive++;
+        if (r.avgDay5Change > 0) sectorStats[r.sectorName].day5Positive++;
       }
     }
     for (const ss of Object.values(sectorStats)) {
       if (ss.verified > 0) {
         ss.avgChange = ss.avgChange / ss.verified;
+        ss.avgDay3 = ss.avgDay3 / ss.verified;
+        ss.avgDay5 = ss.avgDay5 / ss.verified;
       }
     }
 
     // ── Top performing stocks across all verified records ──
-    const stockPerformance: Record<string, { name: string; appearances: number; nextDayChanges: number[]; avgChange: number }> = {};
+    const stockPerformance: Record<string, { name: string; appearances: number; nextDayChanges: number[]; day3Changes: number[]; day5Changes: number[]; avgChange: number }> = {};
     for (const r of parsedRecords) {
       if (!r.isVerified) continue;
       for (const stock of r.stocks as Array<{ symbol: string; name: string; [key: string]: any }>) {
         if (!stockPerformance[stock.symbol]) {
-          stockPerformance[stock.symbol] = { name: stock.name, appearances: 0, nextDayChanges: [], avgChange: 0 };
+          stockPerformance[stock.symbol] = { name: stock.name, appearances: 0, nextDayChanges: [], day3Changes: [], day5Changes: [], avgChange: 0 };
         }
         stockPerformance[stock.symbol].appearances++;
         const nextDayChange = r.nextDayChanges[stock.symbol];
-        if (nextDayChange != null) {
-          stockPerformance[stock.symbol].nextDayChanges.push(nextDayChange);
-        }
+        if (nextDayChange != null) stockPerformance[stock.symbol].nextDayChanges.push(nextDayChange);
+        const day3Change = r.day3Changes[stock.symbol];
+        if (day3Change != null) stockPerformance[stock.symbol].day3Changes.push(day3Change);
+        const day5Change = r.day5Changes[stock.symbol];
+        if (day5Change != null) stockPerformance[stock.symbol].day5Changes.push(day5Change);
       }
     }
     // Compute avg per stock
@@ -117,11 +138,11 @@ export async function GET(request: NextRequest) {
         sp.avgChange = sp.nextDayChanges.reduce((a, b) => a + b, 0) / sp.nextDayChanges.length;
       }
     }
-    // Sort by appearances desc, take top 20
+    // Sort by appearances desc, take top 30
     const topStocks = Object.entries(stockPerformance)
       .map(([symbol, data]) => ({ symbol, ...data }))
       .sort((a, b) => b.appearances - a.appearances || b.avgChange - a.avgChange)
-      .slice(0, 20);
+      .slice(0, 30);
 
     // Available sectors for filter dropdown
     const availableSectors = Object.keys(sectorStats).sort();
@@ -134,10 +155,13 @@ export async function GET(request: NextRequest) {
         verifiedCount: verifiedRecords.length,
         accuracy: Number(accuracy.toFixed(1)),
         avgNextDayChange: Number(avgNextDayChange.toFixed(2)),
+        avgDay3Change: Number(avgDay3Change.toFixed(2)),
+        avgDay5Change: Number(avgDay5Change.toFixed(2)),
         positiveCount,
         negativeCount: verifiedRecords.length - positiveCount,
+        day3PositiveCount,
+        day5PositiveCount,
       },
-      dateStats,
       sectorStats,
       topStocks,
       availableSectors,
@@ -154,7 +178,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action, records } = body;
 
-    // Action: verify — backfill next-day results for unverified records
+    // Action: verify — backfill multi-day results for unverified records
     if (action === "verify") {
       const unverified = await db.screenerHistoryRecord.findMany({
         where: { isVerified: false },
@@ -169,7 +193,7 @@ export async function POST(request: NextRequest) {
       const today = getTodayDate();
       let verifiedCount = 0;
       let skippedToday = 0;
-      const details: Array<{ recordDate: string; recordTime: string; sectorName: string; status: string; stockVerified: number; avgChange: number }> = [];
+      const details: Array<{ recordDate: string; recordTime: string; sectorName: string; status: string; stockVerified: number; avgChange: number; avgDay3: number; avgDay5: number }> = [];
 
       for (const record of unverified) {
         // Can't verify today's records (no next-day data yet)
@@ -183,18 +207,18 @@ export async function POST(request: NextRequest) {
           if (!stocks || stocks.length === 0) continue;
 
           const symbols = stocks.map((s) => s.symbol);
-          let totalChange = 0;
-          let validCount = 0;
           const nextDayChanges: Record<string, number> = {};
+          const day3Changes: Record<string, number> = {};
+          const day5Changes: Record<string, number> = {};
 
-          // Fetch daily K-line for each stock to get next-trading-day change
-          // Batch in groups of 10 for parallelism
+          // Fetch daily K-line for each stock to get multi-day changes
+          // Need at least 10 trading days of data after record date for 5-day verification
           for (let i = 0; i < symbols.length; i += 10) {
             const batch = symbols.slice(i, i + 10);
             const results = await Promise.allSettled(
               batch.map(async (sym) => {
-                // Get recent 10 daily K-lines (enough to find next day after recordDate)
-                const kline = await getAShareKLine(sym, 240, 10);
+                // Get recent 20 daily K-lines (enough to find next 5+ trading days after recordDate)
+                const kline = await getAShareKLine(sym, 240, 20);
                 return { symbol: sym, kline };
               })
             );
@@ -204,62 +228,62 @@ export async function POST(request: NextRequest) {
               const { symbol: sym, kline } = result.value;
               if (!Array.isArray(kline) || kline.length === 0) continue;
 
-              // Find the next trading day after recordDate
-              // K-line dates are in format "2026-05-10"
-              const recordDateStr = record.recordDate;
-              let nextDayKline = null;
-              let foundRecordDate = false;
-              for (const item of kline) {
-                if (item.date === recordDateStr) {
-                  foundRecordDate = true;
-                  continue; // Skip the record date itself, we want the NEXT day
-                }
-                if (foundRecordDate && item.date > recordDateStr) {
-                  nextDayKline = item;
-                  break;
-                }
-                // Also handle case where recordDate is not in kline (e.g. recordDate is a weekend/holiday)
-                if (!foundRecordDate && item.date > recordDateStr) {
-                  nextDayKline = item;
-                  break;
+              // Sort kline by date ascending
+              const sorted = [...kline].sort((a: any, b: any) => a.date.localeCompare(b.date));
+
+              // Find all trading days after recordDate
+              const futureDays = sorted.filter((k: any) => k.date > record.recordDate && k.close > 0);
+              if (futureDays.length === 0) continue;
+
+              // The entry price is the close of the last trading day on or before recordDate
+              // For simplicity, use the open of the first future day as entry (simulates buying at next-day open)
+              const entryClose = futureDays[0].open > 0 ? futureDays[0].open : futureDays[0].close;
+
+              // Day 1: next trading day close vs entry open
+              if (futureDays.length >= 1) {
+                const day1Close = futureDays[0].close;
+                if (entryClose > 0) {
+                  nextDayChanges[sym] = Number((((day1Close - entryClose) / entryClose) * 100).toFixed(2));
                 }
               }
 
-              if (nextDayKline && nextDayKline.close > 0) {
-                // Calculate next-day change: we need the close of the trading day BEFORE the next day
-                // The K-line "close" is the close price, and "open" is the open price
-                // For next-day verification, we compare next-day close vs record-day close
-                // But since we may not have the exact record-day close, we use:
-                // nextDayChange = (nextDayClose - nextDayOpen) is NOT correct
-                // Correct: nextDayChange = (nextDayClose - prevDayClose) / prevDayClose * 100
-                // But the prevDayClose might not be the same as the screening-time price
-                
-                // Better approach: use the nextDayKline's open as the entry point
-                // and close as the exit point for the day's gain
-                // Actually, the standard "次日涨幅" is the change from previous close to next day's close
-                // which is exactly what the K-line data represents if we look at the close vs prev close
-                
-                // Find the day before nextDayKline to get prev close
-                const nextDayIdx = kline.findIndex(k => k.date === nextDayKline!.date);
-                const prevClose = nextDayIdx > 0 ? kline[nextDayIdx - 1].close : 0;
-                
-                if (prevClose > 0) {
-                  const nextDayChange = ((nextDayKline.close - prevClose) / prevClose) * 100;
-                  nextDayChanges[sym] = Number(nextDayChange.toFixed(2));
-                  totalChange += nextDayChange;
-                  validCount++;
+              // Day 3: 3rd trading day close vs entry open
+              if (futureDays.length >= 3) {
+                const day3Close = futureDays[2].close;
+                if (entryClose > 0) {
+                  day3Changes[sym] = Number((((day3Close - entryClose) / entryClose) * 100).toFixed(2));
+                }
+              }
+
+              // Day 5: 5th trading day close vs entry open
+              if (futureDays.length >= 5) {
+                const day5Close = futureDays[4].close;
+                if (entryClose > 0) {
+                  day5Changes[sym] = Number((((day5Close - entryClose) / entryClose) * 100).toFixed(2));
                 }
               }
             }
           }
 
-          if (validCount > 0) {
-            const avgChange = totalChange / validCount;
+          // Compute averages
+          const nextDayValues = Object.values(nextDayChanges);
+          const day3Values = Object.values(day3Changes);
+          const day5Values = Object.values(day5Changes);
+
+          const avgNextDay = nextDayValues.length > 0 ? nextDayValues.reduce((a, b) => a + b, 0) / nextDayValues.length : 0;
+          const avgDay3 = day3Values.length > 0 ? day3Values.reduce((a, b) => a + b, 0) / day3Values.length : 0;
+          const avgDay5 = day5Values.length > 0 ? day5Values.reduce((a, b) => a + b, 0) / day5Values.length : 0;
+
+          if (nextDayValues.length > 0) {
             await db.screenerHistoryRecord.update({
               where: { id: record.id },
               data: {
-                avgNextDayChange: Number(avgChange.toFixed(2)),
+                avgNextDayChange: Number(avgNextDay.toFixed(2)),
                 nextDayChangesJson: JSON.stringify(nextDayChanges),
+                avgDay3Change: Number(avgDay3.toFixed(2)),
+                day3ChangesJson: JSON.stringify(day3Changes),
+                avgDay5Change: Number(avgDay5.toFixed(2)),
+                day5ChangesJson: JSON.stringify(day5Changes),
                 isVerified: true,
                 verifiedAt: new Date(),
               },
@@ -270,8 +294,10 @@ export async function POST(request: NextRequest) {
               recordTime: record.recordTime,
               sectorName: record.sectorName,
               status: "verified",
-              stockVerified: validCount,
-              avgChange: Number(avgChange.toFixed(2)),
+              stockVerified: nextDayValues.length,
+              avgChange: Number(avgNextDay.toFixed(2)),
+              avgDay3: Number(avgDay3.toFixed(2)),
+              avgDay5: Number(avgDay5.toFixed(2)),
             });
           } else {
             details.push({
@@ -281,6 +307,8 @@ export async function POST(request: NextRequest) {
               status: "no_data",
               stockVerified: 0,
               avgChange: 0,
+              avgDay3: 0,
+              avgDay5: 0,
             });
           }
         } catch (e) {
@@ -292,6 +320,8 @@ export async function POST(request: NextRequest) {
             status: "error",
             stockVerified: 0,
             avgChange: 0,
+            avgDay3: 0,
+            avgDay5: 0,
           });
         }
       }
@@ -311,7 +341,7 @@ export async function POST(request: NextRequest) {
       const saved: Array<{ id: string; recordDate: string; recordTime: string; sectorName: string }> = [];
 
       for (const rec of records) {
-        const { recordDate, recordTime, sectorName, stockCount, stocksJson, filtersJson } = rec;
+        const { recordDate, recordTime, sectorName, screenerType, stockCount, stocksJson, filtersJson } = rec;
         if (!recordDate || !recordTime || !sectorName) continue;
 
         const result = await db.screenerHistoryRecord.upsert({
@@ -325,6 +355,7 @@ export async function POST(request: NextRequest) {
           create: {
             recordDate,
             recordTime,
+            screenerType: screenerType || "stock",
             sectorName,
             stockCount: stockCount || 0,
             stocksJson: stocksJson || "[]",

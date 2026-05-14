@@ -16,26 +16,22 @@ import {
 import {
   History,
   TrendingUp,
-  TrendingDown,
   RefreshCw,
   ChevronDown,
   ChevronUp,
   CheckCircle2,
-  XCircle,
   Clock,
-  BarChart3,
-  Database,
   Loader2,
   Trash2,
   ArrowUpRight,
   ArrowDownRight,
   Target,
   CalendarDays,
-  Filter,
   Trophy,
   PieChart,
   Save,
   AlertTriangle,
+  BarChart3,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────
@@ -57,12 +53,17 @@ interface HistoryRecord {
   id: string;
   recordDate: string;
   recordTime: string;
+  screenerType: string;
   sectorName: string;
   stockCount: number;
   stocks: ScreenerStock[];
   filters: Record<string, any>;
   avgNextDayChange: number;
   nextDayChanges: Record<string, number>;
+  day3Changes: Record<string, number>;
+  day5Changes: Record<string, number>;
+  avgDay3Change: number;
+  avgDay5Change: number;
   isVerified: boolean;
   verifiedAt: string | null;
   createdAt: string;
@@ -74,15 +75,23 @@ interface Stats {
   verifiedCount: number;
   accuracy: number;
   avgNextDayChange: number;
+  avgDay3Change: number;
+  avgDay5Change: number;
   positiveCount: number;
   negativeCount: number;
+  day3PositiveCount: number;
+  day5PositiveCount: number;
 }
 
 interface SectorStat {
   count: number;
   verified: number;
   avgChange: number;
+  avgDay3: number;
+  avgDay5: number;
   positive: number;
+  day3Positive: number;
+  day5Positive: number;
   totalStocks: number;
 }
 
@@ -91,8 +100,19 @@ interface TopStock {
   name: string;
   appearances: number;
   nextDayChanges: number[];
+  day3Changes: number[];
+  day5Changes: number[];
   avgChange: number;
 }
+
+// ── Screener type labels ──
+const SCREENER_TYPE_LABELS: Record<string, string> = {
+  stock: "智能选股",
+  intraday: "分时选股",
+  early: "早盘选股",
+  low_open: "低开选股",
+  limit_up: "涨停分析",
+};
 
 // ── Component ──────────────────────────────────────────
 
@@ -168,14 +188,11 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
   const handleManualSave = async () => {
     setSaving(true);
     try {
-      // Trigger the save by reading from the module cache (stock-screener saves via its own logic)
-      // We'll just re-trigger by reading the client cache
       const cacheData = localStorage.getItem("screener-last-result");
       if (!cacheData) {
         setSaving(false);
         return;
       }
-      // Use the auto-save logic path
       const now = new Date();
       const chinaTime = new Date(now.getTime() + (8 * 60 + now.getTimezoneOffset()) * 60000);
       const recordDate = chinaTime.toISOString().split("T")[0];
@@ -209,6 +226,7 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
           records: [{
             recordDate,
             recordTime,
+            screenerType: parsed.screenerType || "stock",
             sectorName: parsed.sector || "未知",
             stockCount: stocksToSave.length,
             stocksJson: JSON.stringify(stocksToSave),
@@ -290,7 +308,7 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
         <CardContent className="pt-0">
           {/* Stats Row */}
           {stats && (
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
               <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
                 <div className="text-xs text-muted-foreground mb-1">总记录数</div>
                 <div className="text-lg font-bold">{stats.totalRecords}</div>
@@ -304,20 +322,30 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
                 <div className={`text-lg font-bold ${stats.accuracy >= 50 ? "text-red-500" : "text-green-500"}`}>
                   {stats.accuracy.toFixed(1)}%
                 </div>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <span className="text-[10px] text-red-500 flex items-center gap-0.5"><ArrowUpRight className="w-2.5 h-2.5" />{stats.positiveCount}</span>
-                  <span className="text-[10px] text-green-500 flex items-center gap-0.5"><ArrowDownRight className="w-2.5 h-2.5" />{stats.negativeCount}</span>
-                </div>
               </div>
               <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
-                <div className="text-xs text-muted-foreground mb-1">次日平均涨幅</div>
+                <div className="text-xs text-muted-foreground mb-1">次日均幅</div>
                 <div className={`text-lg font-bold ${stats.avgNextDayChange >= 0 ? "text-red-500" : "text-green-500"}`}>
                   {stats.avgNextDayChange >= 0 ? "+" : ""}{stats.avgNextDayChange.toFixed(2)}%
                 </div>
               </div>
               <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
-                <div className="text-xs text-muted-foreground mb-1">涉及板块</div>
-                <div className="text-lg font-bold">{Object.keys(sectorStats).length}</div>
+                <div className="text-xs text-muted-foreground mb-1">3日均幅</div>
+                <div className={`text-lg font-bold ${stats.avgDay3Change >= 0 ? "text-red-500" : "text-green-500"}`}>
+                  {stats.avgDay3Change >= 0 ? "+" : ""}{stats.avgDay3Change.toFixed(2)}%
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
+                <div className="text-xs text-muted-foreground mb-1">5日均幅</div>
+                <div className={`text-lg font-bold ${stats.avgDay5Change >= 0 ? "text-red-500" : "text-green-500"}`}>
+                  {stats.avgDay5Change >= 0 ? "+" : ""}{stats.avgDay5Change.toFixed(2)}%
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
+                <div className="text-xs text-muted-foreground mb-1">5日走强率</div>
+                <div className={`text-lg font-bold ${stats.day5PositiveCount > stats.verifiedCount - stats.day5PositiveCount ? "text-red-500" : "text-green-500"}`}>
+                  {stats.verifiedCount > 0 ? ((stats.day5PositiveCount / stats.verifiedCount) * 100).toFixed(1) : "0"}%
+                </div>
               </div>
             </div>
           )}
@@ -345,7 +373,7 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
               手动保存当前选股
             </Button>
             <span className="text-[10px] text-muted-foreground">
-              验证: 获取次日行情 | 保存: 立即记录当前选股结果
+              验证: 获取1/3/5日后续行情 | 保存: 立即记录当前选股结果
             </span>
           </div>
 
@@ -371,14 +399,9 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
                   成功验证 {verifyResult.verified} 条记录
                   {verifyResult.details.filter(d => d.status === "verified").map((d, i) => (
                     <span key={i} className="ml-2">
-                      {d.recordDate} {d.sectorName}: {d.stockVerified}只股票, 次日均{d.avgChange >= 0 ? "+" : ""}{d.avgChange}%
+                      {d.recordDate} {d.sectorName}: 次日{d.avgChange >= 0 ? "+" : ""}{d.avgChange}% | 3日{d.avgDay3 >= 0 ? "+" : ""}{d.avgDay3}% | 5日{d.avgDay5 >= 0 ? "+" : ""}{d.avgDay5}%
                     </span>
                   ))}
-                </div>
-              )}
-              {verifyResult.skipped > 0 && (
-                <div className="text-[10px] text-muted-foreground ml-5">
-                  今日 {verifyResult.skipped} 条记录需等次日交易结束后才能验证
                 </div>
               )}
             </div>
@@ -423,9 +446,9 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
               </div>
             ) : records.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
-                <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <History className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p className="text-sm">暂无历史选股记录</p>
-                <p className="text-xs mt-1">智能选股每30分钟自动保存一次，也可手动保存</p>
+                <p className="text-xs mt-1">选股结果会自动保存，也可手动保存</p>
               </div>
             ) : (
               <div className="max-h-[calc(100vh-460px)] overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
@@ -475,16 +498,17 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
                       <TableHead className="text-xs h-8 py-0">排名</TableHead>
                       <TableHead className="text-xs h-8 py-0">板块</TableHead>
                       <TableHead className="text-xs h-8 py-0 text-right">记录数</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">已验证</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">累计选股</TableHead>
                       <TableHead className="text-xs h-8 py-0 text-right">次日胜率</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">次日平均涨幅</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">涨/跌</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">次日均幅</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">3日均幅</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">5日均幅</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">5日走强率</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sortedSectorStats.map(([name, s], idx) => {
                       const winRate = s.verified > 0 ? (s.positive / s.verified) * 100 : 0;
+                      const day5WinRate = s.verified > 0 ? (s.day5Positive / s.verified) * 100 : 0;
                       return (
                         <TableRow key={name} className="hover:bg-muted/30">
                           <TableCell className="text-xs py-2">
@@ -500,18 +524,20 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
                           </TableCell>
                           <TableCell className="text-xs py-2 font-medium">{name}</TableCell>
                           <TableCell className="text-xs py-2 text-right text-muted-foreground">{s.count}</TableCell>
-                          <TableCell className="text-xs py-2 text-right">{s.verified}/{s.count}</TableCell>
-                          <TableCell className="text-xs py-2 text-right text-muted-foreground">{s.totalStocks}只</TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${winRate >= 50 ? "text-red-500" : "text-green-500"}`}>
                             {winRate.toFixed(1)}%
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${s.avgChange >= 0 ? "text-red-500" : "text-green-500"}`}>
                             {s.avgChange >= 0 ? "+" : ""}{s.avgChange.toFixed(2)}%
                           </TableCell>
-                          <TableCell className="text-xs py-2 text-right">
-                            <span className="text-red-500">{s.positive}</span>
-                            <span className="text-muted-foreground mx-0.5">/</span>
-                            <span className="text-green-500">{s.verified - s.positive}</span>
+                          <TableCell className={`text-xs py-2 text-right font-mono font-medium ${s.avgDay3 >= 0 ? "text-red-500" : "text-green-500"}`}>
+                            {s.avgDay3 >= 0 ? "+" : ""}{s.avgDay3.toFixed(2)}%
+                          </TableCell>
+                          <TableCell className={`text-xs py-2 text-right font-mono font-medium ${s.avgDay5 >= 0 ? "text-red-500" : "text-green-500"}`}>
+                            {s.avgDay5 >= 0 ? "+" : ""}{s.avgDay5.toFixed(2)}%
+                          </TableCell>
+                          <TableCell className={`text-xs py-2 text-right font-mono font-medium ${day5WinRate >= 50 ? "text-red-500" : "text-green-500"}`}>
+                            {day5WinRate.toFixed(1)}%
                           </TableCell>
                         </TableRow>
                       );
@@ -541,12 +567,12 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
                       <TableHead className="text-xs h-8 py-0">排名</TableHead>
                       <TableHead className="text-xs h-8 py-0">代码</TableHead>
                       <TableHead className="text-xs h-8 py-0">名称</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">入选次数</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">已验证</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">平均次日涨幅</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">胜率</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">最佳</TableHead>
-                      <TableHead className="text-xs h-8 py-0 text-right">最差</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">入选</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">次日均幅</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">次日胜率</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">3日均幅</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">5日均幅</TableHead>
+                      <TableHead className="text-xs h-8 py-0 text-right">5日走强率</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -554,8 +580,13 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
                       const verified = stock.nextDayChanges.length;
                       const wins = stock.nextDayChanges.filter(c => c > 0).length;
                       const winRate = verified > 0 ? (wins / verified) * 100 : 0;
-                      const best = verified > 0 ? Math.max(...stock.nextDayChanges) : null;
-                      const worst = verified > 0 ? Math.min(...stock.nextDayChanges) : null;
+                      const day3Verified = stock.day3Changes.length;
+                      const day3Wins = stock.day3Changes.filter(c => c > 0).length;
+                      const avgDay3 = day3Verified > 0 ? stock.day3Changes.reduce((a, b) => a + b, 0) / day3Verified : 0;
+                      const day5Verified = stock.day5Changes.length;
+                      const day5Wins = stock.day5Changes.filter(c => c > 0).length;
+                      const avgDay5 = day5Verified > 0 ? stock.day5Changes.reduce((a, b) => a + b, 0) / day5Verified : 0;
+                      const day5WinRate = day5Verified > 0 ? (day5Wins / day5Verified) * 100 : 0;
                       return (
                         <TableRow
                           key={stock.symbol}
@@ -580,18 +611,20 @@ export function ScreenerHistoryPanel({ onSelectStock }: { onSelectStock?: (symbo
                               {stock.appearances}次
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs py-2 text-right text-muted-foreground">{verified}次</TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${stock.avgChange >= 0 ? "text-red-500" : "text-green-500"}`}>
                             {stock.avgChange >= 0 ? "+" : ""}{stock.avgChange.toFixed(2)}%
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono ${winRate >= 50 ? "text-red-500" : "text-green-500"}`}>
                             {verified > 0 ? `${winRate.toFixed(0)}%` : "--"}
                           </TableCell>
-                          <TableCell className="text-xs py-2 text-right font-mono text-red-500">
-                            {best != null ? `+${best.toFixed(2)}%` : "--"}
+                          <TableCell className={`text-xs py-2 text-right font-mono font-medium ${avgDay3 >= 0 ? "text-red-500" : "text-green-500"}`}>
+                            {day3Verified > 0 ? `${avgDay3 >= 0 ? "+" : ""}${avgDay3.toFixed(2)}%` : "--"}
                           </TableCell>
-                          <TableCell className="text-xs py-2 text-right font-mono text-green-500">
-                            {worst != null ? `${worst.toFixed(2)}%` : "--"}
+                          <TableCell className={`text-xs py-2 text-right font-mono font-medium ${avgDay5 >= 0 ? "text-red-500" : "text-green-500"}`}>
+                            {day5Verified > 0 ? `${avgDay5 >= 0 ? "+" : ""}${avgDay5.toFixed(2)}%` : "--"}
+                          </TableCell>
+                          <TableCell className={`text-xs py-2 text-right font-mono ${day5WinRate >= 50 ? "text-red-500" : "text-green-500"}`}>
+                            {day5Verified > 0 ? `${day5WinRate.toFixed(0)}%` : "--"}
                           </TableCell>
                         </TableRow>
                       );
@@ -624,11 +657,19 @@ function RecordCard({
 }) {
   const isPositive = record.avgNextDayChange > 0;
   const nextDayChanges = record.nextDayChanges || {};
+  const day3Changes = record.day3Changes || {};
+  const day5Changes = record.day5Changes || {};
+  const screenerLabel = SCREENER_TYPE_LABELS[record.screenerType] || record.screenerType;
 
   // Compute per-record stock stats
   const verifiedStocks = Object.values(nextDayChanges);
   const stockWinCount = verifiedStocks.filter(c => c > 0).length;
   const stockWinRate = verifiedStocks.length > 0 ? (stockWinCount / verifiedStocks.length) * 100 : 0;
+
+  // 5-day "走强" rate
+  const day5Values = Object.values(day5Changes);
+  const day5WinCount = day5Values.filter(c => c > 0).length;
+  const day5WinRate = day5Values.length > 0 ? (day5WinCount / day5Values.length) * 100 : 0;
 
   return (
     <div className="rounded-lg border border-border/50 overflow-hidden">
@@ -640,6 +681,9 @@ function RecordCard({
         <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-300 shrink-0">
           <Clock className="w-2.5 h-2.5 mr-0.5" />
           {record.recordTime}
+        </Badge>
+        <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-purple-500/5 border-purple-500/20 text-purple-600 dark:text-purple-300 shrink-0">
+          {screenerLabel}
         </Badge>
         <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300 shrink-0">
           {record.sectorName}
@@ -659,8 +703,21 @@ function RecordCard({
                 }`}
               >
                 {isPositive ? <ArrowUpRight className="w-2.5 h-2.5 mr-0.5" /> : <ArrowDownRight className="w-2.5 h-2.5 mr-0.5" />}
-                次日均 {isPositive ? "+" : ""}{record.avgNextDayChange.toFixed(2)}%
+                次日{isPositive ? "+" : ""}{record.avgNextDayChange.toFixed(2)}%
               </Badge>
+              {record.avgDay5Change !== 0 && (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] py-0 px-1.5 ${
+                    record.avgDay5Change > 0
+                      ? "bg-amber-500/5 border-amber-500/20 text-amber-600"
+                      : "bg-muted/50 text-muted-foreground"
+                  }`}
+                >
+                  <BarChart3 className="w-2.5 h-2.5 mr-0.5" />
+                  5日{record.avgDay5Change > 0 ? "+" : ""}{record.avgDay5Change.toFixed(2)}%
+                </Badge>
+              )}
               {verifiedStocks.length > 0 && (
                 <Badge
                   variant="outline"
@@ -697,15 +754,21 @@ function RecordCard({
         <div className="border-t border-border/50 px-3 py-2 bg-muted/10">
           {/* Summary bar for verified records */}
           {record.isVerified && verifiedStocks.length > 0 && (
-            <div className="flex items-center gap-3 mb-2 px-1 py-1.5 rounded bg-background/50 border border-border/30 text-[10px]">
+            <div className="flex items-center gap-3 mb-2 px-1 py-1.5 rounded bg-background/50 border border-border/30 text-[10px] flex-wrap">
               <span className="text-muted-foreground">验证概要:</span>
               <span className="text-red-500 flex items-center gap-0.5"><ArrowUpRight className="w-2.5 h-2.5" />{stockWinCount}涨</span>
               <span className="text-green-500 flex items-center gap-0.5"><ArrowDownRight className="w-2.5 h-2.5" />{verifiedStocks.length - stockWinCount}跌</span>
-              <span className={stockWinRate >= 50 ? "text-amber-600" : "text-muted-foreground"}>
-                胜率{stockWinRate.toFixed(0)}%
-              </span>
-              <span className="text-red-500">最佳+{Math.max(...verifiedStocks).toFixed(2)}%</span>
-              <span className="text-green-500">最差{Math.min(...verifiedStocks).toFixed(2)}%</span>
+              <span className="text-muted-foreground">|</span>
+              <span>次日胜率<span className={stockWinRate >= 50 ? "text-amber-600" : "text-muted-foreground"}>{stockWinRate.toFixed(0)}%</span></span>
+              {day5Values.length > 0 && (
+                <>
+                  <span className="text-muted-foreground">|</span>
+                  <span>5日走强率<span className={day5WinRate >= 50 ? "text-amber-600" : "text-muted-foreground"}>{day5WinRate.toFixed(0)}%</span></span>
+                  <span className="text-muted-foreground">|</span>
+                  <span>3日均<span className={record.avgDay3Change >= 0 ? "text-red-500" : "text-green-500"}>{record.avgDay3Change >= 0 ? "+" : ""}{record.avgDay3Change.toFixed(2)}%</span></span>
+                  <span>5日均<span className={record.avgDay5Change >= 0 ? "text-red-500" : "text-green-500"}>{record.avgDay5Change >= 0 ? "+" : ""}{record.avgDay5Change.toFixed(2)}%</span></span>
+                </>
+              )}
             </div>
           )}
           <Table>
@@ -713,18 +776,22 @@ function RecordCard({
               <TableRow className="hover:bg-transparent">
                 <TableHead className="text-[10px] h-7 py-0 w-24">代码</TableHead>
                 <TableHead className="text-[10px] h-7 py-0">名称</TableHead>
-                <TableHead className="text-[10px] h-7 py-0 text-right w-20">当时价格</TableHead>
                 <TableHead className="text-[10px] h-7 py-0 text-right w-20">当时涨幅</TableHead>
                 <TableHead className="text-[10px] h-7 py-0 text-right w-20">综合评分</TableHead>
-                <TableHead className="text-[10px] h-7 py-0 text-right w-20">评估</TableHead>
                 {record.isVerified && (
-                  <TableHead className="text-[10px] h-7 py-0 text-right w-24">次日涨幅</TableHead>
+                  <>
+                    <TableHead className="text-[10px] h-7 py-0 text-right w-20">次日</TableHead>
+                    <TableHead className="text-[10px] h-7 py-0 text-right w-20">3日</TableHead>
+                    <TableHead className="text-[10px] h-7 py-0 text-right w-20">5日</TableHead>
+                  </>
                 )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {record.stocks.map((stock) => {
                 const nextChange = nextDayChanges[stock.symbol];
+                const day3Change = day3Changes[stock.symbol];
+                const day5Change = day5Changes[stock.symbol];
                 return (
                   <TableRow
                     key={stock.symbol}
@@ -733,7 +800,6 @@ function RecordCard({
                   >
                     <TableCell className="text-xs py-1 font-mono">{stock.symbol}</TableCell>
                     <TableCell className="text-xs py-1">{stock.name}</TableCell>
-                    <TableCell className="text-xs py-1 text-right font-mono">{stock.price?.toFixed(2) ?? "--"}</TableCell>
                     <TableCell className={`text-xs py-1 text-right font-mono ${stock.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
                       {stock.changePercent >= 0 ? "+" : ""}{stock.changePercent?.toFixed(2) ?? "--"}%
                     </TableCell>
@@ -744,28 +810,18 @@ function RecordCard({
                         </span>
                       ) : "--"}
                     </TableCell>
-                    <TableCell className="text-xs py-1 text-right">
-                      {stock.evaluation || "--"}
-                    </TableCell>
                     {record.isVerified && (
-                      <TableCell className={`text-xs py-1 text-right font-mono font-medium ${
-                        nextChange == null ? "text-muted-foreground" :
-                        nextChange > 0 ? "text-red-500" :
-                        nextChange < 0 ? "text-green-500" :
-                        "text-muted-foreground"
-                      }`}>
-                        {nextChange != null ? (
-                          <span className="flex items-center justify-end gap-0.5">
-                            {nextChange > 0 ? <ArrowUpRight className="w-2.5 h-2.5" /> :
-                             nextChange < 0 ? <ArrowDownRight className="w-2.5 h-2.5" /> : null}
-                            {nextChange > 0 ? "+" : ""}{nextChange.toFixed(2)}%
-                          </span>
-                        ) : (
-                          <span className="flex items-center justify-end gap-0.5">
-                            <AlertTriangle className="w-2.5 h-2.5" />--
-                          </span>
-                        )}
-                      </TableCell>
+                      <>
+                        <TableCell className={`text-xs py-1 text-right font-mono font-medium ${getChangeColor(nextChange)}`}>
+                          {formatChange(nextChange)}
+                        </TableCell>
+                        <TableCell className={`text-xs py-1 text-right font-mono font-medium ${getChangeColor(day3Change)}`}>
+                          {formatChange(day3Change)}
+                        </TableCell>
+                        <TableCell className={`text-xs py-1 text-right font-mono font-medium ${getChangeColor(day5Change)}`}>
+                          {formatChange(day5Change)}
+                        </TableCell>
+                      </>
                     )}
                   </TableRow>
                 );
@@ -775,5 +831,25 @@ function RecordCard({
         </div>
       )}
     </div>
+  );
+}
+
+// ── Helpers ──
+
+function getChangeColor(change: number | undefined): string {
+  if (change == null) return "text-muted-foreground";
+  if (change > 0) return "text-red-500";
+  if (change < 0) return "text-green-500";
+  return "text-muted-foreground";
+}
+
+function formatChange(change: number | undefined): React.ReactNode {
+  if (change == null) return <span className="flex items-center justify-end gap-0.5"><AlertTriangle className="w-2.5 h-2.5" />--</span>;
+  return (
+    <span className="flex items-center justify-end gap-0.5">
+      {change > 0 ? <ArrowUpRight className="w-2.5 h-2.5" /> :
+       change < 0 ? <ArrowDownRight className="w-2.5 h-2.5" /> : null}
+      {change > 0 ? "+" : ""}{change.toFixed(2)}%
+    </span>
   );
 }
