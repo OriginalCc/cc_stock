@@ -95,12 +95,12 @@ function readInitialChartMode(): ChartMode {
 }
 
 // ── Cache TTL constants ──
-const QUOTE_CACHE_TTL = 1_000; // 1s for quote data (real-time refresh)
-const TIMELINE_CACHE_TTL = 1_000; // 1s for timeline data (real-time refresh)
+const QUOTE_CACHE_TTL = 500; // 500ms for quote data (real-time refresh)
+const TIMELINE_CACHE_TTL = 500; // 500ms for timeline data (real-time refresh)
 const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
 
 // ── Auto-refresh interval ──
-const TIMELINE_REFRESH_INTERVAL = 1_000; // 1s for timeline/quote auto-refresh during trading hours
+const TIMELINE_REFRESH_INTERVAL = 800; // 800ms for timeline/quote auto-refresh during trading hours
 
 // ── Hook ──────────────────────────────────────────────
 

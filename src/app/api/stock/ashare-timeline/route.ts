@@ -20,7 +20,7 @@ function getTimelineCacheTTL(): number {
   const isMorningSession = (chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35);
   const isAfternoonSession = (chinaHour === 13) || (chinaHour === 14) || (chinaHour === 15 && chinaMinute <= 5);
 
-  if (isMorningSession || isAfternoonSession) return 3000; // 3s during trading (1s client refresh)
+  if (isMorningSession || isAfternoonSession) return 1000; // 1s during trading (800ms client refresh)
   return 300000; // 5 min outside trading hours
 }
 
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     if (!includeQuote) {
       const result = await timelinePromise;
       // Browser cache: 0 during trading (1s refresh), otherwise match server TTL
-      const isTrading = cacheTTL <= 3000;
+      const isTrading = cacheTTL <= 1000;
       const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
       return NextResponse.json(result, {
         headers: { "Cache-Control": `public, max-age=${maxAge}, stale-while-revalidate=60` },
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Browser cache: 0 during trading (1s refresh), otherwise match server TTL
-    const isTrading = cacheTTL <= 3000;
+    const isTrading = cacheTTL <= 1000;
     const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
     return NextResponse.json(response, {
       headers: { "Cache-Control": `public, max-age=${maxAge}, stale-while-revalidate=60` },
