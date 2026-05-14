@@ -70,29 +70,14 @@ export interface TimelineItem {
 export type TimeInterval = "1m" | "5m" | "15m" | "30m" | "1h" | "1d" | "1wk";
 export type ChartMode = "5d-timeline" | "timeline" | "kline";
 
-// ── Synchronous localStorage read (avoids hydration mismatch) ──
-// Read once at module level so the initial useState matches server render
+// ── Default values (always consistent between server and client) ──
+// To avoid hydration mismatch, always use defaults on first render,
+// then update from localStorage in useEffect.
 
 const LAST_STOCK_KEY = "lastSelectedStock";
 const LAST_CHART_MODE_KEY = "lastChartMode";
-
-function readInitialSymbol(): string {
-  if (typeof window === "undefined") return "600519";
-  try {
-    const saved = localStorage.getItem(LAST_STOCK_KEY);
-    if (saved && /^[0-9]{6}$/.test(saved)) return saved;
-  } catch {}
-  return "600519";
-}
-
-function readInitialChartMode(): ChartMode {
-  if (typeof window === "undefined") return "timeline";
-  try {
-    const saved = localStorage.getItem(LAST_CHART_MODE_KEY);
-    if (saved === "kline" || saved === "timeline" || saved === "5d-timeline") return saved;
-  } catch {}
-  return "timeline";
-}
+const DEFAULT_SYMBOL = "600519";
+const DEFAULT_CHART_MODE: ChartMode = "timeline";
 
 // ── Cache TTL constants ──
 const QUOTE_CACHE_TTL = 500; // 500ms for quote data (real-time refresh)
@@ -105,15 +90,15 @@ const TIMELINE_REFRESH_INTERVAL = 800; // 800ms for timeline/quote auto-refresh 
 // ── Hook ──────────────────────────────────────────────
 
 export function useStockData() {
-  // Initialize from localStorage synchronously to avoid mount delay
-  // Use function initializer so it only reads once per mount
-  const [symbol, setSymbol] = useState<string>(readInitialSymbol);
+  // Use consistent defaults between server and client to avoid hydration mismatch
+  // Then update from localStorage in useEffect after mount
+  const [symbol, setSymbol] = useState<string>(DEFAULT_SYMBOL);
   const [quote, setQuote] = useState<StockQuote | null>(null);
   const [history, setHistory] = useState<KLineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [timelinePrevClose, setTimelinePrevClose] = useState<number>(0);
   const [interval, setInterval_] = useState<TimeInterval>("1d");
-  const [chartMode, setChartMode] = useState<ChartMode>(readInitialChartMode);
+  const [chartMode, setChartMode] = useState<ChartMode>(DEFAULT_CHART_MODE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [latestSignal, setLatestSignal] = useState<{
@@ -121,6 +106,23 @@ export function useStockData() {
     strength: "strong" | "medium" | "weak";
     reason: string;
   } | null>(null);
+
+  // Read from localStorage after mount to avoid hydration mismatch
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    try {
+      const savedSymbol = localStorage.getItem(LAST_STOCK_KEY);
+      if (savedSymbol && /^[0-9]{6}$/.test(savedSymbol) && savedSymbol !== DEFAULT_SYMBOL) {
+        queueMicrotask(() => setSymbol(savedSymbol));
+      }
+      const savedMode = localStorage.getItem(LAST_CHART_MODE_KEY);
+      if (savedMode === "kline" || savedMode === "5d-timeline") {
+        queueMicrotask(() => setChartMode(savedMode as ChartMode));
+      }
+    } catch {}
+  }, []);
 
   // Track initial fetch to prevent double-fetch
   const initialFetchDone = useRef(false);
