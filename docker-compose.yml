@@ -1,0 +1,38 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 做T助手 — 一键部署
+#
+# 使用方法:
+#   1. 修改下面的 APP_PASSWORD 为你想设置的密码
+#   2. 运行: docker-compose up -d
+#   3. 访问: http://你的服务器IP:3000
+#
+# 管理命令:
+#   查看日志:   docker-compose logs -f
+#   停止服务:   docker-compose down
+#   重启服务:   docker-compose restart
+#   更新部署:   docker-compose up -d --build
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+services:
+  app:
+    build: .
+    container_name: stock-t-assistant
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/db/custom.db
+      - APP_PASSWORD=888888        # ← 修改为你的密码
+    volumes:
+      - stock-t-data:/app/db       # 持久化数据库
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  stock-t-data:
+    name: stock-t-assistant-data

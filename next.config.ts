@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  output: "standalone",
   allowedDevOrigins: [
     "*.space-z.ai",
     "space-z.ai",

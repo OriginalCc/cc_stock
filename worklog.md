@@ -190,3 +190,27 @@ Stage Summary:
 - 导航栏右侧增加"密码"管理按钮，点击弹出密码管理对话框
 - 密码管理对话框支持：输入当前密码验证、设置新密码、确认新密码
 - API 支持完整的密码验证和修改流程
+
+---
+Task ID: 8
+Agent: main
+Task: 降低部署难度，实现一键部署
+
+Work Log:
+- 创建 Dockerfile（多阶段构建: deps → builder → runner，使用 standalone 输出）
+- 更新 next.config.ts 添加 output: "standalone" 支持 Docker 精简镜像
+- 创建 docker-compose.yml（一键 docker-compose up -d）
+- 创建 docker-entrypoint.sh（自动初始化数据库）
+- 创建 .dockerignore（优化构建上下文）
+- 创建 .env.example（环境变量模板）
+- 创建 ecosystem.config.js（PM2 生产环境配置）
+- 创建 setup.sh（VPS 全自动一键部署脚本，自动安装 Node/Bun/PM2，构建并启动）
+- 更新 package.json 添加 deploy/docker:* 快捷命令
+- 重写 DEPLOY.md 简化为三种部署方式：Docker一键 / VPS一键脚本 / 宝塔面板
+
+Stage Summary:
+- 三种部署方式，全部一键搞定
+- Docker: docker-compose up -d（2条命令）
+- VPS: bash setup.sh（自动安装所有环境+构建+启动）
+- 宝塔: setup.sh + 反向代理
+- 默认密码 888888，通过 APP_PASSWORD 环境变量或界面修改
