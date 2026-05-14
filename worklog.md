@@ -118,3 +118,43 @@ Stage Summary:
 - 选股结果客户端+服务端均默认缓存1小时
 - 取消自动刷新，只能通过刷新按钮手动更新
 - 刷新按钮点击时传 refresh=1 参数，服务端绕过缓存重新获取数据
+
+## Task 2 - Fix client-cache periodic cleanup threshold
+
+**Date:** 2025-03-04
+**Agent:** main
+
+### Summary
+Updated the periodic cleanup threshold in `src/lib/client-cache.ts` from 10 minutes (600,000ms) to 2 hours (7,200,000ms) so that screener cache entries with a 1-hour TTL are not prematurely evicted.
+
+### Changes Made
+- **File:** `src/lib/client-cache.ts` (line 257-258)
+  - Changed comment from "Remove entries older than 10 minutes" to "Remove entries older than 2 hours"
+  - Changed threshold from `600_000` to `7_200_000`
+
+### Rationale
+The screener components use `fetchWithSWR` and `cachedFetch` with a 1-hour (3,600,000ms) TTL. The previous 10-minute cleanup threshold was evicting these entries well before their TTL expired, causing unnecessary re-fetches. A 2-hour threshold provides a comfortable buffer beyond the 1-hour TTL.
+
+---
+Task ID: 6
+Agent: main
+Task: 添加密码保护功能（PasswordGate）
+
+Work Log:
+- 创建 API 路由 src/app/api/auth/verify/route.ts：POST 请求验证密码，密码存储在 APP_PASSWORD 环境变量（默认 888888）
+- 创建 PasswordGate 组件 src/components/password-gate.tsx：
+  - 客户端组件，包裹主页面内容
+  - 使用 localStorage 存储认证状态（key: app-auth，含 timestamp）
+  - 24小时过期机制，过期后需重新登录
+  - SSR 安全：检查 typeof window 防止服务端渲染问题
+  - 美观 UI：居中卡片、Zap 图标、"做T助手"标题、密码输入框（含显示/隐藏切换）
+  - 密码错误时 shake 动画反馈
+  - 加载状态（Loader2 旋转图标）
+- 修改 src/app/page.tsx：导入 PasswordGate，用 <PasswordGate> 包裹 return 内容
+- Lint 通过，API 测试通过（正确密码返回 success:true，错误密码返回 401）
+
+Stage Summary:
+- 新增密码保护功能，访问应用前需输入密码
+- 密码验证通过服务端 API，不暴露密码到客户端
+- 认证状态持久化 24 小时（localStorage），自动检查并跳过登录
+- 登录界面美观专业，含动画反馈

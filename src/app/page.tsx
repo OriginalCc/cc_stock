@@ -29,6 +29,7 @@ const FiveDayTimelinePanel = dynamic(() => import("@/components/five-day-timelin
 });
 const NewsAnalysisPanel = dynamic(() => import("@/components/news-analysis-panel").then(m => ({ default: m.NewsAnalysisPanel })), { ssr: false });
 const SignalSummaryPanel = dynamic(() => import("@/components/signal-summary-panel").then(m => ({ default: m.SignalSummaryPanel })), { ssr: false });
+import { PasswordGate } from "@/components/password-gate";
 import { calculateMACD } from "@/lib/indicators";
 import { generateTimelineSignals as generateOptimizedSignals, getTimeWindow, detectMarketRegimeDetail, buildFactorOverridesFromDB, computeKeyPriceLevels, type FactorOverride, type RegimeDetail } from "@/lib/t-strategy";
 import { generateTimelineSignals, detectPulseVolumeMarkers, type TSignal, type PulseVolumeMarker, type CustomFactorDefinition, formatVolume, formatNum, formatMarketCap, REGIME_CONFIG, T_MODE_CONFIG, DEFAULT_ASHARES, INTERVALS, INDEX_CONFIG, INDEX_KEYS, SIGNAL_PULSE_CSS, playAlertSound, getTIndexColor, getTIndexLabel, getTIndexLabelColor, BUILT_IN_CUSTOM_FACTORS, CUSTOM_FACTORS_STORAGE_KEY, type IndexKey } from "@/lib/chart-shared";
@@ -474,6 +475,7 @@ export default function StockTAssistant() {
   const priceColor = isUp ? "text-red-500" : "text-green-500";
 
   return (
+    <PasswordGate>
     <div className="min-h-screen flex flex-col bg-background">
       <style dangerouslySetInnerHTML={{ __html: SIGNAL_PULSE_CSS }} />
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
@@ -703,5 +705,6 @@ export default function StockTAssistant() {
         </div>
       </footer>
     </div>
+    </PasswordGate>
   );
 }

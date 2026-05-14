@@ -254,8 +254,8 @@ if (typeof window !== "undefined") {
   setInterval(() => {
     const now = Date.now();
     for (const [key, entry] of cache) {
-      // Remove entries older than 10 minutes
-      if (now - entry.timestamp > 600_000) {
+      // Remove entries older than 2 hours
+      if (now - entry.timestamp > 7_200_000) {
         cache.delete(key);
       }
     }
