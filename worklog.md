@@ -214,3 +214,30 @@ Stage Summary:
 - VPS: bash setup.sh（自动安装所有环境+构建+启动）
 - 宝塔: setup.sh + 反向代理
 - 默认密码 888888，通过 APP_PASSWORD 环境变量或界面修改
+
+---
+Task ID: 9
+Agent: main
+Task: 简化宝塔面板一键部署
+
+Work Log:
+- 创建 bt-install.sh — 宝塔专用一键安装脚本
+  - 自动检测宝塔自带的 Node.js (/www/server/nodejs)
+  - 自动安装 PM2、依赖、构建项目、启动服务
+  - 安装完成后输出宝塔面板操作指引（添加站点+反向代理+SSL）
+  - 支持自定义密码: bash bt-install.sh 你的密码
+- 创建 pack.sh — 项目打包脚本
+  - 只打包必要源码，排除 node_modules/.next/日志等
+  - 生成约 512KB 的 tar.gz 压缩包
+  - 打包后显示宝塔部署步骤提示
+- 重写 DEPLOY.md — 专注于宝塔面板3步部署
+  - Step 1: 上传项目（pack.sh 打包上传 或 git clone）
+  - Step 2: bash bt-install.sh 一键安装
+  - Step 3: 宝塔面板配置域名+HTTPS（可选）
+- 更新 package.json 添加 deploy:bt 和 pack 快捷命令
+
+Stage Summary:
+- 宝塔部署仅需3步：上传 → bash bt-install.sh → 配置域名(可选)
+- 打包后仅 512KB，上传速度极快
+- bt-install.sh 专门适配宝塔环境（自动识别宝塔 Node.js 路径）
+- 部署完成后有清晰的下一步操作提示

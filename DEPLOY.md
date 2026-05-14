@@ -1,162 +1,142 @@
-# 做T助手 — 部署指南
+# 做T助手 — 宝塔面板一键部署
 
-> 三种部署方式，从简单到灵活，选择最适合你的
+> 只需3步，5分钟搞定部署
 
 ---
 
-## 🐳 方式一：Docker 一键部署（推荐，最简单）
+## 🚀 快速开始
 
-### 前提条件
-- 安装了 [Docker](https://docs.docker.com/get-docker/) 和 Docker Compose
+### Step 1: 上传项目
 
-### 一条命令搞定
+**方式A — 打包上传（推荐）**
 
+在本地开发机上执行打包：
 ```bash
-# 1. 克隆项目
+bash pack.sh
+```
+会生成 `stock-t-assistant.tar.gz`（约 5-15MB）
+
+然后在宝塔面板：
+1. **文件** → 进入 `/www/wwwroot/`
+2. 点击 **上传** → 选择 `stock-t-assistant.tar.gz`
+3. 右键压缩包 → **解压**
+
+**方式B — Git 克隆**
+
+在宝塔终端执行：
+```bash
+cd /www/wwwroot
 git clone https://your-repo.git stock-t-assistant
-cd stock-t-assistant
-
-# 2. （可选）修改密码 — 编辑 docker-compose.yml 中的 APP_PASSWORD
-#    默认密码: 888888
-
-# 3. 一键启动！
-docker-compose up -d
-```
-
-### 访问
-打开浏览器访问 `http://你的服务器IP:3000`，输入密码 `888888`
-
-### 常用命令
-
-```bash
-docker-compose logs -f           # 查看日志
-docker-compose restart           # 重启服务
-docker-compose down              # 停止服务
-docker-compose up -d --build     # 更新并重启（代码更新后执行）
-```
-
-### 数据持久化
-数据库自动保存在 Docker Volume `stock-t-assistant-data` 中，删除容器不会丢失数据。
-
----
-
-## 🖥️ 方式二：VPS 一键脚本部署
-
-### 前提条件
-- 一台 Ubuntu/Debian/CentOS 服务器
-- 可以用 root 或有 sudo 权限的用户
-
-### 一条命令搞定
-
-```bash
-# 克隆项目并一键部署
-git clone https://your-repo.git stock-t-assistant
-cd stock-t-assistant
-bash setup.sh
-```
-
-脚本会自动完成：
-1. ✅ 安装 Node.js 20 + Bun + PM2
-2. ✅ 安装项目依赖
-3. ✅ 初始化 SQLite 数据库
-4. ✅ 构建项目
-5. ✅ 启动 PM2 服务（自动重启 + 开机自启）
-6. ✅ 配置防火墙放行 3000 端口
-
-### 访问
-打开浏览器访问 `http://你的服务器IP:3000`，输入密码 `888888`
-
-### 更新部署
-
-```bash
-cd stock-t-assistant
-git pull
-bash setup.sh          # 重新构建并重启
-```
-
-### 常用命令
-
-```bash
-pm2 status                          # 查看服务状态
-pm2 logs stock-t-assistant          # 查看日志
-pm2 restart stock-t-assistant       # 重启服务
-pm2 stop stock-t-assistant          # 停止服务
 ```
 
 ---
 
-## 🔧 方式三：宝塔面板部署
+### Step 2: 一键安装
 
-适合已安装宝塔面板的服务器，可以通过 Nginx 反向代理 + 域名访问。
-
-### 步骤
-
+在宝塔终端执行：
 ```bash
-# 1. 在宝塔面板安装 PM2管理器（软件商店搜索安装）
-
-# 2. 上传项目到 /www/wwwroot/stock-t-assistant
-
-# 3. SSH 执行
 cd /www/wwwroot/stock-t-assistant
-bash setup.sh
-
-# 4. 宝塔面板 → 网站 → 添加站点
-#    域名: 你的域名
-#    PHP: 纯静态
-
-# 5. 站点设置 → 反向代理 → 添加
-#    目标URL: http://127.0.0.1:3000
-#    发送域名: $host
-
-# 6. （推荐）站点设置 → SSL → 申请 Let's Encrypt 免费证书 → 开启强制HTTPS
+bash bt-install.sh
 ```
 
-### 访问
-打开浏览器访问 `https://你的域名`
+脚本自动完成：安装 Node.js → 安装 PM2 → 安装依赖 → 构建项目 → 启动服务
+
+> 🔐 默认密码: `888888`，可自定义: `bash bt-install.sh 你的密码`
 
 ---
+
+### Step 3: 绑定域名（可选）
+
+如果需要域名访问（推荐，可加 HTTPS）：
+
+1. 宝塔面板 → **网站** → **添加站点**
+   - 域名: 你的域名
+   - PHP: 纯静态
+
+2. 点击站点名 → **反向代理** → **添加反向代理**
+   - 目标URL: `http://127.0.0.1:3000`
+   - 发送域名: `$host`
+
+3. 点击站点名 → **SSL** → Let's Encrypt → 申请证书 → 开启**强制HTTPS**
+
+4. 访问 `https://你的域名` 🎉
+
+---
+
+## 🌐 暂不绑域名？
+
+直接用 IP 访问: `http://你的服务器IP:3000`
+
+需要在宝塔面板 → **安全** → 防火墙 → 放行 `3000` 端口
+
+---
+
+## 📋 常用命令
+
+```bash
+pm2 status                        # 查看服务状态
+pm2 logs stock-t-assistant        # 查看日志
+pm2 restart stock-t-assistant     # 重启服务
+pm2 stop stock-t-assistant        # 停止服务
+```
+
+## 🔄 更新部署
+
+```bash
+cd /www/wwwroot/stock-t-assistant
+git pull                          # 拉取最新代码
+bash bt-install.sh                # 重新构建并启动
+```
 
 ## 🔐 密码管理
 
-- 默认密码: `888888`
-- 登录后点击右上角 **「密码管理」** 按钮即可修改
-- 密码修改后保存在数据库中，重启不丢失
-- 也可以通过环境变量 `APP_PASSWORD` 设置初始密码
+- 登录后点击右上角 **「密码管理」** 按钮修改
+- 密码保存在数据库中，重启不丢失
 
-## 💾 数据备份
+## 💾 数据库备份
 
+宝塔面板 → **计划任务** → 添加 Shell 脚本:
 ```bash
-# 手动备份数据库
-cp db/custom.db backup/custom_$(date +%Y%m%d).db
-
-# Docker 环境
-docker cp stock-t-assistant:/app/db/custom.db ./backup/
-
-# 设置定时备份（crontab -e）
-0 3 * * * cp /path/to/db/custom.db /path/to/backup/custom_$(date +\%Y\%m\%d).db
+#!/bin/bash
+cp /www/wwwroot/stock-t-assistant/db/custom.db /www/backup/stock-t/custom_$(date +\%Y\%m\%d).db
+find /www/backup/stock-t/ -name "custom_*.db" -mtime +30 -delete
 ```
+执行周期: 每天 03:00
+
+---
 
 ## ❓ 常见问题
 
-**Q: 构建内存不足？**
+**Q: 构建时报内存不足？**
 ```bash
-# 增加 swap
+# 添加 swap
 sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
 sudo mkswap /swapfile && sudo swapon /swapfile
+# 重新执行
+bash bt-install.sh
 ```
 
-**Q: 端口被占用？**
+**Q: 端口 3000 被占用？**
 ```bash
-# 修改端口: 编辑 ecosystem.config.js 中的 PORT 和 args
-# 或 Docker: 修改 docker-compose.yml 中的 ports "你的端口:3000"
+# 查看占用进程
+lsof -i :3000
+# 或修改端口: 编辑 ecosystem.config.js 中 args 和 PORT
 ```
 
-**Q: 无法访问？**
+**Q: Nginx 502 错误？**
 ```bash
 # 检查服务是否运行
-pm2 status          # VPS 部署
-docker-compose ps   # Docker 部署
-
-# 检查防火墙
-sudo ufw allow 3000/tcp
+pm2 status
+# 如果未运行，查看错误日志
+pm2 logs stock-t-assistant --err --lines 30
 ```
+
+---
+
+## 🐳 Docker 部署（替代方案）
+
+如果服务器安装了 Docker：
+```bash
+docker-compose up -d
+```
+详见 `docker-compose.yml`

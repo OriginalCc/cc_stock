@@ -13,6 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "deploy": "bash setup.sh",
+    "deploy:bt": "bash bt-install.sh",
+    "pack": "bash pack.sh",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:rebuild": "docker-compose up -d --build",
