@@ -493,7 +493,7 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
               <>
                 <span className="text-muted-foreground tabular-nums">{displayItem.date}</span>
                 <span>
-                  开<span className={displayItem.close >= displayItem.open ? "text-red-500" : "text-green-500"} ml-1>{displayItem.open.toFixed(2)}</span>
+                  开<span className={`${displayItem.close >= displayItem.open ? "text-red-500" : "text-green-500"} ml-1`}>{displayItem.open.toFixed(2)}</span>
                 </span>
                 <span>
                   高<span className="text-red-500 ml-1">{displayItem.high.toFixed(2)}</span>
@@ -502,7 +502,7 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
                   低<span className="text-green-500 ml-1">{displayItem.low.toFixed(2)}</span>
                 </span>
                 <span>
-                  收<span className={displayItem.close >= displayItem.open ? "text-red-500" : "text-green-500"} ml-1>{displayItem.close.toFixed(2)}</span>
+                  收<span className={`${displayItem.close >= displayItem.open ? "text-red-500" : "text-green-500"} ml-1`}>{displayItem.close.toFixed(2)}</span>
                 </span>
                 <span>
                   量<span className="text-muted-foreground ml-1">{formatVolume(displayItem.volume)}</span>

@@ -65,6 +65,10 @@ export default function StockTAssistant() {
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsData, setNewsData] = useState<Record<string, any>>({});
 
+  // ── Mount tracking (prevent hydration mismatch for localStorage-dependent renders) ──
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { queueMicrotask(() => setMounted(true)); }, []);
+
   // ── Menu Bar Stocks ──
   const [menuStocks, setMenuStocks] = useState<{ symbol: string; name: string }[]>(DEFAULT_ASHARES);
   useEffect(() => {
@@ -513,7 +517,7 @@ export default function StockTAssistant() {
               )}
             </div>
             <div className="hidden lg:flex items-center gap-1">
-              {menuStocks.map((s) => (<Button key={s.symbol} variant={symbol === s.symbol ? "default" : "ghost"} size="sm" className="h-7 text-xs px-2" onClick={() => handleSelectStock(s.symbol)}>{s.name}</Button>))}
+              {menuStocks.map((s) => (<Button key={s.symbol} variant={mounted && symbol === s.symbol ? "default" : "ghost"} size="sm" className="h-7 text-xs px-2" onClick={() => handleSelectStock(s.symbol)}>{s.name}</Button>))}
             </div>
           </div>
         </div>

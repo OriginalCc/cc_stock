@@ -622,15 +622,6 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     if (!loading) fetchScreenerData(false);
   }, autoRefreshEnabled && pageVisible);
 
-  // Auto-save screener results for historical verification
-  useAutoSaveScreener(
-    sortedStocks,
-    "stock",
-    filters.sector || "全市场",
-    filters,
-    sortedStocks.length > 0
-  );
-
   // Close sector dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -749,6 +740,15 @@ export function StockScreener({ onSelectStock }: StockScreenerProps) {
     });
     return stocks;
   }, [result?.stocks, sortField, sortOrder]);
+
+  // Auto-save screener results for historical verification (must be after sortedStocks definition)
+  useAutoSaveScreener(
+    sortedStocks,
+    "stock",
+    filters.sector || "全市场",
+    filters,
+    sortedStocks.length > 0
+  );
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {

@@ -248,15 +248,6 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
     if (!loading) fetchData(false);
   }, autoRefreshEnabled && pageVisible);
 
-  // Auto-save screener results for historical verification
-  useAutoSaveScreener(
-    sortedStocks,
-    "low_open",
-    filters.sector || "全市场",
-    filters,
-    sortedStocks.length > 0
-  );
-
   // Close sector dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -343,6 +334,15 @@ export function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
     });
     return stocks;
   }, [result?.stocks, sortField, sortOrder]);
+
+  // Auto-save screener results for historical verification (must be after sortedStocks definition)
+  useAutoSaveScreener(
+    sortedStocks,
+    "low_open",
+    filters.sector || "全市场",
+    filters,
+    sortedStocks.length > 0
+  );
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortOrder(prev => prev === "desc" ? "asc" : "desc");
