@@ -122,3 +122,13 @@ model ScreenerHistoryRecord {
 
   @@unique([recordDate, recordTime, sectorName]) // 同一天同一时间同一板块只记录一次
 }
+
+// ── 应用配置（密码等） ────────────────────────────────────
+
+model AppConfig {
+  id    String @id @default(cuid())
+  key   String @unique                // 配置键名: "app_password"
+  value String                       // 配置值
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

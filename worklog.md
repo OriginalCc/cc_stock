@@ -158,3 +158,35 @@ Stage Summary:
 - 密码验证通过服务端 API，不暴露密码到客户端
 - 认证状态持久化 24 小时（localStorage），自动检查并跳过登录
 - 登录界面美观专业，含动画反馈
+
+---
+Task ID: 7
+Agent: main
+Task: 在菜单中增加密码管理修改菜单
+
+Work Log:
+- 在 Prisma schema 中新增 AppConfig 模型（key/value 键值对存储），用于持久化密码配置
+- 运行 db:push 和 prisma generate 同步数据库和客户端
+- 更新 API 路由 src/app/api/auth/verify/route.ts：
+  - POST 保持密码验证功能，改为从 DB 读取密码（fallback 到环境变量/默认值）
+  - 新增 PUT 方法：修改密码，需验证当前密码后 upsert 新密码到 DB
+  - 新密码至少4位，不能与当前密码相同
+- 创建密码管理对话框组件 src/components/password-manage-dialog.tsx：
+  - 使用 shadcn/ui Dialog 组件
+  - 包含当前密码、新密码、确认新密码三个输入框
+  - 每个密码框有显示/隐藏切换按钮
+  - 完整的表单验证（空值、长度、一致性检查）
+  - 加载状态、错误提示、成功动画
+  - 自动关闭成功提示
+- 修改 src/app/page.tsx：
+  - 导入 PasswordManageDialog 和 ShieldCheck 图标
+  - 添加 showPasswordDialog 状态
+  - 在头部右侧导航区域添加密码管理按钮（ShieldCheck 图标 + "密码"文字）
+  - 在页面底部添加 PasswordManageDialog 组件实例
+- Lint 通过，API 测试通过
+
+Stage Summary:
+- 新增 AppConfig 数据模型，密码修改后持久化到数据库
+- 导航栏右侧增加"密码"管理按钮，点击弹出密码管理对话框
+- 密码管理对话框支持：输入当前密码验证、设置新密码、确认新密码
+- API 支持完整的密码验证和修改流程

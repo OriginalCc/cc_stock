@@ -30,6 +30,7 @@ const FiveDayTimelinePanel = dynamic(() => import("@/components/five-day-timelin
 const NewsAnalysisPanel = dynamic(() => import("@/components/news-analysis-panel").then(m => ({ default: m.NewsAnalysisPanel })), { ssr: false });
 const SignalSummaryPanel = dynamic(() => import("@/components/signal-summary-panel").then(m => ({ default: m.SignalSummaryPanel })), { ssr: false });
 import { PasswordGate } from "@/components/password-gate";
+import { PasswordManageDialog } from "@/components/password-manage-dialog";
 import { calculateMACD } from "@/lib/indicators";
 import { generateTimelineSignals as generateOptimizedSignals, getTimeWindow, detectMarketRegimeDetail, buildFactorOverridesFromDB, computeKeyPriceLevels, type FactorOverride, type RegimeDetail } from "@/lib/t-strategy";
 import { generateTimelineSignals, detectPulseVolumeMarkers, type TSignal, type PulseVolumeMarker, type CustomFactorDefinition, formatVolume, formatNum, formatMarketCap, REGIME_CONFIG, T_MODE_CONFIG, DEFAULT_ASHARES, INTERVALS, INDEX_CONFIG, INDEX_KEYS, SIGNAL_PULSE_CSS, playAlertSound, getTIndexColor, getTIndexLabel, getTIndexLabelColor, BUILT_IN_CUSTOM_FACTORS, CUSTOM_FACTORS_STORAGE_KEY, type IndexKey } from "@/lib/chart-shared";
@@ -43,7 +44,7 @@ import {
   Search, TrendingUp, TrendingDown, Activity, ArrowUpRight, ArrowDownRight,
   X, Clock, Zap, LineChart, CandlestickChart, GitBranch, Filter,
   Star, Bell, BellOff, Volume2, Newspaper, CalendarDays, Flame,
-  History,
+  History, ShieldCheck,
 } from "lucide-react";
 
 export default function StockTAssistant() {
@@ -59,6 +60,7 @@ export default function StockTAssistant() {
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
   const [showSearch, setShowSearch] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── News state (passed to NewsAnalysisPanel) ──
@@ -518,8 +520,20 @@ export default function StockTAssistant() {
                 </div>
               )}
             </div>
-            <div className="hidden lg:flex items-center gap-1">
-              {menuStocks.map((s) => (<Button key={s.symbol} variant={mounted && symbol === s.symbol ? "default" : "ghost"} size="sm" className="h-7 text-xs px-2" onClick={() => handleSelectStock(s.symbol)}>{s.name}</Button>))}
+            <div className="flex items-center gap-1">
+              <div className="hidden lg:flex items-center gap-1">
+                {menuStocks.map((s) => (<Button key={s.symbol} variant={mounted && symbol === s.symbol ? "default" : "ghost"} size="sm" className="h-7 text-xs px-2" onClick={() => handleSelectStock(s.symbol)}>{s.name}</Button>))}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPasswordDialog(true)}
+                title="密码管理"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">密码</span>
+              </Button>
             </div>
           </div>
         </div>
@@ -704,6 +718,8 @@ export default function StockTAssistant() {
           </div>
         </div>
       </footer>
+      {/* Password Management Dialog */}
+      <PasswordManageDialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog} />
     </div>
     </PasswordGate>
   );
