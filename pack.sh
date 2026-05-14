@@ -61,6 +61,7 @@ cp docker-entrypoint.sh "$COPY_DIR/" 2>/dev/null || true
 cp .env.example "$COPY_DIR/"
 cp .dockerignore "$COPY_DIR/" 2>/dev/null || true
 cp DEPLOY.md "$COPY_DIR/"
+cp BAOTA_DEPLOY.md "$COPY_DIR/"
 
 # Ensure scripts are executable
 chmod +x "$COPY_DIR/bt-install.sh" "$COPY_DIR/setup.sh" 2>/dev/null || true

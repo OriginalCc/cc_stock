@@ -2,6 +2,8 @@
 
 > 只需3步，5分钟搞定部署
 
+📖 **完整部署说明书**: [BAOTA_DEPLOY.md](./BAOTA_DEPLOY.md)（推荐阅读，图文详细）
+
 ---
 
 ## 🚀 快速开始
@@ -130,6 +132,8 @@ pm2 status
 # 如果未运行，查看错误日志
 pm2 logs stock-t-assistant --err --lines 30
 ```
+
+> 更多问题排查见 👉 [BAOTA_DEPLOY.md](./BAOTA_DEPLOY.md)
 
 ---
 
