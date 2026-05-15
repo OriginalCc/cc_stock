@@ -290,3 +290,28 @@ Stage Summary:
 - 所有选股页面现在切换回来时会立即显示缓存数据，不会出现空白
 - 缓存有效期 1 小时（3_600_000ms），通过刷新按钮强制更新
 - client-cache.ts 的模块级 Map 在 SPA 生命周期内持续有效，tab 切换不会丢失
+---
+Task ID: 1
+Agent: main
+Task: Add strategy panel to low-open screener page explaining all factors
+
+Work Log:
+- Researched low-open stock selection factors via web search (5 searches)
+- Read current low-open-screener.tsx (1054 lines) and API route (730 lines)
+- Identified 7 existing factors in backend: gapFillRate, supportStrength, volumeConfirm, mainForceScore, valuationSafety, elasticityScore, gapDepthScore + compositeScore
+- Added strategyExpanded state variable
+- Added BookOpen, Info, Shield, Zap, BarChart2, Layers icon imports
+- Implemented collapsible strategy panel card with:
+  - Core strategy logic explanation (amber themed)
+  - 7 factor detail cards with: calculation method, meaning, usage tips, weight badges
+  - Composite score formula and interpretation guide (rose themed)
+  - 7 practical trading tips (emerald themed)
+  - Risk warnings section (red themed)
+- Fixed indentation issue in factor 3
+- Lint check passed
+
+Stage Summary:
+- Strategy panel added between header card and results section
+- All 7 factors documented with calculation, meaning, and usage tips
+- Composite score formula and score interpretation included
+- Panel is collapsed by default, expandable with click
