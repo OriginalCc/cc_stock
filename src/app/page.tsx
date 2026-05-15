@@ -518,7 +518,7 @@ export default function StockTAssistant() {
               <h1 className="text-lg font-bold hidden sm:block">做T助手</h1>
               <Badge variant="outline" className="text-xs hidden sm:flex">A股</Badge>
               <div className="flex items-center border border-border rounded-md overflow-hidden ml-1">
-                {(["t-assistant", "screener", "intraday-screener", "sector-rotation", "early-screen", "low-open", "limit-up", "baota-deploy"] as const).map((mode) => (
+                {(["t-assistant", "screener", "low-open", "intraday-screener", "sector-rotation", "early-screen", "limit-up", "baota-deploy"] as const).map((mode) => (
                   <button key={mode} onClick={() => { setPageMode(mode); setScreenerSubView("screener"); }} className={`px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${pageMode === mode ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}>
                     {mode === "t-assistant" && "做T"}
                     {mode === "screener" && <><Filter className="w-3 h-3" />选股</>}
