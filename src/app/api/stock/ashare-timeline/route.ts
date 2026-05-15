@@ -4,7 +4,7 @@ import { fetchGuarded } from "@/lib/fetch-guard";
 
 /**
  * Determine cache TTL based on trading status:
- * - During trading hours: 3s (supports 1s client-side refresh)
+ * - During trading hours: 2s (supports 3s client-side refresh)
  * - Outside trading hours: 300s (data is static)
  */
 function getTimelineCacheTTL(): number {
@@ -37,6 +37,10 @@ export async function GET(request: NextRequest) {
   }
 
   const cacheTTL = getTimelineCacheTTL();
+  // FIX: was `cacheTTL <= 1000` but trading TTL is 2000, so isTrading was always false
+  const isTrading = cacheTTL <= 3000;
+  const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
+  const cacheHeaders = { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` };
 
   try {
     // When includeQuote=true, fetch quote FIRST to get prevClose, then pass it to timeline
@@ -94,11 +98,7 @@ export async function GET(request: NextRequest) {
         } : null,
       };
 
-      const isTrading = cacheTTL <= 1000;
-      const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
-      return NextResponse.json(response, {
-        headers: { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` },
-      });
+      return NextResponse.json(response, { headers: cacheHeaders });
     }
 
     // No quote needed - just fetch timeline
@@ -114,11 +114,7 @@ export async function GET(request: NextRequest) {
       cacheTTL
     );
 
-    const isTrading = cacheTTL <= 1000;
-    const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
-    return NextResponse.json(result, {
-      headers: { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` },
-    });
+    return NextResponse.json(result, { headers: cacheHeaders });
   } catch (error: any) {
     console.error("Timeline API error:", error);
     return NextResponse.json({ error: "获取分时数据失败", items: [], prevClose: 0 }, { status: 500 });

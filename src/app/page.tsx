@@ -97,28 +97,54 @@ export default function StockTAssistant() {
   const [indexTimelineData, setIndexTimelineData] = useState<Record<IndexKey, { items: TimelineItem[]; prevClose: number }>>({ sz: { items: [], prevClose: 0 }, sh: { items: [], prevClose: 0 }, cyb: { items: [], prevClose: 0 } });
 
   useEffect(() => {
-    // Index data fetch - start immediately, then refresh every 30s during trading hours
+    // Index data fetch - start with active index immediately, then others with a delay
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const fetchIndex = async (key: IndexKey) => {
+      const { symbol: sym } = INDEX_CONFIG[key];
+      try {
+        const res = await fetch(`/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}`, { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data.error || !data.items || data.items.length < 10) return null;
+        return { regime: detectMarketRegimeDetail(data.items, data.prevClose || data.items[0].price), items: data.items as TimelineItem[], prevClose: data.prevClose || data.items[0].price };
+      } catch { return null; }
+    };
+
     const fetchAllIndices = async () => {
       const results = await Promise.allSettled(
-        INDEX_KEYS.map(async (key) => {
-          const { symbol: sym } = INDEX_CONFIG[key];
-          try {
-            const res = await fetch(`/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}`, { signal: AbortSignal.timeout(5000) });
-            if (!res.ok) return null;
-            const data = await res.json();
-            if (data.error || !data.items || data.items.length < 10) return null;
-            return { regime: detectMarketRegimeDetail(data.items, data.prevClose || data.items[0].price), items: data.items as TimelineItem[], prevClose: data.prevClose || data.items[0].price };
-          } catch { return null; }
-        })
+        INDEX_KEYS.map(key => fetchIndex(key))
       );
       if (cancelled) return;
       setIndexRegimes(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newRegime = results[i].value!.regime; if (prev[key]?.regime !== newRegime.regime || prev[key]?.confidence !== newRegime.confidence) { next[key] = newRegime; changed = true; } } }); return changed ? next : prev; });
       setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
     };
-    // Start immediately
-    fetchAllIndices();
+
+    // Fetch the active index immediately for faster initial display
+    const fetchActiveIndex = async () => {
+      const result = await fetchIndex(activeIndexKey);
+      if (cancelled || !result) return;
+      setIndexRegimes(prev => {
+        const newRegime = result.regime;
+        if (prev[activeIndexKey]?.regime !== newRegime.regime || prev[activeIndexKey]?.confidence !== newRegime.confidence) {
+          return { ...prev, [activeIndexKey]: newRegime };
+        }
+        return prev;
+      });
+      setIndexTimelineData(prev => {
+        const newVal = { items: result.items, prevClose: result.prevClose };
+        if (prev[activeIndexKey]?.items.length !== newVal.items.length || prev[activeIndexKey]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) {
+          return { ...prev, [activeIndexKey]: newVal };
+        }
+        return prev;
+      });
+    };
+
+    // Start with active index immediately, then fetch all after a short delay
+    fetchActiveIndex();
+    const delayTimer = setTimeout(() => fetchAllIndices(), 1000);
+
     // Refresh every 30s during trading hours
     const isTradingHours = () => {
       const now = new Date(); const h = (now.getUTCHours() + 8) % 24; const m = now.getUTCMinutes();
@@ -128,7 +154,7 @@ export default function StockTAssistant() {
     if (isTradingHours()) {
       intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 30000);
     }
-    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
+    return () => { cancelled = true; clearTimeout(delayTimer); if (intervalId) clearInterval(intervalId); };
   }, []);
 
   const szIndexRegime = indexRegimes[activeIndexKey];

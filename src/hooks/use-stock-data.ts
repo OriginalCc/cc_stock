@@ -80,12 +80,12 @@ const DEFAULT_SYMBOL = "600519";
 const DEFAULT_CHART_MODE: ChartMode = "timeline";
 
 // ── Cache TTL constants ──
-const QUOTE_CACHE_TTL = 2000; // 2s for quote data (matches refresh interval)
-const TIMELINE_CACHE_TTL = 2000; // 2s for timeline data (matches refresh interval)
+const QUOTE_CACHE_TTL = 1500; // 1.5s for quote data (slightly less than refresh interval for smoother updates)
+const TIMELINE_CACHE_TTL = 1500; // 1.5s for timeline data (slightly less than refresh interval)
 const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
 
 // ── Auto-refresh interval ──
-const TIMELINE_REFRESH_INTERVAL = 3000; // 3s for timeline/quote auto-refresh during trading hours
+const TIMELINE_REFRESH_INTERVAL = 2000; // 2s for timeline/quote auto-refresh during trading hours
 
 // ── Hook ──────────────────────────────────────────────
 

@@ -44,6 +44,23 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+// ── Stable shape renderers (module-level to avoid re-creating on every render) ──
+
+function timelineVolumeBarShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!payload?.hasData) return null;
+  return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
+}
+
+function timelineMacdBarShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (payload?.macd == null) return null;
+  const h = Math.abs(height || 0);
+  if (h < 0.3) return null;
+  const ry = height < 0 ? y + height : y;
+  return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+}
+
 // ── Tooltip Components ─────────────────────────────────
 
 const TimelineTooltip = ({ active, payload }: any) => {
@@ -1259,11 +1276,7 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
           <YAxis yAxisId="vol" domain={[0, maxVolume * 1.1]} tick={false} tickLine={false} axisLine={false} width={42} />
           <YAxis yAxisId="vol-r" orientation="right" domain={[0, maxVolume * 1.1]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => formatVolume(v)} />
           <Bar yAxisId="vol-r" dataKey="volume" isAnimationActive={false} barSize={barSize}
-            shape={(props: any) => {
-              const { x, y, width, height, payload } = props;
-              if (!payload?.hasData) return null;
-              return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
-            }}
+            shape={timelineVolumeBarShape}
           />
         </ComposedChart>
       </ResponsiveContainer>
@@ -1290,14 +1303,7 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
           <YAxis yAxisId="macd-r" orientation="right" domain={[macdMin - macdPad, macdMax + macdPad]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => v.toFixed(3)} />
           <ReferenceLine yAxisId="macd-r" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.3} />
           <Bar yAxisId="macd-r" dataKey="macd" isAnimationActive={false} barSize={barSize}
-            shape={(props: any) => {
-              const { x, y, width, height, payload } = props;
-              if (payload?.macd == null) return null;
-              const h = Math.abs(height || 0);
-              if (h < 0.3) return null;
-              const ry = height < 0 ? y + height : y;
-              return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
-            }}
+            shape={timelineMacdBarShape}
           />
           <Line yAxisId="macd-r" type="monotone" dataKey="dif" stroke="#2563eb" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
           <Line yAxisId="macd-r" type="monotone" dataKey="dea" stroke="#ea580c" dot={false} strokeWidth={0.8} connectNulls isAnimationActive={false} />
@@ -2351,11 +2357,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               dataKey="volume"
               isAnimationActive={false}
               barSize={barSize}
-              shape={(props: any) => {
-                const { x, y, width, height, payload } = props;
-                if (!payload?.hasData) return null;
-                return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
-              }}
+              shape={timelineVolumeBarShape}
             />
             {/* Crosshair vertical line - shared across panels */}
             {crosshairIdx != null && crosshairItem?.hasData && (
@@ -2434,15 +2436,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               dataKey="macd"
               isAnimationActive={false}
               barSize={barSize}
-              shape={(props: any) => {
-                const { x, y, width, height, payload } = props;
-                if (payload?.macd == null) return null;
-                // SVG rect requires positive height; negative-MACD bars get negative height from Recharts
-                const h = Math.abs(height || 0);
-                if (h < 0.3) return null;
-                const ry = height < 0 ? y + height : y;
-                return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
-              }}
+              shape={timelineMacdBarShape}
             />
             <Line
               yAxisId="macd-right"

@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
         data: [],
         latestSignal: null,
       }, {
-        headers: { 'Cache-Control': 'public, max-age=30, s-maxage=30' },
+        headers: { 'Cache-Control': 'public, max-age=5, must-revalidate' },
       });
     }
 
@@ -84,6 +84,8 @@ export async function GET(request: NextRequest) {
     // Find latest signal
     const latestSignal = signals.filter((s) => s.type !== "hold").pop() || signals[signals.length - 1];
 
+    // History data changes less frequently — allow browser caching for 15s
+    // but server-side fetchGuarded caches for 30s
     return NextResponse.json({
       symbol,
       interval,
@@ -91,7 +93,7 @@ export async function GET(request: NextRequest) {
       data: combinedData,
       latestSignal,
     }, {
-      headers: { 'Cache-Control': 'public, max-age=30, s-maxage=30' },
+      headers: { 'Cache-Control': 'public, max-age=15, must-revalidate' },
     });
   } catch (error: any) {
     console.error("History API error:", error);

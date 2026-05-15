@@ -37,6 +37,22 @@ interface KLineChartPanelProps {
   interval: TimeInterval;
 }
 
+// ── Stable shape renderers (module-level to avoid re-creating on every render) ──
+
+function volumeBarShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  return <rect x={x} y={y} width={width} height={height} fill={payload.close >= payload.open ? "#ef4444" : "#16a34a"} />;
+}
+
+function macdBarShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (payload?.macd == null) return null;
+  const h = Math.abs(height || 0);
+  if (h < 0.3) return null;
+  const ry = height < 0 ? y + height : y;
+  return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+}
+
 // ── Component ──────────────────────────────────────────
 
 export const KLineChartPanel = React.memo(function KLineChartPanel({
@@ -635,10 +651,7 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
               <Tooltip content={klineVolumeTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
               <Customized component={VolumeTitleLabel} />
               <Bar dataKey="volume" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}
-                shape={(props: any) => {
-                  const { x, y, width, height, payload } = props;
-                  return <rect x={x} y={y} width={width} height={height} fill={payload.close >= payload.open ? "#ef4444" : "#16a34a"} />;
-                }}
+                shape={volumeBarShape}
               />
             </ComposedChart>
           </ResponsiveContainer>
@@ -696,14 +709,7 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
               <Customized component={MACDTitleLabel} />
               <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
               <Bar dataKey="macd" isAnimationActive={false} barSize={chartData.length > 150 ? 5 : chartData.length > 80 ? 7 : chartData.length > 50 ? 9 : 12}
-                shape={(props: any) => {
-                  const { x, y, width, height, payload } = props;
-                  if (payload?.macd == null) return null;
-                  const h = Math.abs(height || 0);
-                  if (h < 0.3) return null;
-                  const ry = height < 0 ? y + height : y;
-                  return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
-                }}
+                shape={macdBarShape}
               />
               <Line type="monotone" dataKey="dif" stroke="#3b82f6" dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />
               <Line type="monotone" dataKey="dea" stroke="#f97316" dot={false} strokeWidth={1.5} connectNulls isAnimationActive={false} />

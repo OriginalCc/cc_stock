@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStockSector, getSectorTimeline } from "@/lib/ashare-api";
-
-// Server-side cache for sector data (reduce external API calls)
-const sectorCache = new Map<string, { data: any; timestamp: number }>();
-const SECTOR_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+import { fetchGuarded } from "@/lib/fetch-guard";
 
 // Track recent failures to avoid hammering a broken API
 let lastSectorError = 0;
 const SECTOR_ERROR_COOLDOWN = 60000; // 1 min cooldown after failure
+
+// Trading-hour-aware TTL for sector timeline data
+function getSectorCacheTTL(): number {
+  const now = new Date();
+  const chinaHour = (now.getUTCHours() + 8) % 24;
+  const chinaMinute = now.getUTCMinutes();
+  const isWeekday = now.getUTCDay() >= 1 && now.getUTCDay() <= 5;
+  if (!isWeekday) return 300000;
+  const isTrading = ((chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35)) ||
+    (chinaHour === 13 || chinaHour === 14 || (chinaHour === 15 && chinaMinute <= 5));
+  return isTrading ? 30000 : 300000; // 30s during trading, 5min otherwise
+}
 
 /**
  * GET /api/stock/ashare-sector?symbol=600519&type=info
@@ -25,13 +34,6 @@ export async function GET(request: NextRequest) {
   const sectorCode = searchParams.get("sectorCode") || "";
   const type = searchParams.get("type") || "info";
 
-  // Check cache first
-  const cacheKey = `${symbol}|${sectorCode}|${type}`;
-  const cached = sectorCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < SECTOR_CACHE_TTL) {
-    return NextResponse.json(cached.data);
-  }
-
   // If sector API recently failed, return fallback immediately to avoid blocking server
   if (Date.now() - lastSectorError < SECTOR_ERROR_COOLDOWN) {
     return NextResponse.json({
@@ -42,11 +44,16 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const cacheTTL = getSectorCacheTTL();
+
   try {
     if (type === "timeline" && sectorCode) {
-      const timelineData = await getSectorTimeline(sectorCode);
+      const timelineData = await fetchGuarded(
+        `sector-timeline:${sectorCode}`,
+        async () => getSectorTimeline(sectorCode),
+        cacheTTL
+      );
       const result = { success: true, sectorCode, data: timelineData };
-      sectorCache.set(cacheKey, { data: result, timestamp: Date.now() });
       return NextResponse.json(result);
     }
 
@@ -58,7 +65,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Get sector info for the stock
-    const sectorInfo = await getStockSector(symbol);
+    const sectorInfo = await fetchGuarded(
+      `sector-info:${symbol}`,
+      async () => getStockSector(symbol),
+      300000 // Sector info rarely changes, cache for 5 min
+    );
 
     if (!sectorInfo) {
       return NextResponse.json({
@@ -71,14 +82,16 @@ export async function GET(request: NextRequest) {
 
     if (type === "info") {
       const result = { success: true, symbol, sectorInfo };
-      sectorCache.set(cacheKey, { data: result, timestamp: Date.now() });
       return NextResponse.json(result);
     }
 
-    // type === "full": also fetch timeline
-    const timelineData = await getSectorTimeline(sectorInfo.code);
+    // type === "full": also fetch timeline in parallel
+    const timelineData = await fetchGuarded(
+      `sector-timeline:${sectorInfo.code}`,
+      async () => getSectorTimeline(sectorInfo.code),
+      cacheTTL
+    );
     const result = { success: true, symbol, sectorInfo, data: timelineData };
-    sectorCache.set(cacheKey, { data: result, timestamp: Date.now() });
     return NextResponse.json(result);
   } catch (error: any) {
     console.error("Sector API error:", error);

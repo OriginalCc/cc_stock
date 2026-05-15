@@ -730,18 +730,12 @@ export async function getStockSector(symbol: string): Promise<SectorInfo | null>
     const secid = toEastMoneySecid(symbol);
     const url = `http://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f127`;
 
-    const response = await Promise.race([
-      fetch(url, { next: { revalidate: 0 }, signal: AbortSignal.timeout(8000) }),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
-    ]);
+    // Use single AbortSignal.timeout instead of redundant Promise.race wrappers
+    const response = await fetch(url, { next: { revalidate: 0 }, signal: AbortSignal.timeout(8000) });
 
-    if (!response || response === null) return fallback;
     if (!response.ok) return fallback;
 
-    const data = await Promise.race([
-      response.json(),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-    ]);
+    const data = await response.json();
     if (!data) return fallback;
 
     const sectorName: string | undefined = data?.data?.f127;

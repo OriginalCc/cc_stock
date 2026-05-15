@@ -790,7 +790,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                   cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "4 2" }}
                   wrapperStyle={{ background: "transparent", border: "none" }}
                 />
-                <Bar dataKey="displayVolume" isAnimationActive={false} barSize={barSize} shape={(props: any) => <VolumeBarShape {...props} />} />
+                <Bar dataKey="displayVolume" isAnimationActive={false} barSize={barSize} shape={VolumeBarShape} />
               </ComposedChart>
             </ResponsiveContainer>
           </CardContent>

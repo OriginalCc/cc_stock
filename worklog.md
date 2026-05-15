@@ -241,3 +241,31 @@ Stage Summary:
 - 打包后仅 512KB，上传速度极快
 - bt-install.sh 专门适配宝塔环境（自动识别宝塔 Node.js 路径）
 - 部署完成后有清晰的下一步操作提示
+
+---
+Task ID: 10
+Agent: main
+Task: 优化各个页面的响应速度
+
+Work Log:
+- 修复 ashare-timeline/route.ts 关键 bug：`isTrading` 判断条件 `cacheTTL <= 1000` 改为 `cacheTTL <= 3000`，之前交易时段 `isTrading` 始终为 false，导致浏览器缓存分时数据不刷新
+- 优化 ashare-timeline/route.ts：提取 Cache-Control 头计算为统一变量，避免重复计算
+- 优化 ashare-quote/route.ts：添加交易时段感知 TTL（交易时段2s/非交易5min），替代原来固定3s缓存
+- 优化 ashare-history/route.ts：改进 Cache-Control 头（`max-age=15, must-revalidate` 替代 `max-age=30, s-maxage=30`）
+- 迁移 ashare-sector/route.ts 到 fetchGuarded 统一缓存，替代自定义 sectorCache Map；添加交易时段感知 TTL
+- 修复 ashare-api.ts getStockSector 函数：移除冗余 Promise.race 双重超时（与 AbortSignal.timeout 重复），简化为单一 AbortSignal.timeout
+- 优化 client-cache.ts：LRU 驱逐从 O(n log n) 排序改进为 O(1) 顺序删除（Map 保留插入顺序）；stale 阈值从固定10s改为 TTL 的50%
+- 优化 use-stock-data.ts：客户端自动刷新间隔从3s降到2s；缓存 TTL 从2s降到1.5s（比刷新间隔短，确保每次刷新都能拿到新数据）
+- 优化 fetch-guard.ts：LRU 驱逐从单条删除改为批量删除20%，避免频繁逐出
+- 提取 kline-chart-panel.tsx 内联 shape 函数为模块级稳定引用（volumeBarShape, macdBarShape），避免每次渲染创建新函数
+- 提取 time-sharing-panel.tsx 4个内联 shape 函数为模块级稳定引用（timelineVolumeBarShape, timelineMacdBarShape），减少 Recharts 重渲染
+- 提取 five-day-timeline-panel.tsx 内联 shape 包装函数，直接使用 VolumeBarShape 组件引用
+- 优化 page.tsx 指数数据获取：先获取活跃指数（秒级响应），1s后再获取全部指数，避免初始加载3个并行请求阻塞
+
+Stage Summary:
+- 修复了分时API交易时段缓存不刷新的关键bug（isTrading判断条件错误）
+- 分时数据自动刷新从3s加速到2s
+- 服务端统一使用 fetchGuarded 缓存，sector路由移除了自定义缓存
+- 客户端缓存LRU驱逐O(1)优化，stale阈值动态化
+- 6个Recharts组件的内联shape函数提取为模块级稳定引用，减少不必要重渲染
+- 指数数据初始加载优先级优化，先显示活跃指数

@@ -3,6 +3,20 @@ import { getAShareQuote, isAShare } from "@/lib/ashare-api";
 import { getStockQuote } from "@/lib/finance-api";
 import { fetchGuarded } from "@/lib/fetch-guard";
 
+/**
+ * Determine quote cache TTL based on trading status
+ */
+function getQuoteCacheTTL(): number {
+  const now = new Date();
+  const chinaHour = (now.getUTCHours() + 8) % 24;
+  const chinaMinute = now.getUTCMinutes();
+  const isWeekday = now.getUTCDay() >= 1 && now.getUTCDay() <= 5;
+  if (!isWeekday) return 300000;
+  const isTrading = ((chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35)) ||
+    (chinaHour === 13 || chinaHour === 14 || (chinaHour === 15 && chinaMinute <= 5));
+  return isTrading ? 2000 : 300000;
+}
+
 export async function GET(request: NextRequest) {
   const symbol = request.nextUrl.searchParams.get("symbol") || "";
 
@@ -13,10 +27,14 @@ export async function GET(request: NextRequest) {
   try {
     // If A-share, use Sina/Tencent API
     if (isAShare(symbol)) {
+      const cacheTTL = getQuoteCacheTTL();
+      const isTrading = cacheTTL <= 3000;
+      const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
+
       const quote = await fetchGuarded(
         `quote:${symbol}`,
         async (_signal) => getAShareQuote(symbol),
-        3000 // 3s cache — supports 1s client-side refresh
+        cacheTTL
       );
       if (!quote) {
         return NextResponse.json({ error: "未找到A股数据" }, { status: 404 });
@@ -44,7 +62,7 @@ export async function GET(request: NextRequest) {
         exchange: quote.exchange,
         isAShare: true,
       }, {
-        headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
+        headers: { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` },
       });
     }
 

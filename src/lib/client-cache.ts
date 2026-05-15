@@ -6,7 +6,7 @@
  * 1. Instant cache display on page load / tab switch
  * 2. Background revalidation for fresh data
  * 3. Request deduplication (same key won't trigger duplicate fetches)
- * 4. LRU eviction to prevent memory leaks
+ * 4. O(1) LRU eviction to prevent memory leaks
  * 5. Time-based TTL with stale-while-revalidate
  */
 
@@ -33,7 +33,8 @@ const DEFAULT_TTL = 30_000;
 
 // Stale threshold: data is "stale" but still usable after this time
 // Revalidation happens in background
-const STALE_THRESHOLD = 10_000;
+// Changed from 10s to be proportional to TTL (50% of TTL) for better hit rates
+const STALE_RATIO = 0.5;
 
 /**
  * Get cached data if available (even if stale).
@@ -101,11 +102,12 @@ export async function fetchWithSWR<T>(
   // Check cache first
   const cached = cache.get(key);
   const now = Date.now();
+  const staleThreshold = ttl * STALE_RATIO;
 
   if (cached && !forceRefresh) {
     const age = now - cached.timestamp;
     const isExpired = age >= ttl;
-    const isStale = age >= STALE_THRESHOLD;
+    const isStale = age >= staleThreshold;
 
     if (!isExpired) {
       // Fresh cache - return immediately
@@ -239,13 +241,14 @@ export function clearAllCache(): void {
 function evictIfNeeded(): void {
   if (cache.size < MAX_CACHE_SIZE) return;
 
-  // LRU eviction: remove the oldest 20% of entries
-  const entries = Array.from(cache.entries())
-    .sort((a, b) => a[1].timestamp - b[1].timestamp);
-
-  const toRemove = Math.ceil(entries.length * 0.2);
-  for (let i = 0; i < toRemove; i++) {
-    cache.delete(entries[i][0]);
+  // O(1) LRU eviction: Map preserves insertion order, so the first entry is the oldest.
+  // Just delete the first 20% of entries (oldest first).
+  const toRemove = Math.ceil(cache.size * 0.2);
+  let removed = 0;
+  for (const key of cache.keys()) {
+    if (removed >= toRemove) break;
+    cache.delete(key);
+    removed++;
   }
 }
 

@@ -61,10 +61,15 @@ export function fetchGuarded<T>(
   const promise = fetcher(controller.signal)
     .then((data) => {
       clearTimeout(timeoutId);
-      // Evict oldest entries if cache is full
+      // Evict oldest entries if cache is full (O(1) - Map preserves insertion order)
       if (cache.size >= MAX_CACHE_SIZE) {
-        const oldestKey = cache.keys().next().value;
-        if (oldestKey !== undefined) cache.delete(oldestKey);
+        const toRemove = Math.ceil(MAX_CACHE_SIZE * 0.2);
+        let removed = 0;
+        for (const k of cache.keys()) {
+          if (removed >= toRemove) break;
+          cache.delete(k);
+          removed++;
+        }
       }
       cache.set(key, { data, timestamp: Date.now() });
       inFlight.delete(key);
