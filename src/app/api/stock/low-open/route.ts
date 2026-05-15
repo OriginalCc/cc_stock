@@ -45,6 +45,15 @@ interface LowOpenStock {
   recoveryDetail: string;     // 恢复描述
   lowOpenPattern: string;     // 低开模式: 低开高走/低开低走/低开震荡/低开企稳
   sectorName: string;         // 所属板块
+  // ── Enhanced Factors ──
+  gapFillRate: number;        // 缺口回补率%: how much of the gap has been filled
+  supportStrength: number;    // 支撑强度: position within day's range (0-100)
+  volumeConfirm: number;      // 量价确认分: 0-100
+  mainForceScore: number;     // 主力资金分: 0-100
+  valuationSafety: number;    // 估值安全分: 0-100
+  elasticityScore: number;    // 弹性评分: 0-100
+  gapDepthScore: number;      // 缺口深度分: 0-100
+  compositeScore: number;     // 综合胜率分: 0-100
 }
 
 interface LowOpenResult {
@@ -355,6 +364,160 @@ function analyzeRecovery(stock: {
   };
 }
 
+// ── Enhanced Factor Computation ────────────────────────
+
+interface FactorInput {
+  price: number;
+  prevClose: number;
+  open: number;
+  high: number;
+  low: number;
+  volumeRatio: number;
+  amount: number;
+  mainNetInflow: number;
+  pe: number;
+  amplitude: number;
+  openGapRate: number;
+  recoveryRate: number;
+}
+
+interface FactorOutput {
+  gapFillRate: number;
+  supportStrength: number;
+  volumeConfirm: number;
+  mainForceScore: number;
+  valuationSafety: number;
+  elasticityScore: number;
+  gapDepthScore: number;
+  compositeScore: number;
+}
+
+function computeFactors(stock: FactorInput): FactorOutput {
+  const { price, prevClose, open, high, low, volumeRatio, amount, mainNetInflow, pe, amplitude, openGapRate, recoveryRate } = stock;
+
+  // ── 1. gapFillRate (缺口回补率) ──
+  let gapFillRate = 0;
+  if (prevClose !== open && open > 0) {
+    // (price - open) / (prevClose - open) * 100
+    // When price > prevClose, gapFillRate > 100% (over-filled)
+    // When price < open, gapFillRate < 0% (gap widened)
+    gapFillRate = ((price - open) / (prevClose - open)) * 100;
+  }
+
+  // ── 2. supportStrength (支撑强度, 0-100) ──
+  let supportStrength = 50; // default midpoint
+  if (high > low) {
+    supportStrength = ((price - low) / (high - low)) * 100;
+  }
+
+  // ── 3. volumeConfirm (量价确认分, 0-100) ──
+  let volumeConfirm = 50;
+  if (recoveryRate > 0 && volumeRatio >= 2) {
+    volumeConfirm = 90 + Math.min(10, (volumeRatio - 2) * 5); // 90-100
+  } else if (recoveryRate > 0 && volumeRatio >= 1.5) {
+    volumeConfirm = 70 + Math.min(19, (volumeRatio - 1.5) * 38); // 70-89
+  } else if (recoveryRate > 0 && volumeRatio >= 1) {
+    volumeConfirm = 50 + Math.min(19, (volumeRatio - 1) * 38); // 50-69
+  } else if (recoveryRate > 0 && volumeRatio < 1) {
+    volumeConfirm = 30 + Math.min(19, volumeRatio * 19); // 30-49
+  } else if (recoveryRate <= 0 && volumeRatio >= 2) {
+    volumeConfirm = 20 + Math.min(19, (volumeRatio - 2) * 9.5); // 20-39
+  } else if (recoveryRate <= 0 && volumeRatio < 2) {
+    volumeConfirm = 10 + Math.min(19, volumeRatio * 9.5); // 10-29
+  }
+  // Bonus for significant amount (>1e8)
+  if (amount > 1e8) volumeConfirm = Math.min(100, volumeConfirm + 5);
+  if (amount > 5e8) volumeConfirm = Math.min(100, volumeConfirm + 3);
+  volumeConfirm = Math.round(Math.max(0, Math.min(100, volumeConfirm)));
+
+  // ── 4. mainForceScore (主力资金分, 0-100) ──
+  let mainForceScore = 50;
+  if (amount > 0) {
+    const inflowRatio = Math.abs(mainNetInflow) / amount;
+    if (mainNetInflow > 0) {
+      mainForceScore = 50 + inflowRatio * 500;
+    } else if (mainNetInflow < 0) {
+      mainForceScore = 50 - inflowRatio * 500;
+    }
+  }
+  mainForceScore = Math.round(Math.max(0, Math.min(100, mainForceScore)));
+
+  // ── 5. valuationSafety (估值安全分, 0-100) ──
+  let valuationSafety = 40;
+  if (pe < 0) {
+    valuationSafety = 10; // 亏损
+  } else if (pe === 0) {
+    valuationSafety = 40; // no data
+  } else if (pe <= 15) {
+    valuationSafety = 90; // 低估值安全
+  } else if (pe <= 30) {
+    valuationSafety = 70; // 合理估值
+  } else if (pe <= 50) {
+    valuationSafety = 50; // 偏高
+  } else if (pe <= 100) {
+    valuationSafety = 30; // 高估值风险
+  } else {
+    valuationSafety = 15; // 极高估值
+  }
+
+  // ── 6. elasticityScore (弹性评分, 0-100) ──
+  let elasticityScore = 0;
+  // Base: recoveryRate * 10, capped at 50
+  elasticityScore = Math.min(50, recoveryRate * 10);
+  // Upper shadow for bonus check
+  const upperShadow = high > Math.max(open, price) ? ((high - Math.max(open, price)) / high) * 100 : 0;
+
+  if (amplitude >= 5 && recoveryRate > 0) {
+    elasticityScore += 20 + Math.min(10, (amplitude - 5) * 2); // 20-30 bonus
+  } else if (amplitude >= 3 && recoveryRate > 1) {
+    elasticityScore += 10 + Math.min(10, (amplitude - 3) * 5); // 10-20 bonus
+  }
+  if (upperShadow < 1 && recoveryRate > 0) {
+    elasticityScore += 10; // 无上影线=涨得稳
+  }
+  elasticityScore = Math.round(Math.max(0, Math.min(100, elasticityScore)));
+
+  // ── 7. gapDepthScore (缺口深度分, 0-100) ──
+  const absGap = Math.abs(openGapRate);
+  let gapDepthScore = 30; // default for <2%
+  if (absGap >= 2 && absGap < 4) {
+    gapDepthScore = 60;
+  } else if (absGap >= 4 && absGap < 7) {
+    gapDepthScore = 80;
+  } else if (absGap >= 7 && absGap < 9) {
+    gapDepthScore = 65;
+  } else if (absGap >= 9) {
+    gapDepthScore = 40;
+  }
+
+  // ── 8. compositeScore (综合胜率分, 0-100) ──
+  // Normalize each factor to 0-100, then weighted sum
+  // gapFillRate: can be negative or >100, normalize: clamp to 0-100 for weighting
+  const normalizedGapFill = Math.max(0, Math.min(100, gapFillRate));
+  const normalizedSupport = Math.max(0, Math.min(100, supportStrength));
+
+  const compositeScore = Math.round(Math.max(0, Math.min(100,
+    normalizedGapFill * 0.20 +
+    normalizedSupport * 0.15 +
+    volumeConfirm * 0.20 +
+    mainForceScore * 0.15 +
+    valuationSafety * 0.10 +
+    elasticityScore * 0.10 +
+    gapDepthScore * 0.10
+  )));
+
+  return {
+    gapFillRate: Math.round(gapFillRate * 100) / 100,
+    supportStrength: Math.round(supportStrength * 10) / 10,
+    volumeConfirm,
+    mainForceScore,
+    valuationSafety,
+    elasticityScore,
+    gapDepthScore,
+    compositeScore,
+  };
+}
+
 // ── Main Handler ────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -480,6 +643,14 @@ export async function GET(request: NextRequest) {
         volume, amount, turnover, mainNetInflow, volumeRatio, amplitude,
       });
 
+      const recoveryRate = ((price - open) / open) * 100;
+
+      // Compute enhanced factors
+      const factors = computeFactors({
+        price, prevClose, open, high, low, volumeRatio, amount,
+        mainNetInflow, pe, amplitude, openGapRate, recoveryRate,
+      });
+
       candidates.push({
         symbol: code,
         name,
@@ -500,17 +671,29 @@ export async function GET(request: NextRequest) {
         mainNetInflow,
         volumeRatio,
         openGapRate,
-        recoveryRate: ((price - open) / open) * 100,
+        recoveryRate,
         recoveryScore: recovery.score,
         recoveryDetail: recovery.detail,
         lowOpenPattern: recovery.pattern,
         sectorName: String(stock.f128 || stock.f140 || ""),
+        // ── Enhanced Factors ──
+        gapFillRate: factors.gapFillRate,
+        supportStrength: factors.supportStrength,
+        volumeConfirm: factors.volumeConfirm,
+        mainForceScore: factors.mainForceScore,
+        valuationSafety: factors.valuationSafety,
+        elasticityScore: factors.elasticityScore,
+        gapDepthScore: factors.gapDepthScore,
+        compositeScore: factors.compositeScore,
       });
     }
 
     // ── Sort ──
     candidates.sort((a, b) => {
-      if (sortBy === "openGapRate") {
+      if (sortBy === "compositeScore") {
+        if (b.compositeScore !== a.compositeScore) return b.compositeScore - a.compositeScore;
+        return b.recoveryScore - a.recoveryScore;
+      } else if (sortBy === "openGapRate") {
         return a.openGapRate - b.openGapRate;
       } else if (sortBy === "changePercent") {
         return b.changePercent - a.changePercent;

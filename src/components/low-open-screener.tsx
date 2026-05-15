@@ -59,6 +59,15 @@ interface LowOpenStock {
   recoveryDetail: string;
   lowOpenPattern: string;
   sectorName: string;
+  // ── Enhanced Factors ──
+  gapFillRate: number;
+  supportStrength: number;
+  volumeConfirm: number;
+  mainForceScore: number;
+  valuationSafety: number;
+  elasticityScore: number;
+  gapDepthScore: number;
+  compositeScore: number;
 }
 
 interface LowOpenResult {
@@ -72,7 +81,7 @@ interface LowOpenResult {
   cached?: boolean;
 }
 
-type SortField = "recoveryScore" | "openGapRate" | "recoveryRate" | "changePercent" | "marketCap" | "turnover" | "volumeRatio" | "amplitude";
+type SortField = "compositeScore" | "recoveryScore" | "openGapRate" | "recoveryRate" | "changePercent" | "marketCap" | "turnover" | "volumeRatio" | "amplitude";
 type SortOrder = "asc" | "desc";
 
 // ── Helpers ────────────────────────────────────────────
@@ -158,6 +167,34 @@ function getRecoveryScoreBg(score: number): string {
   return "bg-gray-500/10 border-gray-500/30";
 }
 
+function getCompositeScoreColor(score: number): string {
+  if (score >= 70) return "text-rose-600 dark:text-rose-400";
+  if (score >= 55) return "text-orange-500";
+  if (score >= 40) return "text-amber-500";
+  if (score >= 25) return "text-yellow-600 dark:text-yellow-400";
+  return "text-gray-400";
+}
+
+function getCompositeScoreBg(score: number): string {
+  if (score >= 70) return "bg-rose-500/10 border-rose-500/30";
+  if (score >= 55) return "bg-orange-500/10 border-orange-500/30";
+  if (score >= 40) return "bg-amber-500/10 border-amber-500/30";
+  if (score >= 25) return "bg-yellow-500/10 border-yellow-500/30";
+  return "bg-gray-500/10 border-gray-500/30";
+}
+
+function getFactorBarWidth(score: number): string {
+  return `${Math.max(4, Math.min(100, score))}%`;
+}
+
+function getFactorBarColor(score: number): string {
+  if (score >= 70) return "bg-rose-500";
+  if (score >= 55) return "bg-orange-500";
+  if (score >= 40) return "bg-amber-500";
+  if (score >= 25) return "bg-yellow-500";
+  return "bg-gray-400";
+}
+
 // ── Filter State ───────────────────────────────────────
 
 interface LowOpenFilters {
@@ -184,7 +221,7 @@ const DEFAULT_FILTERS: LowOpenFilters = {
   minTurnover: 0,
   maxTurnover: 100,
   minVolumeRatio: 0,
-  sortBy: "recoveryScore",
+  sortBy: "compositeScore",
   limit: 50,
 };
 
@@ -207,7 +244,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<SortField>("recoveryScore");
+  const [sortField, setSortField] = useState<SortField>("compositeScore");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [lastFetchTime, setLastFetchTime] = useState<string>("");
   const [isFromCache, setIsFromCache] = useState(false);
@@ -717,6 +754,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="compositeScore">综合胜率优先</SelectItem>
                       <SelectItem value="recoveryScore">恢复评分优先</SelectItem>
                       <SelectItem value="openGapRate">低开幅度优先</SelectItem>
                       <SelectItem value="recoveryRate">恢复幅度优先</SelectItem>
@@ -793,6 +831,9 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                   <TableRow>
                     <TableHead className="text-xs w-10">★</TableHead>
                     <TableHead className="text-xs">代码/名称</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort("compositeScore")}>
+                      <div className="flex items-center gap-0.5">综合胜率 <SortIcon field="compositeScore" /></div>
+                    </TableHead>
                     <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort("openGapRate")}>
                       <div className="flex items-center gap-0.5">低开幅度 <SortIcon field="openGapRate" /></div>
                     </TableHead>
@@ -843,6 +884,74 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                           {stock.sectorName && (
                             <div className="text-[10px] text-muted-foreground truncate max-w-[80px]">{stock.sectorName}</div>
                           )}
+                        </TableCell>
+                        <TableCell className="text-xs py-2">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className={`inline-flex items-center justify-center w-11 h-6 rounded-md text-[11px] font-bold border cursor-default ${getCompositeScoreBg(stock.compositeScore)} ${getCompositeScoreColor(stock.compositeScore)}`}>
+                                  {stock.compositeScore}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" className="text-xs max-w-[280px] p-2">
+                                <div className="font-semibold mb-1.5 text-foreground">因子分解 (综合 {stock.compositeScore})</div>
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-20 text-muted-foreground shrink-0">缺口回补</span>
+                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.gapFillRate)}`} style={{ width: getFactorBarWidth(Math.max(0, stock.gapFillRate)) }} />
+                                    </div>
+                                    <span className="w-10 text-right font-mono">{stock.gapFillRate}%</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-20 text-muted-foreground shrink-0">支撑强度</span>
+                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.supportStrength)}`} style={{ width: getFactorBarWidth(stock.supportStrength) }} />
+                                    </div>
+                                    <span className="w-10 text-right font-mono">{stock.supportStrength}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-20 text-muted-foreground shrink-0">量价确认</span>
+                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.volumeConfirm)}`} style={{ width: getFactorBarWidth(stock.volumeConfirm) }} />
+                                    </div>
+                                    <span className="w-10 text-right font-mono">{stock.volumeConfirm}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-20 text-muted-foreground shrink-0">主力资金</span>
+                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.mainForceScore)}`} style={{ width: getFactorBarWidth(stock.mainForceScore) }} />
+                                    </div>
+                                    <span className="w-10 text-right font-mono">{stock.mainForceScore}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-20 text-muted-foreground shrink-0">估值安全</span>
+                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.valuationSafety)}`} style={{ width: getFactorBarWidth(stock.valuationSafety) }} />
+                                    </div>
+                                    <span className="w-10 text-right font-mono">{stock.valuationSafety}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-20 text-muted-foreground shrink-0">弹性评分</span>
+                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.elasticityScore)}`} style={{ width: getFactorBarWidth(stock.elasticityScore) }} />
+                                    </div>
+                                    <span className="w-10 text-right font-mono">{stock.elasticityScore}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-20 text-muted-foreground shrink-0">缺口深度</span>
+                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.gapDepthScore)}`} style={{ width: getFactorBarWidth(stock.gapDepthScore) }} />
+                                    </div>
+                                    <span className="w-10 text-right font-mono">{stock.gapDepthScore}</span>
+                                  </div>
+                                </div>
+                                <div className="mt-1.5 pt-1 border-t border-border/50 text-[10px] text-muted-foreground">
+                                  权重: 回补20% + 量价20% + 支撑15% + 主力15% + 估值10% + 弹性10% + 深度10%
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </TableCell>
                         <TableCell className="text-xs py-2">
                           <span className="font-mono font-semibold text-green-600 dark:text-green-400">
@@ -933,7 +1042,8 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
               <p>• <strong>低开企稳</strong>：低开后价格小幅回升，趋势待确认</p>
               <p>• <strong>低开震荡</strong>：低开后价格在开盘价附近震荡</p>
               <p>• <strong>低开低走</strong>：低开后价格继续下跌，风险较大</p>
-              <p>• 恢复评分综合考虑：反弹幅度、量能配合、主力资金流向、换手率等因素</p>
+              <p>• <strong className="text-foreground">综合胜率</strong>：7因子加权评分，悬停查看因子分解</p>
+              <p className="text-[11px]">缺口回补20% + 量价确认20% + 支撑强度15% + 主力资金15% + 估值安全10% + 弹性评分10% + 缺口深度10%</p>
             </div>
           </div>
         </CardContent>
