@@ -176,7 +176,7 @@ interface LowOpenFilters {
 
 const DEFAULT_FILTERS: LowOpenFilters = {
   sector: "",
-  minOpenGap: -5,
+  minOpenGap: -4,
   maxMarketCap: 0,
   minMarketCap: 0,
   includeChiNext: false,
