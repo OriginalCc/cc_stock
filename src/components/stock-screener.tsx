@@ -62,7 +62,7 @@ import {
 } from "lucide-react";
 
 import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoSaveScreener, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
-import { fetchWithSWR } from "@/lib/client-cache";
+import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -613,53 +613,68 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
 
   const fetchScreenerData = useCallback(async (forceRefresh = false, customFilters?: ScreenerFilters) => {
     const f = customFilters || filters;
-    setLoading(true);
+
+    // Build params and cache key
+    const params = new URLSearchParams({
+      minChange: String(f.minChange),
+      maxChange: String(f.maxChange),
+      maxMarketCap: String(f.maxMarketCap),
+      pulseThreshold: String(f.pulseThreshold),
+      sector: f.sector,
+      pulseTimeStart: f.pulseTimeStart,
+      pulseTimeEnd: f.pulseTimeEnd,
+      volumeSurgeThreshold: String(f.volumeSurgeThreshold),
+      progressiveVolThreshold: String(f.progressiveVolThreshold),
+      minTurnover: String(f.minTurnover),
+      maxTurnover: String(f.maxTurnover),
+      minPE: String(f.minPE),
+      maxPE: String(f.maxPE),
+      minVolumeRatio: String(f.minVolumeRatio),
+      minAmplitude: String(f.minAmplitude),
+      maxAmplitude: String(f.maxAmplitude),
+      maTrendType: f.maTrendType,
+    });
+    if (!f.enablePulse) params.set("pulse", "false");
+    if (!f.enableVolumeSurge) params.set("volumeSurge", "false");
+    if (!f.enableProgressiveVol) params.set("progressiveVol", "false");
+    if (f.mainNetInflowRequired) params.set("mainNetInflowRequired", "true");
+    if (f.enableMATrend) params.set("enableMATrend", "true");
+    if (f.maxCirculatingMarketCap > 0) params.set("maxCirculatingMarketCap", String(f.maxCirculatingMarketCap));
+    if (f.minPB > 0) params.set("minPB", String(f.minPB));
+    if (f.maxPB > 0) params.set("maxPB", String(f.maxPB));
+    if (f.minBuySellRatio > 0) params.set("minBuySellRatio", String(f.minBuySellRatio));
+    if (f.minPricePosition > 0) params.set("minPricePosition", String(f.minPricePosition));
+    if (f.minGapUpRate > 0) params.set("minGapUpRate", String(f.minGapUpRate));
+    if (f.minConsecutiveUpDays > 0) params.set("minConsecutiveUpDays", String(f.minConsecutiveUpDays));
+    if (f.minLimitUpStrength > 0) params.set("minLimitUpStrength", String(f.minLimitUpStrength));
+    if (f.minLargeOrderRatio > 0) params.set("minLargeOrderRatio", String(f.minLargeOrderRatio));
+    if (f.openingStrengthFilter) params.set("openingStrengthFilter", f.openingStrengthFilter);
+    if (f.maxVwapDeviation > 0) params.set("maxVwapDeviation", String(f.maxVwapDeviation));
+    if (f.minVwapDeviation > 0) params.set("minVwapDeviation", String(f.minVwapDeviation));
+    if (f.enableLateSessionFilter) params.set("enableLateSessionFilter", "true");
+    if (f.enableLateSessionFilter && f.lateSessionType) params.set("lateSessionType", f.lateSessionType);
+    if (forceRefresh) params.set("refresh", "1");
+
+    const cacheKey = `screener:${params.toString()}`;
+
+    // Check for fresh cached data to avoid loading flash on tab switch
+    const cachedResult = getCachedData<ScreenerResult>(cacheKey);
+    const hasFreshCache = cachedResult && isCacheFresh(cacheKey, 3_600_000);
+
+    // Only show loading skeleton if there's no cached data to display
+    if (!hasFreshCache || forceRefresh) {
+      setLoading(true);
+    } else {
+      setResult(cachedResult);
+      setIsFromCache(true);
+      setLastFetchTimestamp(Date.now());
+    }
+
     setError(null);
     setIsFromCache(false);
     try {
-      const params = new URLSearchParams({
-        minChange: String(f.minChange),
-        maxChange: String(f.maxChange),
-        maxMarketCap: String(f.maxMarketCap),
-        pulseThreshold: String(f.pulseThreshold),
-        sector: f.sector,
-        pulseTimeStart: f.pulseTimeStart,
-        pulseTimeEnd: f.pulseTimeEnd,
-        volumeSurgeThreshold: String(f.volumeSurgeThreshold),
-        progressiveVolThreshold: String(f.progressiveVolThreshold),
-        // Enhanced conditions
-        minTurnover: String(f.minTurnover),
-        maxTurnover: String(f.maxTurnover),
-        minPE: String(f.minPE),
-        maxPE: String(f.maxPE),
-        minVolumeRatio: String(f.minVolumeRatio),
-        minAmplitude: String(f.minAmplitude),
-        maxAmplitude: String(f.maxAmplitude),
-        maTrendType: f.maTrendType,
-      });
-      if (!f.enablePulse) params.set("pulse", "false");
-      if (!f.enableVolumeSurge) params.set("volumeSurge", "false");
-      if (!f.enableProgressiveVol) params.set("progressiveVol", "false");
-      if (f.mainNetInflowRequired) params.set("mainNetInflowRequired", "true");
-      if (f.enableMATrend) params.set("enableMATrend", "true");
-      if (f.maxCirculatingMarketCap > 0) params.set("maxCirculatingMarketCap", String(f.maxCirculatingMarketCap));
-      if (f.minPB > 0) params.set("minPB", String(f.minPB));
-      if (f.maxPB > 0) params.set("maxPB", String(f.maxPB));
-      if (f.minBuySellRatio > 0) params.set("minBuySellRatio", String(f.minBuySellRatio));
-      if (f.minPricePosition > 0) params.set("minPricePosition", String(f.minPricePosition));
-      if (f.minGapUpRate > 0) params.set("minGapUpRate", String(f.minGapUpRate));
-      // v5.0 进阶筛选
-      if (f.minConsecutiveUpDays > 0) params.set("minConsecutiveUpDays", String(f.minConsecutiveUpDays));
-      if (f.minLimitUpStrength > 0) params.set("minLimitUpStrength", String(f.minLimitUpStrength));
-      if (f.minLargeOrderRatio > 0) params.set("minLargeOrderRatio", String(f.minLargeOrderRatio));
-      if (f.openingStrengthFilter) params.set("openingStrengthFilter", f.openingStrengthFilter);
-      if (f.maxVwapDeviation > 0) params.set("maxVwapDeviation", String(f.maxVwapDeviation));
-      if (f.minVwapDeviation > 0) params.set("minVwapDeviation", String(f.minVwapDeviation));
-      if (f.enableLateSessionFilter) params.set("enableLateSessionFilter", "true");
-      if (f.enableLateSessionFilter && f.lateSessionType) params.set("lateSessionType", f.lateSessionType);
-      if (forceRefresh) params.set("refresh", "1");
       const { data, fromCache } = await fetchWithSWR<ScreenerResult>(
-        `screener:${params.toString()}`,
+        cacheKey,
         async () => {
           const res = await fetch(`/api/stock/screener?${params}`);
           if (!res.ok) throw new Error("选股失败");
@@ -685,8 +700,7 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
     }
   }, [filters]);
 
-  // Auto-fetch on mount: fetchWithSWR returns cached data instantly
-  // and revalidates in background if stale
+  // Auto-fetch on mount: cached data is restored instantly if available
   useEffect(() => {
     fetchScreenerData();
   }, []);

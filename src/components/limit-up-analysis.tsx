@@ -54,7 +54,7 @@ import {
   isTradingHours,
   useAutoSaveScreener,
 } from "@/lib/screener-shared";
-import { cachedFetch } from "@/lib/client-cache";
+import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
 // ── Types (matching API response) ─────────────────────
 
@@ -915,14 +915,28 @@ export const LimitUpAnalysis = React.memo(function LimitUpAnalysis({ onSelectSto
 
   // ── Fetch data ────────────────────────────────────────
   const fetchData = useCallback(async (forceRefresh = false) => {
-    setLoading(true);
+    const params = new URLSearchParams();
+    if (forceRefresh) params.set("refresh", "1");
+
+    const cacheKey = `limit-up:${params.toString()}`;
+
+    // Check for fresh cached data to avoid loading flash on tab switch
+    const cachedResult = getCachedData<LimitUpResult>(cacheKey);
+    const hasFreshCache = cachedResult && isCacheFresh(cacheKey, 3_600_000);
+
+    if (!hasFreshCache || forceRefresh) {
+      setLoading(true);
+    } else {
+      setResult(cachedResult);
+      setIsFromCache(true);
+      setLastFetchTimestamp(Date.now());
+    }
+
     setError(null);
     setIsFromCache(false);
     try {
-      const params = new URLSearchParams();
-      if (forceRefresh) params.set("refresh", "1");
       const data: LimitUpResult = await cachedFetch<LimitUpResult>(
-        `limit-up:${params.toString()}`,
+        cacheKey,
         async () => {
           const res = await fetch(`/api/stock/limit-up?${params}`);
           if (!res.ok) throw new Error("涨停分析失败");

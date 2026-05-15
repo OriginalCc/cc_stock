@@ -77,7 +77,7 @@ import {
   type MiniTimelineResult,
   isTradingHours,
 } from "@/lib/screener-shared";
-import { fetchWithSWR } from "@/lib/client-cache";
+import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -261,26 +261,41 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
 
   const fetchData = useCallback(async (forceRefresh = false, customFilters?: ScreenerFilters) => {
     const f = customFilters || filters;
-    setLoading(true);
+
+    // Build params and cache key
+    const params = new URLSearchParams({
+      strategy: f.strategy,
+      minChange: String(f.minChange),
+      maxChange: String(f.maxChange),
+      maxMarketCap: String(f.maxMarketCap),
+      minTurnover: String(f.minTurnover),
+      minVolumeRatio: String(f.minVolumeRatio),
+      minCompositeScore: String(f.minCompositeScore),
+      maxResults: String(f.maxResults),
+    });
+    if (f.enableChiNext) params.set("chiNext", "true");
+    if (f.enableSTAR) params.set("star", "true");
+    if (forceRefresh) params.set("refresh", "1");
+
+    const cacheKey = `intraday-screener:${params.toString()}`;
+
+    // Check for fresh cached data to avoid loading flash on tab switch
+    const cachedResult = getCachedData<IntradayScreenerResult>(cacheKey);
+    const hasFreshCache = cachedResult && isCacheFresh(cacheKey, 3_600_000);
+
+    if (!hasFreshCache || forceRefresh) {
+      setLoading(true);
+    } else {
+      setResult(cachedResult);
+      setIsFromCache(true);
+      setLastFetchTimestamp(Date.now());
+    }
+
     setError(null);
     setIsFromCache(false);
     try {
-      const params = new URLSearchParams({
-        strategy: f.strategy,
-        minChange: String(f.minChange),
-        maxChange: String(f.maxChange),
-        maxMarketCap: String(f.maxMarketCap),
-        minTurnover: String(f.minTurnover),
-        minVolumeRatio: String(f.minVolumeRatio),
-        minCompositeScore: String(f.minCompositeScore),
-        maxResults: String(f.maxResults),
-      });
-      if (f.enableChiNext) params.set("chiNext", "true");
-      if (f.enableSTAR) params.set("star", "true");
-      if (forceRefresh) params.set("refresh", "1");
-
       const { data, fromCache } = await fetchWithSWR<IntradayScreenerResult>(
-        `intraday-screener:${params.toString()}`,
+        cacheKey,
         async () => {
           const res = await fetch(`/api/stock/intraday-screener?${params}`);
           if (!res.ok) throw new Error("选股失败");

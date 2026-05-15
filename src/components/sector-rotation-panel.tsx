@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import {
   TrendingUp, TrendingDown, ArrowRight, RefreshCw,
   Zap, Target, ArrowUpRight, ArrowDownRight, BarChart3,
@@ -1014,14 +1015,35 @@ export const SectorRotationPanel = React.memo(function SectorRotationPanel({ onS
   const savedDateRef = useRef<string>(""); // Track which date we've saved for
 
   const fetchData = useCallback(async (forceRefresh = false) => {
-    try {
+    const cacheKey = "sector-rotation:default";
+
+    // Check for fresh cached data to avoid loading flash on tab switch
+    const cachedResult = getCachedData<SectorRotationData>(cacheKey);
+    const hasFreshCache = cachedResult && isCacheFresh(cacheKey, 3_600_000);
+
+    if (!hasFreshCache || forceRefresh) {
       setLoading(true);
-      setError(null);
-      const url = `/api/stock/sector-rotation${forceRefresh ? "?refresh=1" : ""}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error || "获取数据失败");
+    } else {
+      setData(cachedResult);
+    }
+
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (forceRefresh) params.set("refresh", "1");
+
+      const json = await cachedFetch<SectorRotationData>(
+        cacheKey,
+        async () => {
+          const res = await fetch(`/api/stock/sector-rotation?${params}`, { signal: AbortSignal.timeout(15000) });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "获取数据失败");
+          return data;
+        },
+        forceRefresh ? 0 : 3_600_000
+      );
+
       setData(json);
     } catch (e: any) {
       if (e.name === "AbortError") return;

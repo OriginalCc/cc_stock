@@ -30,7 +30,7 @@ import {
   removeFromWatchlist, isInWatchlist, isTradingHours,
   useAutoSaveScreener,
 } from "@/lib/screener-shared";
-import { fetchWithSWR } from "@/lib/client-cache";
+import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -237,11 +237,43 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Helper: build cache key from filters
+  const buildCacheKey = useCallback((f: LowOpenFilters) => {
+    const params = new URLSearchParams({
+      minOpenGap: String(f.minOpenGap),
+      maxMarketCap: String(f.maxMarketCap),
+      minMarketCap: String(f.minMarketCap),
+      minTurnover: String(f.minTurnover),
+      maxTurnover: String(f.maxTurnover),
+      minVolumeRatio: String(f.minVolumeRatio),
+      sortBy: f.sortBy,
+      limit: String(f.limit),
+    });
+    if (f.sector) params.set("sector", f.sector);
+    if (f.includeChiNext) params.set("includeChiNext", "true");
+    if (f.includeSTAR) params.set("includeSTAR", "true");
+    return `low-open:${params.toString()}`;
+  }, []);
+
   const fetchData = useCallback(async (forceRefresh = false, customFilters?: LowOpenFilters) => {
     const f = customFilters || filters;
-    setLoading(true);
+    const cacheKey = buildCacheKey(f);
+
+    // Check for fresh cached data to avoid loading flash on tab switch
+    const cachedResult = getCachedData<LowOpenResult>(cacheKey);
+    const hasFreshCache = cachedResult && isCacheFresh(cacheKey, 3_600_000);
+
+    // Only show loading skeleton if there's no cached data to display
+    if (!hasFreshCache || forceRefresh) {
+      setLoading(true);
+    } else {
+      // Restore cached data immediately so the UI never blanks out
+      setResult(cachedResult);
+      setIsFromCache(true);
+      setLastFetchTimestamp(Date.now());
+    }
+
     setError(null);
-    setIsFromCache(false);
     try {
       const params = new URLSearchParams({
         minOpenGap: String(f.minOpenGap),
@@ -259,7 +291,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
       if (forceRefresh) params.set("refresh", "1");
 
       const { data, fromCache } = await fetchWithSWR<LowOpenResult>(
-        `low-open:${params.toString()}`,
+        cacheKey,
         async () => {
           const res = await fetch(`/api/stock/low-open?${params}`);
           if (!res.ok) throw new Error("查询失败");
@@ -283,7 +315,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, buildCacheKey]);
 
   // Auto-fetch on mount: fetchWithSWR returns cached data instantly
   useEffect(() => {

@@ -269,3 +269,24 @@ Stage Summary:
 - 客户端缓存LRU驱逐O(1)优化，stale阈值动态化
 - 6个Recharts组件的内联shape函数提取为模块级稳定引用，减少不必要重渲染
 - 指数数据初始加载优先级优化，先显示活跃指数
+---
+Task ID: 1
+Agent: Main
+Task: 低开页面选出的股票缓存一个小时，不然每次点击去都没有了
+
+Work Log:
+- 分析了低开页面的数据流：组件通过 fetchWithSWR 从 client-cache 获取数据，1小时 TTL
+- 发现问题根因：切换 tab 时组件卸载，React 状态（result）重置为 null，重新挂载时 fetchData() 先 setLoading(true) 导致显示空白/骨架屏，即使 client-cache 模块级 Map 有缓存数据
+- 解决方案：在 fetchData 开头先用 getCachedData + isCacheFresh 检查缓存，有新鲜缓存则立即恢复数据，跳过 loading 骨架屏
+- 将同样优化应用到所有使用 client-cache 的选股组件：
+  - low-open-screener.tsx（低开选股）
+  - stock-screener.tsx（选股器）
+  - intraday-screener.tsx（分时选股）
+  - early-trading-screener.tsx（早盘选股）
+  - limit-up-analysis.tsx（涨停分析）
+  - sector-rotation-panel.tsx（板块轮动 - 新增 cachedFetch 接入）
+
+Stage Summary:
+- 所有选股页面现在切换回来时会立即显示缓存数据，不会出现空白
+- 缓存有效期 1 小时（3_600_000ms），通过刷新按钮强制更新
+- client-cache.ts 的模块级 Map 在 SPA 生命周期内持续有效，tab 切换不会丢失
