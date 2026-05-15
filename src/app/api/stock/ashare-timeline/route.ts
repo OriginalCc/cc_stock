@@ -20,7 +20,7 @@ function getTimelineCacheTTL(): number {
   const isMorningSession = (chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35);
   const isAfternoonSession = (chinaHour === 13) || (chinaHour === 14) || (chinaHour === 15 && chinaMinute <= 5);
 
-  if (isMorningSession || isAfternoonSession) return 1000; // 1s during trading (800ms client refresh)
+  if (isMorningSession || isAfternoonSession) return 2000; // 2s during trading (3s client refresh)
   return 300000; // 5 min outside trading hours
 }
 
@@ -39,9 +39,70 @@ export async function GET(request: NextRequest) {
   const cacheTTL = getTimelineCacheTTL();
 
   try {
-    // Fetch timeline and quote in parallel when includeQuote=true
-    // This eliminates the need for a separate /ashare-quote request on initial page load
-    const timelinePromise = fetchGuarded(
+    // When includeQuote=true, fetch quote FIRST to get prevClose, then pass it to timeline
+    // This avoids getAShareTimeline making a duplicate quote call internally
+    if (includeQuote) {
+      const quoteResult = await fetchGuarded(
+        `quote:${symbol}`,
+        async (signal) => {
+          try {
+            return await getAShareQuote(symbol);
+          } catch {
+            return null;
+          }
+        },
+        cacheTTL
+      );
+
+      // Now fetch timeline with prevClose from the quote (avoids duplicate quote call)
+      const timelineResult = await fetchGuarded(
+        `timeline:${symbol}`,
+        async (signal) => {
+          try {
+            return await getAShareTimeline(symbol, quoteResult?.prevClose);
+          } catch {
+            return { items: [], prevClose: 0 };
+          }
+        },
+        cacheTTL
+      );
+
+      const response: any = {
+        ...timelineResult,
+        quote: quoteResult ? {
+          symbol: quoteResult.symbol,
+          name: quoteResult.name,
+          price: quoteResult.price,
+          prevClose: quoteResult.prevClose,
+          open: quoteResult.open,
+          high: quoteResult.high,
+          low: quoteResult.low,
+          close: quoteResult.close,
+          change: quoteResult.change,
+          changePercent: quoteResult.changePercent,
+          volume: quoteResult.volume * 100, // 手 → 股
+          marketCap: quoteResult.marketCap * 10000, // 万元 → 元
+          peRatio: quoteResult.pe,
+          week52High: quoteResult.high52week,
+          week52Low: quoteResult.low52week,
+          avgVolume: 0,
+          bidPrice: quoteResult.bidPrice,
+          askPrice: quoteResult.askPrice,
+          turnover: quoteResult.turnover,
+          exchange: quoteResult.exchange,
+          isAShare: true,
+        } : null,
+      };
+
+      const isTrading = cacheTTL <= 1000;
+      const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
+      return NextResponse.json(response, {
+        headers: { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` },
+      });
+    }
+
+    // No quote needed - just fetch timeline
+    const result = await fetchGuarded(
       `timeline:${symbol}`,
       async (signal) => {
         try {
@@ -53,62 +114,9 @@ export async function GET(request: NextRequest) {
       cacheTTL
     );
 
-    if (!includeQuote) {
-      const result = await timelinePromise;
-      // Browser cache: 0 during trading (1s refresh), otherwise match server TTL
-      const isTrading = cacheTTL <= 1000;
-      const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
-      return NextResponse.json(result, {
-        headers: { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` },
-      });
-    }
-
-    // Parallel fetch: timeline + quote
-    const quotePromise = fetchGuarded(
-      `quote:${symbol}`,
-      async (signal) => {
-        try {
-          return await getAShareQuote(symbol);
-        } catch {
-          return null;
-        }
-      },
-      cacheTTL
-    );
-
-    const [timelineResult, quoteResult] = await Promise.all([timelinePromise, quotePromise]);
-
-    const response: any = {
-      ...timelineResult,
-      quote: quoteResult ? {
-        symbol: quoteResult.symbol,
-        name: quoteResult.name,
-        price: quoteResult.price,
-        prevClose: quoteResult.prevClose,
-        open: quoteResult.open,
-        high: quoteResult.high,
-        low: quoteResult.low,
-        close: quoteResult.close,
-        change: quoteResult.change,
-        changePercent: quoteResult.changePercent,
-        volume: quoteResult.volume * 100, // 手 → 股
-        marketCap: quoteResult.marketCap * 10000, // 万元 → 元
-        peRatio: quoteResult.pe,
-        week52High: quoteResult.high52week,
-        week52Low: quoteResult.low52week,
-        avgVolume: 0,
-        bidPrice: quoteResult.bidPrice,
-        askPrice: quoteResult.askPrice,
-        turnover: quoteResult.turnover,
-        exchange: quoteResult.exchange,
-        isAShare: true,
-      } : null,
-    };
-
-    // Browser cache: 0 during trading (1s refresh), otherwise match server TTL
     const isTrading = cacheTTL <= 1000;
     const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
-    return NextResponse.json(response, {
+    return NextResponse.json(result, {
       headers: { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` },
     });
   } catch (error: any) {

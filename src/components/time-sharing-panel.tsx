@@ -1309,6 +1309,61 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
 
 // ── 同花顺风格 分时图 (Unified Three-Panel) ──────────
 
+/**
+ * Custom shallow-equivalent comparison for TimeSharingPanel props.
+ * Compares array/object props by content fingerprint instead of reference,
+ * so React.memo can actually skip re-renders when data hasn't changed.
+ */
+function timeSharingPropsEqual(
+  prev: React.ComponentProps<typeof TimeSharingPanel>,
+  next: React.ComponentProps<typeof TimeSharingPanel>
+): boolean {
+  // Quick primitive checks first
+  if (
+    prev.prevClose !== next.prevClose ||
+    prev.symbol !== next.symbol ||
+    prev.visibleMinutes !== next.visibleMinutes ||
+    prev.zoomIdx !== next.zoomIdx ||
+    prev.maxZoomIdx !== next.maxZoomIdx ||
+    prev.panOffset !== next.panOffset ||
+    prev.prevDayMA5 !== next.prevDayMA5 ||
+    prev.activeIndexKey !== next.activeIndexKey
+  ) return false;
+
+  // Data array: compare length + last item fingerprint (most frequent change)
+  const pd = prev.data, nd = next.data;
+  if (pd.length !== nd.length) return false;
+  if (pd.length > 0) {
+    const pLast = pd[pd.length - 1], nLast = nd[nd.length - 1];
+    if (pLast.price !== nLast.price || pLast.time !== nLast.time || pLast.volume !== nLast.volume) return false;
+  }
+
+  // Signals: compare length + last signal type/reason
+  const ps = prev.signals, ns = next.signals;
+  if (ps.length !== ns.length) return false;
+  if (ps.length > 0) {
+    const pSig = ps[ps.length - 1], nSig = ns[ns.length - 1];
+    if (pSig?.type !== nSig?.type || pSig?.reason !== nSig?.reason) return false;
+  }
+
+  // MACD data: compare length
+  if (prev.macdData.length !== next.macdData.length) return false;
+
+  // Key price levels: compare length
+  if ((prev.keyPriceLevels?.length || 0) !== (next.keyPriceLevels?.length || 0)) return false;
+
+  // PV markers: compare length
+  if ((prev.pvMarkers?.length || 0) !== (next.pvMarkers?.length || 0)) return false;
+
+  // Regime objects: compare regime string
+  if (prev.szIndexRegime?.regime !== next.szIndexRegime?.regime) return false;
+  if (prev.sectorRegime?.regime !== next.sectorRegime?.regime) return false;
+  if (prev.sectorInfo?.code !== next.sectorInfo?.code) return false;
+
+  // Callbacks and config are stable refs (useCallback in parent)
+  return true;
+}
+
 export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   data,
   prevClose,
@@ -2416,4 +2471,4 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       </div>
     </div>
   );
-});
+}, timeSharingPropsEqual);

@@ -447,18 +447,21 @@ export async function searchAShare(query: string): Promise<AShareSearchResult[]>
  * Fallback: Sina 5-min K-line data (when Tencent API is unavailable)
  */
 export async function getAShareTimeline(
-  symbol: string
+  symbol: string,
+  prevCloseFromQuote?: number
 ): Promise<{ items: AShareTimelineItem[]; prevClose: number }> {
   const sinaSymbol = toSinaSymbol(symbol);
 
-  // Get quote and timeline data in parallel (instead of serial)
-  const quotePromise = getAShareQuote(symbol);
+  // If prevClose is provided externally, skip the separate quote fetch
+  const quotePromise = prevCloseFromQuote
+    ? Promise.resolve({ prevClose: prevCloseFromQuote } as any)
+    : getAShareQuote(symbol);
   
   // Try Tencent minute API first (provides real 1-minute data)
   try {
     const [quote, tencentResult] = await Promise.all([
       quotePromise,
-      getTencentMinuteData(sinaSymbol, 0, symbol), // prevClose=0, will adjust later
+      getTencentMinuteData(sinaSymbol, prevCloseFromQuote || 0, symbol), // prevClose=0, will adjust later
     ]);
     const prevClose = quote?.prevClose || tencentResult.prevClose || 0;
     if (tencentResult.items.length > 0) {

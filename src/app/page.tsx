@@ -97,9 +97,9 @@ export default function StockTAssistant() {
   const [indexTimelineData, setIndexTimelineData] = useState<Record<IndexKey, { items: TimelineItem[]; prevClose: number }>>({ sz: { items: [], prevClose: 0 }, sh: { items: [], prevClose: 0 }, cyb: { items: [], prevClose: 0 } });
 
   useEffect(() => {
-    // Index data fetch - use requestIdleCallback to avoid blocking initial critical path
-    // Only fetch once on mount, no interval
+    // Index data fetch - start immediately, then refresh every 30s during trading hours
     let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
     const fetchAllIndices = async () => {
       const results = await Promise.allSettled(
         INDEX_KEYS.map(async (key) => {
@@ -117,11 +117,18 @@ export default function StockTAssistant() {
       setIndexRegimes(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newRegime = results[i].value!.regime; if (prev[key]?.regime !== newRegime.regime || prev[key]?.confidence !== newRegime.confidence) { next[key] = newRegime; changed = true; } } }); return changed ? next : prev; });
       setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
     };
-    // Use requestIdleCallback for non-blocking fetch (fallback to setTimeout for SSR compat)
-    const idleCb = (typeof requestIdleCallback !== "undefined")
-      ? requestIdleCallback(() => { if (!cancelled) fetchAllIndices(); }, { timeout: 500 })
-      : setTimeout(fetchAllIndices, 300);
-    return () => { cancelled = true; if (typeof idleCb === "number") clearTimeout(idleCb); else cancelIdleCallback(idleCb); };
+    // Start immediately
+    fetchAllIndices();
+    // Refresh every 30s during trading hours
+    const isTradingHours = () => {
+      const now = new Date(); const h = (now.getUTCHours() + 8) % 24; const m = now.getUTCMinutes();
+      const t = h * 100 + m; const day = now.getUTCDay();
+      return day >= 1 && day <= 5 && ((t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505));
+    };
+    if (isTradingHours()) {
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 30000);
+    }
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
 
   const szIndexRegime = indexRegimes[activeIndexKey];
@@ -169,25 +176,21 @@ export default function StockTAssistant() {
         if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
       }
     };
-    // Use requestIdleCallback for non-blocking sector fetch (fallback to short setTimeout)
-    const idleCb = (typeof requestIdleCallback !== "undefined")
-      ? requestIdleCallback(() => { if (!cancelled) fetchSectorData(); }, { timeout: 800 })
-      : setTimeout(fetchSectorData, 500);
-    // Sector refresh disabled - only fetch once after idle
-    return () => { cancelled = true; if (typeof idleCb === "number") clearTimeout(idleCb); else cancelIdleCallback(idleCb); abortCtrl?.abort(); };
+    // Start immediately - no idle callback delay for sector data
+    fetchSectorData();
+    return () => { cancelled = true; abortCtrl?.abort(); };
   }, [symbol, isAShareStock]);
 
   // ── DB Factor Overrides (deferred - not needed for initial render) ──
   const [factorOverrides, setFactorOverrides] = useState<FactorOverride[]>([]);
   useEffect(() => {
-    // Use requestIdleCallback to fetch factor overrides without blocking initial render
+    // Fetch factor overrides - low priority but no artificial delay
     const fetchFactors = async () => {
       try { const res = await fetch("/api/stock/strategy"); if (res.ok) { const data = await res.json(); if (data.dbFactors && Array.isArray(data.dbFactors)) startTransition(() => setFactorOverrides(buildFactorOverridesFromDB(data.dbFactors))); } } catch (e) { console.error("Failed to fetch factor overrides:", e); }
     };
-    const idleCb = (typeof requestIdleCallback !== "undefined")
-      ? requestIdleCallback(() => fetchFactors(), { timeout: 500 })
-      : setTimeout(fetchFactors, 200);
-    return () => { if (typeof idleCb === "number") clearTimeout(idleCb); else cancelIdleCallback(idleCb); };
+    // Start after a short delay to let critical data load first
+    const timer = setTimeout(fetchFactors, 300);
+    return () => clearTimeout(timer);
   }, []);
 
   // ── Custom Factors ──
@@ -662,7 +665,7 @@ export default function StockTAssistant() {
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             {(() => { const lastTl = liveTimeline[liveTimeline.length - 1]; if (lastTl && lastTl.avgPrice && lastTl.avgPrice > 0) { const deviation = ((lastTl.price - lastTl.avgPrice) / lastTl.avgPrice) * 100; const isAbove = deviation >= 0; return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[10px] font-semibold ${isAbove ? "bg-red-500/10 border-red-500/25 text-red-600 dark:text-red-400" : "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400"}`} title={`价格 ${lastTl.price.toFixed(2)} 相对均价 ${lastTl.avgPrice.toFixed(2)} 偏离 ${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}%`}><span className="opacity-70">{isAbove ? "↑均线上方" : "↓均线下方"}</span><span className="font-mono">{deviation >= 0 ? "+" : ""}{deviation.toFixed(2)}%</span></span>; } return null; })()}
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSoundEnabled(prev => !prev)} title={soundEnabled ? '关闭声音提醒' : '开启声音提醒'}>{soundEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />}</Button>
-            <Clock className="h-3 w-3" />实时刷新 1s
+            <Clock className="h-3 w-3" />实时刷新 3s
           </div>
         </div>
 
@@ -704,7 +707,7 @@ export default function StockTAssistant() {
 
         {/* T-Trading Signals Summary */}
         {(chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
-          <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
+          <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
         )}
 
         {/* News Analysis Panel */}

@@ -80,12 +80,12 @@ const DEFAULT_SYMBOL = "600519";
 const DEFAULT_CHART_MODE: ChartMode = "timeline";
 
 // ── Cache TTL constants ──
-const QUOTE_CACHE_TTL = 500; // 500ms for quote data (real-time refresh)
-const TIMELINE_CACHE_TTL = 500; // 500ms for timeline data (real-time refresh)
+const QUOTE_CACHE_TTL = 2000; // 2s for quote data (matches refresh interval)
+const TIMELINE_CACHE_TTL = 2000; // 2s for timeline data (matches refresh interval)
 const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
 
 // ── Auto-refresh interval ──
-const TIMELINE_REFRESH_INTERVAL = 800; // 800ms for timeline/quote auto-refresh during trading hours
+const TIMELINE_REFRESH_INTERVAL = 3000; // 3s for timeline/quote auto-refresh during trading hours
 
 // ── Hook ──────────────────────────────────────────────
 
@@ -157,6 +157,8 @@ export function useStockData() {
   }, [checkAShare]);
 
   // ── Fetch timeline + quote in a single request (optimized for initial page load) ──
+  // Ref to track last data fingerprint for skip-if-unchanged optimization
+  const lastTimelineFingerprint = useRef("");
   const fetchTimelineWithQuote = useCallback(async (sym: string) => {
     if (!checkAShare(sym)) return;
     setTimelineLoading(true);
@@ -179,8 +181,16 @@ export function useStockData() {
         TIMELINE_CACHE_TTL
       );
       if (!data.error) {
+        // Skip state update if data hasn't actually changed (price & length fingerprint)
+        const items = data.items || [];
+        const lastItem = items[items.length - 1];
+        const fp = `${items.length}:${lastItem?.time}:${lastItem?.price}:${lastItem?.volume}:${data.prevClose}:${data.quote?.price}`;
+        if (fp === lastTimelineFingerprint.current) {
+          return; // No actual change, skip re-render cascade
+        }
+        lastTimelineFingerprint.current = fp;
         startTransition(() => {
-          setTimeline(data.items || []);
+          setTimeline(items);
           setTimelinePrevClose(data.prevClose || 0);
           if (data.quote) {
             setQuote(data.quote);
