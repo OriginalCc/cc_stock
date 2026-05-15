@@ -100,6 +100,7 @@ export function useStockData() {
   const [interval, setInterval_] = useState<TimeInterval>("1d");
   const [chartMode, setChartMode] = useState<ChartMode>(DEFAULT_CHART_MODE);
   const [loading, setLoading] = useState(false);
+  const [timelineLoading, setTimelineLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [latestSignal, setLatestSignal] = useState<{
     type: "buy" | "sell" | "hold";
@@ -158,6 +159,7 @@ export function useStockData() {
   // ── Fetch timeline + quote in a single request (optimized for initial page load) ──
   const fetchTimelineWithQuote = useCallback(async (sym: string) => {
     if (!checkAShare(sym)) return;
+    setTimelineLoading(true);
     try {
       const data = await cachedFetch<{
         items: TimelineItem[];
@@ -187,6 +189,8 @@ export function useStockData() {
       }
     } catch (err) {
       console.error("Timeline+Quote fetch error:", err);
+    } finally {
+      setTimelineLoading(false);
     }
   }, [checkAShare]);
 
@@ -393,6 +397,7 @@ export function useStockData() {
     interval,
     chartMode,
     loading,
+    timelineLoading,
     error,
     latestSignal,
     selectStock,

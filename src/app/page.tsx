@@ -51,7 +51,7 @@ import {
 export default function StockTAssistant() {
   const {
     symbol, quote, history, timeline, timelinePrevClose, interval, chartMode,
-    loading, error, latestSignal, selectStock, changeInterval, changeChartMode,
+    loading, timelineLoading, error, latestSignal, selectStock, changeInterval, changeChartMode,
     searchStocks, isAShare: isAShareStock,
   } = useStockData();
 
@@ -669,7 +669,7 @@ export default function StockTAssistant() {
         {error && (<Card className="mb-4 border-destructive/50"><CardContent className="p-4 text-destructive text-sm">{error}</CardContent></Card>)}
 
         {/* Charts */}
-        {loading && chartData.length === 0 && liveTimeline.length === 0 ? (
+        {(chartMode === "timeline" || chartMode === "5d-timeline") && liveTimeline.length === 0 && timelineLoading ? (
           <div className="space-y-4"><Skeleton className="h-[400px] w-full" /><Skeleton className="h-[150px] w-full" /><Skeleton className="h-[100px] w-full" /></div>
         ) : chartMode === "5d-timeline" ? (
           <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
@@ -677,8 +677,10 @@ export default function StockTAssistant() {
           <div className="space-y-4">
             <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={deferredTimelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={deferredPvMarkers} />
           </div>
-        ) : chartData.length > 0 ? (
+        ) : chartMode === "kline" && chartData.length > 0 ? (
           <KLineChartPanel allChartData={allChartData} klineVisibleBars={klineVisibleBars} setKlineVisibleBars={setKlineVisibleBars} klinePanOffset={klinePanOffset} setKlinePanOffset={setKlinePanOffset} interval={interval} />
+        ) : chartMode === "kline" && loading ? (
+          <div className="space-y-4"><Skeleton className="h-[400px] w-full" /><Skeleton className="h-[150px] w-full" /><Skeleton className="h-[100px] w-full" /></div>
         ) : (
           !loading && (<Card><CardContent className="p-12 text-center text-muted-foreground"><Activity className="h-12 w-12 mx-auto mb-4 opacity-30" /><p className="text-lg font-medium mb-2">选择A股开始分析</p><p className="text-sm">在搜索框中输入股票代码或名称，或点击上方热门股票</p></CardContent></Card>)
         )}
