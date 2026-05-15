@@ -15,7 +15,7 @@ import {
   Customized,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
-import { formatVolume } from "@/lib/chart-shared";
+import { formatVolume, formatAmount } from "@/lib/chart-shared";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
@@ -285,6 +285,8 @@ const FiveDayTooltip = ({ active, payload }: any) => {
         <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.changePercent?.toFixed(2)}%</span>
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+        <span className="text-muted-foreground">成交额</span>
+        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * data.price)}</span>
       </div>
     </div>
   );
@@ -781,6 +783,8 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                         <div className="grid grid-cols-2 gap-y-0.5 gap-x-2">
                           <span className="text-muted-foreground">成交量</span>
                           <span className="text-right font-mono">{formatVolume(data.displayVolume)}</span>
+                          <span className="text-muted-foreground">成交额</span>
+                          <span className="text-right font-mono text-yellow-500">{formatAmount(data.displayVolume * 100 * data.price)}</span>
                           <span className="text-muted-foreground">价格</span>
                           <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2)}</span>
                         </div>

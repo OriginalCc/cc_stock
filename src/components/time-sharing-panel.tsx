@@ -1956,7 +1956,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className={isUp ? "text-red-600" : "text-green-600"}>{crosshairItem.price?.toFixed(2)}</span>
               <span className={isUp ? "text-red-600" : "text-green-600"}>{isUp ? "+" : ""}{pct?.toFixed(2)}%</span>
               {crosshairItem.volume > 0 && (
-                <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
+                <>
+                  <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
+                  <span className="text-yellow-500">Amt {formatAmount(crosshairItem.volume * 100 * crosshairItem.price)}</span>
+                </>
               )}
               {crosshairItem.dif != null && (
                 <span className="text-blue-600">DIF {crosshairItem.dif.toFixed(3)}</span>
