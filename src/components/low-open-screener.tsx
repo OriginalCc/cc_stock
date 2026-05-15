@@ -194,8 +194,17 @@ interface LowOpenScreenerProps {
   onSelectStock?: (symbol: string) => void;
 }
 
+const LAST_RESULT_KEY = "low-open-last-result";
+
 export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
-  const [result, setResult] = useState<LowOpenResult | null>(null);
+  // Initialize from localStorage so last query result shows instantly on mount
+  const [result, setResult] = useState<LowOpenResult | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const saved = localStorage.getItem(LAST_RESULT_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("recoveryScore");
@@ -307,6 +316,8 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
         setLastFetchTime(fetchTime);
         setIsFromCache(fromCache);
         setLastFetchTimestamp(Date.now());
+        // Persist to localStorage so next mount shows last result immediately
+        try { localStorage.setItem(LAST_RESULT_KEY, JSON.stringify(data)); } catch {}
       } else {
         setError(data.error || "查询失败");
       }
