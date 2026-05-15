@@ -50,5 +50,21 @@ test
 prompt
 
 server.log
+
+# database (will be auto-created on install)
+/db/
+
+# packaged archives
+*.tar.gz
+
+# logs directory
+/logs/
+
+# agent context
+/agent-ctx/
+
 # Skills directory
 /skills/
+
+# zscripts
+/.zscripts/
