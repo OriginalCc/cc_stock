@@ -313,5 +313,43 @@ Work Log:
 Stage Summary:
 - Strategy panel added between header card and results section
 - All 7 factors documented with calculation, meaning, and usage tips
+
+---
+Task ID: 1
+Agent: main
+Task: Enrich the low-open screener page with new features
+
+Work Log:
+- Read existing low-open-screener.tsx (1310 lines) and worklog.md
+- Added new imports: ChevronRight, Gauge, PieChart, Filter, Eye, Plus from lucide-react
+- Added getSentimentInfo helper function for sentiment gauge coloring (强势/偏多/中性/偏空)
+- Extended LowOpenFilters interface with client-side fields: maxPE, excludeST, minCompositeScore, patternFilter, minMainForceScore
+- Updated DEFAULT_FILTERS with new fields (all defaulting to 0/false/"")
+- Added PresetKey type and PRESET_CONFIGS for 6 quick filter presets
+- Added FACTOR_DEFS constant for the 7 factor definitions used in row expansion
+- Added new state variables: activePreset (PresetKey), expandedStock (string | null)
+- Added statsOverview useMemo: avg composite score, avg recovery rate, high-score count, 低开高走 count, avg volume ratio
+- Added sentimentScore useMemo: calculates sentiment based on pattern distribution (低开高走+2, 低开企稳+1, 低开震荡0, 低开低走-2)
+- Added sectorDistribution useMemo: groups stocks by sectorName, sorted by count descending, top 10
+- Added filteredStocks useMemo: applies client-side filters (maxPE, excludeST, minCompositeScore, patternFilter, minMainForceScore) on top of sortedStocks
+- Added handlePresetClick function: applies preset filter combinations, handles deactivation, triggers API refetch when needed
+- Updated handleResetFilters to also reset activePreset
+- Added Quick Filter Presets row (6 pill buttons) in header card below active criteria tags
+- Added new criteria badges for maxPE, excludeST, minCompositeScore, patternFilter, minMainForceScore
+- Added Statistical Overview Card between header and results: 6 stat boxes in grid (avg score, avg recovery, high-score count, 低开高走 count, avg volume ratio, sentiment gauge)
+- Added Sector Distribution Panel between stats card and results: horizontal bar chart of top 10 sectors
+- Added row expansion support: ChevronRight toggle column, expandedStock state, expanded detail sub-row with 7 factor progress bars in 2-column grid, recovery detail text, and quick action buttons (加入自选, 查看详情)
+- Added PE and ST filter inputs to filter panel (Row 5)
+- Updated results count to show filteredStocks.length and indicate client-side filtering
+- Added empty state card for when client-side filters eliminate all results
+- Updated info card to mention row expansion feature
+- Lint check passed with no errors
+
+Stage Summary:
+- 6 new features added to low-open screener: Statistical Overview, Quick Filter Presets, Sector Distribution, Row Expansion, Market Sentiment Gauge, Additional Filters (PE/ST)
+- All existing functionality preserved intact
+- No backend changes required - all new features use client-side filtering and data from existing result state
+- 5 new client-side filter fields added to LowOpenFilters interface
+- ~200 lines of new code added across the component
 - Composite score formula and score interpretation included
 - Panel is collapsed by default, expandable with click

@@ -23,6 +23,7 @@ import {
   ChevronUp as ChevronUpIcon, X, SlidersHorizontal,
   Bookmark, BookmarkPlus, Star, Clock, AlertCircle,
   TrendingUp, Activity, Flame, BookOpen, Info, Shield, Zap, BarChart2, Layers,
+  ChevronRight, Gauge, PieChart, Filter, Eye, Plus,
 } from "lucide-react";
 
 import {
@@ -195,6 +196,13 @@ function getFactorBarColor(score: number): string {
   return "bg-gray-400";
 }
 
+function getSentimentInfo(score: number): { label: string; bgClass: string; textClass: string } {
+  if (score >= 70) return { label: "强势", bgClass: "bg-rose-500/10 border-rose-500/30", textClass: "text-rose-600 dark:text-rose-400" };
+  if (score >= 50) return { label: "偏多", bgClass: "bg-orange-500/10 border-orange-500/30", textClass: "text-orange-600 dark:text-orange-400" };
+  if (score >= 30) return { label: "中性", bgClass: "bg-yellow-500/10 border-yellow-500/30", textClass: "text-yellow-600 dark:text-yellow-400" };
+  return { label: "偏空", bgClass: "bg-green-500/10 border-green-500/30", textClass: "text-green-600 dark:text-green-400" };
+}
+
 // ── Filter State ───────────────────────────────────────
 
 interface LowOpenFilters {
@@ -209,6 +217,12 @@ interface LowOpenFilters {
   minVolumeRatio: number;
   sortBy: string;
   limit: number;
+  // ── Client-side filters ──
+  maxPE: number;              // 0=no limit
+  excludeST: boolean;
+  minCompositeScore: number;  // 0=no filter
+  patternFilter: string;      // ""=no filter
+  minMainForceScore: number;  // 0=no filter
 }
 
 const DEFAULT_FILTERS: LowOpenFilters = {
@@ -223,6 +237,23 @@ const DEFAULT_FILTERS: LowOpenFilters = {
   minVolumeRatio: 0,
   sortBy: "compositeScore",
   limit: 50,
+  maxPE: 0,
+  excludeST: false,
+  minCompositeScore: 0,
+  patternFilter: "",
+  minMainForceScore: 0,
+};
+
+// ── Preset definitions ──
+type PresetKey = "高胜率" | "低开高走" | "放量反弹" | "主力抄底" | "深度低开" | "全市场" | "";
+
+const PRESET_CONFIGS: Record<string, Partial<LowOpenFilters>> = {
+  "高胜率": { minOpenGap: -4, minCompositeScore: 60 },
+  "低开高走": { patternFilter: "低开高走" },
+  "放量反弹": { minVolumeRatio: 1.5 },
+  "主力抄底": { minMainForceScore: 60 },
+  "深度低开": { minOpenGap: -7 },
+  "全市场": {},
 };
 
 // ── Component ──────────────────────────────────────────
@@ -232,6 +263,17 @@ interface LowOpenScreenerProps {
 }
 
 const LAST_RESULT_KEY = "low-open-last-result";
+
+// 7 factor definitions for expansion
+const FACTOR_DEFS: { key: keyof LowOpenStock; label: string }[] = [
+  { key: "gapFillRate", label: "缺口回补" },
+  { key: "volumeConfirm", label: "量价确认" },
+  { key: "supportStrength", label: "支撑强度" },
+  { key: "mainForceScore", label: "主力资金" },
+  { key: "valuationSafety", label: "估值安全" },
+  { key: "elasticityScore", label: "弹性评分" },
+  { key: "gapDepthScore", label: "缺口深度" },
+];
 
 export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
   // Initialize from localStorage so last query result shows instantly on mount
@@ -259,6 +301,10 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
 
   // Strategy panel
   const [strategyExpanded, setStrategyExpanded] = useState(false);
+
+  // Preset & expansion states
+  const [activePreset, setActivePreset] = useState<PresetKey>("");
+  const [expandedStock, setExpandedStock] = useState<string | null>(null);
 
   // Watchlist
   const [watchlist, setWatchlist] = useState<ReturnType<typeof loadWatchlist>>([]);
@@ -386,6 +432,27 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
     return stocks;
   }, [result?.stocks, sortField, sortOrder]);
 
+  // Client-side filtered stocks (applied on top of sortedStocks)
+  const filteredStocks = React.useMemo(() => {
+    let stocks = sortedStocks;
+    if (filters.maxPE > 0) {
+      stocks = stocks.filter(s => s.pe > 0 && s.pe <= filters.maxPE);
+    }
+    if (filters.excludeST) {
+      stocks = stocks.filter(s => !s.name.includes("ST") && !s.name.includes("*ST"));
+    }
+    if (filters.minCompositeScore > 0) {
+      stocks = stocks.filter(s => s.compositeScore >= filters.minCompositeScore);
+    }
+    if (filters.patternFilter) {
+      stocks = stocks.filter(s => s.lowOpenPattern === filters.patternFilter);
+    }
+    if (filters.minMainForceScore > 0) {
+      stocks = stocks.filter(s => s.mainForceScore >= filters.minMainForceScore);
+    }
+    return stocks;
+  }, [sortedStocks, filters.maxPE, filters.excludeST, filters.minCompositeScore, filters.patternFilter, filters.minMainForceScore]);
+
   // Auto-save screener results for historical verification (must be after sortedStocks definition)
   useAutoSaveScreener(
     sortedStocks,
@@ -394,6 +461,47 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
     filters,
     sortedStocks.length > 0
   );
+
+  // ── Statistics Overview ──
+  const statsOverview = React.useMemo(() => {
+    if (!result?.stocks || result.stocks.length === 0) return null;
+    const stocks = result.stocks;
+    const avgComposite = stocks.reduce((s, st) => s + st.compositeScore, 0) / stocks.length;
+    const avgRecovery = stocks.reduce((s, st) => s + st.recoveryRate, 0) / stocks.length;
+    const highScoreCount = stocks.filter(s => s.compositeScore >= 70).length;
+    const patternUpCount = stocks.filter(s => s.lowOpenPattern === "低开高走").length;
+    const avgVolumeRatio = stocks.reduce((s, st) => s + st.volumeRatio, 0) / stocks.length;
+    return { avgComposite, avgRecovery, highScoreCount, patternUpCount, avgVolumeRatio, totalCount: stocks.length };
+  }, [result?.stocks]);
+
+  // ── Sentiment Gauge ──
+  const sentimentScore = React.useMemo(() => {
+    if (!result?.stocks || result.stocks.length === 0) return 50;
+    let total = 0;
+    for (const s of result.stocks) {
+      switch (s.lowOpenPattern) {
+        case "低开高走": total += 2; break;
+        case "低开企稳": total += 1; break;
+        case "低开震荡": total += 0; break;
+        case "低开低走": total -= 2; break;
+      }
+    }
+    const raw = (total / (result.stocks.length * 2)) * 100;
+    return Math.max(0, Math.min(100, 50 + raw / 2));
+  }, [result?.stocks]);
+
+  // ── Sector Distribution ──
+  const sectorDistribution = React.useMemo(() => {
+    if (!result?.stocks) return [];
+    const map: Record<string, number> = {};
+    for (const s of result.stocks) {
+      const sector = s.sectorName || "未分类";
+      map[sector] = (map[sector] || 0) + 1;
+    }
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+  }, [result?.stocks]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortOrder(prev => prev === "desc" ? "asc" : "desc");
@@ -428,6 +536,39 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
   const handleResetFilters = () => {
     setFilters(DEFAULT_FILTERS);
     setSectorInput("");
+    setActivePreset("");
+  };
+
+  const handlePresetClick = (preset: PresetKey) => {
+    if (preset === activePreset) {
+      // Deactivate preset
+      setActivePreset("");
+      const resetFilters = { ...filters };
+      // Reset preset-specific client-side filters
+      resetFilters.minCompositeScore = 0;
+      resetFilters.patternFilter = "";
+      resetFilters.minMainForceScore = 0;
+      setFilters(resetFilters);
+      return;
+    }
+    setActivePreset(preset);
+
+    if (preset === "全市场") {
+      setFilters(DEFAULT_FILTERS);
+      setSectorInput("");
+      fetchData(true, DEFAULT_FILTERS);
+      return;
+    }
+
+    const config = PRESET_CONFIGS[preset];
+    const newFilters = { ...DEFAULT_FILTERS, ...config };
+    setFilters(newFilters);
+    setSectorInput("");
+
+    // If preset changes API-level filters (minOpenGap, minVolumeRatio), need to re-fetch
+    if (config.minOpenGap !== undefined || config.minVolumeRatio !== undefined) {
+      fetchData(true, newFilters);
+    }
   };
 
   const filtersChanged = useMemo(() => {
@@ -536,6 +677,51 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                 市值≥{filters.minMarketCap}亿
               </Badge>
             )}
+            {filters.maxPE > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-300">
+                PE≤{filters.maxPE}
+              </Badge>
+            )}
+            {filters.excludeST && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-red-500/5 border-red-500/20 text-red-700 dark:text-red-300">
+                排除ST
+              </Badge>
+            )}
+            {filters.minCompositeScore > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-rose-500/5 border-rose-500/20 text-rose-700 dark:text-rose-300">
+                胜率≥{filters.minCompositeScore}
+              </Badge>
+            )}
+            {filters.patternFilter && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-red-500/5 border-red-500/20 text-red-700 dark:text-red-300">
+                {filters.patternFilter}
+              </Badge>
+            )}
+            {filters.minMainForceScore > 0 && (
+              <Badge variant="outline" className="text-xs py-0.5 px-2 gap-1 bg-orange-500/5 border-orange-500/20 text-orange-700 dark:text-orange-300">
+                主力≥{filters.minMainForceScore}
+              </Badge>
+            )}
+          </div>
+
+          {/* Quick Filter Presets */}
+          <div className="flex items-center gap-1.5 flex-wrap mb-2">
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Filter className="w-3 h-3" />快捷:
+            </span>
+            {(["高胜率", "低开高走", "放量反弹", "主力抄底", "深度低开", "全市场"] as PresetKey[]).map((preset) => (
+              <button
+                key={preset}
+                onClick={() => handlePresetClick(preset)}
+                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  activePreset === preset
+                    ? "bg-primary/10 border-primary/30 text-primary font-medium"
+                    : "bg-background border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
           </div>
 
           {/* Pattern Distribution Summary */}
@@ -780,6 +966,35 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                 </div>
               </div>
 
+              {/* Row 5: PE & ST filters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    最大PE ({filters.maxPE > 0 ? `≤${filters.maxPE}` : "不限"})
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={filters.maxPE || ""}
+                      onChange={(e) => handleFilterChange("maxPE", parseFloat(e.target.value) || 0)}
+                      className="h-7 text-xs w-20"
+                      placeholder="不限"
+                      min={0}
+                    />
+                    <span className="text-xs text-muted-foreground">0=不限, 排除高估值</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> 排除ST
+                  </Label>
+                  <div className="flex items-center gap-1.5">
+                    <Switch checked={filters.excludeST} onCheckedChange={(v) => handleFilterChange("excludeST", v)} />
+                    <span className="text-xs">排除ST/*ST股票</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Action buttons */}
               <div className="flex items-center gap-2 pt-2">
                 <Button size="sm" onClick={handleApplyFilters} disabled={loading} className="h-8 text-xs gap-1">
@@ -794,6 +1009,92 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
           )}
         </CardContent>
       </Card>
+
+      {/* Statistical Overview Card */}
+      {statsOverview && (
+        <Card className="border-border/50 shadow-sm">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+              {/* Avg Composite Score */}
+              <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
+                <Gauge className="w-4 h-4 text-muted-foreground" />
+                <span className={`text-lg font-bold ${getCompositeScoreColor(statsOverview.avgComposite)}`}>
+                  {statsOverview.avgComposite.toFixed(1)}
+                </span>
+                <span className="text-[10px] text-muted-foreground">平均胜率</span>
+              </div>
+              {/* Avg Recovery Rate */}
+              <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
+                <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                <span className={`text-lg font-bold ${statsOverview.avgRecovery >= 2 ? "text-red-500" : statsOverview.avgRecovery >= 0 ? "text-orange-500" : "text-green-500"}`}>
+                  {statsOverview.avgRecovery >= 0 ? "+" : ""}{statsOverview.avgRecovery.toFixed(2)}%
+                </span>
+                <span className="text-[10px] text-muted-foreground">平均恢复</span>
+              </div>
+              {/* High Score Count */}
+              <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
+                <Flame className="w-4 h-4 text-rose-500" />
+                <span className="text-lg font-bold text-rose-600 dark:text-rose-400">{statsOverview.highScoreCount}</span>
+                <span className="text-[10px] text-muted-foreground">高胜率(≥70)</span>
+              </div>
+              {/* Low Open Up Count */}
+              <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
+                <Activity className="w-4 h-4 text-red-500" />
+                <span className="text-lg font-bold text-red-600 dark:text-red-400">{statsOverview.patternUpCount}</span>
+                <span className="text-[10px] text-muted-foreground">低开高走</span>
+              </div>
+              {/* Avg Volume Ratio */}
+              <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
+                <BarChart2 className="w-4 h-4 text-muted-foreground" />
+                <span className={`text-lg font-bold ${statsOverview.avgVolumeRatio >= 2 ? "text-red-500" : statsOverview.avgVolumeRatio >= 1.5 ? "text-orange-500" : ""}`}>
+                  {statsOverview.avgVolumeRatio.toFixed(1)}
+                </span>
+                <span className="text-[10px] text-muted-foreground">平均量比</span>
+              </div>
+              {/* Sentiment Gauge */}
+              <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
+                <PieChart className="w-4 h-4 text-muted-foreground" />
+                <span className={`inline-flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded-md border ${getSentimentInfo(sentimentScore).bgClass} ${getSentimentInfo(sentimentScore).textClass}`}>
+                  {getSentimentInfo(sentimentScore).label}
+                </span>
+                <span className="text-[10px] text-muted-foreground">市场情绪</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sector Distribution Panel */}
+      {sectorDistribution.length > 0 && (
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+              板块分布 (Top {sectorDistribution.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-1.5">
+              {sectorDistribution.map(([sector, count]) => {
+                const maxCount = sectorDistribution[0]?.[1] || 1;
+                const widthPercent = Math.max(4, (count / maxCount) * 100);
+                return (
+                  <div key={sector} className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground w-20 truncate shrink-0" title={sector}>{sector}</span>
+                    <div className="flex-1 h-4 bg-muted/50 rounded-full overflow-hidden relative">
+                      <div
+                        className={`h-full rounded-full transition-all ${count === sectorDistribution[0]?.[1] ? "bg-rose-500/60" : count >= maxCount * 0.6 ? "bg-orange-500/50" : "bg-amber-500/40"}`}
+                        style={{ width: `${widthPercent}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-mono text-muted-foreground w-8 text-right shrink-0">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       
 {/* Results */}
@@ -823,7 +1124,10 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium">
-                筛选结果: {result.filteredCount} 只低开股票
+                筛选结果: {filteredStocks.length} 只低开股票
+                {filteredStocks.length !== result.filteredCount && (
+                  <span className="text-muted-foreground ml-1">(共{result.filteredCount}只, 筛选后{filteredStocks.length}只)</span>
+                )}
                 {result.sectorName && <span className="text-muted-foreground ml-1">({result.sectorName})</span>}
               </CardTitle>
             </div>
@@ -833,6 +1137,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="text-xs w-8"></TableHead>
                     <TableHead className="text-xs w-10">★</TableHead>
                     <TableHead className="text-xs">代码/名称</TableHead>
                     <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort("compositeScore")}>
@@ -861,162 +1166,249 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedStocks.map((stock) => {
+                  {filteredStocks.map((stock) => {
                     const patternStyle = getPatternStyle(stock.lowOpenPattern);
                     const inWatchlist = isInWatchlist(stock.symbol);
+                    const isExpanded = expandedStock === stock.symbol;
                     return (
-                      <TableRow
-                        key={stock.symbol}
-                        className="cursor-pointer hover:bg-accent/50 transition-colors"
-                        onClick={() => onSelectStock?.(stock.symbol)}
-                      >
-                        <TableCell className="text-xs py-2" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => {
-                              if (inWatchlist) { removeFromWatchlist(stock.symbol); }
-                              else { addToWatchlist(stock.symbol, stock.name, "low-open", stock.price, stock.changePercent); }
-                              setWatchlist(loadWatchlist());
-                            }}
-                            className={`p-1 rounded transition-colors ${inWatchlist ? "text-yellow-500 hover:text-yellow-600" : "text-muted-foreground hover:text-yellow-500"}`}
-                          >
-                            <Star className="w-3.5 h-3.5" fill={inWatchlist ? "currentColor" : "none"} />
-                          </button>
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <div className="font-medium">{stock.symbol}</div>
-                          <div className="text-muted-foreground text-[11px] truncate max-w-[80px]">{stock.name}</div>
-                          {stock.sectorName && (
-                            <div className="text-[10px] text-muted-foreground truncate max-w-[80px]">{stock.sectorName}</div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={`inline-flex items-center justify-center w-11 h-6 rounded-md text-[11px] font-bold border cursor-default ${getCompositeScoreBg(stock.compositeScore)} ${getCompositeScoreColor(stock.compositeScore)}`}>
-                                  {stock.compositeScore}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom" className="text-xs max-w-[280px] p-2">
-                                <div className="font-semibold mb-1.5 text-foreground">因子分解 (综合 {stock.compositeScore})</div>
-                                <div className="space-y-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-20 text-muted-foreground shrink-0">缺口回补</span>
-                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.gapFillRate)}`} style={{ width: getFactorBarWidth(Math.max(0, stock.gapFillRate)) }} />
+                      <React.Fragment key={stock.symbol}>
+                        <TableRow
+                          className={`cursor-pointer hover:bg-accent/50 transition-colors ${isExpanded ? "bg-accent/30" : ""}`}
+                          onClick={() => onSelectStock?.(stock.symbol)}
+                        >
+                          {/* Expand toggle */}
+                          <TableCell className="text-xs py-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => setExpandedStock(isExpanded ? null : stock.symbol)}
+                              className="p-0.5 rounded transition-colors text-muted-foreground hover:text-foreground"
+                            >
+                              <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                            </button>
+                          </TableCell>
+                          <TableCell className="text-xs py-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => {
+                                if (inWatchlist) { removeFromWatchlist(stock.symbol); }
+                                else { addToWatchlist(stock.symbol, stock.name, "low-open", stock.price, stock.changePercent); }
+                                setWatchlist(loadWatchlist());
+                              }}
+                              className={`p-1 rounded transition-colors ${inWatchlist ? "text-yellow-500 hover:text-yellow-600" : "text-muted-foreground hover:text-yellow-500"}`}
+                            >
+                              <Star className="w-3.5 h-3.5" fill={inWatchlist ? "currentColor" : "none"} />
+                            </button>
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <div className="font-medium">{stock.symbol}</div>
+                            <div className="text-muted-foreground text-[11px] truncate max-w-[80px]">{stock.name}</div>
+                            {stock.sectorName && (
+                              <div className="text-[10px] text-muted-foreground truncate max-w-[80px]">{stock.sectorName}</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className={`inline-flex items-center justify-center w-11 h-6 rounded-md text-[11px] font-bold border cursor-default ${getCompositeScoreBg(stock.compositeScore)} ${getCompositeScoreColor(stock.compositeScore)}`}>
+                                    {stock.compositeScore}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="text-xs max-w-[280px] p-2">
+                                  <div className="font-semibold mb-1.5 text-foreground">因子分解 (综合 {stock.compositeScore})</div>
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-20 text-muted-foreground shrink-0">缺口回补</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.gapFillRate)}`} style={{ width: getFactorBarWidth(Math.max(0, stock.gapFillRate)) }} />
+                                      </div>
+                                      <span className="w-10 text-right font-mono">{stock.gapFillRate}%</span>
                                     </div>
-                                    <span className="w-10 text-right font-mono">{stock.gapFillRate}%</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-20 text-muted-foreground shrink-0">支撑强度</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.supportStrength)}`} style={{ width: getFactorBarWidth(stock.supportStrength) }} />
+                                      </div>
+                                      <span className="w-10 text-right font-mono">{stock.supportStrength}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-20 text-muted-foreground shrink-0">量价确认</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.volumeConfirm)}`} style={{ width: getFactorBarWidth(stock.volumeConfirm) }} />
+                                      </div>
+                                      <span className="w-10 text-right font-mono">{stock.volumeConfirm}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-20 text-muted-foreground shrink-0">主力资金</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.mainForceScore)}`} style={{ width: getFactorBarWidth(stock.mainForceScore) }} />
+                                      </div>
+                                      <span className="w-10 text-right font-mono">{stock.mainForceScore}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-20 text-muted-foreground shrink-0">估值安全</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.valuationSafety)}`} style={{ width: getFactorBarWidth(stock.valuationSafety) }} />
+                                      </div>
+                                      <span className="w-10 text-right font-mono">{stock.valuationSafety}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-20 text-muted-foreground shrink-0">弹性评分</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.elasticityScore)}`} style={{ width: getFactorBarWidth(stock.elasticityScore) }} />
+                                      </div>
+                                      <span className="w-10 text-right font-mono">{stock.elasticityScore}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-20 text-muted-foreground shrink-0">缺口深度</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.gapDepthScore)}`} style={{ width: getFactorBarWidth(stock.gapDepthScore) }} />
+                                      </div>
+                                      <span className="w-10 text-right font-mono">{stock.gapDepthScore}</span>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-20 text-muted-foreground shrink-0">支撑强度</span>
-                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.supportStrength)}`} style={{ width: getFactorBarWidth(stock.supportStrength) }} />
-                                    </div>
-                                    <span className="w-10 text-right font-mono">{stock.supportStrength}</span>
+                                  <div className="mt-1.5 pt-1 border-t border-border/50 text-[10px] text-muted-foreground">
+                                    权重: 回补20% + 量价20% + 支撑15% + 主力15% + 估值10% + 弹性10% + 深度10%
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-20 text-muted-foreground shrink-0">量价确认</span>
-                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.volumeConfirm)}`} style={{ width: getFactorBarWidth(stock.volumeConfirm) }} />
-                                    </div>
-                                    <span className="w-10 text-right font-mono">{stock.volumeConfirm}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-20 text-muted-foreground shrink-0">主力资金</span>
-                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.mainForceScore)}`} style={{ width: getFactorBarWidth(stock.mainForceScore) }} />
-                                    </div>
-                                    <span className="w-10 text-right font-mono">{stock.mainForceScore}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-20 text-muted-foreground shrink-0">估值安全</span>
-                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.valuationSafety)}`} style={{ width: getFactorBarWidth(stock.valuationSafety) }} />
-                                    </div>
-                                    <span className="w-10 text-right font-mono">{stock.valuationSafety}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-20 text-muted-foreground shrink-0">弹性评分</span>
-                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.elasticityScore)}`} style={{ width: getFactorBarWidth(stock.elasticityScore) }} />
-                                    </div>
-                                    <span className="w-10 text-right font-mono">{stock.elasticityScore}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-20 text-muted-foreground shrink-0">缺口深度</span>
-                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${getFactorBarColor(stock.gapDepthScore)}`} style={{ width: getFactorBarWidth(stock.gapDepthScore) }} />
-                                    </div>
-                                    <span className="w-10 text-right font-mono">{stock.gapDepthScore}</span>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <span className="font-mono font-semibold text-green-600 dark:text-green-400">
+                              {stock.openGapRate.toFixed(2)}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <span className={`font-mono font-medium ${stock.recoveryRate >= 2 ? "text-red-500" : stock.recoveryRate >= 0 ? "text-orange-500" : "text-green-500"}`}>
+                              {stock.recoveryRate >= 0 ? "+" : ""}{stock.recoveryRate.toFixed(2)}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className={`inline-flex items-center justify-center w-10 h-5 rounded-md text-[11px] font-semibold border ${getRecoveryScoreBg(stock.recoveryScore)} ${getRecoveryScoreColor(stock.recoveryScore)}`}>
+                                    {stock.recoveryScore}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="text-xs max-w-xs">
+                                  {stock.recoveryDetail}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <span className={`inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded-md border ${patternStyle.bg} ${patternStyle.text}`}>
+                              {patternStyle.icon} {stock.lowOpenPattern}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <span className={`font-mono ${stock.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
+                              {stock.changePercent >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <div className="font-mono">{stock.price.toFixed(2)}</div>
+                            <div className="text-[11px] text-muted-foreground">开 {stock.open.toFixed(2)}</div>
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <span className={`font-mono ${stock.volumeRatio >= 2 ? "text-red-500 font-semibold" : stock.volumeRatio >= 1.5 ? "text-orange-500" : ""}`}>
+                              {stock.volumeRatio.toFixed(1)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs py-2 font-mono">
+                            {stock.turnover.toFixed(1)}%
+                          </TableCell>
+                          <TableCell className="text-xs py-2 font-mono">
+                            {formatMarketCap(stock.marketCap)}
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <span className={`font-mono ${stock.mainNetInflow > 0 ? "text-red-500" : stock.mainNetInflow < 0 ? "text-green-500" : ""}`}>
+                              {stock.mainNetInflow > 0 ? "+" : ""}{formatAmount(stock.mainNetInflow)}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                        {/* Expanded Detail Row */}
+                        {isExpanded && (
+                          <TableRow className="bg-accent/20 hover:bg-accent/20">
+                            <TableCell colSpan={14} className="p-4">
+                              <div className="space-y-3">
+                                {/* Factor progress bars in 2-column grid */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                                  {FACTOR_DEFS.map(({ key, label }) => {
+                                    const val = stock[key] as number;
+                                    return (
+                                      <div key={key} className="flex items-center gap-2">
+                                        <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+                                        <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all ${getFactorBarColor(val)}`}
+                                            style={{ width: getFactorBarWidth(Math.max(0, val)) }}
+                                          />
+                                        </div>
+                                        <span className={`text-xs font-mono font-medium w-10 text-right ${getCompositeScoreColor(val)}`}>{val}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {/* Recovery detail & action buttons */}
+                                <div className="flex items-center justify-between gap-4 pt-1 border-t border-border/30">
+                                  <span className="text-[11px] text-muted-foreground">
+                                    {stock.recoveryDetail}
+                                  </span>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-xs gap-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!isInWatchlist(stock.symbol)) {
+                                          addToWatchlist(stock.symbol, stock.name, "low-open", stock.price, stock.changePercent);
+                                          setWatchlist(loadWatchlist());
+                                        }
+                                      }}
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                      加入自选
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-xs gap-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelectStock?.(stock.symbol);
+                                      }}
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                      查看详情
+                                    </Button>
                                   </div>
                                 </div>
-                                <div className="mt-1.5 pt-1 border-t border-border/50 text-[10px] text-muted-foreground">
-                                  权重: 回补20% + 量价20% + 支撑15% + 主力15% + 估值10% + 弹性10% + 深度10%
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <span className="font-mono font-semibold text-green-600 dark:text-green-400">
-                            {stock.openGapRate.toFixed(2)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <span className={`font-mono font-medium ${stock.recoveryRate >= 2 ? "text-red-500" : stock.recoveryRate >= 0 ? "text-orange-500" : "text-green-500"}`}>
-                            {stock.recoveryRate >= 0 ? "+" : ""}{stock.recoveryRate.toFixed(2)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={`inline-flex items-center justify-center w-10 h-5 rounded-md text-[11px] font-semibold border ${getRecoveryScoreBg(stock.recoveryScore)} ${getRecoveryScoreColor(stock.recoveryScore)}`}>
-                                  {stock.recoveryScore}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom" className="text-xs max-w-xs">
-                                {stock.recoveryDetail}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <span className={`inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded-md border ${patternStyle.bg} ${patternStyle.text}`}>
-                            {patternStyle.icon} {stock.lowOpenPattern}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <span className={`font-mono ${stock.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
-                            {stock.changePercent >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <div className="font-mono">{stock.price.toFixed(2)}</div>
-                          <div className="text-[11px] text-muted-foreground">开 {stock.open.toFixed(2)}</div>
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <span className={`font-mono ${stock.volumeRatio >= 2 ? "text-red-500 font-semibold" : stock.volumeRatio >= 1.5 ? "text-orange-500" : ""}`}>
-                            {stock.volumeRatio.toFixed(1)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs py-2 font-mono">
-                          {stock.turnover.toFixed(1)}%
-                        </TableCell>
-                        <TableCell className="text-xs py-2 font-mono">
-                          {formatMarketCap(stock.marketCap)}
-                        </TableCell>
-                        <TableCell className="text-xs py-2">
-                          <span className={`font-mono ${stock.mainNetInflow > 0 ? "text-red-500" : stock.mainNetInflow < 0 ? "text-green-500" : ""}`}>
-                            {stock.mainNetInflow > 0 ? "+" : ""}{formatAmount(stock.mainNetInflow)}
-                          </span>
-                        </TableCell>
-                      </TableRow>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </TableBody>
               </Table>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {result && result.stocks.length > 0 && filteredStocks.length === 0 && (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Filter className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">
+              客户端筛选后无匹配结果
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              尝试调整PE、ST或胜率等客户端筛选条件
+            </p>
           </CardContent>
         </Card>
       )}
@@ -1046,7 +1438,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
               <p>• <strong>低开企稳</strong>：低开后价格小幅回升，趋势待确认</p>
               <p>• <strong>低开震荡</strong>：低开后价格在开盘价附近震荡</p>
               <p>• <strong>低开低走</strong>：低开后价格继续下跌，风险较大</p>
-              <p>• <strong className="text-foreground">综合胜率</strong>：7因子加权评分，悬停查看因子分解</p>
+              <p>• <strong className="text-foreground">综合胜率</strong>：7因子加权评分，悬停查看因子分解，点击行展开查看详情</p>
               <p className="text-[11px]">缺口回补20% + 量价确认20% + 支撑强度15% + 主力资金15% + 估值安全10% + 弹性评分10% + 缺口深度10%</p>
             </div>
           </div>
