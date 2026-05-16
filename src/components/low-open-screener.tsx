@@ -67,7 +67,8 @@ interface LowOpenStock {
   mainForceScore: number;
   valuationSafety: number;
   elasticityScore: number;
-  gapDepthScore: number;
+  gapDepthScore: number;      // legacy
+  turnoverHealth: number;
   compositeScore: number;
 }
 
@@ -265,14 +266,14 @@ interface LowOpenScreenerProps {
 const LAST_RESULT_KEY = "low-open-last-result";
 
 // 7 factor definitions for expansion
-const FACTOR_DEFS: { key: keyof LowOpenStock; label: string }[] = [
-  { key: "gapFillRate", label: "缺口回补" },
-  { key: "volumeConfirm", label: "量价确认" },
-  { key: "supportStrength", label: "支撑强度" },
-  { key: "mainForceScore", label: "主力资金" },
-  { key: "valuationSafety", label: "估值安全" },
-  { key: "elasticityScore", label: "弹性评分" },
-  { key: "gapDepthScore", label: "缺口深度" },
+const FACTOR_DEFS: { key: keyof LowOpenStock; label: string; weight: string }[] = [
+  { key: "gapFillRate", label: "缺口回补", weight: "18%" },
+  { key: "volumeConfirm", label: "量价确认", weight: "18%" },
+  { key: "mainForceScore", label: "主力资金", weight: "15%" },
+  { key: "turnoverHealth", label: "换手健康", weight: "15%" },
+  { key: "supportStrength", label: "支撑强度", weight: "12%" },
+  { key: "elasticityScore", label: "弹性评分", weight: "12%" },
+  { key: "valuationSafety", label: "估值安全", weight: "10%" },
 ];
 
 export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectStock }: LowOpenScreenerProps) {
@@ -1223,13 +1224,6 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                                       <span className="w-10 text-right font-mono">{stock.gapFillRate}%</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <span className="w-20 text-muted-foreground shrink-0">支撑强度</span>
-                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.supportStrength)}`} style={{ width: getFactorBarWidth(stock.supportStrength) }} />
-                                      </div>
-                                      <span className="w-10 text-right font-mono">{stock.supportStrength}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
                                       <span className="w-20 text-muted-foreground shrink-0">量价确认</span>
                                       <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                                         <div className={`h-full rounded-full ${getFactorBarColor(stock.volumeConfirm)}`} style={{ width: getFactorBarWidth(stock.volumeConfirm) }} />
@@ -1244,11 +1238,18 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                                       <span className="w-10 text-right font-mono">{stock.mainForceScore}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <span className="w-20 text-muted-foreground shrink-0">估值安全</span>
+                                      <span className="w-20 text-muted-foreground shrink-0">换手健康</span>
                                       <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.valuationSafety)}`} style={{ width: getFactorBarWidth(stock.valuationSafety) }} />
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.turnoverHealth)}`} style={{ width: getFactorBarWidth(stock.turnoverHealth) }} />
                                       </div>
-                                      <span className="w-10 text-right font-mono">{stock.valuationSafety}</span>
+                                      <span className="w-10 text-right font-mono">{stock.turnoverHealth}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-20 text-muted-foreground shrink-0">支撑强度</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.supportStrength)}`} style={{ width: getFactorBarWidth(stock.supportStrength) }} />
+                                      </div>
+                                      <span className="w-10 text-right font-mono">{stock.supportStrength}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                       <span className="w-20 text-muted-foreground shrink-0">弹性评分</span>
@@ -1258,15 +1259,15 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                                       <span className="w-10 text-right font-mono">{stock.elasticityScore}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <span className="w-20 text-muted-foreground shrink-0">缺口深度</span>
+                                      <span className="w-20 text-muted-foreground shrink-0">估值安全</span>
                                       <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.gapDepthScore)}`} style={{ width: getFactorBarWidth(stock.gapDepthScore) }} />
+                                        <div className={`h-full rounded-full ${getFactorBarColor(stock.valuationSafety)}`} style={{ width: getFactorBarWidth(stock.valuationSafety) }} />
                                       </div>
-                                      <span className="w-10 text-right font-mono">{stock.gapDepthScore}</span>
+                                      <span className="w-10 text-right font-mono">{stock.valuationSafety}</span>
                                     </div>
                                   </div>
                                   <div className="mt-1.5 pt-1 border-t border-border/50 text-[10px] text-muted-foreground">
-                                    权重: 回补20% + 量价20% + 支撑15% + 主力15% + 估值10% + 弹性10% + 深度10%
+                                    权重: 回补18% + 量价18% + 主力15% + 换手15% + 支撑12% + 弹性12% + 估值10%
                                   </div>
                                 </TooltipContent>
                               </Tooltip>
@@ -1334,11 +1335,11 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                               <div className="space-y-3">
                                 {/* Factor progress bars in 2-column grid */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-                                  {FACTOR_DEFS.map(({ key, label }) => {
+                                  {FACTOR_DEFS.map(({ key, label, weight }) => {
                                     const val = stock[key] as number;
                                     return (
                                       <div key={key} className="flex items-center gap-2">
-                                        <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+                                        <span className="text-xs text-muted-foreground w-20 shrink-0">{label} <span className="text-[10px] opacity-60">({weight})</span></span>
                                         <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
                                           <div
                                             className={`h-full rounded-full transition-all ${getFactorBarColor(val)}`}
@@ -1434,12 +1435,12 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
             <AlertCircle className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
             <div className="text-xs text-muted-foreground space-y-1">
               <p><strong className="text-foreground">低开选股</strong>：筛选开盘价低于昨收价一定幅度的股票，分析其恢复潜力。</p>
-              <p>• <strong>低开高走</strong>：低开后价格反弹超过2%，恢复潜力最大</p>
-              <p>• <strong>低开企稳</strong>：低开后价格小幅回升，趋势待确认</p>
+              <p>• <strong>低开高走</strong>：低开后价格反弹超过3%，恢复潜力最大</p>
+              <p>• <strong>低开企稳</strong>：低开后价格回升1-3%，趋势待确认</p>
               <p>• <strong>低开震荡</strong>：低开后价格在开盘价附近震荡</p>
               <p>• <strong>低开低走</strong>：低开后价格继续下跌，风险较大</p>
               <p>• <strong className="text-foreground">综合胜率</strong>：7因子加权评分，悬停查看因子分解，点击行展开查看详情</p>
-              <p className="text-[11px]">缺口回补20% + 量价确认20% + 支撑强度15% + 主力资金15% + 估值安全10% + 弹性评分10% + 缺口深度10%</p>
+              <p className="text-[11px]">缺口回补18% + 量价确认18% + 主力资金15% + 换手健康15% + 支撑强度12% + 弹性评分12% + 估值安全10%</p>
             </div>
           </div>
         </CardContent>
@@ -1469,8 +1470,8 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 低开选股的核心逻辑：<strong className="text-foreground">低开是恐慌性抛售造成的短期价格偏离</strong>，当市场情绪修复时，价格有向均值回归的趋势。
-                低开高走的股票往往具备以下特征：有主力资金承接、放量确认、估值安全、缺口深度适中（4-7%为最佳区间）。
-                综合胜率分通过7个因子加权计算，帮助快速筛选出低开后大概率恢复的标的。
+                低开高走的股票往往具备以下特征：有主力资金承接、放量确认、换手健康、估值安全。
+                综合胜率分通过7个因子加权计算，帮助快速筛选出低开后大概率恢复的标的。v2版本优化了权重分配，新增换手健康因子替代缺口深度。
               </p>
             </div>
 
@@ -1486,9 +1487,9 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">1</span>
-                    <span className="text-xs font-semibold">缺口回补率 (权重20%)</span>
+                    <span className="text-xs font-semibold">缺口回补率 (权重18%)</span>
                   </div>
-                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-300">最高权重</Badge>
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-300">核心因子</Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
                   <strong className="text-foreground">计算方式：</strong>(现价 - 开盘价) / (昨收 - 开盘价) x 100%
@@ -1506,27 +1507,66 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">2</span>
-                    <span className="text-xs font-semibold">量价确认分 (权重20%)</span>
+                    <span className="text-xs font-semibold">量价确认分 (权重18%)</span>
                   </div>
-                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-300">最高权重</Badge>
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-300">核心因子</Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>综合量比+价格反弹方向+成交额三个维度打分(0-100)
+                  <strong className="text-foreground">计算方式：</strong>综合量比+反弹力度+成交额三维度精细打分(0-100)，强反弹与弱反弹分档计算
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>"低开+放量+反弹"是最经典的量价配合形态。量比&gt;1.5且价格反弹，说明有真实资金在低开价位承接，反弹可靠性高。
+                  <strong className="text-foreground">含义：</strong>"低开+放量+反弹"是最经典的量价配合形态。量比&gt;1.5且价格反弹，说明有真实资金在低开价位承接，反弹可靠性高。大额成交额外加成。
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   <strong className="text-foreground">使用要点：</strong>量价确认分&gt;70的标的值得关注。缩量反弹(量比&lt;1)的可靠性较低，可能是技术性反抽而非趋势性恢复。
                 </p>
               </div>
 
-              {/* 因子3: 支撑强度 */}
+              {/* 因子3: 主力资金分 */}
               <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-orange-500/10 text-orange-500 border border-orange-500/20">3</span>
-                    <span className="text-xs font-semibold">支撑强度 (权重15%)</span>
+                    <span className="text-xs font-semibold">主力资金分 (权重15%)</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                  <strong className="text-foreground">计算方式：</strong>基于主力净流入/成交额比例，使用平方根缩放换算为0-100分。50为中性，&gt;50为净流入，&lt;50为净流出。
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                  <strong className="text-foreground">含义：</strong>主力资金是低开反弹的核心驱动力。低开时主力大举买入，说明机构认为低开是错杀，有意识地逢低建仓。平方根缩放使小幅流入也有区分度。
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">使用要点：</strong>主力资金分&gt;70是强信号，说明大资金在积极承接。如果主力大幅流出（&lt;30），即使反弹也可能是散户拉抬，持续性差。
+                </p>
+              </div>
+
+              {/* 因子4: 换手健康度 */}
+              <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">4</span>
+                    <span className="text-xs font-semibold">换手健康度 (权重15%)</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-300">v2新增</Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                  <strong className="text-foreground">计算方式：</strong>基于换手率分段打分。2-8%为最佳区间(85-95分)，1-2%偏低(50分)，8-12%可接受(75分)，&gt;20%投机过热(30分以下)。
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                  <strong className="text-foreground">含义：</strong>换手率反映市场交易活跃度和多空分歧程度。适中换手=交易活跃但分歧不大，低开后更容易形成一致预期向上。过高换手=多空激烈博弈，方向不确定。
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">使用要点：</strong>换手健康度&gt;80的标的（换手2-8%），低开后恢复概率最高。换手&gt;20%的标的即使反弹也可能剧烈波动，风险较大。换手适中+放量=量价齐升加成。
+                </p>
+              </div>
+
+              {/* 因子5: 支撑强度 */}
+              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-orange-500/10 text-orange-500 border border-orange-500/20">5</span>
+                    <span className="text-xs font-semibold">支撑强度 (权重12%)</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
@@ -1540,79 +1580,41 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                 </p>
               </div>
 
-              {/* 因子4: 主力资金分 */}
-              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-orange-500/10 text-orange-500 border border-orange-500/20">4</span>
-                    <span className="text-xs font-semibold">主力资金分 (权重15%)</span>
-                  </div>
-                </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>基于主力净流入/成交额比例换算为0-100分。50为中性，&gt;50为净流入，&lt;50为净流出。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>主力资金是低开反弹的核心驱动力。低开时主力大举买入，说明机构认为低开是错杀，有意识地逢低建仓。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>主力资金分&gt;70是强信号，说明大资金在积极承接。如果主力大幅流出（&lt;30），即使反弹也可能是散户拉抬，持续性差。
-                </p>
-              </div>
-
-              {/* 因子5: 估值安全分 */}
-              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">5</span>
-                    <span className="text-xs font-semibold">估值安全分 (权重10%)</span>
-                  </div>
-                </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>基于PE估值水平打分。PE≤15→90分(低估值安全)，15-30→70分，30-50→50分，50-100→30分，&gt;100→15分，亏损→10分。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>估值越低，安全边际越高。低开时如果估值本身较低，说明价格进一步下跌的空间有限，反弹概率更高。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>估值安全分&gt;70的标的（PE&lt;30），低开后恢复的概率显著高于高估值标的。高PE股票低开可能是价值回归，需谨慎。
-                </p>
-              </div>
-
               {/* 因子6: 弹性评分 */}
               <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">6</span>
-                    <span className="text-xs font-semibold">弹性评分 (权重10%)</span>
+                    <span className="text-xs font-semibold">弹性评分 (权重12%)</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>基于恢复幅度、振幅、上影线三维度。恢复幅度贡献基础分，大振幅+反弹加成，无上影线（涨得稳）额外加分。
+                  <strong className="text-foreground">计算方式：</strong>综合恢复幅度+振幅+上影线+下影线四维度。恢复幅度贡献基础分，大振幅+反弹加成，无/短上影线（涨得稳）加分，有下影线（低位反弹）加分。
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>弹性衡量股价从低位弹回的能力。振幅大且恢复强=弹性好；有长上影线说明冲高回落，弹性打折。
+                  <strong className="text-foreground">含义：</strong>弹性衡量股价从低位弹回的能力。振幅大且恢复强=弹性好；长上影线说明冲高回落，弹性打折；下影线说明低位有支撑，弹性加成。
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>弹性评分&gt;40的股票说明具备较强的反弹能力。关注"无上影线+大振幅+反弹"的组合，这种股票日内恢复最为坚决。
+                  <strong className="text-foreground">使用要点：</strong>弹性评分&gt;40的股票说明具备较强的反弹能力。关注"无上影线+大振幅+反弹+下影线支撑"的组合，这种股票日内恢复最为坚决。
                 </p>
               </div>
 
-              {/* 因子7: 缺口深度分 */}
+              {/* 因子7: 估值安全分 */}
               <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">7</span>
-                    <span className="text-xs font-semibold">缺口深度分 (权重10%)</span>
+                    <span className="text-xs font-semibold">估值安全分 (权重10%)</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>2-4%→60分，4-7%→80分(最佳)，7-9%→65分，&gt;9%→40分，&lt;2%→30分
+                  <strong className="text-foreground">计算方式：</strong>基于PE估值水平线性过渡打分。PE≤10→95分(极低估值)，10-20→80-90，20-35→60-80，35-50→40-60，50-80→20-40，&gt;150→8分，亏损→10分。
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>低开深度存在"甜点区间"。4-7%的低开幅度最佳——足够深有恢复空间，但不至于说明有重大利空。太浅(&lt;2%)空间不够，太深(&gt;9%)可能是有实质利空的恐慌出逃。
+                  <strong className="text-foreground">含义：</strong>估值越低，安全边际越高。低开时如果估值本身较低，说明价格进一步下跌的空间有限，反弹概率更高。v2采用线性过渡避免分数跳变。
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>优先选择缺口深度分&gt;60（即低开4%以上）的标的，这类股票的恢复空间和概率都比较好。
+                  <strong className="text-foreground">使用要点：</strong>估值安全分&gt;70的标的（PE&lt;30），低开后恢复的概率显著高于高估值标的。高PE股票低开可能是价值回归，需谨慎。
                 </p>
               </div>
             </div>
@@ -1624,7 +1626,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                 <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">综合胜率分 = 七因子加权求和</span>
               </div>
               <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1">
-                <p>综合胜率 = 缺口回补率×20% + 量价确认×20% + 支撑强度×15% + 主力资金×15% + 估值安全×10% + 弹性评分×10% + 缺口深度×10%</p>
+                <p>综合胜率 = 缺口回补×18% + 量价确认×18% + 主力资金×15% + 换手健康×15% + 支撑强度×12% + 弹性评分×12% + 估值安全×10%</p>
                 <p className="text-foreground font-medium mt-1.5">分数解读：</p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
                   <span className="text-rose-500 font-medium">70分以上：强势反弹信号</span>
@@ -1669,8 +1671,8 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                   <p>前日涨停的股票次日低开，如果量能放大且快速反弹，是经典的"弱转强"形态，后续继续走强概率较高。</p>
                 </div>
                 <div>
-                  <span className="text-foreground font-medium">6. 换手率适中为佳</span>
-                  <p>3%-10%的换手率最佳，说明交易活跃但未过度。换手率&gt;20%往往意味着多空分歧巨大，波动剧烈风险高；&lt;1%则流动性不足。</p>
+                  <span className="text-foreground font-medium">6. 换手率2-8%为最佳</span>
+                  <p>2-8%的换手率最佳，说明交易活跃且分歧不大。换手率&gt;20%往往意味着多空分歧巨大，波动剧烈风险高；&lt;1%则流动性不足。换手健康度因子已整合此维度。</p>
                 </div>
                 <div>
                   <span className="text-foreground font-medium">7. 主板优先、回避ST</span>
