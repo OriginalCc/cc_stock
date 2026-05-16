@@ -302,6 +302,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
 
   // Strategy panel
   const [strategyExpanded, setStrategyExpanded] = useState(false);
+  const [strategyTab, setStrategyTab] = useState<string>("策略概览");
 
   // Preset & expansion states
   const [activePreset, setActivePreset] = useState<PresetKey>("");
@@ -1462,239 +1463,555 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
         </CardHeader>
         {strategyExpanded && (
           <CardContent className="pt-0 space-y-4">
-            {/* 核心策略逻辑 */}
-            <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">核心策略逻辑</span>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                低开选股的核心逻辑：<strong className="text-foreground">低开是恐慌性抛售造成的短期价格偏离</strong>，当市场情绪修复时，价格有向均值回归的趋势。
-                低开高走的股票往往具备以下特征：有主力资金承接、放量确认、换手健康、估值安全。
-                综合胜率分通过7个因子加权计算，帮助快速筛选出低开后大概率恢复的标的。v2版本优化了权重分配，新增换手健康因子替代缺口深度。
-              </p>
+            {/* Tab Navigation */}
+            <div className="flex items-center gap-1 border-b border-border/50 pb-0">
+              {([
+                { key: "策略概览", icon: Zap, color: "text-amber-500" },
+                { key: "七大因子", icon: Layers, color: "text-rose-500" },
+                { key: "买入逻辑", icon: TrendingUp, color: "text-emerald-500" },
+                { key: "实战要点", icon: Activity, color: "text-orange-500" },
+                { key: "风险提示", icon: AlertCircle, color: "text-red-500" },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setStrategyTab(tab.key)}
+                  className={`inline-flex items-center gap-1.5 text-xs px-3 py-2 border-b-2 transition-colors whitespace-nowrap ${
+                    strategyTab === tab.key
+                      ? "border-primary text-primary font-medium"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                  }`}
+                >
+                  <tab.icon className={`w-3.5 h-3.5 ${strategyTab === tab.key ? tab.color : ""}`} />
+                  {tab.key}
+                </button>
+              ))}
             </div>
 
-            {/* 七大因子详解 */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-rose-500" />
-                <span className="text-xs font-semibold">七大因子详解（综合胜率 = 加权求和）</span>
-              </div>
-
-              {/* 因子1: 缺口回补率 */}
-              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">1</span>
-                    <span className="text-xs font-semibold">缺口回补率 (权重18%)</span>
+            {/* Tab: 策略概览 */}
+            {strategyTab === "策略概览" && (
+              <div className="space-y-4">
+                {/* 核心策略逻辑 */}
+                <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Zap className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">核心策略逻辑</span>
                   </div>
-                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-300">核心因子</Badge>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    低开选股的核心逻辑：<strong className="text-foreground">低开是恐慌性抛售造成的短期价格偏离</strong>，当市场情绪修复时，价格有向均值回归的趋势。
+                    低开高走的股票往往具备以下特征：有主力资金承接、放量确认、换手健康、估值安全。
+                    综合胜率分通过7个因子加权计算，帮助快速筛选出低开后大概率恢复的标的。v2版本优化了权重分配，新增换手健康因子替代缺口深度。
+                  </p>
                 </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>(现价 - 开盘价) / (昨收 - 开盘价) x 100%
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>衡量低开缺口被回补的程度。100%表示完全回补缺口（价格回到昨收），&gt;100%表示超额回补，&lt;0%表示缺口扩大。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>缺口回补率越高，说明低开后的恢复力度越强。关注&gt;50%的标的，这是多头力量积极反击的信号。
-                </p>
-              </div>
 
-              {/* 因子2: 量价确认 */}
-              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">2</span>
-                    <span className="text-xs font-semibold">量价确认分 (权重18%)</span>
+                {/* 综合胜率分 */}
+                <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Shield className="w-3.5 h-3.5 text-rose-500" />
+                    <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">综合胜率分 = 七因子加权求和</span>
                   </div>
-                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-300">核心因子</Badge>
-                </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>综合量比+反弹力度+成交额三维度精细打分(0-100)，强反弹与弱反弹分档计算
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>"低开+放量+反弹"是最经典的量价配合形态。量比&gt;1.5且价格反弹，说明有真实资金在低开价位承接，反弹可靠性高。大额成交额外加成。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>量价确认分&gt;70的标的值得关注。缩量反弹(量比&lt;1)的可靠性较低，可能是技术性反抽而非趋势性恢复。
-                </p>
-              </div>
-
-              {/* 因子3: 主力资金分 */}
-              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-orange-500/10 text-orange-500 border border-orange-500/20">3</span>
-                    <span className="text-xs font-semibold">主力资金分 (权重15%)</span>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1">
+                    <p>综合胜率 = 缺口回补×18% + 量价确认×18% + 主力资金×15% + 换手健康×15% + 支撑强度×12% + 弹性评分×12% + 估值安全×10%</p>
+                    <p className="text-foreground font-medium mt-1.5">分数解读：</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
+                      <span className="text-rose-500 font-medium">70分以上：强势反弹信号</span>
+                      <span>多个因子共振，低开高走概率极高</span>
+                      <span className="text-orange-500 font-medium">55-70分：较好反弹机会</span>
+                      <span>部分因子偏弱，需结合板块趋势判断</span>
+                      <span className="text-amber-500 font-medium">40-55分：一般性机会</span>
+                      <span>恢复力度有限，需谨慎参与</span>
+                      <span className="text-yellow-600 dark:text-yellow-400 font-medium">25-40分：偏弱</span>
+                      <span>低开后恢复困难，不建议追入</span>
+                      <span className="text-gray-400 font-medium">25分以下：弱势</span>
+                      <span>可能存在利空，远离为宜</span>
+                    </div>
                   </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>基于主力净流入/成交额比例，使用平方根缩放换算为0-100分。50为中性，&gt;50为净流入，&lt;50为净流出。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>主力资金是低开反弹的核心驱动力。低开时主力大举买入，说明机构认为低开是错杀，有意识地逢低建仓。平方根缩放使小幅流入也有区分度。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>主力资金分&gt;70是强信号，说明大资金在积极承接。如果主力大幅流出（&lt;30），即使反弹也可能是散户拉抬，持续性差。
-                </p>
               </div>
+            )}
 
-              {/* 因子4: 换手健康度 */}
+            {/* Tab: 七大因子 */}
+            {strategyTab === "七大因子" && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-rose-500" />
+                  <span className="text-xs font-semibold">七大因子详解（综合胜率 = 加权求和）</span>
+                </div>
+
+                {/* 因子1: 缺口回补率 */}
+                <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">1</span>
+                      <span className="text-xs font-semibold">缺口回补率 (权重18%)</span>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-300">核心因子</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">计算方式：</strong>(现价 - 开盘价) / (昨收 - 开盘价) x 100%
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">含义：</strong>衡量低开缺口被回补的程度。100%表示完全回补缺口（价格回到昨收），&gt;100%表示超额回补，&lt;0%表示缺口扩大。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">使用要点：</strong>缺口回补率越高，说明低开后的恢复力度越强。关注&gt;50%的标的，这是多头力量积极反击的信号。
+                  </p>
+                </div>
+
+                {/* 因子2: 量价确认 */}
+                <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">2</span>
+                      <span className="text-xs font-semibold">量价确认分 (权重18%)</span>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-300">核心因子</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">计算方式：</strong>综合量比+反弹力度+成交额三维度精细打分(0-100)，强反弹与弱反弹分档计算
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">含义：</strong>&quot;低开+放量+反弹&quot;是最经典的量价配合形态。量比&gt;1.5且价格反弹，说明有真实资金在低开价位承接，反弹可靠性高。大额成交额外加成。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">使用要点：</strong>量价确认分&gt;70的标的值得关注。缩量反弹(量比&lt;1)的可靠性较低，可能是技术性反抽而非趋势性恢复。
+                  </p>
+                </div>
+
+                {/* 因子3: 主力资金分 */}
+                <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-orange-500/10 text-orange-500 border border-orange-500/20">3</span>
+                      <span className="text-xs font-semibold">主力资金分 (权重15%)</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">计算方式：</strong>基于主力净流入/成交额比例，使用平方根缩放换算为0-100分。50为中性，&gt;50为净流入，&lt;50为净流出。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">含义：</strong>主力资金是低开反弹的核心驱动力。低开时主力大举买入，说明机构认为低开是错杀，有意识地逢低建仓。平方根缩放使小幅流入也有区分度。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">使用要点：</strong>主力资金分&gt;70是强信号，说明大资金在积极承接。如果主力大幅流出（&lt;30），即使反弹也可能是散户拉抬，持续性差。
+                  </p>
+                </div>
+
+                {/* 因子4: 换手健康度 */}
+                <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">4</span>
+                      <span className="text-xs font-semibold">换手健康度 (权重15%)</span>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-300">v2新增</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">计算方式：</strong>基于换手率分段打分。2-8%为最佳区间(85-95分)，1-2%偏低(50分)，8-12%可接受(75分)，&gt;20%投机过热(30分以下)。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">含义：</strong>换手率反映市场交易活跃度和多空分歧程度。适中换手=交易活跃但分歧不大，低开后更容易形成一致预期向上。过高换手=多空激烈博弈，方向不确定。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">使用要点：</strong>换手健康度&gt;80的标的（换手2-8%），低开后恢复概率最高。换手&gt;20%的标的即使反弹也可能剧烈波动，风险较大。换手适中+放量=量价齐升加成。
+                  </p>
+                </div>
+
+                {/* 因子5: 支撑强度 */}
+                <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-orange-500/10 text-orange-500 border border-orange-500/20">5</span>
+                      <span className="text-xs font-semibold">支撑强度 (权重12%)</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">计算方式：</strong>(现价 - 最低价) / (最高价 - 最低价) x 100%
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">含义：</strong>当前价格在日内振幅区间中的位置。80%以上表示价格在高位运行，支撑强劲；20%以下表示价格在低位徘徊，支撑较弱。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">使用要点：</strong>支撑强度&gt;60的股票说明低开后已被买盘推至日内高位，多头主导。配合缺口回补率一起看，效果更佳。
+                  </p>
+                </div>
+
+                {/* 因子6: 弹性评分 */}
+                <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">6</span>
+                      <span className="text-xs font-semibold">弹性评分 (权重12%)</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">计算方式：</strong>综合恢复幅度+振幅+上影线+下影线四维度。恢复幅度贡献基础分，大振幅+反弹加成，无/短上影线（涨得稳）加分，有下影线（低位反弹）加分。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">含义：</strong>弹性衡量股价从低位弹回的能力。振幅大且恢复强=弹性好；长上影线说明冲高回落，弹性打折；下影线说明低位有支撑，弹性加成。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">使用要点：</strong>弹性评分&gt;40的股票说明具备较强的反弹能力。关注&quot;无上影线+大振幅+反弹+下影线支撑&quot;的组合，这种股票日内恢复最为坚决。
+                  </p>
+                </div>
+
+                {/* 因子7: 估值安全分 */}
+                <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">7</span>
+                      <span className="text-xs font-semibold">估值安全分 (权重10%)</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">计算方式：</strong>基于PE估值水平线性过渡打分。PE≤10→95分(极低估值)，10-20→80-90，20-35→60-80，35-50→40-60，50-80→20-40，&gt;150→8分，亏损→10分。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
+                    <strong className="text-foreground">含义：</strong>估值越低，安全边际越高。低开时如果估值本身较低，说明价格进一步下跌的空间有限，反弹概率更高。v2采用线性过渡避免分数跳变。
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">使用要点：</strong>估值安全分&gt;70的标的（PE&lt;30），低开后恢复的概率显著高于高估值标的。高PE股票低开可能是价值回归，需谨慎。
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Tab: 买入逻辑 */}
+            {strategyTab === "买入逻辑" && (
+              <div className="space-y-4">
+                {/* 买入前提条件 */}
+                <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Shield className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">买入前提条件（必须同时满足）</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">✓</span>
+                      <div>
+                        <span className="text-foreground font-medium">综合胜率分 ≥ 55</span>
+                        <p>低于55分的标的恢复概率不高，不值得冒险。55分以上意味着至少3个以上因子偏强，反弹有实质性支撑。</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">✓</span>
+                      <div>
+                        <span className="text-foreground font-medium">非ST/退市风险股</span>
+                        <p>ST股基本面恶化，低开可能不是错杀而是价值回归。这类风险无法通过技术分析化解，坚决回避。</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">✓</span>
+                      <div>
+                        <span className="text-foreground font-medium">低开幅度在 -3% ~ -9% 之间</span>
+                        <p>-3%以下空间太小做T无利润；-9%以上可能有重大利空，即使反弹也可能是&quot;死猫跳&quot;。最佳区间为 -4% ~ -7%。</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">✓</span>
+                      <div>
+                        <span className="text-foreground font-medium">大盘非暴跌行情</span>
+                        <p>大盘跌幅&gt;2%时，低开反弹成功率大幅下降。系统性风险下所有技术分析失效，等待大盘企稳再参与。</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 四种低开模式的买入策略 */}
+                <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <TrendingUp className="w-3.5 h-3.5 text-rose-500" />
+                    <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">四种低开模式的买入策略</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed space-y-3">
+                    {/* 低开高走 */}
+                    <div className="p-2.5 rounded-md border border-rose-500/10 bg-rose-500/5">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-base">🔥</span>
+                        <span className="text-rose-600 dark:text-rose-400 font-semibold text-xs">低开高走 — 最佳买入时机</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p><strong className="text-foreground">识别特征：</strong>开盘低于昨收，盘中持续上行，现价已高于开盘价3%以上，缺口回补率&gt;50%。</p>
+                        <p><strong className="text-foreground">买入时机：</strong>确认分时线突破开盘价后回踩不破时可买入。最佳入场点为开盘后15-30分钟确认趋势后。</p>
+                        <p><strong className="text-foreground">仓位建议：</strong>可相对积极，仓位可放到总资金的30-40%。</p>
+                        <p><strong className="text-foreground">止盈目标：</strong>第一目标看缺口完全回补（回到昨收价），第二目标看涨幅1-2%。</p>
+                        <p><strong className="text-foreground">关键确认：</strong>量比&gt;1.5 + 主力资金分&gt;60 + 支撑强度&gt;50，三条件满足越多越可靠。</p>
+                      </div>
+                    </div>
+
+                    {/* 低开企稳 */}
+                    <div className="p-2.5 rounded-md border border-orange-500/10 bg-orange-500/5">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-base">📊</span>
+                        <span className="text-orange-600 dark:text-orange-400 font-semibold text-xs">低开企稳 — 谨慎买入</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p><strong className="text-foreground">识别特征：</strong>开盘低开后，价格在开盘价附近横盘整理，波动不大，未继续下跌也未明显反弹。</p>
+                        <p><strong className="text-foreground">买入时机：</strong>等待分时线放量突破横盘区间上沿时介入。不要在横盘期间提前买入，方向未明。</p>
+                        <p><strong className="text-foreground">仓位建议：</strong>轻仓试探，仓位控制在总资金的15-20%。</p>
+                        <p><strong className="text-foreground">止盈目标：</strong>回到昨收价附近即可考虑止盈。</p>
+                        <p><strong className="text-foreground">关键确认：</strong>横盘期间量能萎缩+突破时放量=真突破。若横盘后放量下跌则放弃。</p>
+                      </div>
+                    </div>
+
+                    {/* 低开震荡 */}
+                    <div className="p-2.5 rounded-md border border-yellow-500/10 bg-yellow-500/5">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-base">↔️</span>
+                        <span className="text-yellow-600 dark:text-yellow-400 font-semibold text-xs">低开震荡 — 观望为主</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p><strong className="text-foreground">识别特征：</strong>低开后价格上下波动，没有明确的趋势方向，振幅较大但始终围绕某个价位震荡。</p>
+                        <p><strong className="text-foreground">买入时机：</strong>不建议主动买入。如参与，仅在震荡区间下沿获得支撑且出现放量反弹信号时小仓位介入。</p>
+                        <p><strong className="text-foreground">仓位建议：</strong>极轻仓，不超过总资金的10%。</p>
+                        <p><strong className="text-foreground">止盈止损：</strong>严格止损，跌破震荡区间下沿立即出局。止盈设在震荡区间上沿。</p>
+                        <p><strong className="text-foreground">关键确认：</strong>换手率&gt;5%且主力资金分&lt;40的震荡股应放弃，说明多空分歧大且主力未介入。</p>
+                      </div>
+                    </div>
+
+                    {/* 低开低走 */}
+                    <div className="p-2.5 rounded-md border border-green-500/10 bg-green-500/5">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-base">📉</span>
+                        <span className="text-green-600 dark:text-green-400 font-semibold text-xs">低开低走 — 坚决回避</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p><strong className="text-foreground">识别特征：</strong>开盘低开后持续走低，盘中反弹无力，缺口不断扩大，现价远低于开盘价。</p>
+                        <p><strong className="text-foreground">买入时机：</strong>不买入！无论胜率分多高，低开低走模式都是最危险的信号。</p>
+                        <p><strong className="text-foreground">原因分析：</strong>低开低走通常意味着存在未公开利空、机构集体出货、或技术面严重破位。不要试图抄底，接飞刀的代价极高。</p>
+                        <p><strong className="text-foreground">特殊情况：</strong>仅在尾盘14:30后出现急剧缩量企稳+主力资金大幅流入时，可关注次日可能反弹，但不建议当日买入。</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 买入时间窗口 */}
+                <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">买入时间窗口详解</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2.5">
+                    <div className="p-2 rounded-md border border-rose-500/10 bg-rose-500/5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-rose-600 dark:text-rose-400 font-semibold text-[11px]">9:25-9:35 集合竞价观察期</span>
+                        <Badge variant="outline" className="text-[9px] py-0 px-1 bg-rose-500/5 border-rose-500/20 text-rose-500">最重要</Badge>
+                      </div>
+                      <p>不要在开盘第一分钟就冲进去！集合竞价只能看到开盘价，无法判断盘中趋势。观察前5-10分钟的走势，确认低开后是否开始反弹。如果开盘后立刻拉升，不要追高，等待回踩确认。</p>
+                    </div>
+                    <div className="p-2 rounded-md border border-orange-500/10 bg-orange-500/5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-orange-600 dark:text-orange-400 font-semibold text-[11px]">9:35-10:00 确认入场期</span>
+                        <Badge variant="outline" className="text-[9px] py-0 px-1 bg-orange-500/5 border-orange-500/20 text-orange-500">最佳窗口</Badge>
+                      </div>
+                      <p>开盘15分钟后趋势初步明朗，这是最佳入场窗口。如果此时分时线站稳在开盘价上方+量能放大，说明低开高走概率大，可择机买入。突破后回踩不破开盘价=最佳买入点。</p>
+                    </div>
+                    <div className="p-2 rounded-md border border-amber-500/10 bg-amber-500/5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-amber-600 dark:text-amber-400 font-semibold text-[11px]">10:00-11:30 二次确认期</span>
+                        <Badge variant="outline" className="text-[9px] py-0 px-1 bg-amber-500/5 border-amber-500/20 text-amber-500">可入场</Badge>
+                      </div>
+                      <p>如果上午走势持续向好，缺口持续回补，此时仍可入场。但要注意入场价位可能已经远离低点，利润空间变小。建议仅对胜率分&gt;65的标的在此窗口入场。</p>
+                    </div>
+                    <div className="p-2 rounded-md border border-yellow-500/10 bg-yellow-500/5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-yellow-600 dark:text-yellow-400 font-semibold text-[11px]">13:00-14:00 午后观察期</span>
+                        <Badge variant="outline" className="text-[9px] py-0 px-1 bg-yellow-500/5 border-yellow-500/20 text-yellow-500">谨慎</Badge>
+                      </div>
+                      <p>午后开盘可能出现方向变化。如果上午反弹强势午后回调到支撑位，可二次加仓。如果上午弱势午后继续下跌，坚决不抄底。午后入场需更严格的止盈止损。</p>
+                    </div>
+                    <div className="p-2 rounded-md border border-gray-500/10 bg-gray-500/5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-gray-600 dark:text-gray-400 font-semibold text-[11px]">14:00-15:00 尾盘期</span>
+                        <Badge variant="outline" className="text-[9px] py-0 px-1 bg-gray-500/5 border-gray-500/20 text-gray-500">不推荐</Badge>
+                      </div>
+                      <p>尾盘买入做T的空间非常有限，且面临次日开盘的不确定性。除非是为次日做布局，否则不建议尾盘新开仓位。如果已持仓，14:30前应完成止盈或止损操作。</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 买入检查清单 */}
+                <div className="p-3 rounded-lg border border-primary/20 bg-primary/5">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <BookOpen className="w-3.5 h-3.5 text-primary" />
+                    <span className="text-xs font-semibold text-primary">买入前检查清单（逐条确认）</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1.5">
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">1</span>
+                      <span>综合胜率分是否 ≥ 55？如 ≥ 70则可加仓</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">2</span>
+                      <span>缺口回补率是否 &gt; 30%？越高越好</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">3</span>
+                      <span>量比是否 &gt; 1.0？放量反弹才可靠</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">4</span>
+                      <span>主力资金是否净流入？主力分 &gt; 50 为佳</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">5</span>
+                      <span>是否为低开高走或低开企稳模式？低开低走坚决不买</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">6</span>
+                      <span>当前是否在9:35-14:00的合适时间窗口内？</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">7</span>
+                      <span>大盘是否非暴跌（跌幅 &lt; 2%）？大盘暴跌时不参与</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">8</span>
+                      <span>是否已设好止盈止损位？止损-2%，止盈看缺口回补</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">9</span>
+                      <span>仓位是否合理？单只股票不超过总资金40%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 止盈止损策略 */}
+                <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Target className="w-3.5 h-3.5 text-red-500" />
+                    <span className="text-xs font-semibold text-red-700 dark:text-red-300">止盈止损策略</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2.5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-2.5 rounded-md border border-emerald-500/10 bg-emerald-500/5">
+                        <div className="text-emerald-600 dark:text-emerald-400 font-semibold text-[11px] mb-1.5">止盈策略</div>
+                        <div className="space-y-1">
+                          <p><strong className="text-foreground">保守止盈：</strong>回到昨收价（缺口100%回补）即止盈50%仓位</p>
+                          <p><strong className="text-foreground">积极止盈：</strong>等涨幅到1-2%再止盈，适合胜率分&gt;70且量能持续的标的</p>
+                          <p><strong className="text-foreground">移动止盈：</strong>盈利&gt;1%后，回撤0.5%即止盈，保护利润</p>
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-md border border-red-500/10 bg-red-500/5">
+                        <div className="text-red-600 dark:text-red-400 font-semibold text-[11px] mb-1.5">止损策略</div>
+                        <div className="space-y-1">
+                          <p><strong className="text-foreground">硬止损：</strong>买入后跌幅达到-2%无条件止损，不抱幻想</p>
+                          <p><strong className="text-foreground">技术止损：</strong>跌破日内分时低点且量能放大，立即止损</p>
+                          <p><strong className="text-foreground">时间止损：</strong>买入后30分钟内无反弹迹象，止损出局</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-md border border-amber-500/10 bg-amber-500/5">
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold text-[11px]">铁律：</span>
+                      <span>做T操作的盈亏比至少要达到2:1。即每笔交易预期盈利2%以上，才值得承担1%的亏损风险。如果预期盈利不足1%，不参与。</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 仓位管理 */}
+                <div className="p-3 rounded-lg border border-teal-500/20 bg-teal-500/5">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <PieChart className="w-3.5 h-3.5 text-teal-500" />
+                    <span className="text-xs font-semibold text-teal-700 dark:text-teal-300">仓位管理规则</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr className="border-b border-teal-500/10">
+                            <th className="text-left py-1.5 px-2 text-teal-600 dark:text-teal-400 font-semibold">胜率分区间</th>
+                            <th className="text-left py-1.5 px-2 text-teal-600 dark:text-teal-400 font-semibold">建议仓位</th>
+                            <th className="text-left py-1.5 px-2 text-teal-600 dark:text-teal-400 font-semibold">策略</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="border-b border-border/30">
+                            <td className="py-1.5 px-2 text-rose-500 font-medium">70分以上</td>
+                            <td className="py-1.5 px-2">30-40%</td>
+                            <td className="py-1.5 px-2">多因子共振，可重仓做T</td>
+                          </tr>
+                          <tr className="border-b border-border/30">
+                            <td className="py-1.5 px-2 text-orange-500 font-medium">55-70分</td>
+                            <td className="py-1.5 px-2">20-30%</td>
+                            <td className="py-1.5 px-2">部分因子偏强，适度参与</td>
+                          </tr>
+                          <tr className="border-b border-border/30">
+                            <td className="py-1.5 px-2 text-amber-500 font-medium">40-55分</td>
+                            <td className="py-1.5 px-2">10-15%</td>
+                            <td className="py-1.5 px-2">轻仓试探，快进快出</td>
+                          </tr>
+                          <tr>
+                            <td className="py-1.5 px-2 text-gray-400 font-medium">40分以下</td>
+                            <td className="py-1.5 px-2">0%</td>
+                            <td className="py-1.5 px-2">不参与，等待更好机会</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="p-2 rounded-md border border-amber-500/10 bg-amber-500/5 mt-2">
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold text-[11px]">分批建仓原则：</span>
+                      <span>不要一次性满仓买入。建议分2-3批：第一笔确认趋势（50%仓位），第二笔回踩确认后加仓（30%仓位），第三笔突破后追仓（20%仓位）。如果第一笔买入后即下跌触发止损，不加仓。</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab: 实战要点 */}
+            {strategyTab === "实战要点" && (
               <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">4</span>
-                    <span className="text-xs font-semibold">换手健康度 (权重15%)</span>
-                  </div>
-                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-300">v2新增</Badge>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Activity className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">实战要点与经验法则</span>
                 </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>基于换手率分段打分。2-8%为最佳区间(85-95分)，1-2%偏低(50分)，8-12%可接受(75分)，&gt;20%投机过热(30分以下)。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>换手率反映市场交易活跃度和多空分歧程度。适中换手=交易活跃但分歧不大，低开后更容易形成一致预期向上。过高换手=多空激烈博弈，方向不确定。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>换手健康度&gt;80的标的（换手2-8%），低开后恢复概率最高。换手&gt;20%的标的即使反弹也可能剧烈波动，风险较大。换手适中+放量=量价齐升加成。
-                </p>
-              </div>
-
-              {/* 因子5: 支撑强度 */}
-              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-orange-500/10 text-orange-500 border border-orange-500/20">5</span>
-                    <span className="text-xs font-semibold">支撑强度 (权重12%)</span>
+                <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+                  <div>
+                    <span className="text-foreground font-medium">1. 最佳低开深度：4%-7%</span>
+                    <p>这个区间的低开既有恢复空间，又不至于反映重大利空。低于2%的低开空间太小，超过9%的低开可能是有实质利空，需要区别对待。</p>
                   </div>
-                </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>(现价 - 最低价) / (最高价 - 最低价) x 100%
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>当前价格在日内振幅区间中的位置。80%以上表示价格在高位运行，支撑强劲；20%以下表示价格在低位徘徊，支撑较弱。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>支撑强度&gt;60的股票说明低开后已被买盘推至日内高位，多头主导。配合缺口回补率一起看，效果更佳。
-                </p>
-              </div>
-
-              {/* 因子6: 弹性评分 */}
-              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">6</span>
-                    <span className="text-xs font-semibold">弹性评分 (权重12%)</span>
+                  <div>
+                    <span className="text-foreground font-medium">2. 量价配合是关键</span>
+                    <p>低开+放量反弹是最可靠的反转信号。量比&gt;1.5且反弹幅度&gt;2%的标的，日内恢复概率显著高于缩量反弹。无量反弹可能是技术性反抽，持续性差。</p>
+                  </div>
+                  <div>
+                    <span className="text-foreground font-medium">3. 主力资金确认方向</span>
+                    <p>主力净流入是判断低开反弹真实性的重要依据。低开时主力大举买入=机构认为错杀，积极建仓；主力大幅流出=机构在借低开出货，需远离。</p>
+                  </div>
+                  <div>
+                    <span className="text-foreground font-medium">4. 板块联动效应</span>
+                    <p>同板块多只股票同时低开且反弹，说明是板块级事件驱动的错杀，恢复概率更高。如果仅个股低开，可能是个股利空，需谨慎。</p>
+                  </div>
+                  <div>
+                    <span className="text-foreground font-medium">5. 前日涨停+低开=弱转强信号</span>
+                    <p>前日涨停的股票次日低开，如果量能放大且快速反弹，是经典的&quot;弱转强&quot;形态，后续继续走强概率较高。</p>
+                  </div>
+                  <div>
+                    <span className="text-foreground font-medium">6. 换手率2-8%为最佳</span>
+                    <p>2-8%的换手率最佳，说明交易活跃且分歧不大。换手率&gt;20%往往意味着多空分歧巨大，波动剧烈风险高；&lt;1%则流动性不足。换手健康度因子已整合此维度。</p>
+                  </div>
+                  <div>
+                    <span className="text-foreground font-medium">7. 主板优先、回避ST</span>
+                    <p>主板股票流动性最好，做T成交顺畅。ST/退市风险股即使低开也不建议参与，基本面风险无法通过技术分析化解。</p>
                   </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>综合恢复幅度+振幅+上影线+下影线四维度。恢复幅度贡献基础分，大振幅+反弹加成，无/短上影线（涨得稳）加分，有下影线（低位反弹）加分。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>弹性衡量股价从低位弹回的能力。振幅大且恢复强=弹性好；长上影线说明冲高回落，弹性打折；下影线说明低位有支撑，弹性加成。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>弹性评分&gt;40的股票说明具备较强的反弹能力。关注"无上影线+大振幅+反弹+下影线支撑"的组合，这种股票日内恢复最为坚决。
-                </p>
               </div>
+            )}
 
-              {/* 因子7: 估值安全分 */}
-              <div className="p-3 rounded-lg border border-border/50 bg-muted/30">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">7</span>
-                    <span className="text-xs font-semibold">估值安全分 (权重10%)</span>
-                  </div>
+            {/* Tab: 风险提示 */}
+            {strategyTab === "风险提示" && (
+              <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                  <span className="text-xs font-semibold text-red-700 dark:text-red-300">风险提示</span>
                 </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">计算方式：</strong>基于PE估值水平线性过渡打分。PE≤10→95分(极低估值)，10-20→80-90，20-35→60-80，35-50→40-60，50-80→20-40，&gt;150→8分，亏损→10分。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5">
-                  <strong className="text-foreground">含义：</strong>估值越低，安全边际越高。低开时如果估值本身较低，说明价格进一步下跌的空间有限，反弹概率更高。v2采用线性过渡避免分数跳变。
-                </p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">使用要点：</strong>估值安全分&gt;70的标的（PE&lt;30），低开后恢复的概率显著高于高估值标的。高PE股票低开可能是价值回归，需谨慎。
-                </p>
-              </div>
-            </div>
-
-            {/* 综合胜率分 */}
-            <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Shield className="w-3.5 h-3.5 text-rose-500" />
-                <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">综合胜率分 = 七因子加权求和</span>
-              </div>
-              <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1">
-                <p>综合胜率 = 缺口回补×18% + 量价确认×18% + 主力资金×15% + 换手健康×15% + 支撑强度×12% + 弹性评分×12% + 估值安全×10%</p>
-                <p className="text-foreground font-medium mt-1.5">分数解读：</p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
-                  <span className="text-rose-500 font-medium">70分以上：强势反弹信号</span>
-                  <span>多个因子共振，低开高走概率极高</span>
-                  <span className="text-orange-500 font-medium">55-70分：较好反弹机会</span>
-                  <span>部分因子偏弱，需结合板块趋势判断</span>
-                  <span className="text-amber-500 font-medium">40-55分：一般性机会</span>
-                  <span>恢复力度有限，需谨慎参与</span>
-                  <span className="text-yellow-600 dark:text-yellow-400 font-medium">25-40分：偏弱</span>
-                  <span>低开后恢复困难，不建议追入</span>
-                  <span className="text-gray-400 font-medium">25分以下：弱势</span>
-                  <span>可能存在利空，远离为宜</span>
+                <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1">
+                  <p>1. 综合胜率分是量化参考，不构成投资建议。市场存在不可预测的系统性风险。</p>
+                  <p>2. 低开幅度过大（&gt;9%）可能存在重大利空，即使反弹也可能是&quot;死猫跳&quot;。</p>
+                  <p>3. 大盘弱势环境下，低开反弹的成功率会显著下降，需结合大盘趋势判断。</p>
+                  <p>4. 做T操作需要严格的止盈止损纪律，建议设置2-3%的止损线。</p>
+                  <p>5. 因子数据为实时计算，盘中会随行情变化，需持续关注因子分值变化。</p>
                 </div>
               </div>
-            </div>
-
-            {/* 实战要点 */}
-            <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Activity className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">实战要点与经验法则</span>
-              </div>
-              <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
-                <div>
-                  <span className="text-foreground font-medium">1. 最佳低开深度：4%-7%</span>
-                  <p>这个区间的低开既有恢复空间，又不至于反映重大利空。低于2%的低开空间太小，超过9%的低开可能是有实质利空，需要区别对待。</p>
-                </div>
-                <div>
-                  <span className="text-foreground font-medium">2. 量价配合是关键</span>
-                  <p>低开+放量反弹是最可靠的反转信号。量比&gt;1.5且反弹幅度&gt;2%的标的，日内恢复概率显著高于缩量反弹。无量反弹可能是技术性反抽，持续性差。</p>
-                </div>
-                <div>
-                  <span className="text-foreground font-medium">3. 主力资金确认方向</span>
-                  <p>主力净流入是判断低开反弹真实性的重要依据。低开时主力大举买入=机构认为错杀，积极建仓；主力大幅流出=机构在借低开出货，需远离。</p>
-                </div>
-                <div>
-                  <span className="text-foreground font-medium">4. 板块联动效应</span>
-                  <p>同板块多只股票同时低开且反弹，说明是板块级事件驱动的错杀，恢复概率更高。如果仅个股低开，可能是个股利空，需谨慎。</p>
-                </div>
-                <div>
-                  <span className="text-foreground font-medium">5. 前日涨停+低开=弱转强信号</span>
-                  <p>前日涨停的股票次日低开，如果量能放大且快速反弹，是经典的"弱转强"形态，后续继续走强概率较高。</p>
-                </div>
-                <div>
-                  <span className="text-foreground font-medium">6. 换手率2-8%为最佳</span>
-                  <p>2-8%的换手率最佳，说明交易活跃且分歧不大。换手率&gt;20%往往意味着多空分歧巨大，波动剧烈风险高；&lt;1%则流动性不足。换手健康度因子已整合此维度。</p>
-                </div>
-                <div>
-                  <span className="text-foreground font-medium">7. 主板优先、回避ST</span>
-                  <p>主板股票流动性最好，做T成交顺畅。ST/退市风险股即使低开也不建议参与，基本面风险无法通过技术分析化解。</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 风险提示 */}
-            <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5">
-              <div className="flex items-center gap-1.5 mb-2">
-                <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-                <span className="text-xs font-semibold text-red-700 dark:text-red-300">风险提示</span>
-              </div>
-              <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1">
-                <p>1. 综合胜率分是量化参考，不构成投资建议。市场存在不可预测的系统性风险。</p>
-                <p>2. 低开幅度过大（&gt;9%）可能存在重大利空，即使反弹也可能是"死猫跳"。</p>
-                <p>3. 大盘弱势环境下，低开反弹的成功率会显著下降，需结合大盘趋势判断。</p>
-                <p>4. 做T操作需要严格的止盈止损纪律，建议设置2-3%的止损线。</p>
-                <p>5. 因子数据为实时计算，盘中会随行情变化，需持续关注因子分值变化。</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         )}
       </Card>
