@@ -984,15 +984,32 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
             <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5">
               <div className="flex items-center gap-1.5 mb-2">
                 <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
-                <span className="text-xs font-semibold text-red-700 dark:text-red-300">核心规矩：板块与个股双跌时仓位限制</span>
+                <span className="text-xs font-semibold text-red-700 dark:text-red-300">核心规矩：大盘+板块+个股三维仓位控制（以深证成指为主）</span>
               </div>
               <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
                 <div className="p-2.5 rounded-md border border-red-500/15 bg-red-500/5">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <span className="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-red-500/10 text-red-500 border border-red-500/20">1/3</span>
-                    <span className="text-red-600 dark:text-red-400 font-semibold text-xs">所在板块下跌 + 个股下跌 → 最多用1/3仓位参与</span>
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-red-500/10 text-red-500 border border-red-500/20">1/4</span>
+                    <span className="text-red-600 dark:text-red-400 font-semibold text-xs">深证↓ + 板块↓ + 个股↓ → 最多用1/4仓位参与（三跌最危险）</span>
                   </div>
-                  <p>当个股所属板块整体下跌，且个股本身也在下跌时，市场环境对多头不利。此时如果仍想参与交易，<strong className="text-foreground">仓位严格控制在总资金的1/3以内</strong>，绝不可满仓操作。</p>
+                  <p>当深证成指下跌（大盘弱势）、个股所属板块下跌、且个股本身也在下跌时，三个层面全面看空，<strong className="text-foreground">仓位严格控制在总资金的1/4以内</strong>。</p>
+                  <div className="mt-2 p-2 rounded border border-red-500/10 bg-red-500/5">
+                    <p className="text-red-600 dark:text-red-400 font-medium text-[11px] mb-1">为什么三跌用1/4？</p>
+                    <div className="space-y-1 text-[11px]">
+                      <p>1. 深证成指下跌说明整个市场系统性承压，80%个股跟随下跌</p>
+                      <p>2. 板块下跌说明行业/概念整体弱势，个股难独善其身</p>
+                      <p>3. 个股下跌确认了自身弱势，做T是逆三重趋势操作</p>
+                      <p>4. 1/4仓位即使亏损3%，总资金也只损失0.75%，风险极度可控</p>
+                      <p>5. 保留3/4资金作为后备，可在大盘企稳后加仓</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-md border border-red-500/15 bg-red-500/5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-red-500/10 text-red-500 border border-red-500/20">1/3</span>
+                    <span className="text-red-600 dark:text-red-400 font-semibold text-xs">板块↓ + 个股↓（大盘不跌时）→ 最多用1/3仓位参与</span>
+                  </div>
+                  <p>当大盘（深证）未下跌，但板块和个股双跌时，<strong className="text-foreground">仓位控制在总资金的1/3以内</strong>。大盘不跌说明市场不差，但板块和个股弱势仍需谨慎。</p>
                   <div className="mt-2 p-2 rounded border border-red-500/10 bg-red-500/5">
                     <p className="text-red-600 dark:text-red-400 font-medium text-[11px] mb-1">为什么是1/3？</p>
                     <div className="space-y-1 text-[11px]">
@@ -1006,16 +1023,57 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
               </div>
             </div>
 
+            {/* 大盘影响说明 */}
+            <div className="p-3 rounded-lg border border-orange-500/20 bg-orange-500/5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Activity className="w-3.5 h-3.5 text-orange-500" />
+                <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">大盘（深证成指）影响规则</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+                <p className="text-foreground font-medium">以深证成指为大盘方向参考，大盘方向作为仓位调节器：</p>
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="p-2 rounded border border-red-500/15 bg-red-500/5">
+                    <p className="text-red-600 dark:text-red-400 font-medium text-[11px] mb-1">🔻 深证成指下跌时的仓位调节</p>
+                    <div className="space-y-1 text-[11px]">
+                      <p>• 板块↓+个股↓ → 从1/3仓降为1/4仓（三跌最危险）</p>
+                      <p>• 板块↓+个股↑ → 从20-30%降为1/3仓上限</p>
+                      <p>• 板块↑+个股↓ → 从20-30%降为15-20%（大盘拖累）</p>
+                      <p>• 板块↑+个股↑ → 从30-40%降为20-30%（大盘压制）</p>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded border border-green-500/15 bg-green-500/5">
+                    <p className="text-green-600 dark:text-green-400 font-medium text-[11px] mb-1">🔺 深证成指上涨时的仓位调节</p>
+                    <div className="space-y-1 text-[11px]">
+                      <p>• 板块↓+个股↓ → 维持1/3仓（大盘有支撑，但板块仍弱）</p>
+                      <p>• 板块↓+个股↑ → 可从20-30%提升至25-30%（大盘助力）</p>
+                      <p>• 板块↑+个股↓ → 可从20-30%提升至25-30%（回调低吸好时机）</p>
+                      <p>• 板块↑+个股↑ → 维持30-40%积极仓位（三涨最强）</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-1 p-2 rounded border border-orange-500/10 bg-orange-500/5">
+                  <p className="text-orange-600 dark:text-orange-400 font-medium text-[11px] mb-1">为什么选深证成指？</p>
+                  <div className="space-y-1 text-[11px]">
+                    <p>1. 深证成指覆盖深市核心标的，更能反映中小盘和成长股走势</p>
+                    <p>2. 深市个股数量远多于沪市，大部分做T标的在深市</p>
+                    <p>3. 深证成指波动性适中，比上证50更灵敏，比创业板指更稳定</p>
+                    <p>4. 深证成指跌破关键支撑时，往往意味着市场整体走弱</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* 仓位对照表 */}
             <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
               <div className="flex items-center gap-1.5 mb-2">
                 <Scale className="w-3.5 h-3.5 text-amber-500" />
-                <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">仓位对照表（按板块与个股方向）</span>
+                <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">仓位对照表（三维：大盘×板块×个股）</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px] border-collapse">
                   <thead>
                     <tr className="border-b border-amber-500/10">
+                      <th className="text-left py-1.5 px-2 text-amber-600 dark:text-amber-400 font-semibold">深证成指</th>
                       <th className="text-left py-1.5 px-2 text-amber-600 dark:text-amber-400 font-semibold">板块方向</th>
                       <th className="text-left py-1.5 px-2 text-amber-600 dark:text-amber-400 font-semibold">个股方向</th>
                       <th className="text-left py-1.5 px-2 text-amber-600 dark:text-amber-400 font-semibold">建议仓位</th>
@@ -1023,31 +1081,64 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="border-b border-border/30">
-                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
-                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
-                      <td className="py-1.5 px-2 font-medium">30-40%</td>
-                      <td className="py-1.5 px-2">顺趋势，可积极做T</td>
-                    </tr>
-                    <tr className="border-b border-border/30">
-                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                    <tr className="border-b border-border/30 bg-red-500/8">
                       <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
-                      <td className="py-1.5 px-2 font-medium">20-30%</td>
-                      <td className="py-1.5 px-2">板块强支撑，个股回调可低吸</td>
-                    </tr>
-                    <tr className="border-b border-border/30">
                       <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
-                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
-                      <td className="py-1.5 px-2 font-medium">20-30%</td>
-                      <td className="py-1.5 px-2">逆板块走强，谨慎参与</td>
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-bold">≤ 1/4</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-600 dark:text-red-400 font-medium">三跌！极度危险</span></td>
                     </tr>
                     <tr className="border-b border-border/30 bg-red-500/5">
                       <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
                       <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
                       <td className="py-1.5 px-2"><span className="text-red-500 font-bold">≤ 1/3</span></td>
-                      <td className="py-1.5 px-2"><span className="text-red-600 dark:text-red-400 font-medium">双跌！严格限制仓位</span></td>
+                      <td className="py-1.5 px-2">逆势走强，但大环境差</td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2 font-medium">15-20%</td>
+                      <td className="py-1.5 px-2">大盘拖累，板块独木难支</td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2 font-medium">20-30%</td>
+                      <td className="py-1.5 px-2">逆势板块，大盘压制</td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-bold">≤ 1/3</span></td>
+                      <td className="py-1.5 px-2">大盘好但板块差，仍需控仓</td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2 font-medium">25-30%</td>
+                      <td className="py-1.5 px-2">大盘支撑，个股逆板块</td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2 font-medium">25-30%</td>
+                      <td className="py-1.5 px-2">大盘+板块支撑，回调低吸</td>
+                    </tr>
+                    <tr className="border-b border-border/30 bg-green-500/5">
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2 font-medium">30-40%</td>
+                      <td className="py-1.5 px-2"><span className="text-green-600 dark:text-green-400 font-medium">三涨！可积极做T</span></td>
                     </tr>
                     <tr>
+                      <td className="py-1.5 px-2"><span className="text-gray-400">— 横盘</span></td>
                       <td className="py-1.5 px-2"><span className="text-gray-400">— 横盘</span></td>
                       <td className="py-1.5 px-2"><span className="text-gray-400">— 横盘</span></td>
                       <td className="py-1.5 px-2 font-medium">15-25%</td>
@@ -1066,42 +1157,56 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
               </div>
               <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
                 <div className="flex items-start gap-2">
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">1</span>
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-red-500/10 text-red-500 border border-red-500/20 shrink-0 mt-0.5">1</span>
                   <div>
-                    <span className="text-foreground font-medium">大盘暴跌（跌幅 &gt; 2%）时不参与任何做T</span>
-                    <p>系统性风险下所有技术分析失效，空仓等待是最好的策略。不要试图在暴跌中抄底。</p>
+                    <span className="text-foreground font-medium">深证成指暴跌（跌幅 &gt; 2%）时不参与任何做T</span>
+                    <p>系统性风险下所有技术分析失效，大盘暴跌时80%以上个股跟跌，空仓等待是最好的策略。</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">2</span>
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-red-500/10 text-red-500 border border-red-500/20 shrink-0 mt-0.5">2</span>
                   <div>
-                    <span className="text-foreground font-medium">板块暴跌时，即使个股上涨也要减仓</span>
-                    <p>板块暴跌说明有行业级利空，个股的上涨可能只是暂时的抗跌，后续补跌概率大。先减仓锁定利润。</p>
+                    <span className="text-foreground font-medium">深证成指连续3天以上下跌，仓位上限减半</span>
+                    <p>大盘持续下跌说明市场信心崩塌，即使个股有信号也要极度谨慎。原1/3仓降为1/6，原30%降为15%。</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">3</span>
                   <div>
-                    <span className="text-foreground font-medium">单只股票仓位不超过总资金的40%</span>
-                    <p>无论信号多强，单一标的风险过于集中。40%是上限，建议控制在30%以内。</p>
+                    <span className="text-foreground font-medium">板块暴跌时，即使个股上涨也要减仓</span>
+                    <p>板块暴跌说明有行业级利空，个股上涨可能只是暂时的抗跌。若大盘也下跌，直接清仓观望。</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">4</span>
                   <div>
-                    <span className="text-foreground font-medium">做T必须当天完成买卖，不隔夜</span>
-                    <p>做T的本质是利用日内波动赚取差价，不持仓过夜可以规避隔夜风险。如果当天买入后无法盈利卖出，也要在尾盘止损出局。</p>
+                    <span className="text-foreground font-medium">单只股票仓位不超过总资金的40%</span>
+                    <p>无论信号多强，单一标的风险过于集中。大盘下跌时应进一步降至25%以下。</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">5</span>
                   <div>
-                    <span className="text-foreground font-medium">连续2次做T亏损，当天停止交易</span>
-                    <p>连续亏损说明当前市场节奏与你的判断不一致，强做只会加大亏损。停下来观察，明天再战。</p>
+                    <span className="text-foreground font-medium">做T必须当天完成买卖，不隔夜</span>
+                    <p>做T本质是利用日内波动赚取差价，不持仓过夜规避隔夜风险。大盘弱势时尤其不能隔夜。</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">6</span>
+                  <div>
+                    <span className="text-foreground font-medium">连续2次做T亏损，当天停止交易</span>
+                    <p>连续亏损说明当前市场节奏与你的判断不一致，停下来观察。大盘下跌时1次亏损即停止。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">7</span>
+                  <div>
+                    <span className="text-foreground font-medium">深证成指翻红（由跌转涨）是加仓信号</span>
+                    <p>大盘由弱转强时，可从保守仓位提升至正常仓位。如1/4仓→1/3仓，20%→30%。这是大盘给的"安全通行证"。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">8</span>
                   <div>
                     <span className="text-foreground font-medium">ST股、退市风险股不参与</span>
                     <p>基本面风险无法通过技术分析化解，ST股的低开/下跌可能不是错杀而是价值归零。</p>
@@ -1114,28 +1219,48 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
             <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
               <div className="flex items-center gap-1.5 mb-2">
                 <Info className="w-3.5 h-3.5 text-rose-500" />
-                <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">实战案例：1/3仓位规矩的应用</span>
+                <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">实战案例：三维仓位规矩的应用</span>
               </div>
               <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
-                <div className="p-2 rounded-md border border-rose-500/10 bg-rose-500/5">
-                  <p className="text-rose-600 dark:text-rose-400 font-medium mb-1">场景：半导体板块跌1.5%，某半导体个股跌2.3%</p>
+                <div className="p-2 rounded-md border border-red-500/10 bg-red-500/5">
+                  <p className="text-red-600 dark:text-red-400 font-medium mb-1">场景1：深证成指跌1.8%，半导体板块跌1.5%，某半导体个股跌2.3%</p>
                   <div className="space-y-1">
-                    <p>板块和个股都在下跌，属于<strong className="text-foreground">双跌</strong>情况。</p>
+                    <p>大盘、板块和个股都在下跌，属于<strong className="text-foreground">三跌</strong>情况（最危险）。</p>
                     <p>假设总资金10万元：</p>
-                    <p className="pl-2">• 可用仓位：≤ 1/3 = ≤ 3.3万元</p>
-                    <p className="pl-2">• 买入3万元，个股继续跌3% → 亏损900元，占总资金0.9%，可控</p>
+                    <p className="pl-2">• 可用仓位：≤ 1/4 = ≤ 2.5万元</p>
+                    <p className="pl-2">• 买入2.5万元，个股继续跌3% → 亏损750元，占总资金0.75%，极度可控</p>
                     <p className="pl-2">• 如果满仓10万买入，跌3% → 亏损3000元，占总资金3%，损失过大</p>
-                    <p className="pl-2">• 保留7万元，如果个股跌到支撑位可补仓，或寻找其他板块机会</p>
+                    <p className="pl-2">• 保留7.5万元，等待大盘企稳后再考虑加仓</p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-rose-500/10 bg-rose-500/5">
+                  <p className="text-rose-600 dark:text-rose-400 font-medium mb-1">场景2：深证成指涨0.8%，半导体板块跌1.5%，某半导体个股跌2.3%</p>
+                  <div className="space-y-1">
+                    <p>大盘上涨但板块和个股双跌，属于<strong className="text-foreground">大盘强+板块弱+个股弱</strong>。</p>
+                    <p>大盘有支撑但板块弱势，仓位仍需控制：</p>
+                    <p className="pl-2">• 建议仓位：≤ 1/3，约3.3万元</p>
+                    <p className="pl-2">• 大盘上涨提供了市场信心底线，但板块不配合不宜重仓</p>
+                    <p className="pl-2">• 如果板块转涨，可提升至25-30%仓位</p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-green-500/10 bg-green-500/5">
+                  <p className="text-green-600 dark:text-green-400 font-medium mb-1">场景3：深证成指涨1.2%，半导体板块涨0.8%，某半导体个股涨1.5%</p>
+                  <div className="space-y-1">
+                    <p>大盘、板块和个股都在上涨，属于<strong className="text-foreground">三涨</strong>情况（最安全）。</p>
+                    <p>三个层面共振向上，做T成功率高：</p>
+                    <p className="pl-2">• 建议仓位：30-40%，约3-4万元</p>
+                    <p className="pl-2">• 顺势做T，正T（先买后卖）和反T（先卖后买）均可</p>
+                    <p className="pl-2">• 但如果大盘突然翻绿，立即降仓至1/3以下</p>
                   </div>
                 </div>
                 <div className="p-2 rounded-md border border-emerald-500/10 bg-emerald-500/5">
-                  <p className="text-emerald-600 dark:text-emerald-400 font-medium mb-1">对比场景：半导体板块涨1.2%，某半导体个股跌2.3%</p>
+                  <p className="text-emerald-600 dark:text-emerald-400 font-medium mb-1">场景4：深证成指跌0.5%，半导体板块涨1.2%，某半导体个股涨2.3%</p>
                   <div className="space-y-1">
-                    <p>板块上涨但个股下跌，属于<strong className="text-foreground">板块强+个股弱</strong>的情况。</p>
-                    <p>板块支撑在，个股的下跌可能是暂时回调，可适当参与：</p>
+                    <p>大盘下跌但板块和个股逆势上涨，属于<strong className="text-foreground">大盘弱+板块强+个股强</strong>。</p>
+                    <p>板块和个股逆大盘走强，说明有独立行情，但大盘压制下需控制仓位：</p>
                     <p className="pl-2">• 建议仓位：20-30%，约2-3万元</p>
-                    <p className="pl-2">• 如果板块继续走强，个股很可能跟随反弹，做T成功率高</p>
-                    <p className="pl-2">• 但如果板块转跌，立即降仓到1/3以下</p>
+                    <p className="pl-2">• 如果大盘转涨，可提升至30-40%</p>
+                    <p className="pl-2">• 如果板块也转跌，立即降仓到1/4以下</p>
                   </div>
                 </div>
               </div>

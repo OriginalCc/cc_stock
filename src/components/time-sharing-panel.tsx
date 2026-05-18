@@ -1810,7 +1810,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         <span className={`tabular-nums ${lastItem.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
           {lastItem.changePercent >= 0 ? "+" : ""}{lastItem.changePercent.toFixed(2)}%
         </span>
-        {/* Position Rule Badge - prominent, always visible */}
+        {/* Position Rule Badge - prominent, always visible (3-factor: 大盘+板块+个股) */}
         {(() => {
           const stockPct = lastItem.changePercent;
           const sectorDown = sectorRegime?.regime === '下跌趋势' || sectorRegime?.regime === '横盘末期';
@@ -1819,23 +1819,70 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           const stockUp = stockPct >= 0;
           const hasSectorInfo = !!sectorRegime;
 
+          // 大盘方向（深证成指为主）
+          const mktDown = szIndexRegime?.regime === '下跌趋势' || szIndexRegime?.regime === '横盘末期';
+          const mktUp = szIndexRegime?.regime === '上升通道';
+          const hasMktInfo = !!szIndexRegime;
+
           let posLabel = '';
           let posColor = '';
           let posBg = '';
 
-          if (hasSectorInfo && sectorDown && stockDown) {
+          // ── 三维仓位模型：大盘 × 板块 × 个股 ──
+          if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown) {
+            // 三跌：大盘↓+板块↓+个股↓ → 最危险
+            posLabel = '🚫 极限1/4仓';
+            posColor = 'text-red-700 dark:text-red-300';
+            posBg = 'bg-red-500/20 border-red-500/40';
+          } else if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockUp) {
+            // 大盘↓+板块↓+个股↑ → 逆势走强但大环境差
             posLabel = '⛔ 1/3仓';
             posColor = 'text-red-600 dark:text-red-400';
             posBg = 'bg-red-500/15 border-red-500/30';
-          } else if (hasSectorInfo && sectorDown && stockUp) {
-            posLabel = '⚠️ 谨慎20-30%';
+          } else if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockDown) {
+            // 大盘↓+板块↑+个股↓ → 大盘拖累
+            posLabel = '⚠️ 轻仓15-20%';
             posColor = 'text-amber-600 dark:text-amber-400';
             posBg = 'bg-amber-500/15 border-amber-500/30';
-          } else if (hasSectorInfo && sectorUp && stockUp) {
+          } else if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
+            // 大盘↓+板块↑+个股↑ → 板块逆势，但大盘压制
+            posLabel = '🔸 适度20-30%';
+            posColor = 'text-yellow-600 dark:text-yellow-400';
+            posBg = 'bg-yellow-500/15 border-yellow-500/30';
+          } else if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockDown) {
+            // 大盘↑+板块↓+个股↓ → 大盘好但板块差
+            posLabel = '⚠️ 1/3仓';
+            posColor = 'text-red-600 dark:text-red-400';
+            posBg = 'bg-red-500/15 border-red-500/30';
+          } else if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockUp) {
+            // 大盘↑+板块↓+个股↑ → 个股逆板块，大盘支撑
+            posLabel = '🔸 谨慎25-30%';
+            posColor = 'text-yellow-600 dark:text-yellow-400';
+            posBg = 'bg-yellow-500/15 border-yellow-500/30';
+          } else if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockDown) {
+            // 大盘↑+板块↑+个股↓ → 回调低吸
+            posLabel = '🔹 低吸25-30%';
+            posColor = 'text-blue-600 dark:text-blue-400';
+            posBg = 'bg-blue-500/15 border-blue-500/30';
+          } else if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp) {
+            // 三涨：大盘↑+板块↑+个股↑ → 最安全
             posLabel = '✅ 积极30-40%';
             posColor = 'text-green-600 dark:text-green-400';
             posBg = 'bg-green-500/15 border-green-500/30';
-          } else if (hasSectorInfo && sectorUp && stockDown) {
+          } else if (!hasMktInfo && hasSectorInfo && sectorDown && stockDown) {
+            // 无大盘数据，回退到二维模型
+            posLabel = '⛔ 1/3仓';
+            posColor = 'text-red-600 dark:text-red-400';
+            posBg = 'bg-red-500/15 border-red-500/30';
+          } else if (!hasMktInfo && hasSectorInfo && sectorDown && stockUp) {
+            posLabel = '⚠️ 谨慎20-30%';
+            posColor = 'text-amber-600 dark:text-amber-400';
+            posBg = 'bg-amber-500/15 border-amber-500/30';
+          } else if (!hasMktInfo && hasSectorInfo && sectorUp && stockUp) {
+            posLabel = '✅ 积极30-40%';
+            posColor = 'text-green-600 dark:text-green-400';
+            posBg = 'bg-green-500/15 border-green-500/30';
+          } else if (!hasMktInfo && hasSectorInfo && sectorUp && stockDown) {
             posLabel = '🔻 低吸20-30%';
             posColor = 'text-yellow-600 dark:text-yellow-400';
             posBg = 'bg-yellow-500/15 border-yellow-500/30';
@@ -1853,10 +1900,14 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             posBg = 'bg-gray-500/10 border-gray-500/25';
           }
 
+          const mktDir = hasMktInfo ? (mktDown ? '↓下跌' : mktUp ? '↑上涨' : '—震荡') : '大盘加载中';
+          const secDir = hasSectorInfo ? (sectorDown ? '↓下跌' : sectorUp ? '↑上涨' : '—震荡') : '板块加载中';
+          const stkDir = stockDown ? '↓下跌' : '↑上涨';
+
           return (
             <span
               className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full border text-[11px] font-bold ${posBg} ${posColor}`}
-              title={`仓位规矩：${hasSectorInfo ? `板块${sectorDown ? '↓下跌' : sectorUp ? '↑上涨' : '—震荡'}` : '板块数据加载中'} + 个股${stockDown ? '↓下跌' : '↑上涨'} → ${posLabel}`}
+              title={`仓位规矩(三维)：深证${mktDir} + ${secDir} + 个股${stkDir} → ${posLabel}`}
             >
               {posLabel}
             </span>
@@ -2095,7 +2146,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         </div>
       </div>
 
-      {/* ─── Position Rule Banner on Chart ─── */}
+      {/* ─── Position Rule Banner on Chart (3-factor: 大盘+板块+个股) ─── */}
       {(() => {
         const lastPoint = data[data.length - 1];
         const stockPct = lastPoint?.changePercent ?? 0;
@@ -2105,32 +2156,76 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         const stockUp = stockPct >= 0;
         const hasSectorInfo = !!sectorRegime;
 
-        // Only show prominent banner for key scenarios
-        const isDualDown = hasSectorInfo && sectorDown && stockDown;
-        const isDualUp = hasSectorInfo && sectorUp && stockUp;
+        // 大盘方向（深证成指为主）
+        const mktDown = szIndexRegime?.regime === '下跌趋势' || szIndexRegime?.regime === '横盘末期';
+        const mktUp = szIndexRegime?.regime === '上升通道';
+        const hasMktInfo = !!szIndexRegime;
 
-        if (isDualDown) {
+        // 三维场景判断
+        const isTripleDown = hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown;
+        const isTripleUp = hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp;
+
+        if (isTripleDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">⛔</span>
-              <span className="text-xs font-bold text-red-600 dark:text-red-400">
-                板块↓ + 个股↓ = 双跌！仓位 ≤ 1/3
+            <div className="px-3 py-1.5 bg-red-500/15 border-b border-red-500/25 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">🚫</span>
+              <span className="text-xs font-bold text-red-700 dark:text-red-300">
+                深证↓ + 板块↓ + 个股↓ = 三跌！仓位 ≤ 1/4
               </span>
-              <span className="text-[10px] text-red-500/70">严格控仓，保留2/3后备资金</span>
+              <span className="text-[10px] text-red-500/70">极度危险，保留3/4后备资金</span>
             </div>
           );
         }
-        if (isDualUp) {
+        // 三涨：大盘↑+板块↑+个股↑
+        if (isTripleUp) {
           return (
             <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
               <span className="text-green-500 text-xs">✅</span>
               <span className="text-xs font-bold text-green-600 dark:text-green-400">
-                板块↑ + 个股↑ = 双涨，可积极做T
+                深证↑ + 板块↑ + 个股↑ = 三涨，可积极做T
               </span>
               <span className="text-[10px] text-green-500/70">建议仓位 30-40%</span>
             </div>
           );
         }
+        // 大盘↓+板块↓+个股↓ (无大盘数据时降级为双跌)
+        const isDualDown = (hasMktInfo ? mktDown : true) && hasSectorInfo && sectorDown && stockDown;
+        if (isDualDown && !isTripleDown) {
+          return (
+            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">⛔</span>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+                {hasMktInfo ? '深证↓ + ' : ''}板块↓ + 个股↓ = 双跌！仓位 ≤ 1/3
+              </span>
+              <span className="text-[10px] text-red-500/70">严格控仓，保留2/3后备资金</span>
+            </div>
+          );
+        }
+        // 大盘↓+板块↑+个股↑ (逆势板块+个股)
+        if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
+          return (
+            <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
+              <span className="text-yellow-500 text-xs">🔸</span>
+              <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
+                深证↓ 但板块↑+个股↑，大盘压制下适度参与
+              </span>
+              <span className="text-[10px] text-yellow-500/70">建议仓位 20-30%</span>
+            </div>
+          );
+        }
+        // 大盘↑+板块↓+个股↓ (大盘好但板块和个股差)
+        if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockDown) {
+          return (
+            <div className="px-3 py-1.5 bg-red-500/8 border-b border-red-500/15 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">⚠️</span>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+                深证↑ 但板块↓+个股↓，大盘支撑但板块弱势
+              </span>
+              <span className="text-[10px] text-red-500/70">仓位 ≤ 1/3</span>
+            </div>
+          );
+        }
+        // 板块↓+个股↑ (无大盘数据或大盘震荡)
         if (hasSectorInfo && sectorDown && stockUp) {
           return (
             <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-center gap-2">
@@ -2142,6 +2237,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             </div>
           );
         }
+        // 板块↑+个股↓ (回调低吸)
         if (hasSectorInfo && sectorUp && stockDown) {
           return (
             <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
@@ -2149,11 +2245,21 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
                 板块↑ 个股↓，回调可低吸
               </span>
-              <span className="text-[10px] text-yellow-500/70">建议仓位 20-30%</span>
+              <span className="text-[10px] text-yellow-500/70">建议仓位 {hasMktInfo && mktUp ? '25-30%' : '20-30%'}</span>
             </div>
           );
         }
-        // No sector info - show simpler banner based on stock direction only
+        // No sector info - show simpler banner based on stock direction + market
+        if (!hasSectorInfo && hasMktInfo && mktDown && stockDown) {
+          return (
+            <div className="px-3 py-1.5 bg-red-500/5 border-b border-red-500/10 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">🔻</span>
+              <span className="text-xs font-medium text-red-600/80 dark:text-red-400/80">
+                深证↓ + 个股↓，大盘弱势注意控仓
+              </span>
+            </div>
+          );
+        }
         if (!hasSectorInfo && stockDown) {
           return (
             <div className="px-3 py-1.5 bg-amber-500/5 border-b border-amber-500/10 flex items-center justify-center gap-2">
