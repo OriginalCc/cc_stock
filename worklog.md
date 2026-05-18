@@ -353,3 +353,30 @@ Stage Summary:
 - ~200 lines of new code added across the component
 - Composite score formula and score interpretation included
 - Panel is collapsed by default, expandable with click
+
+---
+Task ID: 2
+Agent: main
+Task: Add trading rules panel and position annotations to the T-Assistant page
+
+Work Log:
+- Read worklog.md and current page.tsx / time-sharing-panel.tsx structure
+- Added new icon imports to page.tsx: Scale, AlertTriangle, BookOpen, Info, ChevronUp, ChevronDown from lucide-react
+- Added `rulesExpanded` state variable to page.tsx
+- Added collapsible Trading Rules Card after StrategyAdminPanel in the T-Assistant view (page.tsx), containing:
+  - 核心规矩: 板块与个股双跌时仓位限制1/3规则，含原因解释
+  - 仓位对照表: 5种板块×个股方向组合的建议仓位表格
+  - 其他规矩: 6条交易纪律（大盘暴跌不参与、板块暴跌减仓等）
+  - 实战案例: 双跌场景和板块强+个股弱场景的仓位应用示例
+- Added Position Rule Badge to time-sharing-panel.tsx, right after the sector regime badge:
+  - Based on sectorRegime + last data point changePercent to determine position suggestion
+  - 5 color-coded states: red(1/3仓), amber(谨慎20-30%仓), green(积极30-40%仓), yellow(低吸20-30%仓), gray(轻仓15-25%)
+  - Shows tooltip with sector+stock direction explanation
+- Lint passed with no errors
+- Dev server running normally (200 responses confirmed)
+
+Stage Summary:
+- Trading Rules panel added as collapsible card in T-Assistant page
+- Position Rule Badge added to TimeSharingPanel chart header
+- No backend changes required
+- No modifications to intraday-screener.tsx

@@ -1926,6 +1926,50 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             </span>
           );
         })()}
+        {/* Position Rule Badge - shows suggested position based on sector+stock direction */}
+        {sectorRegime && (() => {
+          const lastPoint = data[data.length - 1];
+          const stockPct = lastPoint?.changePercent ?? 0;
+          const sectorDown = sectorRegime.regime === '下跌趋势' || sectorRegime.regime === '横盘末期';
+          const stockDown = stockPct < 0;
+          const sectorUp = sectorRegime.regime === '上升通道';
+          const stockUp = stockPct >= 0;
+          
+          let posLabel = '';
+          let posColor = '';
+          let posBg = '';
+          
+          if (sectorDown && stockDown) {
+            posLabel = '⚠ 1/3仓';
+            posColor = 'text-red-600 dark:text-red-400';
+            posBg = 'bg-red-500/10 border-red-500/25';
+          } else if (sectorDown && stockUp) {
+            posLabel = '谨慎 20-30%仓';
+            posColor = 'text-amber-600 dark:text-amber-400';
+            posBg = 'bg-amber-500/10 border-amber-500/25';
+          } else if (sectorUp && stockUp) {
+            posLabel = '积极 30-40%仓';
+            posColor = 'text-green-600 dark:text-green-400';
+            posBg = 'bg-green-500/10 border-green-500/25';
+          } else if (sectorUp && stockDown) {
+            posLabel = '低吸 20-30%仓';
+            posColor = 'text-yellow-600 dark:text-yellow-400';
+            posBg = 'bg-yellow-500/10 border-yellow-500/25';
+          } else {
+            posLabel = '轻仓 15-25%';
+            posColor = 'text-gray-500 dark:text-gray-400';
+            posBg = 'bg-gray-500/10 border-gray-500/25';
+          }
+          
+          return (
+            <span
+              className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full border text-[10px] font-bold ${posBg} ${posColor}`}
+              title={`仓位规矩：板块${sectorDown ? '↓下跌' : sectorUp ? '↑上涨' : '—震荡'} + 个股${stockDown ? '↓下跌' : '↑上涨'} → ${posLabel}`}
+            >
+              {posLabel}
+            </span>
+          );
+        })()}
         {lastSignal && (
           <Badge variant={lastSignal.type === "buy" ? "default" : lastSignal.type === "stoploss" ? "outline" : "destructive"} className="text-[10px] h-5">
             {lastSignal.type === "buy" ? "买入" : lastSignal.type === "stoploss" ? "止损" : "卖出"} · {lastSignal.reason}
