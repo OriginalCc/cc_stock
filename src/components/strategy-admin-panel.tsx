@@ -2400,7 +2400,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                     <p>做T的第一步不是"何时操作"，而是"做正T还是反T(先卖再买)"。方向选错，再精准的时机也白搭。系统已根据趋势识别自动推荐T方向。</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                       <div className="p-2.5 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20 space-y-1.5">
-                        <div className="text-[10px] font-bold text-red-600 dark:text-red-400">正T（先卖后买）</div>
+                        <div className="text-[10px] font-bold text-red-600 dark:text-red-400">正T（先买后卖）</div>
                         <div className="text-[9px] text-muted-foreground space-y-0.5">
                           <p>① 手中已有持仓 → 高位卖出 → 低位买回</p>
                           <p>② 风险：卖飞（卖出后继续涨，买不回来）</p>

@@ -981,6 +981,37 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
         </CardHeader>
         {rulesExpanded && (
           <CardContent className="pt-0 space-y-3">
+            {/* ── 做T自检三问 ── */}
+            <div className="p-3 rounded-lg border border-amber-500/30 bg-gradient-to-r from-amber-500/8 to-orange-500/5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="text-base">🎯</span>
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-300">做T前必问三件事（3秒快速自检）</span>
+              </div>
+              <div className="text-[11px] leading-relaxed space-y-1.5">
+                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10 bg-amber-500/5">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold bg-red-500/15 text-red-600 border border-red-500/25 shrink-0">1</span>
+                  <div>
+                    <span className="text-foreground font-medium">大盘安全吗？</span>
+                    <span className="text-muted-foreground ml-1">深证红盘✅ → 可做T；深证暴跌🚫 → 空仓</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10 bg-amber-500/5">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/25 shrink-0">2</span>
+                  <div>
+                    <span className="text-foreground font-medium">方向对了吗？</span>
+                    <span className="text-muted-foreground ml-1">三跌偏反T(先卖再买)，三涨偏正T，方向错=白做</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10 bg-amber-500/5">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">3</span>
+                  <div>
+                    <span className="text-foreground font-medium">仓位控住了吗？</span>
+                    <span className="text-muted-foreground ml-1">10万资金：三跌≤2.5万，双跌≤3.3万，三涨≤4万</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* ── 一、仓位阶梯 ── */}
             <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5">
               <div className="flex items-center gap-1.5 mb-2">
@@ -1052,7 +1083,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                     <div className="space-y-0.5 text-[11px]">
                       <p>• 大盘↑+板块↑+个股↓ → 低吸良机</p>
                       <p>• 大盘震荡+板块↑+个股↓ → 板块保护下低吸</p>
-                      <p>• 适合尾盘买入、次日冲高卖出</p>
+                      <p>• 适合盘中低吸后反弹卖出，当天完成闭环</p>
                       <p>• 量能配合：缩量下跌→放量反弹</p>
                     </div>
                   </div>
@@ -1062,7 +1093,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                     <div className="space-y-0.5 text-[11px]">
                       <p>• 大盘↓+板块↓+个股↑ → 冲高减仓</p>
                       <p>• 大盘↓+板块震荡+个股↑ → 大盘压制下卖出</p>
-                      <p>• 适合早盘冲高卖出、盘中回落买回</p>
+                      <p>• 适合早盘冲高卖出、盘中回落买回，当天完成闭环</p>
                       <p>• 量能配合：缩量反弹→放量下跌</p>
                     </div>
                   </div>
@@ -1136,19 +1167,20 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                   <div className="p-2 rounded-md border border-red-500/15 bg-red-500/5">
                     <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1">🛑 止损规矩</p>
                     <div className="space-y-1 text-[11px]">
-                      <p>• <span className="text-foreground font-medium">单笔止损 -2%</span>：无条件止损，不抱幻想</p>
+                      <p>• <span className="text-foreground font-medium">单笔止损 -2%</span>：10万本金做T亏2000元，无条件止损</p>
                       <p>• <span className="text-foreground font-medium">时间止损</span>：持仓超2小时未盈利，择机平仓</p>
                       <p>• <span className="text-foreground font-medium">信号止损</span>：出现强卖出信号，立即平仓</p>
                       <p>• <span className="text-foreground font-medium">大盘止损</span>：深证翻绿，所有做T仓位减半</p>
+                      <p>• <span className="text-foreground font-medium">日亏损上限</span>：当日累计亏损达本金0.5%（10万亏500），停止当日所有做T</p>
                     </div>
                   </div>
                   <div className="p-2 rounded-md border border-green-500/15 bg-green-500/5">
                     <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1">💰 止盈规矩</p>
                     <div className="space-y-1 text-[11px]">
-                      <p>• <span className="text-foreground font-medium">首目标 +1.5%</span>：先卖一半锁定利润</p>
-                      <p>• <span className="text-foreground font-medium">二目标 +3%</span>：全部卖出落袋</p>
-                      <p>• <span className="text-foreground font-medium">冲高回落</span>：从最高点回落0.5%即卖出</p>
-                      <p>• <span className="text-foreground font-medium">大盘翻绿</span>：不管盈亏立即卖出</p>
+                      <p>• <span className="text-foreground font-medium">首目标 +1.5%</span>：3万T仓赚450元，先卖一半锁定利润</p>
+                      <p>• <span className="text-foreground font-medium">二目标 +3%</span>：3万T仓赚900元，全部卖出落袋</p>
+                      <p>• <span className="text-foreground font-medium">冲高回落</span>：从最高点回落0.5%即卖出，宁可少赚不可倒亏</p>
+                      <p>• <span className="text-foreground font-medium">大盘翻绿</span>：不管盈亏立即卖出，不抱幻想</p>
                     </div>
                   </div>
                 </div>
@@ -1364,6 +1396,20 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                   <div>
                     <span className="text-foreground font-medium">ST股、退市风险股不参与</span>
                     <p>基本面风险无法通过技术分析化解。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-red-500/10 text-red-500 border border-red-500/20 shrink-0 mt-0.5">5</span>
+                  <div>
+                    <span className="text-foreground font-medium">亏损后加仓翻本 → 绝对禁止</span>
+                    <p>做T亏损后越买越多是最大的坑。亏损说明判断有误，应减仓而非加仓。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-red-500/10 text-red-500 border border-red-500/20 shrink-0 mt-0.5">6</span>
+                  <div>
+                    <span className="text-foreground font-medium">跌停板股票不参与做T</span>
+                    <p>跌停=流动性枯竭，无法卖出完成做T闭环。涨停同理，买入后可能无法卖出。</p>
                   </div>
                 </div>
               </div>
