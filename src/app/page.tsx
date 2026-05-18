@@ -151,29 +151,8 @@ export default function StockTAssistant() {
       setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
     };
 
-    // Fetch the active index immediately for faster initial display
-    const fetchActiveIndex = async () => {
-      const result = await fetchIndex(activeIndexKey);
-      if (cancelled || !result) return;
-      setIndexRegimes(prev => {
-        const newRegime = result.regime;
-        if (prev[activeIndexKey]?.regime !== newRegime.regime || prev[activeIndexKey]?.confidence !== newRegime.confidence) {
-          return { ...prev, [activeIndexKey]: newRegime };
-        }
-        return prev;
-      });
-      setIndexTimelineData(prev => {
-        const newVal = { items: result.items, prevClose: result.prevClose };
-        if (prev[activeIndexKey]?.items.length !== newVal.items.length || prev[activeIndexKey]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) {
-          return { ...prev, [activeIndexKey]: newVal };
-        }
-        return prev;
-      });
-    };
-
-    // Start with active index immediately, then fetch all after a short delay
-    fetchActiveIndex();
-    const delayTimer = setTimeout(() => fetchAllIndices(), 1000);
+    // Fetch all indices immediately in parallel (no double-fetch for active index)
+    fetchAllIndices();
 
     // Refresh every 30s during trading hours
     const isTradingHours = () => {
@@ -184,7 +163,7 @@ export default function StockTAssistant() {
     if (isTradingHours()) {
       intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 30000);
     }
-    return () => { cancelled = true; clearTimeout(delayTimer); if (intervalId) clearInterval(intervalId); };
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
 
   const szIndexRegime = indexRegimes[activeIndexKey];
@@ -414,10 +393,16 @@ export default function StockTAssistant() {
     if (!last) return truncated;
     const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
     if (last.time === curMin) {
+      // Fast path: if only the price changed, return same array with last element updated
+      // This reduces downstream useMemo recomputation when just the quote price ticks
       if (last.price === quote.price) return truncated;
-      const updated = truncated.slice(0, -1);
       const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : last.changePercent;
-      updated.push({ ...last, price: quote.price, changePercent: Number(changePercent.toFixed(2)) });
+      const newChangePercent = Number(changePercent.toFixed(2));
+      // Only update if price or changePercent actually differs
+      if (last.price === quote.price && last.changePercent === newChangePercent) return truncated;
+      // Mutate-friendly: create minimal new array with only last element changed
+      const updated = truncated.slice(0, -1);
+      updated.push({ ...last, price: quote.price, changePercent: newChangePercent });
       return updated;
     }
     if (isTradingHours) {

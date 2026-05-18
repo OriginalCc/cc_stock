@@ -43,33 +43,33 @@ export async function GET(request: NextRequest) {
   const cacheHeaders = { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` };
 
   try {
-    // When includeQuote=true, fetch quote FIRST to get prevClose, then pass it to timeline
-    // This avoids getAShareTimeline making a duplicate quote call internally
+    // When includeQuote=true, fetch quote and timeline IN PARALLEL for faster loading
+    // getAShareTimeline can fetch its own prevClose internally, so no need to wait
     if (includeQuote) {
-      const quoteResult = await fetchGuarded(
-        `quote:${symbol}`,
-        async (signal) => {
-          try {
-            return await getAShareQuote(symbol);
-          } catch {
-            return null;
-          }
-        },
-        cacheTTL
-      );
-
-      // Now fetch timeline with prevClose from the quote (avoids duplicate quote call)
-      const timelineResult = await fetchGuarded(
-        `timeline:${symbol}`,
-        async (signal) => {
-          try {
-            return await getAShareTimeline(symbol, quoteResult?.prevClose);
-          } catch {
-            return { items: [], prevClose: 0 };
-          }
-        },
-        cacheTTL
-      );
+      const [quoteResult, timelineResult] = await Promise.all([
+        fetchGuarded(
+          `quote:${symbol}`,
+          async (signal) => {
+            try {
+              return await getAShareQuote(symbol);
+            } catch {
+              return null;
+            }
+          },
+          cacheTTL
+        ),
+        fetchGuarded(
+          `timeline:${symbol}`,
+          async (signal) => {
+            try {
+              return await getAShareTimeline(symbol);
+            } catch {
+              return { items: [], prevClose: 0 };
+            }
+          },
+          cacheTTL
+        ),
+      ]);
 
       const response: any = {
         ...timelineResult,

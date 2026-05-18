@@ -129,6 +129,8 @@ export function useStockData() {
   const initialFetchDone = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Request ID to ignore stale responses when stock changes mid-flight
+  const requestIdRef = useRef(0);
 
   const checkAShare = useCallback((sym: string) => isAShare(sym), []);
 
@@ -293,10 +295,18 @@ export function useStockData() {
   const selectStock = useCallback(
     (sym: string) => {
       setSymbol(sym);
+      // Increment request ID to invalidate any in-flight requests for the old symbol
+      requestIdRef.current++;
+      const currentRequestId = requestIdRef.current;
       // Abort previous requests
       if (abortRef.current) abortRef.current.abort();
+      abortRef.current = new AbortController();
       // Persist last selected stock to localStorage
       try { localStorage.setItem(LAST_STOCK_KEY, sym); } catch {}
+      // Clear stale data immediately for snappier UI
+      setTimeline([]);
+      setQuote(null);
+      setHistory([]);
       // Use combined timeline+quote fetch for faster loading when in timeline mode
       if (checkAShare(sym) && chartMode !== "kline") {
         fetchTimelineWithQuote(sym);
