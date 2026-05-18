@@ -62,6 +62,10 @@ import {
   X,
   ChevronRight,
   Clock,
+  BookOpen,
+  AlertTriangle,
+  Scale,
+  Info,
 } from "lucide-react";
 import {
   formatMarketCap,
@@ -251,6 +255,9 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
 
   // Stats section state
   const [statsExpanded, setStatsExpanded] = useState(false);
+
+  // Trading rules panel state
+  const [rulesExpanded, setRulesExpanded] = useState(false);
 
   // Mini timeline preview state
   const [previewStock, setPreviewStock] = useState<IntradayStock | null>(null);
@@ -955,6 +962,186 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
             </div>
           </div>
         </CardContent>
+      </Card>
+
+      {/* Trading Rules Card */}
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-2">
+          <button
+            onClick={() => setRulesExpanded(!rulesExpanded)}
+            className="flex items-center justify-between w-full"
+          >
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Scale className="w-4 h-4 text-amber-500" />
+              交易规矩
+            </CardTitle>
+            {rulesExpanded ? <ChevronUpIcon className="w-4 h-4 text-muted-foreground" /> : <ChevronDownIcon className="w-4 h-4 text-muted-foreground" />}
+          </button>
+        </CardHeader>
+        {rulesExpanded && (
+          <CardContent className="pt-0 space-y-4">
+            {/* 核心规矩 */}
+            <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                <span className="text-xs font-semibold text-red-700 dark:text-red-300">核心规矩：板块与个股双跌时仓位限制</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+                <div className="p-2.5 rounded-md border border-red-500/15 bg-red-500/5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-red-500/10 text-red-500 border border-red-500/20">1/3</span>
+                    <span className="text-red-600 dark:text-red-400 font-semibold text-xs">所在板块下跌 + 个股下跌 → 最多用1/3仓位参与</span>
+                  </div>
+                  <p>当个股所属板块整体下跌，且个股本身也在下跌时，市场环境对多头不利。此时如果仍想参与交易，<strong className="text-foreground">仓位严格控制在总资金的1/3以内</strong>，绝不可满仓操作。</p>
+                  <div className="mt-2 p-2 rounded border border-red-500/10 bg-red-500/5">
+                    <p className="text-red-600 dark:text-red-400 font-medium text-[11px] mb-1">为什么是1/3？</p>
+                    <div className="space-y-1 text-[11px]">
+                      <p>1. 板块下跌说明行业/概念整体承压，个股难独善其身</p>
+                      <p>2. 个股下跌确认了弱势，做T的方向是逆势操作</p>
+                      <p>3. 1/3仓位即使亏损3%，总资金也只损失1%，风险可控</p>
+                      <p>4. 保留2/3资金作为后备，可在更低价位补仓或转战其他机会</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 仓位对照表 */}
+            <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Scale className="w-3.5 h-3.5 text-amber-500" />
+                <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">仓位对照表（按板块与个股方向）</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-amber-500/10">
+                      <th className="text-left py-1.5 px-2 text-amber-600 dark:text-amber-400 font-semibold">板块方向</th>
+                      <th className="text-left py-1.5 px-2 text-amber-600 dark:text-amber-400 font-semibold">个股方向</th>
+                      <th className="text-left py-1.5 px-2 text-amber-600 dark:text-amber-400 font-semibold">建议仓位</th>
+                      <th className="text-left py-1.5 px-2 text-amber-600 dark:text-amber-400 font-semibold">说明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2 font-medium">30-40%</td>
+                      <td className="py-1.5 px-2">顺趋势，可积极做T</td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2 font-medium">20-30%</td>
+                      <td className="py-1.5 px-2">板块强支撑，个股回调可低吸</td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 上涨</span></td>
+                      <td className="py-1.5 px-2 font-medium">20-30%</td>
+                      <td className="py-1.5 px-2">逆板块走强，谨慎参与</td>
+                    </tr>
+                    <tr className="border-b border-border/30 bg-red-500/5">
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 下跌</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-500 font-bold">≤ 1/3</span></td>
+                      <td className="py-1.5 px-2"><span className="text-red-600 dark:text-red-400 font-medium">双跌！严格限制仓位</span></td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5 px-2"><span className="text-gray-400">— 横盘</span></td>
+                      <td className="py-1.5 px-2"><span className="text-gray-400">— 横盘</span></td>
+                      <td className="py-1.5 px-2 font-medium">15-25%</td>
+                      <td className="py-1.5 px-2">方向不明，轻仓试探</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 其他规矩 */}
+            <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <BookOpen className="w-3.5 h-3.5 text-emerald-500" />
+                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">其他交易规矩</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">1</span>
+                  <div>
+                    <span className="text-foreground font-medium">大盘暴跌（跌幅 &gt; 2%）时不参与任何做T</span>
+                    <p>系统性风险下所有技术分析失效，空仓等待是最好的策略。不要试图在暴跌中抄底。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">2</span>
+                  <div>
+                    <span className="text-foreground font-medium">板块暴跌时，即使个股上涨也要减仓</span>
+                    <p>板块暴跌说明有行业级利空，个股的上涨可能只是暂时的抗跌，后续补跌概率大。先减仓锁定利润。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">3</span>
+                  <div>
+                    <span className="text-foreground font-medium">单只股票仓位不超过总资金的40%</span>
+                    <p>无论信号多强，单一标的风险过于集中。40%是上限，建议控制在30%以内。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">4</span>
+                  <div>
+                    <span className="text-foreground font-medium">做T必须当天完成买卖，不隔夜</span>
+                    <p>做T的本质是利用日内波动赚取差价，不持仓过夜可以规避隔夜风险。如果当天买入后无法盈利卖出，也要在尾盘止损出局。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">5</span>
+                  <div>
+                    <span className="text-foreground font-medium">连续2次做T亏损，当天停止交易</span>
+                    <p>连续亏损说明当前市场节奏与你的判断不一致，强做只会加大亏损。停下来观察，明天再战。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0 mt-0.5">6</span>
+                  <div>
+                    <span className="text-foreground font-medium">ST股、退市风险股不参与</span>
+                    <p>基本面风险无法通过技术分析化解，ST股的低开/下跌可能不是错杀而是价值归零。</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 实战案例 */}
+            <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Info className="w-3.5 h-3.5 text-rose-500" />
+                <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">实战案例：1/3仓位规矩的应用</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+                <div className="p-2 rounded-md border border-rose-500/10 bg-rose-500/5">
+                  <p className="text-rose-600 dark:text-rose-400 font-medium mb-1">场景：半导体板块跌1.5%，某半导体个股跌2.3%</p>
+                  <div className="space-y-1">
+                    <p>板块和个股都在下跌，属于<strong className="text-foreground">双跌</strong>情况。</p>
+                    <p>假设总资金10万元：</p>
+                    <p className="pl-2">• 可用仓位：≤ 1/3 = ≤ 3.3万元</p>
+                    <p className="pl-2">• 买入3万元，个股继续跌3% → 亏损900元，占总资金0.9%，可控</p>
+                    <p className="pl-2">• 如果满仓10万买入，跌3% → 亏损3000元，占总资金3%，损失过大</p>
+                    <p className="pl-2">• 保留7万元，如果个股跌到支撑位可补仓，或寻找其他板块机会</p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-emerald-500/10 bg-emerald-500/5">
+                  <p className="text-emerald-600 dark:text-emerald-400 font-medium mb-1">对比场景：半导体板块涨1.2%，某半导体个股跌2.3%</p>
+                  <div className="space-y-1">
+                    <p>板块上涨但个股下跌，属于<strong className="text-foreground">板块强+个股弱</strong>的情况。</p>
+                    <p>板块支撑在，个股的下跌可能是暂时回调，可适当参与：</p>
+                    <p className="pl-2">• 建议仓位：20-30%，约2-3万元</p>
+                    <p className="pl-2">• 如果板块继续走强，个股很可能跟随反弹，做T成功率高</p>
+                    <p className="pl-2">• 但如果板块转跌，立即降仓到1/3以下</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* Error */}
