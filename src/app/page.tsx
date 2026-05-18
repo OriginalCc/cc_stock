@@ -67,7 +67,32 @@ export default function StockTAssistant() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [rulesExpanded, setRulesExpanded] = useState<boolean>(false);
+  const [autoExpanded, setAutoExpanded] = useState<boolean>(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ── Auto-expand rules in first 3 minutes of market open ──
+  useEffect(() => {
+    if (chartMode !== "timeline") return;
+    const checkMarketOpen = () => {
+      const now = new Date();
+      const h = now.getHours();
+      const m = now.getMinutes();
+      const minutes = h * 60 + m;
+      // 9:30 (570) ~ 9:33 (573) = first 3 minutes of market open
+      const isOpeningMinutes = minutes >= 570 && minutes < 573;
+      if (isOpeningMinutes && !rulesExpanded && !autoExpanded) {
+        setRulesExpanded(true);
+        setAutoExpanded(true);
+      }
+      // After 9:33, reset autoExpanded flag so user can manually toggle
+      if (minutes >= 573 && autoExpanded) {
+        setAutoExpanded(false);
+      }
+    };
+    checkMarketOpen();
+    const timer = setInterval(checkMarketOpen, 10000); // check every 10s
+    return () => clearInterval(timer);
+  }, [chartMode, rulesExpanded, autoExpanded]);
 
   // ── News state (passed to NewsAnalysisPanel) ──
   const [showNewsAnalysis, setShowNewsAnalysis] = useState(false);
@@ -777,6 +802,7 @@ export default function StockTAssistant() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Scale className="w-4 h-4 text-amber-500" />
                 交易规矩
+                {autoExpanded && <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-amber-500/10 text-amber-600 border-amber-500/25 animate-pulse">🔔 开盘提醒</Badge>}
               </CardTitle>
               {rulesExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
             </button>
