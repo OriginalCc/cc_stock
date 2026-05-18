@@ -142,7 +142,7 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 - confidence: 信心度1-100
 - summary: 100字以内的综合摘要
 - keyFactors: 3-5个关键影响因素数组
-- suggestion: ${day}做T建议（正T/反T/观望）
+- suggestion: ${day}做T建议（正T/反T(先卖再买)/观望）
 - riskLevel: 风险等级（高/中/低）
 - newsSentiment: 整体资讯情绪（偏多/偏空/中性）
 - technicalView: 技术面观点（30字以内）
@@ -162,7 +162,7 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 - confidence: 信心度1-100
 - summary: 100字以内的综合摘要
 - keyFactors: 3-5个关键影响因素数组
-- suggestion: ${day}做T建议（正T/反T/观望）
+- suggestion: ${day}做T建议（正T/反T(先卖再买)/观望）
 - riskLevel: 风险等级（高/中/低）
 - newsSentiment: 整体资讯情绪（偏多/偏空/中性）
 - technicalView: 技术面观点（30字以内）
@@ -182,7 +182,7 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 - confidence: 信心度1-100
 - summary: 100字以内的综合摘要
 - keyFactors: 3-5个关键影响因素数组
-- suggestion: ${day}做T建议（正T/反T/观望）
+- suggestion: ${day}做T建议（正T/反T(先卖再买)/观望）
 - riskLevel: 风险等级（高/中/低）
 - newsSentiment: 整体资讯情绪（偏多/偏空/中性）
 - technicalView: 技术面观点（30字以内）
@@ -202,7 +202,7 @@ async function analyzeWithLLM(context: string, type: "market" | "sector" | "stoc
 - confidence: 信心度1-100
 - summary: 100字以内的综合摘要（需包含美股港股关键指数涨跌数据）
 - keyFactors: 3-5个关键影响因素数组
-- suggestion: ${day}做T建议（正T/反T/观望）
+- suggestion: ${day}做T建议（正T/反T(先卖再买)/观望）
 - riskLevel: 风险等级（高/中/低）
 - newsSentiment: 整体资讯情绪（偏多/偏空/中性）
 - technicalView: 美股技术面观点（30字以内，含主要指数涨跌幅）

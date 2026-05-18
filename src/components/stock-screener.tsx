@@ -3744,7 +3744,7 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="正T">正T</SelectItem>
-                                      <SelectItem value="反T">反T</SelectItem>
+                                      <SelectItem value="反T">反T(先卖再买)</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </TableCell>

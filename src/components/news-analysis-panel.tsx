@@ -528,7 +528,7 @@ export const NewsAnalysisPanel = React.memo(function NewsAnalysisPanel({
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-semibold ${sCfg.bg} ${sCfg.text}`}>
-                            {newsActiveTab === "overseas" ? "A股建议" : `${currentPredictionDay}建议`}：{analysis.suggestion}
+                            {newsActiveTab === "overseas" ? "A股建议" : `${currentPredictionDay}建议`}：{analysis.suggestion === "反T" ? "反T(先卖再买)" : analysis.suggestion}
                           </span>
                           <div className="flex items-center gap-1.5">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-medium ${rCfg.bg} ${rCfg.text}`}>
@@ -678,7 +678,7 @@ export const NewsAnalysisPanel = React.memo(function NewsAnalysisPanel({
                       <Target className="h-3.5 w-3.5 text-primary" />
                       <span className="text-xs font-medium">AI 操作建议</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded border ${sCfg.bg} ${sCfg.text}`}>
-                        {analysis.suggestion}
+                        {analysis.suggestion === "反T" ? "反T(先卖再买)" : analysis.suggestion}
                       </span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded border ${rCfg.bg} ${rCfg.text}`}>
                         风险{analysis.riskLevel}
@@ -691,7 +691,7 @@ export const NewsAnalysisPanel = React.memo(function NewsAnalysisPanel({
                         </span>
                         <span className="text-foreground/70">
                           {analysis.suggestion === "正T" ? "先买后卖：开盘逢低买入，反弹后卖出，适合预判上升行情" :
-                           analysis.suggestion === "反T" ? "先卖后买：开盘逢高卖出，回调后买回，适合预判下降行情" :
+                           analysis.suggestion === "反T" ? "反T(先卖再买)：先卖后买，开盘逢高卖出，回调后买回，适合预判下降行情" :
                            "暂不操作：市场方向不明，等待信号确认后再行动"}
                         </span>
                       </div>

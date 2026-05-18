@@ -1831,13 +1831,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
 
           // ── 5-tier position ladder + T-direction ──
           if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown) {
-            // 一级：三跌 → ≤1/4仓，反T/空仓
+            // 一级：三跌 → ≤1/4仓，反T(先卖再买)/空仓
             posLabel = '1/4仓';
             tDir = '反T';
             posColor = 'text-red-700 dark:text-red-300';
             posBg = 'bg-red-500/20 border-red-500/40';
           } else if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockUp) {
-            // 二级：大盘↓+板块↓+个股↑ → ≤1/3仓，反T冲高卖
+            // 二级：大盘↓+板块↓+个股↑ → ≤1/3仓，反T(先卖再买)冲高卖
             posLabel = '1/3仓';
             tDir = '反T';
             posColor = 'text-red-600 dark:text-red-400';
@@ -1849,7 +1849,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             posColor = 'text-amber-600 dark:text-amber-400';
             posBg = 'bg-amber-500/15 border-amber-500/30';
           } else if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
-            // 三级：大盘↓+板块↑+个股↑ → 20-30%，反T
+            // 三级：大盘↓+板块↑+个股↑ → 20-30%，反T(先卖再买)
             posLabel = '25%仓';
             tDir = '反T';
             posColor = 'text-yellow-600 dark:text-yellow-400';
@@ -1861,7 +1861,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             posColor = 'text-orange-600 dark:text-orange-400';
             posBg = 'bg-orange-500/15 border-orange-500/30';
           } else if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockUp) {
-            // 三级：大盘↑+板块↓+个股↑ → 25-30%，反T冲高卖
+            // 三级：大盘↑+板块↓+个股↑ → 25-30%，反T(先卖再买)冲高卖
             posLabel = '30%仓';
             tDir = '反T';
             posColor = 'text-yellow-600 dark:text-yellow-400';
@@ -1873,7 +1873,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             posColor = 'text-blue-600 dark:text-blue-400';
             posBg = 'bg-blue-500/15 border-blue-500/30';
           } else if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp) {
-            // 五级：三涨 → 30-40%，正T/反T均可
+            // 五级：三涨 → 30-40%，正T/反T(先卖再买)均可
             posLabel = '40%仓';
             tDir = '正反T';
             posColor = 'text-green-600 dark:text-green-400';
@@ -1927,7 +1927,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             >
               <span>{posLabel}</span>
               <span className="text-[9px] opacity-70 font-medium">|</span>
-              <span className={`text-[9px] font-bold ${tDir === '反T' ? 'text-red-400' : tDir === '正T' ? 'text-green-400' : tDir === '正反T' ? 'text-blue-400' : 'text-gray-400'}`}>{tDir}</span>
+              <span className={`text-[9px] font-bold ${tDir === '反T' ? 'text-red-400' : tDir === '正T' ? 'text-green-400' : tDir === '正反T' ? 'text-blue-400' : 'text-gray-400'}`}>{tDir === '反T' ? '反T(先卖再买)' : tDir === '正反T' ? '正T/反T(先卖再买)' : tDir}</span>
             </span>
           );
         })()}
@@ -2190,7 +2190,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-bold text-red-700 dark:text-red-300">
                 三跌！深证↓+板块↓+个股↓ ≤ 1/4仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T/空仓</span>
+              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)/空仓</span>
               <span className="text-[10px] text-red-500/70">极度危险，保留3/4后备</span>
             </div>
           );
@@ -2203,7 +2203,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-bold text-green-600 dark:text-green-400">
                 三涨！深证↑+板块↑+个股↑ 30-40%仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T/反T均可</span>
+              <span className="text-[10px] text-green-400 font-bold">| 正T/反T(先卖再买)均可</span>
               <span className="text-[10px] text-green-500/70">最安全，积极做T</span>
             </div>
           );
@@ -2217,7 +2217,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-bold text-red-600 dark:text-red-400">
                 {hasMktInfo ? '深证↓+' : ''}板块↓+个股↓ = 双跌！≤ 1/3仓
               </span>
-              <span className="text-[10px] text-orange-400 font-bold">| 反T冲高卖</span>
+              <span className="text-[10px] text-orange-400 font-bold">| 反T(先卖再买)冲高卖</span>
               <span className="text-[10px] text-red-500/70">保留2/3后备资金</span>
             </div>
           );
@@ -2230,7 +2230,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
                 深证↓ 但板块↑+个股↑ 20-30%仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T冲高卖</span>
+              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)冲高卖</span>
               <span className="text-[10px] text-yellow-500/70">大盘压制，适度参与</span>
             </div>
           );
@@ -2269,7 +2269,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
                 板块↓+个股↑ 20-30%仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T冲高卖</span>
+              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)冲高卖</span>
               <span className="text-[10px] text-amber-500/70">逆板块走强需谨慎</span>
             </div>
           );
@@ -2295,7 +2295,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-medium text-red-600/80 dark:text-red-400/80">
                 深证↓+个股↓，大盘弱势注意控仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T</span>
+              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)</span>
             </div>
           );
         }

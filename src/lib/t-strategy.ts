@@ -3087,14 +3087,14 @@ export const STRATEGY_OVERVIEW = {
   timeWindows: [
     { period: "9:30-10:00", feature: "开盘波动最大，方向不明确", action: "不操作，只观察", actionType: "observe" as const },
     { period: "10:00-10:30", feature: "主力意图显现，冲高或下探", action: "正T最佳卖出窗口", actionType: "sell" as const },
-    { period: "10:30-11:30", feature: "走势趋于稳定", action: "正T买回 / 反T买入窗口", actionType: "buy" as const },
+    { period: "10:30-11:30", feature: "走势趋于稳定", action: "正T买回 / 反T(先卖再买)买入窗口", actionType: "buy" as const },
     { period: "13:00-14:00", feature: "午后可能二次冲高", action: "第二次做T的卖出窗口", actionType: "sell" as const },
     { period: "14:00-14:30", feature: "尾盘方向逐渐明确", action: "第二次做T的买回窗口", actionType: "buy" as const },
     { period: "14:30-15:00", feature: "尾盘波动大，变数多", action: "不操作（极端低位除外）", actionType: "observe" as const },
   ],
   stopLossRules: [
     { scenario: "正T卖出后股价继续上涨", rule: "上涨超过卖出价1.5%时，必须买回（认亏买回）" },
-    { scenario: "反T买入后股价继续下跌", rule: "下跌超过买入价1.5%时，不在同日补仓，次日处理" },
+    { scenario: "反T(先卖再买)买入后股价继续下跌", rule: "下跌超过买入价1.5%时，不在同日补仓，次日处理" },
     { scenario: "做T后股价突破关键位", rule: "放弃做T，回归持有策略" },
   ],
   marketRegimes: [

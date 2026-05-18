@@ -430,7 +430,7 @@ export async function GET() {
         { step: 7, name: "差价底线检查", description: "买回信号需验证与卖出价的差价是否满足1.5%底线" },
         { step: 8, name: "做T次数限制", description: "每日最多2次做T，超限不再产生信号" },
         { step: 9, name: "信号去重", description: "连续同类型+同T模式信号只保留第一个" },
-        { step: 10, name: "信号展示", description: "在分时图上用标记显示买卖信号，标注正T/反T模式和时间窗口" },
+        { step: 10, name: "信号展示", description: "在分时图上用标记显示买卖信号，标注正T/反T(先卖再买)模式和时间窗口" },
         { step: 11, name: "自动刷新", description: "每30秒自动刷新数据，重新计算指标和信号" },
       ],
       decisionTree: [
@@ -639,7 +639,7 @@ export async function POST(request: NextRequest) {
             { name: "差价底线检查", description: "买回信号需验证与卖出价的差价是否满足1.5%底线", logicOrder: 7, isActive: true, category: "spread" },
             { name: "做T次数限制", description: "每日最多2次做T，超限不再产生信号", logicOrder: 8, isActive: true, category: "risk" },
             { name: "信号去重", description: "连续同类型+同T模式信号只保留第一个", logicOrder: 9, isActive: true, category: "filter" },
-            { name: "信号展示", description: "在分时图上用标记显示买卖信号，标注正T/反T模式和时间窗口", logicOrder: 10, isActive: true, category: "display" },
+            { name: "信号展示", description: "在分时图上用标记显示买卖信号，标注正T/反T(先卖再买)模式和时间窗口", logicOrder: 10, isActive: true, category: "display" },
             { name: "自动刷新", description: "每30秒自动刷新数据，重新计算指标和信号", logicOrder: 11, isActive: true, category: "system" },
           ],
         });

@@ -739,7 +739,7 @@ function CustomFactorsTab() {
                   className={`flex-1 h-7 rounded text-[10px] font-medium transition-colors ${newFactorTMode === "反T" ? "bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800" : "bg-muted/50 text-muted-foreground border border-border"}`}
                   onClick={() => setNewFactorTMode("反T")}
                 >
-                  反T
+                  反T(先卖再买)
                 </button>
               </div>
             </div>
@@ -1668,7 +1668,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="正T"><span className="text-[10px]">正T</span></SelectItem>
-                                    <SelectItem value="反T"><span className="text-[10px]">反T</span></SelectItem>
+                                    <SelectItem value="反T"><span className="text-[10px]">反T(先卖再买)</span></SelectItem>
                                   </SelectContent>
                                 </Select>
                               </span>
@@ -2209,14 +2209,14 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                         <ul className="space-y-0.5 text-muted-foreground">
                           <li>• 大盘震荡 → 个股做T安全区，可积极操作</li>
                           <li>• 大盘上升 → 仅做正T，防卖飞</li>
-                          <li>• 大盘下跌 → 仅做正T卖出，不做反T</li>
+                          <li>• 大盘下跌 → 仅做正T卖出，不做反T(先卖再买)</li>
                           <li>• 大盘方向与个股方向一致时，信号可信度更高</li>
                         </ul>
                       </div>
                       <div className="p-2 rounded bg-card border border-border">
                         <div className="font-semibold text-red-500 mb-1">❌ 常见错误</div>
                         <ul className="space-y-0.5 text-muted-foreground">
-                          <li>• 大盘跳水时做反T（买入后被套）</li>
+                          <li>• 大盘跳水时做反T(先卖再买)（买入后被套）</li>
                           <li>• 大盘暴涨时做正T（卖出后买不回来）</li>
                           <li>• 忽略指数与个股的背离（指数涨个股跌）</li>
                           <li>• 只看个股不看大盘，逆势操作</li>
@@ -2393,11 +2393,11 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                 <div className="rounded-lg border border-border p-3 space-y-2 bg-gradient-to-r from-yellow-50/50 to-lime-50/50 dark:from-yellow-950/10 dark:to-lime-950/10">
                   <div className="flex items-center gap-2">
                     <Badge className="text-[10px] h-5 bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300">7</Badge>
-                    <span className="text-xs font-bold">正T vs 反T — 方向比努力更重要</span>
+                    <span className="text-xs font-bold">正T vs 反T(先卖再买) — 方向比努力更重要</span>
                     <Badge variant="outline" className="text-[9px] h-4 px-1.5 ml-auto">胜率贡献 8%</Badge>
                   </div>
                   <div className="text-[10px] text-muted-foreground leading-relaxed space-y-1">
-                    <p>做T的第一步不是"何时操作"，而是"做正T还是反T"。方向选错，再精准的时机也白搭。系统已根据趋势识别自动推荐T方向。</p>
+                    <p>做T的第一步不是"何时操作"，而是"做正T还是反T(先卖再买)"。方向选错，再精准的时机也白搭。系统已根据趋势识别自动推荐T方向。</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                       <div className="p-2.5 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20 space-y-1.5">
                         <div className="text-[10px] font-bold text-red-600 dark:text-red-400">正T（先卖后买）</div>
@@ -2412,7 +2412,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                         </div>
                       </div>
                       <div className="p-2.5 rounded-lg border border-green-200 bg-green-50/50 dark:border-green-900/40 dark:bg-green-950/20 space-y-1.5">
-                        <div className="text-[10px] font-bold text-green-600 dark:text-green-400">反T/倒T（先买后卖）</div>
+                        <div className="text-[10px] font-bold text-green-600 dark:text-green-400">反T(先卖再买)/倒T</div>
                         <div className="text-[9px] text-muted-foreground space-y-0.5">
                           <p>① 手中已有持仓 → 低位加仓 → 高位卖出加仓部分</p>
                           <p>② 风险：加仓被套（买入后继续跌）</p>
@@ -2426,7 +2426,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                     </div>
                     <div className="text-[9px] text-red-500 dark:text-red-400 flex items-start gap-1 mt-1">
                       <span className="shrink-0 mt-px">⚠️</span>
-                      <span>铁律：下跌趋势中严禁做反T！反T加仓被套是做T亏损的最大来源。</span>
+                      <span>铁律：下跌趋势中严禁做反T(先卖再买)！反T(先卖再买)加仓被套是做T亏损的最大来源。</span>
                     </div>
                   </div>
                 </div>
@@ -2503,7 +2503,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                       <div className="text-[10px] font-semibold text-foreground/80">止损触发条件：</div>
                       <ul className="space-y-0.5 text-[9px]">
                         <li>• 正T卖出后价格涨幅超过1.5% → 止损（买回），承认卖飞</li>
-                        <li>• 反T买入后价格跌幅超过1.5% → 止损（卖出加仓），承认做反</li>
+                        <li>• 反T(先卖再买)买入后价格跌幅超过1.5% → 止损（卖出加仓），承认做反</li>
                         <li>• 日内亏损达到总持仓的0.5% → 停止当日所有做T操作</li>
                       </ul>
                       <div className="text-[9px] text-red-500 dark:text-red-400 flex items-start gap-1 mt-1">
@@ -2611,7 +2611,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                       <div className="p-2 rounded bg-card border border-border space-y-1.5">
                         <div className="font-semibold text-red-500 text-[10px]">板块背离危险 ⚠️</div>
                         <ul className="space-y-0.5 text-[9px]">
-                          <li>• <span className="font-semibold">板块下跌+个股独涨</span> → 补跌风险大，不做反T</li>
+                          <li>• <span className="font-semibold">板块下跌+个股独涨</span> → 补跌风险大，不做反T(先卖再买)</li>
                           <li>• <span className="font-semibold">板块上涨+个股独跌</span> → 个股问题，不抄底</li>
                           <li>• <span className="font-semibold">板块轮动切换</span> → 前期热点退潮时减少做T</li>
                           <li>• <span className="font-semibold">冷门板块突然异动</span> → 多为一日游，不追高</li>
@@ -2683,7 +2683,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                         </div>
                         <div className="p-2 rounded bg-card border border-border">
                           <div className="font-semibold text-amber-500 mb-1">北向资金持续流出</div>
-                          <span className="text-muted-foreground">外资看空 → 减少做T频率，仅做正T卖出，不做反T加仓</span>
+                          <span className="text-muted-foreground">外资看空 → 减少做T频率，仅做正T卖出，不做反T(先卖再买)加仓</span>
                         </div>
                       </div>
                       <div className="text-[9px] text-amber-600 dark:text-amber-400 flex items-start gap-1 mt-1">
@@ -3202,7 +3202,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                       { field: "confidence", label: "信心度", values: "1-100", desc: "对趋势判断的信心程度，≥70高信心，40-70中等，<40低信心" },
                       { field: "riskLevel", label: "风险等级", values: "高 / 中 / 低", desc: "操作风险评级，高=建议谨慎，低=相对安全" },
                       { field: "newsSentiment", label: "资讯情绪", values: "偏多🔺 / 偏空🔻 / 中性↔️", desc: "整体资讯面偏向看涨还是看跌" },
-                      { field: "suggestion", label: "做T建议", values: "正T / 反T / 观望", desc: "基于趋势预判给出的具体做T方向建议" },
+                      { field: "suggestion", label: "做T建议", values: "正T / 反T(先卖再买) / 观望", desc: "基于趋势预判给出的具体做T方向建议" },
                       { field: "keyFactors", label: "关键因素", values: "3-5个", desc: "影响走势的核心驱动因素列表" },
                       { field: "technicalView", label: "技术面观点", values: "30字以内", desc: "技术面维度的独立判断摘要" },
                       { field: "capitalView", label: "资金面观点", values: "30字以内", desc: "资金面维度的独立判断摘要" },

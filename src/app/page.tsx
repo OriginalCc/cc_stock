@@ -821,7 +821,7 @@ export default function StockTAssistant() {
               <div className="p-3 rounded-lg border border-violet-500/20 bg-violet-500/5">
                 <div className="flex items-center gap-1.5 mb-2">
                   <Zap className="w-3.5 h-3.5 text-violet-500" />
-                  <span className="text-xs font-semibold text-violet-700 dark:text-violet-300">二、做T策略选择（正T vs 反T）</span>
+                  <span className="text-xs font-semibold text-violet-700 dark:text-violet-300">二、做T策略选择（正T vs 反T(先卖再买)）</span>
                 </div>
                 <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -836,7 +836,7 @@ export default function StockTAssistant() {
                       </div>
                     </div>
                     <div className="p-2 rounded-md border border-red-500/15 bg-red-500/5">
-                      <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">🔴 反T（先卖后买）</p>
+                      <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">🔴 反T(先卖再买)</p>
                       <p className="text-foreground font-medium mb-1">适用场景：预期股价先涨后跌</p>
                       <div className="space-y-0.5 text-[11px]">
                         <p>• 大盘↓+板块↓+个股↑ → 冲高减仓</p>
@@ -847,7 +847,7 @@ export default function StockTAssistant() {
                     </div>
                   </div>
                   <div className="p-1.5 rounded border border-violet-500/10 bg-violet-500/5">
-                    <p className="text-violet-600 dark:text-violet-400 font-medium text-[10px]">⚡ 核心原则：顺势做T！大盘涨时偏正T，大盘跌时偏反T。三跌时严禁正T（不抄底），三涨时严禁反T（不卖飞）。</p>
+                    <p className="text-violet-600 dark:text-violet-400 font-medium text-[10px]">⚡ 核心原则：顺势做T！大盘涨时偏正T，大盘跌时偏反T(先卖再买)。三跌时严禁正T（不抄底），三涨时严禁反T(先卖再买)（不卖飞）。</p>
                   </div>
                 </div>
               </div>
@@ -1038,7 +1038,7 @@ export default function StockTAssistant() {
                         <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 跌</span></td>
                         <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 跌</span></td>
                         <td className="py-1.5 px-2"><span className="text-red-500 font-bold">≤1/4</span></td>
-                        <td className="py-1.5 px-2"><span className="text-red-500 font-medium">反T/空仓</span></td>
+                        <td className="py-1.5 px-2"><span className="text-red-500 font-medium">反T(先卖再买)/空仓</span></td>
                         <td className="py-1.5 px-2"><span className="text-red-600 dark:text-red-400 font-medium">三跌！最危险</span></td>
                       </tr>
                       <tr className="border-b border-border/30 bg-red-500/5">
@@ -1046,7 +1046,7 @@ export default function StockTAssistant() {
                         <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 跌</span></td>
                         <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                         <td className="py-1.5 px-2"><span className="text-orange-500 font-bold">≤1/3</span></td>
-                        <td className="py-1.5 px-2"><span className="text-red-500 font-medium">反T冲高卖</span></td>
+                        <td className="py-1.5 px-2"><span className="text-red-500 font-medium">反T(先卖再买)冲高卖</span></td>
                         <td className="py-1.5 px-2">逆势走强，大环境差</td>
                       </tr>
                       <tr className="border-b border-border/30">
@@ -1062,7 +1062,7 @@ export default function StockTAssistant() {
                         <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                         <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                         <td className="py-1.5 px-2 font-medium">20-30%</td>
-                        <td className="py-1.5 px-2"><span className="text-yellow-600 font-medium">反T冲高卖</span></td>
+                        <td className="py-1.5 px-2"><span className="text-yellow-600 font-medium">反T(先卖再买)冲高卖</span></td>
                         <td className="py-1.5 px-2">逆势板块，大盘压制</td>
                       </tr>
                       <tr className="border-b border-border/30">
@@ -1078,7 +1078,7 @@ export default function StockTAssistant() {
                         <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 跌</span></td>
                         <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                         <td className="py-1.5 px-2 font-medium">25-30%</td>
-                        <td className="py-1.5 px-2"><span className="text-red-500 font-medium">反T冲高卖</span></td>
+                        <td className="py-1.5 px-2"><span className="text-red-500 font-medium">反T(先卖再买)冲高卖</span></td>
                         <td className="py-1.5 px-2">大盘支撑，个股逆板块</td>
                       </tr>
                       <tr className="border-b border-border/30">
@@ -1094,7 +1094,7 @@ export default function StockTAssistant() {
                         <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                         <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                         <td className="py-1.5 px-2 font-bold text-green-600">30-40%</td>
-                        <td className="py-1.5 px-2"><span className="text-green-600 font-medium">正T/反T均可</span></td>
+                        <td className="py-1.5 px-2"><span className="text-green-600 font-medium">正T/反T(先卖再买)均可</span></td>
                         <td className="py-1.5 px-2"><span className="text-green-600 dark:text-green-400 font-medium">三涨！最安全</span></td>
                       </tr>
                       <tr>
@@ -1205,18 +1205,18 @@ export default function StockTAssistant() {
                   <div className="p-2 rounded-md border border-red-500/10 bg-red-500/5">
                     <p className="text-red-600 dark:text-red-400 font-medium mb-1">场景1（三跌）：深证跌1.8% + 半导体跌1.5% + 个股跌2.3%</p>
                     <div className="space-y-0.5">
-                      <p>→ <span className="text-red-500 font-bold">一级·≤1/4仓</span>，策略：<span className="text-red-500 font-medium">反T冲高卖</span>，10万资金最多用2.5万</p>
+                      <p>→ <span className="text-red-500 font-bold">一级·≤1/4仓</span>，策略：<span className="text-red-500 font-medium">反T(先卖再买)冲高卖</span>，10万资金最多用2.5万</p>
                       <p>• 买入2.5万，跌3%亏750元（总0.75%）→ 可控</p>
                       <p>• 满仓10万，跌3%亏3000元（总3%）→ 不可接受</p>
-                      <p>• 若个股冲高翻红，反T卖出后不买回</p>
+                      <p>• 若个股冲高翻红，反T(先卖再买)卖出后不买回</p>
                     </div>
                   </div>
                   <div className="p-2 rounded-md border border-green-500/10 bg-green-500/5">
                     <p className="text-green-600 dark:text-green-400 font-medium mb-1">场景2（三涨）：深证涨1.2% + 半导体涨0.8% + 个股涨1.5%</p>
                     <div className="space-y-0.5">
-                      <p>→ <span className="text-green-500 font-bold">五级·30-40%仓</span>，策略：<span className="text-green-500 font-medium">正T/反T均可</span>，10万资金可用3-4万</p>
+                      <p>→ <span className="text-green-500 font-bold">五级·30-40%仓</span>，策略：<span className="text-green-500 font-medium">正T/反T(先卖再买)均可</span>，10万资金可用3-4万</p>
                       <p>• 正T：回调时买入3万，反弹1.5%赚450元</p>
-                      <p>• 反T：冲高卖出3万，回落买回赚差价</p>
+                      <p>• 反T(先卖再买)：冲高卖出3万，回落买回赚差价</p>
                       <p>• 但大盘突然翻绿 → 立即降仓至1/3以下</p>
                     </div>
                   </div>
@@ -1232,7 +1232,7 @@ export default function StockTAssistant() {
                   <div className="p-2 rounded-md border border-emerald-500/10 bg-emerald-500/5">
                     <p className="text-emerald-600 dark:text-emerald-400 font-medium mb-1">场景4（大盘弱+板块个股强）：深证跌0.5% + 半导体涨1.2% + 个股涨2.3%</p>
                     <div className="space-y-0.5">
-                      <p>→ <span className="text-yellow-500 font-bold">三级·20-30%仓</span>，策略：<span className="text-red-500 font-medium">反T冲高卖</span></p>
+                      <p>→ <span className="text-yellow-500 font-bold">三级·20-30%仓</span>，策略：<span className="text-red-500 font-medium">反T(先卖再买)冲高卖</span></p>
                       <p>• 板块和个股逆大盘走强，有独立行情</p>
                       <p>• 但大盘压制下需控仓，冲高先卖后买回</p>
                       <p>• 若大盘转涨 → 提升至30-40%；板块转跌 → 降至1/4</p>

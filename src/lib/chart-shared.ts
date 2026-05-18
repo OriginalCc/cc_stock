@@ -145,8 +145,8 @@ export const REGIME_CONFIG: Record<string, { bg: string; text: string; icon: str
 };
 
 export const T_MODE_CONFIG: Record<string, { label: string; bg: string; text: string; tip: string }> = {
-  "上升通道": { label: "正T/反T", bg: "bg-orange-500/10 border-orange-500/25", text: "text-orange-600 dark:text-orange-400", tip: "偏强市场：正T为主（冲高卖出→回落买回），也可反T（低吸→冲高卖出），T仓≤20%，买回要快" },
-  "下跌趋势": { label: "仅正T", bg: "bg-red-500/10 border-red-500/25", text: "text-red-600 dark:text-red-400", tip: "偏弱市场：仅正T卖出（冲高卖出→回落买回），不做反T，T仓≤15%，严格止损" },
+  "上升通道": { label: "正T/反T(先卖再买)", bg: "bg-orange-500/10 border-orange-500/25", text: "text-orange-600 dark:text-orange-400", tip: "偏强市场：正T为主（冲高卖出→回落买回），也可反T(先卖再买)（低吸→冲高卖出），T仓≤20%，买回要快" },
+  "下跌趋势": { label: "仅正T", bg: "bg-red-500/10 border-red-500/25", text: "text-red-600 dark:text-red-400", tip: "偏弱市场：仅正T卖出（冲高卖出→回落买回），不做反T(先卖再买)，T仓≤15%，严格止损" },
   "震荡市":   { label: "正T", bg: "bg-blue-500/10 border-blue-500/25", text: "text-blue-600 dark:text-blue-400", tip: "震荡行情：最适合做正T（高抛低吸），T仓30-40%，差价≥1.5%再操作" },
   "横盘末期": { label: "观望", bg: "bg-gray-500/10 border-gray-500/25", text: "text-gray-600 dark:text-gray-400", tip: "方向不明：减少做T频率，等待趋势突破再操作" },
 };
