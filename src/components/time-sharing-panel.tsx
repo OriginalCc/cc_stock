@@ -219,7 +219,7 @@ function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): 
   const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
   const pillH = 16;
 
-  const labelY = isAbove ? y - 26 : y + 14;
+  const labelY = isAbove ? y - 38 : y + 26;
 
   return { isAbove, labelY, pillW, pillH, displayLabel };
 }
@@ -374,7 +374,7 @@ function renderPulseVolumeMarker(
   // Decline markers use green tones (bearish in Chinese markets)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
   const isAbove = isPulse || isProgressiveVol;
-  const defaultLabelY = isAbove ? y - 26 : y + 14;
+  const defaultLabelY = isAbove ? y - 38 : y + 26;
   const labelY = adjustedLabelY ?? defaultLabelY;
 
   if (isPulse) {
@@ -664,8 +664,8 @@ function computeTimelineSignalElements(
     const labelW = textWidth + padX * 2;
     const labelH = 14;
 
-    const markerOffset = 14;
-    const labelGap = 4;
+    const markerOffset = 22;
+    const labelGap = 8;
     let labelY: number;
     if (isBuy) {
       labelY = m.y + markerOffset + labelGap;
