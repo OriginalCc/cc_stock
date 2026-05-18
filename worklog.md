@@ -380,3 +380,22 @@ Stage Summary:
 - Position Rule Badge added to TimeSharingPanel chart header
 - No backend changes required
 - No modifications to intraday-screener.tsx
+
+---
+Task ID: 3
+Agent: main
+Task: 修复分时图仓位规矩标注不可见的问题
+
+Work Log:
+- 分析问题：仓位规矩徽章依赖 sectorRegime 数据才显示，且 text-[10px] 太小难以发现
+- 在分时图头部价格信息旁增加显眼的仓位徽章（紧跟涨跌幅后面，text-[11px] font-bold，带emoji图标）
+- 仓位徽章改为始终显示（不依赖 sectorRegime），无板块数据时根据个股涨跌显示简化建议
+- 在图表区域上方增加彩色仓位规矩横幅（Position Rule Banner），双跌时红色横幅、双涨时绿色横幅等
+- 移除之前在sector regime徽章旁的重复小徽章，避免信息冗余
+- 横幅6种状态：双跌(红)、双涨(绿)、板块跌+个股涨(琥珀)、板块涨+个股跌(黄)、无板块+个股跌(淡琥珀)、无板块+个股涨(淡绿)
+- Lint通过，页面正常加载
+
+Stage Summary:
+- 仓位规矩现在有2处醒目标注：价格旁徽章 + 图表上方横幅
+- 不再依赖 sectorRegime 数据，始终可见
+- 双跌场景（板块↓+个股↓）红色横幅 "⛔ 板块↓ + 个股↓ = 双跌！仓位 ≤ 1/3" 最醒目

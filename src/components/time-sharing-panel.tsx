@@ -1810,6 +1810,58 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         <span className={`tabular-nums ${lastItem.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
           {lastItem.changePercent >= 0 ? "+" : ""}{lastItem.changePercent.toFixed(2)}%
         </span>
+        {/* Position Rule Badge - prominent, always visible */}
+        {(() => {
+          const stockPct = lastItem.changePercent;
+          const sectorDown = sectorRegime?.regime === '下跌趋势' || sectorRegime?.regime === '横盘末期';
+          const stockDown = stockPct < 0;
+          const sectorUp = sectorRegime?.regime === '上升通道';
+          const stockUp = stockPct >= 0;
+          const hasSectorInfo = !!sectorRegime;
+
+          let posLabel = '';
+          let posColor = '';
+          let posBg = '';
+
+          if (hasSectorInfo && sectorDown && stockDown) {
+            posLabel = '⛔ 1/3仓';
+            posColor = 'text-red-600 dark:text-red-400';
+            posBg = 'bg-red-500/15 border-red-500/30';
+          } else if (hasSectorInfo && sectorDown && stockUp) {
+            posLabel = '⚠️ 谨慎20-30%';
+            posColor = 'text-amber-600 dark:text-amber-400';
+            posBg = 'bg-amber-500/15 border-amber-500/30';
+          } else if (hasSectorInfo && sectorUp && stockUp) {
+            posLabel = '✅ 积极30-40%';
+            posColor = 'text-green-600 dark:text-green-400';
+            posBg = 'bg-green-500/15 border-green-500/30';
+          } else if (hasSectorInfo && sectorUp && stockDown) {
+            posLabel = '🔻 低吸20-30%';
+            posColor = 'text-yellow-600 dark:text-yellow-400';
+            posBg = 'bg-yellow-500/15 border-yellow-500/30';
+          } else if (!hasSectorInfo && stockDown) {
+            posLabel = '🔻 下跌轻仓';
+            posColor = 'text-amber-600 dark:text-amber-400';
+            posBg = 'bg-amber-500/10 border-amber-500/25';
+          } else if (!hasSectorInfo && stockUp) {
+            posLabel = '📈 可参与';
+            posColor = 'text-green-600 dark:text-green-400';
+            posBg = 'bg-green-500/10 border-green-500/25';
+          } else {
+            posLabel = '⚡ 轻仓15-25%';
+            posColor = 'text-gray-500 dark:text-gray-400';
+            posBg = 'bg-gray-500/10 border-gray-500/25';
+          }
+
+          return (
+            <span
+              className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full border text-[11px] font-bold ${posBg} ${posColor}`}
+              title={`仓位规矩：${hasSectorInfo ? `板块${sectorDown ? '↓下跌' : sectorUp ? '↑上涨' : '—震荡'}` : '板块数据加载中'} + 个股${stockDown ? '↓下跌' : '↑上涨'} → ${posLabel}`}
+            >
+              {posLabel}
+            </span>
+          );
+        })()}
         <div className="h-3 w-px bg-border" />
         <span className="flex items-center gap-1">
           <span className="inline-block w-3 h-0.5 bg-blue-500 rounded" />
@@ -1923,50 +1975,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span>{cfg.icon}</span>
               <span>{sectorRegime.regime}</span>
               <span className="opacity-60">{sectorRegime.confidence}%</span>
-            </span>
-          );
-        })()}
-        {/* Position Rule Badge - shows suggested position based on sector+stock direction */}
-        {sectorRegime && (() => {
-          const lastPoint = data[data.length - 1];
-          const stockPct = lastPoint?.changePercent ?? 0;
-          const sectorDown = sectorRegime.regime === '下跌趋势' || sectorRegime.regime === '横盘末期';
-          const stockDown = stockPct < 0;
-          const sectorUp = sectorRegime.regime === '上升通道';
-          const stockUp = stockPct >= 0;
-          
-          let posLabel = '';
-          let posColor = '';
-          let posBg = '';
-          
-          if (sectorDown && stockDown) {
-            posLabel = '⚠ 1/3仓';
-            posColor = 'text-red-600 dark:text-red-400';
-            posBg = 'bg-red-500/10 border-red-500/25';
-          } else if (sectorDown && stockUp) {
-            posLabel = '谨慎 20-30%仓';
-            posColor = 'text-amber-600 dark:text-amber-400';
-            posBg = 'bg-amber-500/10 border-amber-500/25';
-          } else if (sectorUp && stockUp) {
-            posLabel = '积极 30-40%仓';
-            posColor = 'text-green-600 dark:text-green-400';
-            posBg = 'bg-green-500/10 border-green-500/25';
-          } else if (sectorUp && stockDown) {
-            posLabel = '低吸 20-30%仓';
-            posColor = 'text-yellow-600 dark:text-yellow-400';
-            posBg = 'bg-yellow-500/10 border-yellow-500/25';
-          } else {
-            posLabel = '轻仓 15-25%';
-            posColor = 'text-gray-500 dark:text-gray-400';
-            posBg = 'bg-gray-500/10 border-gray-500/25';
-          }
-          
-          return (
-            <span
-              className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full border text-[10px] font-bold ${posBg} ${posColor}`}
-              title={`仓位规矩：板块${sectorDown ? '↓下跌' : sectorUp ? '↑上涨' : '—震荡'} + 个股${stockDown ? '↓下跌' : '↑上涨'} → ${posLabel}`}
-            >
-              {posLabel}
             </span>
           );
         })()}
@@ -2086,6 +2094,78 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           )}
         </div>
       </div>
+
+      {/* ─── Position Rule Banner on Chart ─── */}
+      {(() => {
+        const lastPoint = data[data.length - 1];
+        const stockPct = lastPoint?.changePercent ?? 0;
+        const sectorDown = sectorRegime?.regime === '下跌趋势' || sectorRegime?.regime === '横盘末期';
+        const stockDown = stockPct < 0;
+        const sectorUp = sectorRegime?.regime === '上升通道';
+        const stockUp = stockPct >= 0;
+        const hasSectorInfo = !!sectorRegime;
+
+        // Only show prominent banner for key scenarios
+        const isDualDown = hasSectorInfo && sectorDown && stockDown;
+        const isDualUp = hasSectorInfo && sectorUp && stockUp;
+
+        if (isDualDown) {
+          return (
+            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">⛔</span>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+                板块↓ + 个股↓ = 双跌！仓位 ≤ 1/3
+              </span>
+              <span className="text-[10px] text-red-500/70">严格控仓，保留2/3后备资金</span>
+            </div>
+          );
+        }
+        if (isDualUp) {
+          return (
+            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">✅</span>
+              <span className="text-xs font-bold text-green-600 dark:text-green-400">
+                板块↑ + 个股↑ = 双涨，可积极做T
+              </span>
+              <span className="text-[10px] text-green-500/70">建议仓位 30-40%</span>
+            </div>
+          );
+        }
+        if (hasSectorInfo && sectorDown && stockUp) {
+          return (
+            <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-center gap-2">
+              <span className="text-amber-500 text-xs">⚠️</span>
+              <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                板块↓ 个股↑，逆板块走强需谨慎
+              </span>
+              <span className="text-[10px] text-amber-500/70">建议仓位 20-30%</span>
+            </div>
+          );
+        }
+        if (hasSectorInfo && sectorUp && stockDown) {
+          return (
+            <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
+              <span className="text-yellow-500 text-xs">🔻</span>
+              <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
+                板块↑ 个股↓，回调可低吸
+              </span>
+              <span className="text-[10px] text-yellow-500/70">建议仓位 20-30%</span>
+            </div>
+          );
+        }
+        // No sector info - show simpler banner based on stock direction only
+        if (!hasSectorInfo && stockDown) {
+          return (
+            <div className="px-3 py-1.5 bg-amber-500/5 border-b border-amber-500/10 flex items-center justify-center gap-2">
+              <span className="text-amber-500 text-xs">🔻</span>
+              <span className="text-xs font-medium text-amber-600/80 dark:text-amber-400/80">
+                个股下跌，注意控制仓位
+              </span>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {/* ─── Panel 1: Price Chart ─── */}
       <div className="relative">
