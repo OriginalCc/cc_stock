@@ -2,9 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStockSector, getSectorTimeline } from "@/lib/ashare-api";
 import { fetchGuarded } from "@/lib/fetch-guard";
 
-// Track recent failures to avoid hammering a broken API
-let lastSectorError = 0;
-const SECTOR_ERROR_COOLDOWN = 60000; // 1 min cooldown after failure
+// Track recent failures per-key (not global) to avoid blocking ALL stocks
+const sectorErrors = new Map<string, number>();
+const SECTOR_ERROR_COOLDOWN = 10000; // 10s cooldown per key after failure (was 60s global)
+
+// Cleanup old error entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of sectorErrors) {
+    if (now - timestamp > 60000) sectorErrors.delete(key);
+  }
+}, 60000);
 
 // Trading-hour-aware TTL for sector timeline data
 function getSectorCacheTTL(): number {
@@ -34,8 +42,10 @@ export async function GET(request: NextRequest) {
   const sectorCode = searchParams.get("sectorCode") || "";
   const type = searchParams.get("type") || "info";
 
-  // If sector API recently failed, return fallback immediately to avoid blocking server
-  if (Date.now() - lastSectorError < SECTOR_ERROR_COOLDOWN) {
+  // Per-key error cooldown instead of global — only block the specific symbol/sector that failed
+  const errorKey = symbol || sectorCode;
+  const lastError = sectorErrors.get(errorKey);
+  if (lastError && Date.now() - lastError < SECTOR_ERROR_COOLDOWN) {
     return NextResponse.json({
       success: false,
       error: "Sector API temporarily unavailable",
@@ -85,7 +95,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // type === "full": also fetch timeline in parallel
+    // type === "full": also fetch timeline
     const timelineData = await fetchGuarded(
       `sector-timeline:${sectorInfo.code}`,
       async () => getSectorTimeline(sectorInfo.code),
@@ -95,7 +105,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error: any) {
     console.error("Sector API error:", error);
-    lastSectorError = Date.now();
+    // Only set per-key error, not global
+    sectorErrors.set(errorKey, Date.now());
     return NextResponse.json(
       { success: false, error: error.message || "Unknown error" },
       { status: 500 }

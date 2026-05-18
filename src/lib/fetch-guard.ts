@@ -40,7 +40,8 @@ setInterval(() => {
 export function fetchGuarded<T>(
   key: string,
   fetcher: (signal: AbortSignal) => Promise<T>,
-  ttl: number = DEFAULT_TTL
+  ttl: number = DEFAULT_TTL,
+  timeout: number = 12000 // 12s default timeout (was 6s, increased for chained sector API calls)
 ): Promise<T> {
   // Check cache first
   const cached = cache.get(key);
@@ -56,7 +57,7 @@ export function fetchGuarded<T>(
 
   // Create new request
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s hard timeout
+  const timeoutId = setTimeout(() => controller.abort(), timeout); // Configurable timeout
 
   const promise = fetcher(controller.signal)
     .then((data) => {

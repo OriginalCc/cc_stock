@@ -172,16 +172,18 @@ export default function StockTAssistant() {
 
   useEffect(() => {
     if (!symbol || !isAShareStock) return;
+    // Reset fail count when switching stocks — previous failures shouldn't block new stock
+    sectorFailCountRef.current = 0;
     let cancelled = false;
     let abortCtrl: AbortController | null = null;
     const fetchSectorData = async () => {
-      // If sector failed too many times, stop trying for this symbol
-      if (sectorFailCountRef.current >= 3) return;
+      // If sector failed too many times for THIS stock, stop trying (but allow reset on symbol change)
+      if (sectorFailCountRef.current >= 5) return;
       try {
         // Abort previous request if still pending
         if (abortCtrl) abortCtrl.abort();
         abortCtrl = new AbortController();
-        const timeoutId = setTimeout(() => abortCtrl?.abort(), 8000);
+        const timeoutId = setTimeout(() => abortCtrl?.abort(), 15000); // 15s timeout for chained API calls
 
         const infoRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(symbol)}&type=full`, { signal: abortCtrl.signal });
         clearTimeout(timeoutId);
@@ -192,7 +194,8 @@ export default function StockTAssistant() {
         if (cancelled) return;
         sectorFailCountRef.current = 0; // Reset on success
         setSectorInfoRaw({ code: sInfo.code, name: sInfo.name });
-        if (infoData.data && infoData.data.items && infoData.data.items.length >= 10) {
+        // Relax threshold: show sector chart even with few data points (early morning, inactive sectors)
+        if (infoData.data && infoData.data.items && infoData.data.items.length > 0) {
           const sectorPrevClose = infoData.data.prevClose || infoData.data.items[0].price;
           const regime = detectMarketRegimeDetail(infoData.data.items, sectorPrevClose);
           if (!cancelled) { setSectorRegimeRaw(regime); setSectorTimelineData({ items: infoData.data.items, prevClose: sectorPrevClose }); }
@@ -206,7 +209,11 @@ export default function StockTAssistant() {
     };
     // Start immediately - no idle callback delay for sector data
     fetchSectorData();
-    return () => { cancelled = true; abortCtrl?.abort(); };
+    // Refresh sector data every 30s during trading hours
+    const refreshInterval = setInterval(() => {
+      if (!cancelled) fetchSectorData();
+    }, 30000);
+    return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
   }, [symbol, isAShareStock]);
 
   // ── DB Factor Overrides (deferred - not needed for initial render) ──
@@ -719,7 +726,7 @@ export default function StockTAssistant() {
         {/* Market Index & Sector Overview */}
         {chartMode === "timeline" && liveTimeline.length > 0 && (() => {
           const szData = indexTimelineData[activeIndexKey]; const idxInfo = INDEX_CONFIG[activeIndexKey];
-          const hasIdxData = szData && szData.items.length > 10; const hasSectorData = sectorTimelineData.items.length > 10 && sectorInfo;
+          const hasIdxData = szData && szData.items.length > 0; const hasSectorData = sectorTimelineData.items.length > 0 && sectorInfo;
           const regimeBadge = (regime: RegimeDetail | null) => { if (!regime) return null; const cfg = REGIME_CONFIG[regime.regime] || REGIME_CONFIG["震荡市"]; return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}><span>{cfg.icon}</span><span>{regime.regime}</span></span>; };
           if (!hasIdxData && !hasSectorData) return null;
           return (
