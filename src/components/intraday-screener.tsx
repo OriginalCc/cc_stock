@@ -1006,7 +1006,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">3</span>
                   <div>
                     <span className="text-foreground font-medium">仓位控住了吗？</span>
-                    <span className="text-muted-foreground ml-1">10万资金：三跌≤2.5万，双跌≤3.3万，三涨≤4万</span>
+                    <span className="text-muted-foreground ml-1">1万资金：三跌≤2500，双跌≤3300，三涨≤4000</span>
                   </div>
                 </div>
               </div>
@@ -1167,18 +1167,18 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                   <div className="p-2 rounded-md border border-red-500/15 bg-red-500/5">
                     <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1">🛑 止损规矩</p>
                     <div className="space-y-1 text-[11px]">
-                      <p>• <span className="text-foreground font-medium">单笔止损 -2%</span>：10万本金做T亏2000元，无条件止损</p>
+                      <p>• <span className="text-foreground font-medium">单笔止损 -2%</span>：1万本金做T亏200元，无条件止损</p>
                       <p>• <span className="text-foreground font-medium">时间止损</span>：持仓超2小时未盈利，择机平仓</p>
                       <p>• <span className="text-foreground font-medium">信号止损</span>：出现强卖出信号，立即平仓</p>
                       <p>• <span className="text-foreground font-medium">大盘止损</span>：深证翻绿，所有做T仓位减半</p>
-                      <p>• <span className="text-foreground font-medium">日亏损上限</span>：当日累计亏损达本金0.5%（10万亏500），停止当日所有做T</p>
+                      <p>• <span className="text-foreground font-medium">日亏损上限</span>：当日累计亏损达本金0.5%（1万亏50），停止当日所有做T</p>
                     </div>
                   </div>
                   <div className="p-2 rounded-md border border-green-500/15 bg-green-500/5">
                     <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1">💰 止盈规矩</p>
                     <div className="space-y-1 text-[11px]">
-                      <p>• <span className="text-foreground font-medium">首目标 +1.5%</span>：3万T仓赚450元，先卖一半锁定利润</p>
-                      <p>• <span className="text-foreground font-medium">二目标 +3%</span>：3万T仓赚900元，全部卖出落袋</p>
+                      <p>• <span className="text-foreground font-medium">首目标 +1.5%</span>：3000 T仓赚45元，先卖一半锁定利润</p>
+                      <p>• <span className="text-foreground font-medium">二目标 +3%</span>：3000 T仓赚90元，全部卖出落袋</p>
                       <p>• <span className="text-foreground font-medium">冲高回落</span>：从最高点回落0.5%即卖出，宁可少赚不可倒亏</p>
                       <p>• <span className="text-foreground font-medium">大盘翻绿</span>：不管盈亏立即卖出，不抱幻想</p>
                     </div>
@@ -1472,16 +1472,16 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                 <div className="p-2 rounded-md border border-red-500/10 bg-red-500/5">
                   <p className="text-red-600 dark:text-red-400 font-medium mb-1">场景1（三跌）：深证跌1.8% + 半导体跌1.5% + 个股跌2.3%</p>
                   <div className="space-y-0.5">
-                    <p>→ <span className="text-red-500 font-bold">一级·≤1/4仓</span>，策略：<span className="text-red-500 font-medium">反T(先卖再买)冲高卖</span>，10万资金最多用2.5万</p>
+                    <p>→ <span className="text-red-500 font-bold">一级·≤1/4仓</span>，策略：<span className="text-red-500 font-medium">反T(先卖再买)冲高卖</span>，1万资金最多用2500</p>
                     <p>• 买入2.5万，跌3%亏750元（总0.75%）→ 可控</p>
-                    <p>• 满仓10万，跌3%亏3000元（总3%）→ 不可接受</p>
+                    <p>• 满仓1万，跌3%亏300元（总3%）→ 不可接受</p>
                     <p>• 若个股冲高翻红，反T(先卖再买)卖出后不买回</p>
                   </div>
                 </div>
                 <div className="p-2 rounded-md border border-green-500/10 bg-green-500/5">
                   <p className="text-green-600 dark:text-green-400 font-medium mb-1">场景2（三涨）：深证涨1.2% + 半导体涨0.8% + 个股涨1.5%</p>
                   <div className="space-y-0.5">
-                    <p>→ <span className="text-green-500 font-bold">五级·30-40%仓</span>，策略：<span className="text-green-500 font-medium">正T/反T(先卖再买)均可</span>，10万资金可用3-4万</p>
+                    <p>→ <span className="text-green-500 font-bold">五级·30-40%仓</span>，策略：<span className="text-green-500 font-medium">正T/反T(先卖再买)均可</span>，1万资金可用3000-4000</p>
                     <p>• 正T：回调时买入3万，反弹1.5%赚450元</p>
                     <p>• 反T(先卖再买)：冲高卖出3万，回落买回赚差价</p>
                     <p>• 但大盘突然翻绿 → 立即降仓至1/3以下</p>
