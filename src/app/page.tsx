@@ -30,6 +30,9 @@ const FiveDayTimelinePanel = dynamic(() => import("@/components/five-day-timelin
 const NewsAnalysisPanel = dynamic(() => import("@/components/news-analysis-panel").then(m => ({ default: m.NewsAnalysisPanel })), { ssr: false, loading: () => <div className="h-[400px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载新闻分析...</span></div> });
 const SignalSummaryPanel = dynamic(() => import("@/components/signal-summary-panel").then(m => ({ default: m.SignalSummaryPanel })), { ssr: false, loading: () => <div className="h-[400px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载信号汇总...</span></div> });
 const BaotaDeployGuide = dynamic(() => import("@/components/baota-deploy-guide"), { ssr: false, loading: () => <div className="h-[400px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载部署指南...</span></div> });
+const TSuitabilityScore = dynamic(() => import("@/components/t-suitability-score").then(m => ({ default: m.TSuitabilityScore })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载适宜度评分...</span></div> });
+const TTradeJournal = dynamic(() => import("@/components/t-trade-journal").then(m => ({ default: m.TTradeJournal })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载做T记录...</span></div> });
+const RiskAlertPanel = dynamic(() => import("@/components/risk-alert-panel").then(m => ({ default: m.RiskAlertPanel })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载风险仪表盘...</span></div> });
 import { PasswordGate } from "@/components/password-gate";
 import { PasswordManageDialog } from "@/components/password-manage-dialog";
 import { calculateMACD } from "@/lib/indicators";
@@ -723,6 +726,14 @@ export default function StockTAssistant() {
           !loading && (<Card><CardContent className="p-12 text-center text-muted-foreground"><Activity className="h-12 w-12 mx-auto mb-4 opacity-30" /><p className="text-lg font-medium mb-2">选择A股开始分析</p><p className="text-sm">在搜索框中输入股票代码或名称，或点击上方热门股票</p></CardContent></Card>)
         )}
 
+        {/* T-Suitability Score + Risk Dashboard — only in timeline mode */}
+        {chartMode === "timeline" && liveTimeline.length > 0 && (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <TSuitabilityScore symbol={symbol} quote={quote} liveTimeline={liveTimeline} sectorRegime={sectorRegime} szIndexRegime={szIndexRegime} />
+            <RiskAlertPanel symbol={symbol} quote={quote} liveTimeline={liveTimeline} sectorRegime={sectorRegime} szIndexRegime={szIndexRegime} signalCounts={signalCounts} />
+          </div>
+        )}
+
         {/* Market Index & Sector Overview */}
         {chartMode === "timeline" && liveTimeline.length > 0 && (() => {
           const szData = indexTimelineData[activeIndexKey]; const idxInfo = INDEX_CONFIG[activeIndexKey];
@@ -743,6 +754,11 @@ export default function StockTAssistant() {
         {/* T-Trading Signals Summary */}
         {(chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
           <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
+        )}
+
+        {/* T-Trade Journal — only in timeline mode */}
+        {chartMode === "timeline" && liveTimeline.length > 0 && (
+          <TTradeJournal symbol={symbol} stockName={quote?.name} currentPrice={quote?.price} />
         )}
 
         {/* News Analysis Panel */}

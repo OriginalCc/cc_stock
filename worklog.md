@@ -503,6 +503,36 @@ Stage Summary:
 - 6处显示文本增强（增加10万资金具体数字实例）
 
 ---
+Task ID: 4
+Agent: risk-dashboard
+Task: Create Risk Alert Dashboard (风险仪表盘) component
+
+Work Log:
+- Created `/src/components/risk-alert-panel.tsx` with "use client" directive and React.memo
+- Defined `RiskAlertPanelProps` interface with symbol, quote, liveTimeline, sectorRegime, szIndexRegime, signalCounts
+- Implemented 6 risk indicator calculation functions:
+  - `calcLimitDistance`: 涨跌停距离 - calculates distance to ±10% limits from prevClose, danger when within 1%, warning within 2%
+  - `calcVWAPDeviation`: 均价偏离 - calculates deviation from avgPrice, danger at ≥3%, warning at ≥2%, safe when <1%
+  - `calcVolumeAnomaly`: 量能异常 - compares latest minute volume to 30-min average, danger at >5x (脉冲放量), warning at >3x
+  - `calcMarketRisk`: 大盘风险 - based on szIndexRegime, danger for 下跌趋势, warning for 横盘末期, safe for 震荡市
+  - `calcSignalDensity`: 信号密度 - based on signal counts, warning when >20 signals, normal at 10-20, shows buy/sell ratio
+  - `calcIntradayTrend`: 日内趋势 - calculates from liveTimeline, detects 上涨/下跌/震荡/横盘 based on price vs open & avgPrice and cross count
+- Implemented overall risk level calculation: 🔴 高风险 (3+ danger/warning), 🟡 中风险 (1-2 warning), 🟢 低风险 (0-1)
+- UI design: Card with Shield icon header, overall risk badge, 2x3 grid on desktop / 1x6 on mobile, compact indicator cards (~80px tall)
+- Each indicator card shows: colored icon, title, value with unit, level label with emoji, one-line suggestion
+- Bottom risk summary bar with overall suggestion and stock symbol
+- Only renders when liveTimeline.length > 5
+- Handles null quote gracefully (shows "无数据" placeholders)
+- Lint passed with no errors
+
+Stage Summary:
+- New component: `src/components/risk-alert-panel.tsx` (named export `RiskAlertPanel`)
+- 6 risk indicators with color-coded levels (danger/warning/normal/safe/info/none)
+- Overall risk level badge in header
+- Compact grid layout, responsive (1 col mobile / 2 col sm / 3 col lg)
+- Graceful null handling for quote and regime data
+
+---
 Task ID: 3
 Agent: main
 Task: 同步交易规矩变更从 page.tsx 到 intraday-screener.tsx
@@ -522,3 +552,104 @@ Stage Summary:
 - 修复1个关键矛盾（正T描述vs隔夜禁令）
 - 新增1个自检section + 1条止损规则 + 2条禁忌规则
 
+---
+Task ID: 2
+Agent: main
+Task: 创建"做T适宜度评分"组件 (TSuitabilityScore)
+
+Work Log:
+- 创建 /src/components/t-suitability-score.tsx 组件
+- 实现6维评分逻辑（100分总分）：
+  1. 日内振幅 (25分): ≥4%→25, 3-4%→18, 2-3%→10, <2%→0
+  2. 波动率 (20分): std≥0.8%→20, 0.5-0.8%→14, 0.3-0.5%→8, <0.3%→3
+  3. 量能充足度 (20分): ≥5000万→20, 3000-5000万→14, 1000-3000万→8, <1000万→3
+  4. 均价偏离度 (15分): ≥2%→15, 1-2%→10, 0.5-1%→6, <0.5%→2
+  5. 大盘环境 (10分): 震荡市→10, 上升通道→6, 下跌趋势→3, 横盘末期→4, 无数据→5
+  6. 板块共振 (10分): 方向一致→10, 无数据→5, 方向相反→3
+- 总分评级: ≥80→🟢高度适宜, 60-79→🟡基本适宜, 40-59→🟠勉强适宜, <40→🔴不宜做T
+- UI设计：左侧SVG圆形进度环(类似T-Index)，右侧3x2网格展示6项因子分数+迷你进度条
+- 底部一行建议文字，根据总分显示不同颜色和建议语
+- 优雅处理 null quote（显示"选择股票查看做T适宜度"）和 liveTimeline 长度 ≤5（显示"等待分时数据加载..."）
+- 使用 React.memo 包裹，named export
+- Lint 通过
+
+Stage Summary:
+- 新增 TSuitabilityScore 组件，评估股票做T适宜度
+- 6维评分体系：振幅/波动率/量能/均价偏离/大盘环境/板块共振
+- 紧凑卡片设计：圆形评分环 + 3x2因子网格 + 底部建议
+- 4级颜色主题（绿/黄/橙/红）随总分动态切换
+
+---
+Task ID: 3
+Agent: main
+Task: 创建"做T交易记录"（T-Trade Journal）组件
+
+Work Log:
+- 创建 `/src/components/t-trade-journal.tsx` 组件，实现完整的做T交易记录功能
+- 定义 TTradeRecord 数据模型：id, symbol, stockName, date, type(正T/反T), entryTime, entryPrice, exitTime, exitPrice, quantity, status(open/closed), profit, profitPct, notes
+- 使用 localStorage 持久化存储：per-stock key `t-trade-journal-{symbol}` + aggregate key `t-trade-journal-summary`
+- 实现 Quick Entry Section：记录买入/记录卖出两个快捷按钮，自动填充当前时间和当前价格
+- 实现内联表单：正T/反T类型选择器、价格输入、股数输入、备注输入、确认按钮
+- 智能默认：点击"记录买入"时，若有未平仓反T记录，自动选择反T类型并提示建议平仓；反之亦然
+- 实现 Today's Trades 列表：显示今日所有做T记录，含类型徽章、入场→出场价格、盈亏（绿色/红色）、时间
+- 开仓交易显示当前浮动盈亏（基于 currentPrice prop）
+- 点击展开：显示详细信息和操作按钮（按现价平仓、删除）
+- 一键平仓：开仓交易可直接按当前价平仓
+- 删除功能：可删除误录记录
+- 每日限制警告：今日已平仓交易 ≥2 时显示琥珀色警告"今日做T已达上限，规则建议不超过2次"
+- 实现 Statistics Dashboard（可折叠）：
+  - 今日做T次数(X/2)
+  - 今日胜率(X%)
+  - 今日盈亏(±¥XXX)
+  - 未平仓浮动盈亏
+  - 近5日胜率(X%)
+  - 近5日盈亏(±¥XXX)
+  - 最佳做T时段(30分钟粒度)
+  - 平均做T利润(%)
+- 利润计算：正T = (exitPrice - entryPrice) * quantity，反T = (entryPrice - exitPrice) * quantity
+- 日期使用中国时区(UTC+8)，格式 YYYY-MM-DD 和 HH:MM
+- 使用 React.memo 包裹，named export `TTradeJournal`
+- 处理 SSR hydration：mounted 状态延迟渲染 localStorage 数据
+- 使用 queueMicrotask 包装 effect 中的 setState 调用，避免 ESLint cascading renders 警告
+- Lint 通过
+
+Stage Summary:
+- 新增 TTradeJournal 组件：做T交易记录、实时浮动盈亏、统计面板
+- localStorage 持久化，per-stock 独立存储
+- 支持正T/反T两种做T类型，正确计算盈亏
+- 每日2次限制警告，最佳时段统计，5日胜率/盈亏
+- 紧凑卡片设计，统计面板默认折叠
+
+
+---
+Task ID: 6
+Agent: main
+Task: 在分时页面增加提升胜率的新功能（做T适宜度评分 + 做T交易记录 + 风险仪表盘）
+
+Work Log:
+- 分析分时页面现有功能，识别出3个关键缺失功能：做T适宜度评分、做T交易记录、风险仪表盘
+- 创建 t-suitability-score.tsx (504行) — 做T适宜度评分组件
+  - 6维评分体系：日内振幅(25分)、波动率(20分)、量能充足度(20分)、均价偏离度(15分)、大盘环境(10分)、板块共振(10分)
+  - 4级评级：≥80高度适宜(绿)、60-79基本适宜(黄)、40-59勉强适宜(橙)、<40不宜做T(红)
+  - SVG圆形进度弧 + 3x2因子分解网格
+- 创建 t-trade-journal.tsx (832行) — 做T交易记录组件
+  - 快速记录：记录买入/记录卖出按钮，自动填入当前时间和价格
+  - 今日交易列表：显示每笔交易详情，未平仓显示浮动盈亏
+  - 统计面板（可折叠）：今日做T次数(X/2)、胜率、盈亏、近5日统计、最佳做T时段
+  - localStorage持久化，支持正T/反T(先卖再买)两种模式
+- 创建 risk-alert-panel.tsx (682行) — 风险仪表盘组件
+  - 6个风险指标：涨跌停距离、均价偏离、量能异常、大盘风险、信号密度、日内趋势
+  - 整体风险等级：高风险(红)、中风险(黄)、低风险(绿)
+  - 紧凑卡片设计，响应式网格布局
+- 在 page.tsx 中集成3个新组件：
+  - 做T适宜度评分 + 风险仪表盘：并排显示在分时图下方（2列网格）
+  - 做T交易记录：在信号汇总面板下方
+  - 仅在 timeline 模式且有分时数据时显示
+- Lint通过，dev server正常运行（HTTP 200）
+
+Stage Summary:
+- 新增3个提升胜率的核心功能组件
+- 做T适宜度评分：帮助用户判断当前股票是否适合做T（避免在不适合的股票上操作）
+- 做T交易记录：记录和追踪做T胜率，支持统计分析和复盘
+- 风险仪表盘：6个关键风险指标一目了然，实时预警
+- 关键价位线已在之前实现在分时图上（支撑/阻力虚线）
