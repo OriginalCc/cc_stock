@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Shield,
-  AlertTriangle,
   TrendingUp,
   TrendingDown,
   Activity,
@@ -61,7 +60,7 @@ type RiskLevel = "danger" | "warning" | "normal" | "safe" | "info" | "none";
 interface RiskIndicator {
   id: string;
   title: string;
-  icon: React.ReactNode;
+  icon: React.ElementType;
   value: string;
   level: RiskLevel;
   levelLabel: string;
@@ -70,38 +69,59 @@ interface RiskIndicator {
 
 // ── Color Mapping ──────────────────────────────────────
 
-const LEVEL_COLORS: Record<RiskLevel, { icon: string; badge: string; badgeText: string }> = {
+const LEVEL_COLORS: Record<RiskLevel, { bar: string; icon: string; badgeText: string }> = {
   danger: {
+    bar: "#ef4444",
     icon: "text-red-500",
-    badge: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25",
     badgeText: "text-red-500",
   },
   warning: {
+    bar: "#f59e0b",
     icon: "text-amber-500",
-    badge: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25",
     badgeText: "text-amber-500",
   },
   normal: {
+    bar: "#22c55e",
     icon: "text-emerald-500",
-    badge: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
     badgeText: "text-emerald-500",
   },
   safe: {
+    bar: "#3b82f6",
     icon: "text-blue-500",
-    badge: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25",
     badgeText: "text-blue-500",
   },
   info: {
+    bar: "#a855f7",
     icon: "text-purple-500",
-    badge: "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25",
     badgeText: "text-purple-500",
   },
   none: {
+    bar: "#9ca3af",
     icon: "text-muted-foreground",
-    badge: "bg-muted text-muted-foreground border-border",
     badgeText: "text-muted-foreground",
   },
 };
+
+// ── Mini risk bar component ─────────────────────────
+
+function MiniRiskBar({ level }: { level: RiskLevel }) {
+  const widths: Record<RiskLevel, string> = {
+    danger: "100%",
+    warning: "75%",
+    normal: "50%",
+    info: "40%",
+    safe: "25%",
+    none: "10%",
+  };
+  return (
+    <div className="h-1.5 w-full bg-muted/30 rounded-full overflow-hidden">
+      <div
+        className="h-full rounded-full transition-all duration-500"
+        style={{ width: widths[level], backgroundColor: LEVEL_COLORS[level].bar }}
+      />
+    </div>
+  );
+}
 
 // ── Indicator Calculations ─────────────────────────────
 
@@ -113,7 +133,7 @@ function calcLimitDistance(
     return {
       id: "limit",
       title: "涨跌停距离",
-      icon: <Gauge className="h-4 w-4" />,
+      icon: Gauge,
       value: "--",
       level: "none",
       levelLabel: "无数据",
@@ -126,7 +146,6 @@ function calcLimitDistance(
   const distUp = ((limitUp - price) / price) * 100;
   const distDown = ((price - limitDown) / price) * 100;
 
-  // Determine level based on the closer side
   const minDist = Math.min(distUp, distDown);
   let level: RiskLevel;
   let levelLabel: string;
@@ -138,7 +157,7 @@ function calcLimitDistance(
     suggestion = minDist === distUp ? "接近涨停，注意回落风险" : "接近跌停，注意止损";
   } else if (minDist <= 2) {
     level = "warning";
-    levelLabel = "⚠️ 靠近极限";
+    levelLabel = "靠近极限";
     suggestion = minDist === distUp ? "临近涨停，谨慎追高" : "临近跌停，严控仓位";
   } else {
     level = "normal";
@@ -149,7 +168,7 @@ function calcLimitDistance(
   return {
     id: "limit",
     title: "涨跌停距离",
-    icon: <Gauge className="h-4 w-4" />,
+    icon: Gauge,
     value: `↑${distUp.toFixed(1)}% ↓${distDown.toFixed(1)}%`,
     level,
     levelLabel,
@@ -165,7 +184,7 @@ function calcVWAPDeviation(
     return {
       id: "vwap",
       title: "均价偏离",
-      icon: <Activity className="h-4 w-4" />,
+      icon: Activity,
       value: "--",
       level: "none",
       levelLabel: "无数据",
@@ -179,7 +198,7 @@ function calcVWAPDeviation(
     return {
       id: "vwap",
       title: "均价偏离",
-      icon: <Activity className="h-4 w-4" />,
+      icon: Activity,
       value: "--",
       level: "none",
       levelLabel: "无数据",
@@ -196,26 +215,26 @@ function calcVWAPDeviation(
 
   if (absDev >= 3) {
     level = "danger";
-    levelLabel = "🔴 严重偏离";
+    levelLabel = "严重偏离";
     suggestion = deviation > 0 ? "严重高于均价，止损区域" : "严重低于均价，止损区域";
   } else if (absDev >= 2) {
     level = "warning";
-    levelLabel = "🟡 偏离较大";
+    levelLabel = "偏离较大";
     suggestion = deviation > 0 ? "高于均价较多，考虑高抛" : "低于均价较多，考虑低吸";
   } else if (absDev >= 1) {
     level = "normal";
-    levelLabel = "🟢 轻度偏离";
+    levelLabel = "轻度偏离";
     suggestion = "偏离正常范围";
   } else {
     level = "safe";
-    levelLabel = "⚪ 贴近均价";
+    levelLabel = "贴近均价";
     suggestion = "贴近均价，暂无T机会";
   }
 
   return {
     id: "vwap",
     title: "均价偏离",
-    icon: <Activity className="h-4 w-4" />,
+    icon: Activity,
     value: `${direction}${deviation.toFixed(2)}%`,
     level,
     levelLabel,
@@ -230,7 +249,7 @@ function calcVolumeAnomaly(
     return {
       id: "volume",
       title: "量能异常",
-      icon: <BarChart3 className="h-4 w-4" />,
+      icon: BarChart3,
       value: "--",
       level: "none",
       levelLabel: "无数据",
@@ -238,7 +257,6 @@ function calcVolumeAnomaly(
     };
   }
 
-  // Use recent 30 data points for average (or all available)
   const windowSize = Math.min(30, liveTimeline.length - 1);
   const recentVolumes = liveTimeline.slice(-windowSize - 1, -1);
   const avgVolume = recentVolumes.reduce((s, d) => s + d.volume, 0) / recentVolumes.length;
@@ -248,7 +266,7 @@ function calcVolumeAnomaly(
     return {
       id: "volume",
       title: "量能异常",
-      icon: <BarChart3 className="h-4 w-4" />,
+      icon: BarChart3,
       value: "--",
       level: "none",
       levelLabel: "无数据",
@@ -263,30 +281,30 @@ function calcVolumeAnomaly(
 
   if (ratio > 5) {
     level = "danger";
-    levelLabel = "🔴 脉冲放量";
+    levelLabel = "脉冲放量";
     suggestion = "异常脉冲，警惕主力出货";
   } else if (ratio > 3) {
     level = "warning";
-    levelLabel = "🟡 显著放量";
+    levelLabel = "显著放量";
     suggestion = "放量明显，关注方向选择";
   } else if (ratio > 2) {
     level = "info";
-    levelLabel = "🟠 温和放量";
+    levelLabel = "温和放量";
     suggestion = "温和放量，留意趋势加强";
   } else if (ratio < 0.3) {
     level = "safe";
-    levelLabel = "🔵 极度缩量";
+    levelLabel = "极度缩量";
     suggestion = "极度缩量，变盘在即";
   } else {
     level = "normal";
-    levelLabel = "⚪ 正常量能";
+    levelLabel = "正常量能";
     suggestion = "量能正常";
   }
 
   return {
     id: "volume",
     title: "量能异常",
-    icon: <BarChart3 className="h-4 w-4" />,
+    icon: BarChart3,
     value: `${ratio.toFixed(1)}x`,
     level,
     levelLabel,
@@ -301,10 +319,10 @@ function calcMarketRisk(
     return {
       id: "market",
       title: "大盘风险",
-      icon: <Shield className="h-4 w-4" />,
+      icon: Shield,
       value: "--",
       level: "none",
-      levelLabel: "⚪ 暂无数据",
+      levelLabel: "暂无数据",
       suggestion: "大盘数据缺失",
     };
   }
@@ -316,30 +334,30 @@ function calcMarketRisk(
 
   if (regime === "下跌趋势") {
     level = "danger";
-    levelLabel = "🔴 下跌趋势";
+    levelLabel = "下跌趋势";
     suggestion = "大盘下跌，全面减仓";
   } else if (regime === "横盘末期") {
     level = "warning";
-    levelLabel = "🟡 方向不明";
+    levelLabel = "方向不明";
     suggestion = "大盘方向不明，控制仓位";
   } else if (regime === "上升通道") {
     level = "normal";
-    levelLabel = "🟢 上升趋势";
+    levelLabel = "上升趋势";
     suggestion = "大盘上涨，可积极参与";
   } else if (regime === "震荡市") {
     level = "safe";
-    levelLabel = "🔵 震荡市";
+    levelLabel = "震荡市";
     suggestion = "大盘震荡，适合做T";
   } else {
     level = "none";
-    levelLabel = "⚪ 未知";
+    levelLabel = "未知";
     suggestion = "无法判断大盘状态";
   }
 
   return {
     id: "market",
     title: "大盘风险",
-    icon: <Shield className="h-4 w-4" />,
+    icon: Shield,
     value: regime,
     level,
     levelLabel,
@@ -356,16 +374,16 @@ function calcSignalDensity(
 
   if (totalSigs > 20) {
     level = "warning";
-    levelLabel = "🟡 信号过多";
+    levelLabel = "信号过多";
   } else if (totalSigs >= 10) {
     level = "normal";
-    levelLabel = "🟢 信号适中";
+    levelLabel = "信号适中";
   } else if (totalSigs >= 5) {
     level = "safe";
-    levelLabel = "🔵 信号偏少";
+    levelLabel = "信号偏少";
   } else {
     level = "none";
-    levelLabel = "⚪ 信号稀少";
+    levelLabel = "信号稀少";
   }
 
   const buyRatio = totalSigs > 0 ? ((buyCount / totalSigs) * 100).toFixed(0) : "0";
@@ -385,7 +403,7 @@ function calcSignalDensity(
   return {
     id: "signal",
     title: "信号密度",
-    icon: <Zap className="h-4 w-4" />,
+    icon: Zap,
     value: `${totalSigs}个`,
     level,
     levelLabel,
@@ -401,7 +419,7 @@ function calcIntradayTrend(
     return {
       id: "trend",
       title: "日内趋势",
-      icon: <TrendingUp className="h-4 w-4" />,
+      icon: TrendingUp,
       value: "--",
       level: "none",
       levelLabel: "无数据",
@@ -415,7 +433,6 @@ function calcIntradayTrend(
   const open = quote.open;
   const openChange = open > 0 ? ((price - open) / open) * 100 : 0;
 
-  // Count how many times price crosses avgPrice
   let crossCount = 0;
   for (let i = 1; i < liveTimeline.length; i++) {
     const prev = liveTimeline[i - 1];
@@ -429,7 +446,6 @@ function calcIntradayTrend(
     }
   }
 
-  // Price range (max - min) relative to open
   const prices = liveTimeline.map((d) => d.price);
   const maxP = Math.max(...prices);
   const minP = Math.min(...prices);
@@ -438,28 +454,33 @@ function calcIntradayTrend(
   let level: RiskLevel;
   let levelLabel: string;
   let suggestion: string;
+  let TrendIcon: React.ElementType;
 
   if (price > open && price > avgPrice && crossCount <= 2) {
     level = "danger";
-    levelLabel = "🔴 上涨趋势";
+    levelLabel = "上涨趋势";
     suggestion = "注意冲高回落";
+    TrendIcon = TrendingUp;
   } else if (price < open && price < avgPrice && crossCount <= 2) {
     level = "normal";
-    levelLabel = "🟢 下跌趋势";
+    levelLabel = "下跌趋势";
     suggestion = "注意低吸机会";
+    TrendIcon = TrendingDown;
   } else if (crossCount >= 3) {
     level = "safe";
-    levelLabel = "🔵 震荡行情";
+    levelLabel = "震荡行情";
     suggestion = "适合高抛低吸";
+    TrendIcon = Activity;
   } else if (range < 1) {
     level = "none";
-    levelLabel = "⚪ 横盘整理";
+    levelLabel = "横盘整理";
     suggestion = "等待突破";
+    TrendIcon = Activity;
   } else {
-    // Default to oscillating
     level = "safe";
-    levelLabel = "🔵 震荡行情";
+    levelLabel = "震荡行情";
     suggestion = "波动中适合做T";
+    TrendIcon = Activity;
   }
 
   const dirSymbol = openChange >= 0 ? "+" : "";
@@ -467,14 +488,7 @@ function calcIntradayTrend(
   return {
     id: "trend",
     title: "日内趋势",
-    icon:
-      level === "danger" ? (
-        <TrendingUp className="h-4 w-4" />
-      ) : level === "normal" ? (
-        <TrendingDown className="h-4 w-4" />
-      ) : (
-        <Activity className="h-4 w-4" />
-      ),
+    icon: TrendIcon,
     value: `${dirSymbol}${openChange.toFixed(2)}%`,
     level,
     levelLabel,
@@ -489,6 +503,7 @@ function calcOverallRisk(indicators: RiskIndicator[]): {
   label: string;
   color: string;
   bgColor: string;
+  borderColor: string;
   icon: string;
   suggestion: string;
 } {
@@ -504,7 +519,8 @@ function calcOverallRisk(indicators: RiskIndicator[]): {
       level: "high",
       label: "高风险",
       color: "text-red-600 dark:text-red-400",
-      bgColor: "bg-red-500/10 border-red-500/25",
+      bgColor: "bg-red-500/5",
+      borderColor: "border-red-500/25",
       icon: "🔴",
       suggestion: "当前风险较高，建议减仓或观望",
     };
@@ -513,7 +529,8 @@ function calcOverallRisk(indicators: RiskIndicator[]): {
       level: "medium",
       label: "中风险",
       color: "text-amber-600 dark:text-amber-400",
-      bgColor: "bg-amber-500/10 border-amber-500/25",
+      bgColor: "bg-amber-500/5",
+      borderColor: "border-amber-500/25",
       icon: "🟡",
       suggestion: "注意风险，控制仓位参与",
     };
@@ -522,7 +539,8 @@ function calcOverallRisk(indicators: RiskIndicator[]): {
       level: "low",
       label: "低风险",
       color: "text-emerald-600 dark:text-emerald-400",
-      bgColor: "bg-emerald-500/10 border-emerald-500/25",
+      bgColor: "bg-emerald-500/5",
+      borderColor: "border-emerald-500/25",
       icon: "🟢",
       suggestion: "风险可控，可适度参与",
     };
@@ -539,20 +557,18 @@ export const RiskAlertPanel = React.memo(function RiskAlertPanel({
   szIndexRegime,
   signalCounts,
 }: RiskAlertPanelProps) {
-  // Only show when liveTimeline has enough data
   const indicators = useMemo(() => {
     if (liveTimeline.length <= 5) return [] as RiskIndicator[];
 
     const result: RiskIndicator[] = [];
 
-    // 1. 涨跌停距离
     if (quote) {
       result.push(calcLimitDistance(quote));
     } else {
       result.push({
         id: "limit",
         title: "涨跌停距离",
-        icon: <Gauge className="h-4 w-4" />,
+        icon: Gauge,
         value: "--",
         level: "none",
         levelLabel: "无数据",
@@ -560,14 +576,13 @@ export const RiskAlertPanel = React.memo(function RiskAlertPanel({
       });
     }
 
-    // 2. 均价偏离
     if (quote) {
       result.push(calcVWAPDeviation(quote, liveTimeline));
     } else {
       result.push({
         id: "vwap",
         title: "均价偏离",
-        icon: <Activity className="h-4 w-4" />,
+        icon: Activity,
         value: "--",
         level: "none",
         levelLabel: "无数据",
@@ -575,23 +590,17 @@ export const RiskAlertPanel = React.memo(function RiskAlertPanel({
       });
     }
 
-    // 3. 量能异常
     result.push(calcVolumeAnomaly(liveTimeline));
-
-    // 4. 大盘风险
     result.push(calcMarketRisk(szIndexRegime));
-
-    // 5. 信号密度
     result.push(calcSignalDensity(signalCounts));
 
-    // 6. 日内趋势
     if (quote) {
       result.push(calcIntradayTrend(quote, liveTimeline));
     } else {
       result.push({
         id: "trend",
         title: "日内趋势",
-        icon: <Activity className="h-4 w-4" />,
+        icon: Activity,
         value: "--",
         level: "none",
         levelLabel: "无数据",
@@ -607,73 +616,66 @@ export const RiskAlertPanel = React.memo(function RiskAlertPanel({
     [indicators]
   );
 
-  // Don't render if not enough data
   if (liveTimeline.length <= 5) {
     return null;
   }
 
   return (
-    <Card className="mt-4">
-      <CardHeader className="pb-2 pt-3 px-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Shield className="h-4 w-4" />
+    <Card className={`h-full flex flex-col overflow-hidden ${overallRisk.bgColor} ${overallRisk.borderColor}`}>
+      <CardContent className="p-3 sm:p-4 flex flex-col flex-1">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+            <Shield className="h-3.5 w-3.5" />
             风险仪表盘
-          </CardTitle>
+          </span>
           <Badge
-            className={`text-[11px] px-2 py-0.5 border ${overallRisk.bgColor} ${overallRisk.color}`}
             variant="outline"
+            className={`text-[10px] h-5 px-1.5 ${overallRisk.bgColor} ${overallRisk.color}`}
           >
             {overallRisk.icon} {overallRisk.label}
           </Badge>
         </div>
-      </CardHeader>
-      <CardContent className="px-4 pb-4">
-        {/* 6 Risk Indicator Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+
+        {/* 6 Risk Indicator Grid - same 3-col layout as suitability */}
+        <div className="grid grid-cols-3 gap-x-3 gap-y-2">
           {indicators.map((ind) => {
             const colors = LEVEL_COLORS[ind.level];
+            const Icon = ind.icon;
             return (
-              <div
-                key={ind.id}
-                className="flex items-start gap-2.5 p-3 rounded-lg bg-muted/30 border border-border/50 hover:border-border transition-colors"
-              >
-                <div className={`mt-0.5 shrink-0 ${colors.icon}`}>
-                  {ind.icon}
+              <div key={ind.id} className="min-w-0">
+                <div className="flex items-center gap-1 mb-0.5">
+                  <Icon
+                    className="h-3 w-3 shrink-0"
+                    style={{ color: colors.bar }}
+                  />
+                  <span className="text-[10px] text-muted-foreground truncate">
+                    {ind.title}
+                  </span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs text-muted-foreground font-medium truncate">
-                      {ind.title}
-                    </span>
-                    <span
-                      className={`text-[10px] font-medium whitespace-nowrap ${colors.badgeText}`}
-                    >
-                      {ind.levelLabel}
-                    </span>
-                  </div>
-                  <div className="text-sm font-semibold font-mono mt-0.5 truncate">
+                <div className="flex items-center gap-1">
+                  <span
+                    className="text-xs font-bold tabular-nums leading-none"
+                    style={{ color: colors.bar }}
+                  >
+                    {ind.levelLabel}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground leading-none ml-auto truncate">
                     {ind.value}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                    {ind.suggestion}
-                  </div>
+                  </span>
                 </div>
+                <MiniRiskBar level={ind.level} />
               </div>
             );
           })}
         </div>
 
-        {/* Overall Risk Summary */}
+        {/* Bottom: Overall Risk Summary - same style as suitability suggestion */}
         <div
-          className={`mt-3 p-2.5 rounded-lg border ${overallRisk.bgColor} flex items-center gap-2`}
+          className={`mt-3 pt-2 border-t ${overallRisk.borderColor} text-center`}
         >
-          <AlertTriangle className={`h-4 w-4 shrink-0 ${overallRisk.color}`} />
           <span className={`text-xs font-medium ${overallRisk.color}`}>
-            {overallRisk.suggestion}
-          </span>
-          <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
-            {symbol}
+            {overallRisk.icon} {overallRisk.suggestion}
           </span>
         </div>
       </CardContent>

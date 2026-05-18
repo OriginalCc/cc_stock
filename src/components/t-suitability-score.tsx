@@ -376,8 +376,8 @@ export const TSuitabilityScore = React.memo(function TSuitabilityScore({
   ];
 
   return (
-    <Card className={`overflow-hidden ${rating.bgColor} ${rating.borderColor}`}>
-      <CardContent className="p-3 sm:p-4">
+    <Card className={`h-full flex flex-col overflow-hidden ${rating.bgColor} ${rating.borderColor}`}>
+      <CardContent className="p-3 sm:p-4 flex flex-col flex-1">
         <div className="flex items-start gap-4">
           {/* Left: Score Circle */}
           <div className="relative shrink-0">
