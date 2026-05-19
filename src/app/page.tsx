@@ -780,17 +780,21 @@ export default function StockTAssistant() {
           <NewsAnalysisPanel symbol={symbol} stockName={quote?.name} isAShare={isAShareStock} quote={quote} sectorInfo={sectorInfo} newsData={newsData} setNewsData={setNewsData} newsLoading={newsLoading} setNewsLoading={setNewsLoading} showNewsAnalysis={showNewsAnalysis} setShowNewsAnalysis={setShowNewsAnalysis} />
         </LazyMount>
 
-        {/* Strategy Admin Panel */}
+        {/* Strategy Admin Panel — hidden in 5d-timeline mode */}
+        {chartMode !== "5d-timeline" && (
         <LazyMount height={100}>
           <StrategyAdminPanel onFactorsChanged={(factors) => setFactorOverrides(buildFactorOverridesFromDB(factors))} />
         </LazyMount>
+        )}
         </>
         )}
 
-        {/* Trading Rules Reference — always visible */}
+        {/* Trading Rules Reference — hidden in 5d-timeline mode */}
+        {chartMode !== "5d-timeline" && (
         <div className="mb-4">
           <TradingRulesCard autoExpanded={autoExpanded} />
         </div>
+        )}
 
       </main>
       <footer className="border-t border-border bg-card/30 mt-auto">
