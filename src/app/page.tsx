@@ -149,8 +149,18 @@ export default function StockTAssistant() {
       setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
     };
 
-    // Fetch all indices immediately in parallel (no double-fetch for active index)
-    fetchAllIndices();
+    // Defer index fetch to avoid competing with stock timeline for connection pool
+    // Index data is less critical than stock data for initial paint
+    const startDelay = typeof requestIdleCallback === 'function' ? 0 : 1500;
+    const idleFetch = () => {
+      if (cancelled) return;
+      fetchAllIndices();
+    };
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(idleFetch, { timeout: 2000 });
+    } else {
+      setTimeout(idleFetch, startDelay);
+    }
 
     // Refresh every 30s during trading hours
     const isTradingHours = () => {
@@ -255,6 +265,12 @@ export default function StockTAssistant() {
 
   // ── allChartData: merge today's quote into K-line history ──
   const allChartData = useMemo(() => {
+    // In timeline mode, skip heavy quote-merge logic since K-line data is only used for
+    // prevDayMA5 and SignalSummaryPanel — neither needs real-time quote updates
+    if (chartMode === 'timeline' || chartMode === '5d-timeline') {
+      return history.filter((h) => h.close > 0);
+    }
+
     // Helper: normalize a date string to just the date part (YYYY-MM-DD)
     const normalizeDate = (d: string | undefined): string => {
       if (!d) return "";
@@ -349,7 +365,7 @@ export default function StockTAssistant() {
       return deduped;
     }
     return data;
-  }, [history, quote, interval]);
+  }, [history, chartMode, quote, interval]);
 
   // ── chartData for signal summary (visible K-line slice) ──
   const chartData = useMemo(() => {
@@ -438,18 +454,14 @@ export default function StockTAssistant() {
 
   const timelineMACDData = useMemo(() => {
     // Skip heavy MACD computation when not in timeline mode
-    if (!isTimelineActive || timeline.length === 0) return [];
-    const now = new Date(); const h = now.getHours(); const m = now.getMinutes();
-    const isMorningSession = (h === 9 && m >= 30) || (h === 10) || (h === 11 && m <= 30);
-    const isAfternoonSession = (h >= 13 && h < 15) || (h === 15 && m === 0);
-    let macdTimeline = timeline;
-    if (isMorningSession || isAfternoonSession) { const curMin = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`; const lastValidIdx = timeline.reduce((lastIdx: number, d: TimelineItem, i: number) => d.time <= curMin ? i : lastIdx, -1); if (lastValidIdx >= 0 && lastValidIdx < timeline.length - 1) macdTimeline = timeline.slice(0, lastValidIdx + 1); }
-    const prices = macdTimeline.map((d) => d.price);
+    // Use liveTimeline (already truncated to current minute) instead of raw timeline
+    if (!isTimelineActive || liveTimeline.length === 0) return [];
+    const prices = liveTimeline.map((d) => d.price);
     const macdResult = calculateMACD(prices);
     const result: { time: string; dif: number | null; dea: number | null; macd: number | null }[] = [];
-    for (let i = 0; i < macdTimeline.length; i++) { const mr = macdResult[i]; if (isNaN(mr.dif) || isNaN(mr.dea) || isNaN(mr.macd)) result.push({ time: macdTimeline[i].time, dif: null, dea: null, macd: null }); else result.push({ time: macdTimeline[i].time, dif: mr.dif, dea: mr.dea, macd: mr.macd }); }
+    for (let i = 0; i < liveTimeline.length; i++) { const mr = macdResult[i]; if (isNaN(mr.dif) || isNaN(mr.dea) || isNaN(mr.macd)) result.push({ time: liveTimeline[i].time, dif: null, dea: null, macd: null }); else result.push({ time: liveTimeline[i].time, dif: mr.dif, dea: mr.dea, macd: mr.macd }); }
     return result.filter((d) => d.dif != null);
-  }, [timeline, isTimelineActive]);
+  }, [liveTimeline, isTimelineActive]);
 
   const timelineSignals = useMemo(() => {
     // Skip the heaviest computation (~7000 condition evaluations) when not in timeline mode

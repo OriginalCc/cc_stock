@@ -90,15 +90,29 @@ const TIMELINE_REFRESH_INTERVAL = 1500; // 1.5s for timeline/quote auto-refresh 
 // ── Hook ──────────────────────────────────────────────
 
 export function useStockData() {
-  // Use consistent defaults between server and client to avoid hydration mismatch
-  // Then update from localStorage in useEffect after mount
-  const [symbol, setSymbol] = useState<string>(DEFAULT_SYMBOL);
+  // Read from localStorage during initialization to avoid hydration race
+  // Component is "use client" and won't SSR, so localStorage is safe here
+  const [symbol, setSymbol] = useState<string>(() => {
+    if (typeof window === 'undefined') return DEFAULT_SYMBOL;
+    try {
+      const saved = localStorage.getItem(LAST_STOCK_KEY);
+      if (saved && /^[0-9]{6}$/.test(saved)) return saved;
+    } catch {}
+    return DEFAULT_SYMBOL;
+  });
   const [quote, setQuote] = useState<StockQuote | null>(null);
   const [history, setHistory] = useState<KLineItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [timelinePrevClose, setTimelinePrevClose] = useState<number>(0);
   const [interval, setInterval_] = useState<TimeInterval>("1d");
-  const [chartMode, setChartMode] = useState<ChartMode>(DEFAULT_CHART_MODE);
+  const [chartMode, setChartMode] = useState<ChartMode>(() => {
+    if (typeof window === 'undefined') return DEFAULT_CHART_MODE;
+    try {
+      const saved = localStorage.getItem(LAST_CHART_MODE_KEY);
+      if (saved === "kline" || saved === "5d-timeline") return saved as ChartMode;
+    } catch {}
+    return DEFAULT_CHART_MODE;
+  });
   const [loading, setLoading] = useState(false);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,23 +121,6 @@ export function useStockData() {
     strength: "strong" | "medium" | "weak";
     reason: string;
   } | null>(null);
-
-  // Read from localStorage after mount to avoid hydration mismatch
-  const hydratedRef = useRef(false);
-  useEffect(() => {
-    if (hydratedRef.current) return;
-    hydratedRef.current = true;
-    try {
-      const savedSymbol = localStorage.getItem(LAST_STOCK_KEY);
-      if (savedSymbol && /^[0-9]{6}$/.test(savedSymbol) && savedSymbol !== DEFAULT_SYMBOL) {
-        queueMicrotask(() => setSymbol(savedSymbol));
-      }
-      const savedMode = localStorage.getItem(LAST_CHART_MODE_KEY);
-      if (savedMode === "kline" || savedMode === "5d-timeline") {
-        queueMicrotask(() => setChartMode(savedMode as ChartMode));
-      }
-    } catch {}
-  }, []);
 
   // Track initial fetch to prevent double-fetch
   const initialFetchDone = useRef(false);
@@ -161,9 +158,11 @@ export function useStockData() {
   // ── Fetch timeline + quote in a single request (optimized for initial page load) ──
   // Ref to track last data fingerprint for skip-if-unchanged optimization
   const lastTimelineFingerprint = useRef("");
-  const fetchTimelineWithQuote = useCallback(async (sym: string) => {
+  const fetchTimelineWithQuote = useCallback(async (sym: string, isRefresh = false) => {
     if (!checkAShare(sym)) return;
-    setTimelineLoading(true);
+    // Only show loading state on initial fetch, not on auto-refresh
+    // This prevents skeleton flash every 1.5s during trading hours
+    if (!isRefresh) setTimelineLoading(true);
     try {
       const data = await cachedFetch<{
         items: TimelineItem[];
@@ -202,7 +201,7 @@ export function useStockData() {
     } catch (err) {
       console.error("Timeline+Quote fetch error:", err);
     } finally {
-      setTimelineLoading(false);
+      if (!isRefresh) setTimelineLoading(false);
     }
   }, [checkAShare]);
 
@@ -390,8 +389,8 @@ export function useStockData() {
 
       const currentMode = chartMode;
       if (currentMode === "timeline" || currentMode === "5d-timeline") {
-        // Refresh timeline + quote together (single request)
-        fetchTimelineWithQuote(symbol);
+        // Refresh timeline + quote together (single request, isRefresh=true to skip loading state)
+        fetchTimelineWithQuote(symbol, true);
       } else {
         fetchQuote(symbol);
       }

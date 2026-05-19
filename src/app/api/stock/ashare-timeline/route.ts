@@ -43,33 +43,34 @@ export async function GET(request: NextRequest) {
   const cacheHeaders = { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` };
 
   try {
-    // When includeQuote=true, fetch quote and timeline IN PARALLEL for faster loading
-    // getAShareTimeline can fetch its own prevClose internally, so no need to wait
+    // When includeQuote=true, fetch quote FIRST, then pass prevClose to timeline
+    // This avoids getAShareTimeline making a duplicate quote API call internally
     if (includeQuote) {
-      const [quoteResult, timelineResult] = await Promise.all([
-        fetchGuarded(
-          `quote:${symbol}`,
-          async (signal) => {
-            try {
-              return await getAShareQuote(symbol);
-            } catch {
-              return null;
-            }
-          },
-          cacheTTL
-        ),
-        fetchGuarded(
-          `timeline:${symbol}`,
-          async (signal) => {
-            try {
-              return await getAShareTimeline(symbol);
-            } catch {
-              return { items: [], prevClose: 0 };
-            }
-          },
-          cacheTTL
-        ),
-      ]);
+      const quoteResult = await fetchGuarded(
+        `quote:${symbol}`,
+        async (signal) => {
+          try {
+            return await getAShareQuote(symbol);
+          } catch {
+            return null;
+          }
+        },
+        cacheTTL
+      );
+
+      const prevClose = quoteResult?.prevClose || 0;
+
+      const timelineResult = await fetchGuarded(
+        `timeline:${symbol}`,
+        async (signal) => {
+          try {
+            return await getAShareTimeline(symbol, prevClose);
+          } catch {
+            return { items: [], prevClose: 0 };
+          }
+        },
+        cacheTTL
+      );
 
       const response: any = {
         ...timelineResult,
