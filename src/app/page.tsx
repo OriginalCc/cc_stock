@@ -49,7 +49,6 @@ import {
   X, Clock, Zap, LineChart, CandlestickChart, GitBranch, Filter,
   Star, Bell, BellOff, Volume2, Newspaper, CalendarDays, Flame,
   History, ShieldCheck, Server, Scale, AlertTriangle, BookOpen, Info,
-  ChevronUp, ChevronDown,
 } from "lucide-react";
 
 export default function StockTAssistant() {
@@ -66,11 +65,10 @@ export default function StockTAssistant() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [rulesExpanded, setRulesExpanded] = useState<boolean>(true);
   const [autoExpanded, setAutoExpanded] = useState<boolean>(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ── Auto-expand rules in first 3 minutes of market open ──
+  // ── Auto-show opening reminder badge in first 3 minutes of market open ──
   useEffect(() => {
     if (chartMode !== "timeline") return;
     const checkMarketOpen = () => {
@@ -80,11 +78,10 @@ export default function StockTAssistant() {
       const minutes = h * 60 + m;
       // 9:30 (570) ~ 9:33 (573) = first 3 minutes of market open
       const isOpeningMinutes = minutes >= 570 && minutes < 573;
-      if (isOpeningMinutes && !rulesExpanded && !autoExpanded) {
-        setRulesExpanded(true);
+      if (isOpeningMinutes && !autoExpanded) {
         setAutoExpanded(true);
       }
-      // After 9:33, reset autoExpanded flag so user can manually toggle
+      // After 9:33, reset autoExpanded flag
       if (minutes >= 573 && autoExpanded) {
         setAutoExpanded(false);
       }
@@ -92,7 +89,7 @@ export default function StockTAssistant() {
     checkMarketOpen();
     const timer = setInterval(checkMarketOpen, 10000); // check every 10s
     return () => clearInterval(timer);
-  }, [chartMode, rulesExpanded, autoExpanded]);
+  }, [chartMode, autoExpanded]);
 
   // ── News state (passed to NewsAnalysisPanel) ──
   const [showNewsAnalysis, setShowNewsAnalysis] = useState(false);
@@ -777,23 +774,16 @@ export default function StockTAssistant() {
         {/* Strategy Admin Panel */}
         <StrategyAdminPanel onFactorsChanged={(factors) => setFactorOverrides(buildFactorOverridesFromDB(factors))} />
 
-        {/* Trading Rules Card */}
+        {/* Trading Rules Card — always visible from market open */}
         <Card className="border-border/50 shadow-sm mb-4">
           <CardHeader className="pb-2">
-            <button
-              onClick={() => setRulesExpanded(!rulesExpanded)}
-              className="flex items-center justify-between w-full"
-            >
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Scale className="w-4 h-4 text-amber-500" />
-                交易规矩
-                {autoExpanded && <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-amber-500/10 text-amber-600 border-amber-500/25 animate-pulse">🔔 开盘提醒</Badge>}
-              </CardTitle>
-              {rulesExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-            </button>
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Scale className="w-4 h-4 text-amber-500" />
+              交易规矩
+              {autoExpanded && <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-amber-500/10 text-amber-600 border-amber-500/25 animate-pulse">🔔 开盘提醒</Badge>}
+            </CardTitle>
           </CardHeader>
-          {rulesExpanded && (
-            <CardContent className="pt-0 space-y-3">
+          <CardContent className="pt-0 space-y-3">
               {/* ── 做T自检三问 ── */}
               <div className="p-3 rounded-lg border border-amber-500/30 bg-gradient-to-r from-amber-500/8 to-orange-500/5">
                 <div className="flex items-center gap-1.5 mb-2">
@@ -1321,7 +1311,6 @@ export default function StockTAssistant() {
                 </div>
               </div>
             </CardContent>
-          )}
         </Card>
         </>
         )}

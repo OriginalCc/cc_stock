@@ -257,8 +257,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
   // Stats section state
   const [statsExpanded, setStatsExpanded] = useState(false);
 
-  // Trading rules panel state
-  const [rulesExpanded, setRulesExpanded] = useState(true);
+  // Trading rules panel state (always visible, no toggle needed)
 
   // Mini timeline preview state
   const [previewStock, setPreviewStock] = useState<IntradayStock | null>(null);
@@ -965,21 +964,14 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
         </CardContent>
       </Card>
 
-      {/* Trading Rules Card */}
+      {/* Trading Rules Card — always visible */}
       <Card className="border-border/50 shadow-sm">
         <CardHeader className="pb-2">
-          <button
-            onClick={() => setRulesExpanded(!rulesExpanded)}
-            className="flex items-center justify-between w-full"
-          >
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Scale className="w-4 h-4 text-amber-500" />
               交易规矩
             </CardTitle>
-            {rulesExpanded ? <ChevronUpIcon className="w-4 h-4 text-muted-foreground" /> : <ChevronDownIcon className="w-4 h-4 text-muted-foreground" />}
-          </button>
         </CardHeader>
-        {rulesExpanded && (
           <CardContent className="pt-0 space-y-3">
             {/* ── 做T自检三问 ── */}
             <div className="p-3 rounded-lg border border-amber-500/30 bg-gradient-to-r from-amber-500/8 to-orange-500/5">
@@ -1507,8 +1499,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                 </div>
               </div>
             </div>
-          </CardContent>
-        )}
+            </CardContent>
       </Card>
 
       {/* Error */}
