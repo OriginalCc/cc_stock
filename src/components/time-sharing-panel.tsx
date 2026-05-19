@@ -2122,7 +2122,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         <ResponsiveContainer width="100%" height={isZoomed ? 620 : 530}>
           <ComposedChart
             data={zoomData}
-            margin={{ top: 36, right: 82, left: 2, bottom: 16 }}
+            margin={{ top: 36, right: 82, left: 2, bottom: 4 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
                 startTransition(() => setCrosshairIdx(state.activeTooltipIndex));
@@ -2431,7 +2431,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         };
 
         return (
-          <div className="px-2 py-1">
+          <div className="px-2 pt-0 pb-0.5">
             <div className="flex items-center gap-1.5 mb-0.5">
               <span className="text-[9px] text-muted-foreground font-medium select-none">主力意图</span>
               {segments.length > 0 && (
