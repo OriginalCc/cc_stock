@@ -20,7 +20,7 @@ import { analyzeFiveDayIntent, type FiveDayIntentResult, type DayIntentResult } 
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, ZoomIn, ZoomOut, Maximize2, ShieldAlert, TrendingUp, TrendingDown, Activity, Eye } from "lucide-react";
+import { RefreshCw, ZoomIn, ZoomOut, Maximize2, ShieldAlert, TrendingUp, TrendingDown, Activity, Eye, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 
 // ── Types ──
 
@@ -435,6 +435,100 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
   );
 }
 
+// ── Intent Explanation Panel (collapsible) ──
+
+function IntentExplanationPanel() {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-lg border border-border bg-card/50 mt-2 mb-1">
+      <button
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors"
+        onClick={() => setExpanded(prev => !prev)}
+      >
+        <BookOpen className="w-4 h-4 text-muted-foreground shrink-0" />
+        <span className="text-sm font-medium text-foreground">主力意图识别原理说明</span>
+        {expanded
+          ? <ChevronUp className="w-4 h-4 text-muted-foreground ml-auto" />
+          : <ChevronDown className="w-4 h-4 text-muted-foreground ml-auto" />
+        }
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4 text-xs text-muted-foreground leading-relaxed">
+          {/* 核心原理 */}
+          <div>
+            <h4 className="text-sm font-semibold text-foreground mb-1.5">核心原理</h4>
+            <p>主力资金的操作必然在<strong className="text-foreground">量价关系</strong>上留下痕迹。通过分析5日分时图中的成交量与价格走势的配合模式，可以推断主力是在悄悄买入（吸筹）、高位抛售（出货）、震仓洗盘（洗盘）还是强力上攻（拉升）。</p>
+          </div>
+
+          {/* 吸筹 */}
+          <div className="rounded-md border border-green-500/20 bg-green-500/5 p-3">
+            <h4 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-1.5">🟢 吸筹 — 主力悄悄买入</h4>
+            <div className="space-y-1">
+              <p><strong className="text-foreground">量价配合：</strong>上涨时放量、下跌时缩量，说明主力在上涨时积极买入，下跌时不愿卖出</p>
+              <p><strong className="text-foreground">均价线回归：</strong>价格围绕均价线震荡回升，说明主力在均价线附近持续吸筹</p>
+              <p><strong className="text-foreground">V型回升：</strong>早盘下探后午后回升，主力利用早盘打压吸筹</p>
+              <p><strong className="text-foreground">尾盘放量：</strong>尾盘成交量大于开盘，主力在收盘前抢筹</p>
+              <p><strong className="text-foreground">量能均匀：</strong>成交量分布均匀无剧烈波动，说明主力稳步吸筹而非散户冲动交易</p>
+            </div>
+          </div>
+
+          {/* 出货 */}
+          <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3">
+            <h4 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-1.5">🔴 出货 — 主力高位抛售</h4>
+            <div className="space-y-1">
+              <p><strong className="text-foreground">下跌放量：</strong>价格下跌伴随大量成交，主力借高位大量抛售筹码</p>
+              <p><strong className="text-foreground">冲高回落：</strong>价格冲高后跌破均价线，主力拉高引诱跟风后出货</p>
+              <p><strong className="text-foreground">早盘冲高回落：</strong>开盘快速拉高后持续下跌，利用开盘人气派发</p>
+              <p><strong className="text-foreground">假突破：</strong>放量上攻但收盘偏弱，主力制造突破假象吸引买盘后出货</p>
+              <p><strong className="text-foreground">开盘放量滞涨：</strong>开盘成交量很大但涨幅有限，主力趁开盘活跃出货</p>
+              <p><strong className="text-foreground">尾盘放量下杀：</strong>收盘前放量下跌，主力尾盘集中抛售</p>
+            </div>
+          </div>
+
+          {/* 洗盘 */}
+          <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3">
+            <h4 className="text-sm font-semibold text-yellow-600 dark:text-yellow-400 mb-1.5">🟡 洗盘 — 主力震仓清洗浮筹</h4>
+            <div className="space-y-1">
+              <p><strong className="text-foreground">快速下探收回：</strong>日内大幅下探后迅速收回，主力故意打压制造恐慌</p>
+              <p><strong className="text-foreground">大振幅小涨跌：</strong>日内振幅大但收盘变化小，说明主力在震荡中清洗浮筹</p>
+              <p><strong className="text-foreground">低位放量缩量回升：</strong>低位出现放量（恐慌盘涌出），随后缩量回升（主力不再抛售）</p>
+            </div>
+          </div>
+
+          {/* 拉升 */}
+          <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3">
+            <h4 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-1.5">🚀 拉升 — 主力强力上攻</h4>
+            <div className="space-y-1">
+              <p><strong className="text-foreground">放量拉升：</strong>涨幅大于1.5%且上涨段成交量占比高，主力大举进攻</p>
+              <p><strong className="text-foreground">收盘近高点：</strong>收盘价接近日内最高价，说明主力全天控盘且无出货意愿</p>
+              <p><strong className="text-foreground">午后突破：</strong>午后放量突破早盘高点，主力选择午后发力</p>
+              <p><strong className="text-foreground">远超均价线：</strong>价格远高于均价线，说明主力持续推升</p>
+              <p><strong className="text-foreground">量能递增：</strong>成交量逐步放大，资金持续涌入</p>
+            </div>
+          </div>
+
+          {/* 综合判断 */}
+          <div>
+            <h4 className="text-sm font-semibold text-foreground mb-1.5">五日综合判断逻辑</h4>
+            <div className="space-y-1">
+              <p>1. 每日独立分析量价特征，计算吸筹/出货/洗盘/拉升各项评分</p>
+              <p>2. 取评分最高的意图作为当日判断，评分越高置信度越高</p>
+              <p>3. 五日综合采用<strong className="text-foreground">时间加权</strong>：越近的日期权重越大（最近一日权重最高）</p>
+              <p>4. 根据综合得分判断主力阶段：底部吸筹区 / 震荡吸筹区 / 拉升初期 / 拉升后期 / 高位出货区 / 洗盘整理区</p>
+            </div>
+          </div>
+
+          {/* 免责 */}
+          <div className="pt-1 border-t border-border">
+            <p className="text-[11px] italic">以上识别逻辑基于量价关系的技术分析，仅供参考，不构成投资建议。主力行为可能存在伪装，实际操作请结合多维度信息综合判断。</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ──
 
 const MIN_VISIBLE_POINTS = 60;  // ~1 hour of 1-min data
@@ -714,6 +808,9 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
 
       {/* ── Institutional Intent Analysis ── */}
       {intentResult && <InstitutionalIntentPanel result={intentResult} />}
+
+      {/* Intent Explanation Panel */}
+      <IntentExplanationPanel />
 
       {/* Zoom Controls & Indicator */}
       <div className="flex items-center gap-1 px-1 mb-1">
