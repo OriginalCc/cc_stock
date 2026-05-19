@@ -965,10 +965,10 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
       </Card>
 
       {/* Trading Rules Card — always visible */}
-      <Card className="border-border/50 shadow-sm">
-        <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Scale className="w-4 h-4 text-amber-500" />
+      <Card className="border-2 border-amber-500/40 border-l-4 border-l-amber-500 shadow-lg shadow-amber-500/10 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent">
+        <CardHeader className="pb-2 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-b border-amber-500/20">
+            <CardTitle className="text-base font-bold flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <Scale className="w-5 h-5 text-amber-500 drop-shadow-[0_0_3px_rgba(245,158,11,0.5)]" />
               交易规矩
             </CardTitle>
         </CardHeader>
