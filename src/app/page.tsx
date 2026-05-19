@@ -30,7 +30,6 @@ const NewsAnalysisPanel = dynamic(() => import("@/components/news-analysis-panel
 const SignalSummaryPanel = dynamic(() => import("@/components/signal-summary-panel").then(m => ({ default: m.SignalSummaryPanel })), { ssr: false, loading: () => <div className="h-[400px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载信号汇总...</span></div> });
 const BaotaDeployGuide = dynamic(() => import("@/components/baota-deploy-guide"), { ssr: false, loading: () => <div className="h-[400px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载部署指南...</span></div> });
 const TSuitabilityScore = dynamic(() => import("@/components/t-suitability-score").then(m => ({ default: m.TSuitabilityScore })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载适宜度评分...</span></div> });
-const TTradeJournal = dynamic(() => import("@/components/t-trade-journal").then(m => ({ default: m.TTradeJournal })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载做T记录...</span></div> });
 const RiskAlertPanel = dynamic(() => import("@/components/risk-alert-panel").then(m => ({ default: m.RiskAlertPanel })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载风险仪表盘...</span></div> });
 const TradingRulesCard = dynamic(() => import("@/components/trading-rules-card").then(m => ({ default: m.TradingRulesCard })), { ssr: false, loading: () => <div className="h-[120px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载交易规矩...</span></div> });
 const PositionSignalCard = dynamic(() => import("@/components/position-signal-card").then(m => ({ default: m.PositionSignalCard })), { ssr: false, loading: () => <div className="h-[60px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载仓位信号...</span></div> });
@@ -770,10 +769,6 @@ export default function StockTAssistant() {
           <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
         )}
 
-        {/* T-Trade Journal — always show in timeline mode from market open */}
-        {chartMode === "timeline" && (
-          <TTradeJournal symbol={symbol} stockName={quote?.name} currentPrice={quote?.price} />
-        )}
 
         {/* News Analysis Panel */}
         <NewsAnalysisPanel symbol={symbol} stockName={quote?.name} isAShare={isAShareStock} quote={quote} sectorInfo={sectorInfo} newsData={newsData} setNewsData={setNewsData} newsLoading={newsLoading} setNewsLoading={setNewsLoading} showNewsAnalysis={showNewsAnalysis} setShowNewsAnalysis={setShowNewsAnalysis} />
