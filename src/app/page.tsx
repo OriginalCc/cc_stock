@@ -671,8 +671,8 @@ export default function StockTAssistant() {
         {quote && isTimelineActive && liveTimeline.length > 0 && (
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Card className="border overflow-hidden">
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex items-center gap-4">
+              <CardContent className="p-2 sm:p-2.5">
+                <div className="flex items-center gap-3">
                   <div className="relative shrink-0">
                     <svg width="72" height="72" viewBox="0 0 72 72">
                       <circle cx="36" cy="36" r="30" fill="none" stroke="currentColor" className="text-muted/30" strokeWidth="6" strokeDasharray={`${Math.PI * 30}`} strokeDashoffset="0" transform="rotate(-90 36 36)" strokeLinecap="round" />
@@ -683,7 +683,7 @@ export default function StockTAssistant() {
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-muted-foreground mb-1">做T指数</div>
                     <div className={`text-base font-bold ${getTIndexLabelColor(tIndex)}`}>{getTIndexLabel(tIndex)}</div>
-                    <div className="mt-2 h-2 w-full bg-muted/30 rounded-full overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${tIndex}%`, backgroundColor: getTIndexColor(tIndex) }} /></div>
+                    <div className="mt-1 h-2 w-full bg-muted/30 rounded-full overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${tIndex}%`, backgroundColor: getTIndexColor(tIndex) }} /></div>
                     <div className="flex justify-between mt-1 text-[9px] text-muted-foreground"><span>卖出</span><span>观望</span><span>做T</span><span>优质</span></div>
                   </div>
                   {latestTimelineSignal?.strength === 'strong' && (
@@ -693,8 +693,8 @@ export default function StockTAssistant() {
               </CardContent>
             </Card>
             <Card className={`border overflow-hidden ${smartAction.bgColor}`}>
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex items-start gap-3">
+              <CardContent className="p-2 sm:p-2.5">
+                <div className="flex items-start gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-muted-foreground mb-1">智能操作建议</div>
                     <div className={`text-lg font-bold ${smartAction.color}`}>{smartAction.icon} {smartAction.text}</div>
