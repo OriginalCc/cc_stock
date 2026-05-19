@@ -358,13 +358,27 @@ function VolumeBarShape(props: any) {
   return <rect x={x} y={y} width={barWidth} height={height} fill={isUp ? "rgba(239,68,68,1)" : "rgba(22,163,74,1)"} />;
 }
 
-// ── Institutional Intent Analysis Panel ──
+// ── Institutional Intent Analysis Panel (V2) ──
 
 function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
-  const { overallIntent, dailyIntents, trendPhase, riskLevel } = result;
+  const { overallIntent, dailyIntents, trendPhase, riskLevel, crossDayPattern } = result;
 
   const riskLabel = ["", "低", "较低", "中等", "较高", "高"][riskLevel] || "中等";
   const riskColor = riskLevel >= 4 ? "text-red-500" : riskLevel >= 3 ? "text-yellow-500" : "text-green-500";
+
+  // Score bar visualization
+  const ScoreBar = ({ label, score, maxScore, colorClass }: { label: string; score: number; maxScore: number; colorClass: string }) => {
+    const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+    return (
+      <div className="flex items-center gap-2 text-[11px]">
+        <span className="w-7 text-muted-foreground shrink-0">{label}</span>
+        <div className="flex-1 h-2.5 bg-muted/40 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full ${colorClass} transition-all duration-500`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className={`w-6 text-right font-mono ${pct > 50 ? colorClass : 'text-muted-foreground'}`}>{pct}%</span>
+      </div>
+    );
+  };
 
   return (
     <div className={`rounded-lg border-2 ${overallIntent.borderColor} ${overallIntent.bgColor} p-4 mb-2`}>
@@ -388,6 +402,15 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
         </div>
       </div>
 
+      {/* V2: Cross-day pattern */}
+      {crossDayPattern && crossDayPattern !== "数据不足" && crossDayPattern !== "信号混合" && (
+        <div className="mt-2 flex items-center gap-2">
+          <Activity className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium text-foreground">跨日形态：</span>
+          <span className="text-xs font-semibold text-foreground">{crossDayPattern}</span>
+        </div>
+      )}
+
       {/* Reasons */}
       {overallIntent.reasons.length > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
@@ -400,29 +423,40 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
       {/* Daily breakdown */}
       {dailyIntents.length > 0 && (
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-          {dailyIntents.map((d, i) => (
-            <div
-              key={i}
-              className={`rounded-md border ${d.intent.borderColor} ${d.intent.bgColor} px-3 py-2`}
-            >
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-sm font-medium text-foreground">{d.dayLabel}</span>
-                <span className="text-sm">{d.intent.icon}</span>
-                <span className={`text-xs font-bold ${d.intent.color}`}>{d.intent.intent}</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className={`font-mono ${d.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
-                  {d.changePercent >= 0 ? "+" : ""}{d.changePercent.toFixed(2)}%
-                </span>
-                <span className="text-muted-foreground">量{formatVolume(d.totalVolume)}</span>
-              </div>
-              {d.intent.reasons.length > 0 && (
-                <div className="text-[11px] text-muted-foreground mt-1 leading-snug">
-                  {d.intent.reasons[0]}
+          {dailyIntents.map((d, i) => {
+            const maxS = Math.max(d.scores.accumulation, d.scores.distribution, d.scores.shakeout, d.scores.markup, 1);
+            return (
+              <div
+                key={i}
+                className={`rounded-md border ${d.intent.borderColor} ${d.intent.bgColor} px-3 py-2`}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-sm font-medium text-foreground">{d.dayLabel}</span>
+                  <span className="text-sm">{d.intent.icon}</span>
+                  <span className={`text-xs font-bold ${d.intent.color}`}>{d.intent.intent}</span>
+                  <span className="text-[10px] text-muted-foreground ml-auto">{d.intent.confidence}%</span>
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className={`font-mono ${d.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
+                    {d.changePercent >= 0 ? "+" : ""}{d.changePercent.toFixed(2)}%
+                  </span>
+                  <span className="text-muted-foreground">量{formatVolume(d.totalVolume)}</span>
+                </div>
+                {/* V2: Mini score bars */}
+                <div className="mt-1.5 space-y-0.5">
+                  <ScoreBar label="吸筹" score={d.scores.accumulation} maxScore={maxS} colorClass="bg-green-500" />
+                  <ScoreBar label="出货" score={d.scores.distribution} maxScore={maxS} colorClass="bg-red-500" />
+                  <ScoreBar label="洗盘" score={d.scores.shakeout} maxScore={maxS} colorClass="bg-yellow-500" />
+                  <ScoreBar label="拉升" score={d.scores.markup} maxScore={maxS} colorClass="bg-orange-500" />
+                </div>
+                {d.intent.reasons.length > 0 && (
+                  <div className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                    {d.intent.reasons[0]}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -435,7 +469,7 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
   );
 }
 
-// ── Intent Explanation Panel (collapsible) ──
+// ── Intent Explanation Panel (V2, collapsible) ──
 
 function IntentExplanationPanel() {
   const [expanded, setExpanded] = useState(false);
@@ -447,7 +481,8 @@ function IntentExplanationPanel() {
         onClick={() => setExpanded(prev => !prev)}
       >
         <BookOpen className="w-4 h-4 text-muted-foreground shrink-0" />
-        <span className="text-sm font-medium text-foreground">主力意图识别原理说明</span>
+        <span className="text-sm font-medium text-foreground">主力意图识别原理说明 (V2)</span>
+        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-1">优化版</Badge>
         {expanded
           ? <ChevronUp className="w-4 h-4 text-muted-foreground ml-auto" />
           : <ChevronDown className="w-4 h-4 text-muted-foreground ml-auto" />
@@ -458,18 +493,25 @@ function IntentExplanationPanel() {
           {/* 核心原理 */}
           <div>
             <h4 className="text-sm font-semibold text-foreground mb-1.5">核心原理</h4>
-            <p>主力资金的操作必然在<strong className="text-foreground">量价关系</strong>上留下痕迹。通过分析5日分时图中的成交量与价格走势的配合模式，可以推断主力是在悄悄买入（吸筹）、高位抛售（出货）、震仓洗盘（洗盘）还是强力上攻（拉升）。</p>
+            <p>主力资金的操作必然在<strong className="text-foreground">量价关系</strong>上留下痕迹。V2引擎通过三维度分析来识别主力意图：</p>
+            <div className="mt-1.5 space-y-0.5">
+              <p>• <strong className="text-foreground">量能趋势分析</strong> — 成交量递增/递减/脉冲/集中度</p>
+              <p>• <strong className="text-foreground">价格形态分析</strong> — K线实体/上下影线/均价线位置</p>
+              <p>• <strong className="text-foreground">跨日关联分析</strong> — 多日意图演进模式识别</p>
+            </div>
           </div>
 
           {/* 吸筹 */}
           <div className="rounded-md border border-green-500/20 bg-green-500/5 p-3">
             <h4 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-1.5">🟢 吸筹 — 主力悄悄买入</h4>
             <div className="space-y-1">
-              <p><strong className="text-foreground">量价配合：</strong>上涨时放量、下跌时缩量，说明主力在上涨时积极买入，下跌时不愿卖出</p>
+              <p><strong className="text-foreground">量价配合：</strong>上涨时放量、下跌时缩量（上涨量占比&gt;55%），说明主力在上涨时积极买入，下跌时不愿卖出</p>
               <p><strong className="text-foreground">均价线回归：</strong>价格围绕均价线震荡回升，说明主力在均价线附近持续吸筹</p>
               <p><strong className="text-foreground">V型回升：</strong>早盘下探后午后回升，主力利用早盘打压吸筹</p>
-              <p><strong className="text-foreground">尾盘放量：</strong>尾盘成交量大于开盘，主力在收盘前抢筹</p>
-              <p><strong className="text-foreground">量能均匀：</strong>成交量分布均匀无剧烈波动，说明主力稳步吸筹而非散户冲动交易</p>
+              <p><strong className="text-foreground">尾盘放量：</strong>尾盘成交量大于开盘量，主力在收盘前抢筹</p>
+              <p><strong className="text-foreground">缩量横盘整理：</strong>振幅小、量能平稳，主力暗中吸筹避免引起注意 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
+              <p><strong className="text-foreground">放量上攻后缩量回踩：</strong>先放量上涨再缩量回调，确认吸筹而非出货 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
+              <p><strong className="text-foreground">量能递增微涨：</strong>成交量逐步放大但涨幅不大，主力持续低调吸筹 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
             </div>
           </div>
 
@@ -477,12 +519,15 @@ function IntentExplanationPanel() {
           <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3">
             <h4 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-1.5">🔴 出货 — 主力高位抛售</h4>
             <div className="space-y-1">
-              <p><strong className="text-foreground">下跌放量：</strong>价格下跌伴随大量成交，主力借高位大量抛售筹码</p>
+              <p><strong className="text-foreground">下跌放量：</strong>价格下跌伴随大量成交（下跌量占比&gt;55%），主力集中抛售筹码</p>
               <p><strong className="text-foreground">冲高回落：</strong>价格冲高后跌破均价线，主力拉高引诱跟风后出货</p>
               <p><strong className="text-foreground">早盘冲高回落：</strong>开盘快速拉高后持续下跌，利用开盘人气派发</p>
+              <p><strong className="text-foreground">诱多出货：</strong>盘中放量拉升但收盘偏弱，制造突破假象吸引买盘后出货 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
               <p><strong className="text-foreground">假突破：</strong>放量上攻但收盘偏弱，主力制造突破假象吸引买盘后出货</p>
               <p><strong className="text-foreground">开盘放量滞涨：</strong>开盘成交量很大但涨幅有限，主力趁开盘活跃出货</p>
               <p><strong className="text-foreground">尾盘放量下杀：</strong>收盘前放量下跌，主力尾盘集中抛售</p>
+              <p><strong className="text-foreground">长上影线：</strong>上影线占比超40%，高位抛压沉重 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
+              <p><strong className="text-foreground">高位放量震荡：</strong>价格远超均价线且量能剧烈波动，高位派发 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
             </div>
           </div>
 
@@ -493,29 +538,51 @@ function IntentExplanationPanel() {
               <p><strong className="text-foreground">快速下探收回：</strong>日内大幅下探后迅速收回，主力故意打压制造恐慌</p>
               <p><strong className="text-foreground">大振幅小涨跌：</strong>日内振幅大但收盘变化小，说明主力在震荡中清洗浮筹</p>
               <p><strong className="text-foreground">低位放量缩量回升：</strong>低位出现放量（恐慌盘涌出），随后缩量回升（主力不再抛售）</p>
+              <p><strong className="text-foreground">缩量下跌：</strong>量缩价跌但无恐慌抛售，说明主力并未出逃 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-yellow-500">V2</Badge></p>
+              <p><strong className="text-foreground">长下影线收盘偏强：</strong>下影线长+收盘在区间上半部，下方承接有力 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-yellow-500">V2</Badge></p>
+              <p><strong className="text-foreground">V型洗盘：</strong>深跌后快速拉回，主力借恐慌吸筹 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-yellow-500">V2</Badge></p>
             </div>
           </div>
 
           {/* 拉升 */}
-          <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3">
-            <h4 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-1.5">🚀 拉升 — 主力强力上攻</h4>
+          <div className="rounded-md border border-orange-500/20 bg-orange-500/5 p-3">
+            <h4 className="text-sm font-semibold text-orange-600 dark:text-orange-400 mb-1.5">🚀 拉升 — 主力强力上攻</h4>
             <div className="space-y-1">
               <p><strong className="text-foreground">放量拉升：</strong>涨幅大于1.5%且上涨段成交量占比高，主力大举进攻</p>
               <p><strong className="text-foreground">收盘近高点：</strong>收盘价接近日内最高价，说明主力全天控盘且无出货意愿</p>
               <p><strong className="text-foreground">午后突破：</strong>午后放量突破早盘高点，主力选择午后发力</p>
               <p><strong className="text-foreground">远超均价线：</strong>价格远高于均价线，说明主力持续推升</p>
               <p><strong className="text-foreground">量能递增：</strong>成交量逐步放大，资金持续涌入</p>
+              <p><strong className="text-foreground">量价齐升：</strong>量能递增+脉冲方向朝上，强劲上攻动能 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-orange-500">V2</Badge></p>
+              <p><strong className="text-foreground">跳空高开全天强势：</strong>高开后全天维持高位 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-orange-500">V2</Badge></p>
+              <p><strong className="text-foreground">K线实体饱满：</strong>实体占振幅60%以上，上攻坚决 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-orange-500">V2</Badge></p>
+            </div>
+          </div>
+
+          {/* V2: 跨日形态 */}
+          <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-3">
+            <h4 className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-1.5">🔗 跨日形态识别 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-blue-500">V2</Badge></h4>
+            <div className="space-y-1">
+              <p><strong className="text-foreground">连续吸筹蓄势：</strong>多日吸筹后有望拉升，关注放量突破信号</p>
+              <p><strong className="text-foreground">吸筹转拉升：</strong>主力吸筹完毕开始拉升，上涨有量能支撑</p>
+              <p><strong className="text-foreground">拉升转出货：</strong>主力拉高后开始派发，警惕继续下跌</p>
+              <p><strong className="text-foreground">连续出货：</strong>多日呈现出货特征，主力持续派发，风险较高</p>
+              <p><strong className="text-foreground">洗盘后再次拉升：</strong>上涨中继形态，洗盘后继续上攻，趋势健康</p>
+              <p><strong className="text-foreground">拉升中洗盘 / 吸筹后洗盘：</strong>上涨途中的洗盘整理，可能是拉升前最后一次清洗</p>
             </div>
           </div>
 
           {/* 综合判断 */}
           <div>
-            <h4 className="text-sm font-semibold text-foreground mb-1.5">五日综合判断逻辑</h4>
+            <h4 className="text-sm font-semibold text-foreground mb-1.5">五日综合判断逻辑 (V2)</h4>
             <div className="space-y-1">
-              <p>1. 每日独立分析量价特征，计算吸筹/出货/洗盘/拉升各项评分</p>
-              <p>2. 取评分最高的意图作为当日判断，评分越高置信度越高</p>
-              <p>3. 五日综合采用<strong className="text-foreground">时间加权</strong>：越近的日期权重越大（最近一日权重最高）</p>
-              <p>4. 根据综合得分判断主力阶段：底部吸筹区 / 震荡吸筹区 / 拉升初期 / 拉升后期 / 高位出货区 / 洗盘整理区</p>
+              <p>1. 每日独立分析量价特征，使用8段细分计算吸筹/出货/洗盘/拉升各项评分</p>
+              <p>2. V2新增<strong className="text-foreground">量能趋势分析</strong>：递增/递减/脉冲/集中度，提供更精细的量能判断</p>
+              <p>3. V2新增<strong className="text-foreground">价格形态分析</strong>：K线实体比/上下影线/均价线偏离度</p>
+              <p>4. 取评分最高的意图作为当日判断，<strong className="text-foreground">置信度基于评分差距</strong>计算（差距越大越确定）</p>
+              <p>5. 五日综合采用<strong className="text-foreground">指数时间加权</strong>（1.6的幂次）：越近的日期权重越大</p>
+              <p>6. V2新增<strong className="text-foreground">跨日形态识别</strong>：识别吸筹→拉升、拉升→出货等演进模式</p>
+              <p>7. 根据综合得分判断主力阶段：底部吸筹区 / 震荡吸筹区 / 拉升初期 / 拉升后期 / 高位出货区 / 洗盘整理区</p>
             </div>
           </div>
 
