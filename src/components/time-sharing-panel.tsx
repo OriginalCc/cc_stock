@@ -1404,6 +1404,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   sectorRegime,
   sectorInfo,
   pvMarkers,
+  stockName,
 }: {
   data: TimelineItem[];
   prevClose: number;
