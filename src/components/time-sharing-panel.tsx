@@ -1063,41 +1063,56 @@ function IntentSegmentOverlay(props: any) {
     const rectWidth = (xEnd - xStart) + xPad * 2;
     const plotTop = offset.top;
     const plotHeight = offset.height;
-    const rectY = plotTop;
-    const rectHeight = plotHeight;
 
-    // Background band
-    elements.push(
-      <rect
-        key={`intent-bg-${si}`}
-        x={rectX}
-        y={rectY}
-        width={rectWidth}
-        height={rectHeight}
-        fill={seg.fillColor}
-        rx={2}
-      />
-    );
+    // Calculate the average Y position of the price line within this segment
+    const segAvgY = (segMinY + segMaxY) / 2;
 
-    // Top border line
+    // Determine if intent is bullish (above line) or bearish (below line)
+    // 吸筹/拉升/震荡 → above the price line (lower Y = higher on screen)
+    // 出货/洗盘 → below the price line (higher Y = lower on screen)
+    const isBullishIntent = seg.intent === "吸筹" || seg.intent === "拉升" || seg.intent === "震荡";
+
+    // Background band: only shade the relevant half relative to the price line
+    const rectY = isBullishIntent ? plotTop : segAvgY;
+    const rectHeight = isBullishIntent ? (segAvgY - plotTop) : (plotTop + plotHeight - segAvgY);
+
+    if (rectHeight > 0) {
+      elements.push(
+        <rect
+          key={`intent-bg-${si}`}
+          x={rectX}
+          y={rectY}
+          width={rectWidth}
+          height={rectHeight}
+          fill={seg.fillColor}
+          rx={2}
+        />
+      );
+    }
+
+    // Border line along the price line edge of the segment
     elements.push(
       <line
         key={`intent-line-${si}`}
         x1={rectX}
-        y1={plotTop + 1}
+        y1={segAvgY}
         x2={rectX + rectWidth}
-        y2={plotTop + 1}
-        stroke={seg.intent === "吸筹" || seg.intent === "拉升" ? "rgba(239,68,68,0.35)" : seg.intent === "出货" ? "rgba(22,163,74,0.35)" : seg.intent === "洗盘" ? "rgba(234,179,8,0.35)" : "rgba(156,163,175,0.2)"}
-        strokeWidth={2}
+        y2={segAvgY}
+        stroke={seg.intent === "吸筹" || seg.intent === "拉升" ? "rgba(239,68,68,0.5)" : seg.intent === "出货" ? "rgba(22,163,74,0.5)" : seg.intent === "洗盘" ? "rgba(234,179,8,0.5)" : "rgba(156,163,175,0.3)"}
+        strokeWidth={1.5}
+        strokeDasharray="4 2"
       />
     );
 
-    // Label pill at the top of the segment
+    // Label pill positioned relative to the price line
     const intentLabel = seg.intent;
     const labelW = intentLabel.length * 9 + 16;
     const labelH = 16;
     const labelX = rectX + rectWidth / 2;
-    const labelY = plotTop + 10;
+    // Above line: label center is above the price line; Below line: label center is below
+    const labelY = isBullishIntent
+      ? Math.max(plotTop + labelH / 2 + 4, segAvgY - labelH / 2 - 8)
+      : Math.min(plotTop + plotHeight - labelH / 2 - 4, segAvgY + labelH / 2 + 8);
 
     let pillFill: string;
     let pillStroke: string;
@@ -1155,11 +1170,11 @@ function IntentSegmentOverlay(props: any) {
         >
           {intentLabel}
         </text>
-        {/* Small reason text below */}
+        {/* Small reason text — direction depends on label position relative to line */}
         {seg.topReason && seg.topReason !== "无明显方向" && (
           <text
             x={labelX}
-            y={labelY + labelH / 2 + 8}
+            y={isBullishIntent ? labelY - labelH / 2 - 6 : labelY + labelH / 2 + 8}
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize={7}
