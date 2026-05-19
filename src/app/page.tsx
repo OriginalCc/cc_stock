@@ -667,16 +667,6 @@ export default function StockTAssistant() {
           </CardContent>
         </Card>
 
-        {/* Position Signal Card — dynamic 3-dimension position indicator */}
-        <PositionSignalCard
-          indexRegime={szIndexRegime}
-          sectorRegime={sectorRegime}
-          stockChangePercent={quote?.changePercent}
-          stockName={quote?.name}
-          indexLabel={INDEX_CONFIG[activeIndexKey]?.label || "深证"}
-          sectorName={sectorInfo?.name}
-        />
-
         {/* T-Index & Smart Action Panel (only in timeline modes) */}
         {quote && isTimelineActive && liveTimeline.length > 0 && (
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -726,6 +716,16 @@ export default function StockTAssistant() {
             </Card>
           </div>
         )}
+
+        {/* Position Signal Card — dynamic 3-dimension position indicator */}
+        <PositionSignalCard
+          indexRegime={szIndexRegime}
+          sectorRegime={sectorRegime}
+          stockChangePercent={quote?.changePercent}
+          stockName={quote?.name}
+          indexLabel={INDEX_CONFIG[activeIndexKey]?.label || "深证"}
+          sectorName={sectorInfo?.name}
+        />
 
         {/* Chart Mode & Interval Selector */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
