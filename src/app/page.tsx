@@ -766,8 +766,8 @@ export default function StockTAssistant() {
           <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
         )}
 
-        {/* T-Trade Journal — only in timeline mode */}
-        {chartMode === "timeline" && liveTimeline.length > 0 && (
+        {/* T-Trade Journal — always show in timeline mode from market open */}
+        {chartMode === "timeline" && (
           <TTradeJournal symbol={symbol} stockName={quote?.name} currentPrice={quote?.price} />
         )}
 
