@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  AlertTriangle, Zap, Clock, Volume2, Activity, Scale, BookOpen, Info,
+  AlertTriangle, Zap, Clock, Volume2, Activity, Scale, BookOpen, Info, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 interface TradingRulesCardProps {
@@ -12,16 +12,27 @@ interface TradingRulesCardProps {
 }
 
 export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
+  // null = no manual override; true/false = user explicitly toggled
+  const [manualOverride, setManualOverride] = useState<boolean | null>(null);
+
+  // Show expanded if: user explicitly expanded, or autoExpanded is active (and user hasn't manually collapsed)
+  const expanded = manualOverride !== null ? manualOverride : !!autoExpanded;
+
   return (
     <Card className="border-2 border-amber-500/40 border-l-4 border-l-amber-500 shadow-lg shadow-amber-500/10 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent mb-4">
-      <CardHeader className="pb-2 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-b border-amber-500/20">
+      <CardHeader
+        className="pb-2 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-b border-amber-500/20 cursor-pointer select-none"
+        onClick={() => setManualOverride(prev => !prev)}
+      >
         <CardTitle className="text-base font-bold flex items-center gap-2 text-amber-700 dark:text-amber-400">
+          {expanded ? <ChevronDown className="w-4 h-4 text-amber-500" /> : <ChevronRight className="w-4 h-4 text-amber-500" />}
           <Scale className="w-5 h-5 text-amber-500 drop-shadow-[0_0_3px_rgba(245,158,11,0.5)]" />
           交易规矩
           {autoExpanded && <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-amber-500/10 text-amber-600 border-amber-500/25 animate-pulse">🔔 开盘提醒</Badge>}
+          <span className="text-[10px] font-normal text-muted-foreground ml-auto">{expanded ? "点击收起" : "点击展开"}</span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-0 space-y-3">
+      {expanded && <CardContent className="pt-0 space-y-3">
         {/* ── 做T自检三问 ── */}
         <div className="p-3 rounded-lg border border-amber-500/30 bg-gradient-to-r from-amber-500/8 to-orange-500/5">
           <div className="flex items-center gap-1.5 mb-2">
@@ -547,7 +558,7 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
             </div>
           </div>
         </div>
-      </CardContent>
+      </CardContent>}
     </Card>
   );
 }
