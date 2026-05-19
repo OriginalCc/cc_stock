@@ -219,7 +219,7 @@ function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): 
   const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
   const pillH = 16;
 
-  const labelY = isAbove ? y - 38 : y + 26;
+  const labelY = isAbove ? y - 52 : y + 36;
 
   return { isAbove, labelY, pillW, pillH, displayLabel };
 }
@@ -664,8 +664,8 @@ function computeTimelineSignalElements(
     const labelW = textWidth + padX * 2;
     const labelH = 14;
 
-    const markerOffset = 22;
-    const labelGap = 8;
+    const markerOffset = 30;
+    const labelGap = 14;
     let labelY: number;
     if (isBuy) {
       labelY = m.y + markerOffset + labelGap;
