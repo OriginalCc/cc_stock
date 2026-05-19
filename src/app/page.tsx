@@ -716,7 +716,8 @@ export default function StockTAssistant() {
           </div>
         )}
 
-        {/* Position Signal Card — dynamic 3-dimension position indicator */}
+        {/* Position Signal Card — hidden in 5d-timeline mode */}
+        {chartMode !== "5d-timeline" && (
         <PositionSignalCard
           indexRegime={szIndexRegime}
           sectorRegime={sectorRegime}
@@ -725,6 +726,7 @@ export default function StockTAssistant() {
           indexLabel={INDEX_CONFIG[activeIndexKey]?.label || "深证"}
           sectorName={sectorInfo?.name}
         />
+        )}
 
         {/* Chart Mode & Interval Selector */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
