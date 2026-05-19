@@ -444,8 +444,8 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
                 </div>
                 {/* V2: Mini score bars */}
                 <div className="mt-1.5 space-y-0.5">
-                  <ScoreBar label="吸筹" score={d.scores.accumulation} maxScore={maxS} colorClass="bg-green-500" />
-                  <ScoreBar label="出货" score={d.scores.distribution} maxScore={maxS} colorClass="bg-red-500" />
+                  <ScoreBar label="吸筹" score={d.scores.accumulation} maxScore={maxS} colorClass="bg-red-500" />
+                  <ScoreBar label="出货" score={d.scores.distribution} maxScore={maxS} colorClass="bg-green-500" />
                   <ScoreBar label="洗盘" score={d.scores.shakeout} maxScore={maxS} colorClass="bg-yellow-500" />
                   <ScoreBar label="拉升" score={d.scores.markup} maxScore={maxS} colorClass="bg-orange-500" />
                 </div>
@@ -502,32 +502,32 @@ function IntentExplanationPanel() {
           </div>
 
           {/* 吸筹 */}
-          <div className="rounded-md border border-green-500/20 bg-green-500/5 p-3">
-            <h4 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-1.5">🟢 吸筹 — 主力悄悄买入</h4>
+          <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3">
+            <h4 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-1.5">🔴 吸筹 — 主力悄悄买入</h4>
             <div className="space-y-1">
               <p><strong className="text-foreground">量价配合：</strong>上涨时放量、下跌时缩量（上涨量占比&gt;55%），说明主力在上涨时积极买入，下跌时不愿卖出</p>
               <p><strong className="text-foreground">均价线回归：</strong>价格围绕均价线震荡回升，说明主力在均价线附近持续吸筹</p>
               <p><strong className="text-foreground">V型回升：</strong>早盘下探后午后回升，主力利用早盘打压吸筹</p>
               <p><strong className="text-foreground">尾盘放量：</strong>尾盘成交量大于开盘量，主力在收盘前抢筹</p>
-              <p><strong className="text-foreground">缩量横盘整理：</strong>振幅小、量能平稳，主力暗中吸筹避免引起注意 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
-              <p><strong className="text-foreground">放量上攻后缩量回踩：</strong>先放量上涨再缩量回调，确认吸筹而非出货 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
-              <p><strong className="text-foreground">量能递增微涨：</strong>成交量逐步放大但涨幅不大，主力持续低调吸筹 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
+              <p><strong className="text-foreground">缩量横盘整理：</strong>振幅小、量能平稳，主力暗中吸筹避免引起注意 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
+              <p><strong className="text-foreground">放量上攻后缩量回踩：</strong>先放量上涨再缩量回调，确认吸筹而非出货 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
+              <p><strong className="text-foreground">量能递增微涨：</strong>成交量逐步放大但涨幅不大，主力持续低调吸筹 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
             </div>
           </div>
 
           {/* 出货 */}
-          <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3">
-            <h4 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-1.5">🔴 出货 — 主力高位抛售</h4>
+          <div className="rounded-md border border-green-500/20 bg-green-500/5 p-3">
+            <h4 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-1.5">🟢 出货 — 主力高位抛售</h4>
             <div className="space-y-1">
               <p><strong className="text-foreground">下跌放量：</strong>价格下跌伴随大量成交（下跌量占比&gt;55%），主力集中抛售筹码</p>
               <p><strong className="text-foreground">冲高回落：</strong>价格冲高后跌破均价线，主力拉高引诱跟风后出货</p>
               <p><strong className="text-foreground">早盘冲高回落：</strong>开盘快速拉高后持续下跌，利用开盘人气派发</p>
-              <p><strong className="text-foreground">诱多出货：</strong>盘中放量拉升但收盘偏弱，制造突破假象吸引买盘后出货 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
+              <p><strong className="text-foreground">诱多出货：</strong>盘中放量拉升但收盘偏弱，制造突破假象吸引买盘后出货 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
               <p><strong className="text-foreground">假突破：</strong>放量上攻但收盘偏弱，主力制造突破假象吸引买盘后出货</p>
               <p><strong className="text-foreground">开盘放量滞涨：</strong>开盘成交量很大但涨幅有限，主力趁开盘活跃出货</p>
               <p><strong className="text-foreground">尾盘放量下杀：</strong>收盘前放量下跌，主力尾盘集中抛售</p>
-              <p><strong className="text-foreground">长上影线：</strong>上影线占比超40%，高位抛压沉重 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
-              <p><strong className="text-foreground">高位放量震荡：</strong>价格远超均价线且量能剧烈波动，高位派发 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
+              <p><strong className="text-foreground">长上影线：</strong>上影线占比超40%，高位抛压沉重 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
+              <p><strong className="text-foreground">高位放量震荡：</strong>价格远超均价线且量能剧烈波动，高位派发 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
             </div>
           </div>
 

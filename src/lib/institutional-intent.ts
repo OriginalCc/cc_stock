@@ -565,19 +565,19 @@ function buildIntentSignal(
     volumePattern: string; pricePattern: string; suggestion: string;
   }> = {
     "吸筹": {
-      icon: "🟢",
-      color: "text-green-600 dark:text-green-400",
-      bgColor: "bg-green-500/10",
-      borderColor: "border-green-500/30",
+      icon: "🔴",
+      color: "text-red-600 dark:text-red-400",
+      bgColor: "bg-red-500/10",
+      borderColor: "border-red-500/30",
       volumePattern: "上涨放量、下跌缩量",
       pricePattern: "价格重心上移、回调幅度小",
       suggestion: "可跟随主力低吸，正T为主",
     },
     "出货": {
-      icon: "🔴",
-      color: "text-red-600 dark:text-red-400",
-      bgColor: "bg-red-500/10",
-      borderColor: "border-red-500/30",
+      icon: "🟢",
+      color: "text-green-600 dark:text-green-400",
+      bgColor: "bg-green-500/10",
+      borderColor: "border-green-500/30",
       volumePattern: "下跌放量、反弹缩量",
       pricePattern: "冲高回落、收盘偏弱",
       suggestion: "警惕主力派发，反T冲高卖出为主",
