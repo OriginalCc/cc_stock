@@ -73,9 +73,9 @@ const LEVELS: Record<string, PositionLevel> = {
     detail: "极度危险，保留3/4后备",
     strategy: "反T(先卖再买)/空仓",
     position: "≤1/4仓",
-    color: "text-red-600 dark:text-red-400",
-    bgColor: "bg-red-500/10",
-    borderColor: "border-red-500/40",
+    color: "text-green-600 dark:text-green-400",
+    bgColor: "bg-green-500/10",
+    borderColor: "border-green-500/40",
     dangerLevel: 5,
   },
   "2down": {
@@ -85,9 +85,9 @@ const LEVELS: Record<string, PositionLevel> = {
     detail: "高危，保留2/3后备",
     strategy: "反T(先卖再买)冲高卖",
     position: "≤1/3仓",
-    color: "text-orange-600 dark:text-orange-400",
-    bgColor: "bg-orange-500/10",
-    borderColor: "border-orange-500/40",
+    color: "text-green-600 dark:text-green-400",
+    bgColor: "bg-green-500/10",
+    borderColor: "border-green-500/40",
     dangerLevel: 4,
   },
   "1down1flat": {
@@ -109,9 +109,9 @@ const LEVELS: Record<string, PositionLevel> = {
     detail: "积极，可适度操作",
     strategy: "正T低吸/反T(先卖再买)均可",
     position: "25-35%",
-    color: "text-cyan-600 dark:text-cyan-400",
-    bgColor: "bg-cyan-500/10",
-    borderColor: "border-cyan-500/30",
+    color: "text-red-600 dark:text-red-400",
+    bgColor: "bg-red-500/10",
+    borderColor: "border-red-500/30",
     dangerLevel: 2,
   },
   "3up": {
@@ -121,9 +121,9 @@ const LEVELS: Record<string, PositionLevel> = {
     detail: "最安全，可积极做T",
     strategy: "正T/反T(先卖再买)均可",
     position: "30-40%",
-    color: "text-emerald-600 dark:text-emerald-400",
-    bgColor: "bg-emerald-500/10",
-    borderColor: "border-emerald-500/40",
+    color: "text-red-600 dark:text-red-400",
+    bgColor: "bg-red-500/10",
+    borderColor: "border-red-500/40",
     dangerLevel: 1,
   },
   "neutral": {
@@ -272,11 +272,11 @@ export function PositionSignalCard({
         {/* 仓位速查条 */}
         <div className="mt-1 flex items-center gap-1">
           {[
-            { label: "≤1/4", active: level.key === "3down", color: "bg-red-500" },
-            { label: "≤1/3", active: level.key === "2down", color: "bg-orange-500" },
+            { label: "≤1/4", active: level.key === "3down", color: "bg-green-500" },
+            { label: "≤1/3", active: level.key === "2down", color: "bg-green-500" },
             { label: "20%", active: level.key === "1down1flat" || level.key === "1up1down", color: "bg-yellow-500" },
-            { label: "30%", active: level.key === "2up", color: "bg-cyan-500" },
-            { label: "40%", active: level.key === "3up", color: "bg-emerald-500" },
+            { label: "30%", active: level.key === "2up", color: "bg-red-500" },
+            { label: "40%", active: level.key === "3up", color: "bg-red-500" },
           ].map((item, i) => (
             <div
               key={i}
