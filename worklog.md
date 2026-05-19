@@ -699,3 +699,27 @@ Stage Summary:
   2. 客户端SWR缓存预填充（页面打开即可显示上次数据）
   3. 后台重新验证（用户无感知更新）
   4. 图表组件减少重复计算（ALL_TRADE_TIMES 常量化）
+
+---
+Task ID: 8
+Agent: code-splitter
+Task: Extract MiniTimelinePanel component for code splitting
+
+Work Log:
+- Created `/src/lib/trading-times.ts`: extracted `ALL_TRADE_TIMES` constant to shared utility file
+- Created `/src/components/mini-timeline-panel.tsx`: extracted from time-sharing-panel.tsx
+  - Contains: `MiniTimelinePanel` component, `MiniPercentYTick`, `timelineVolumeBarShape`, `timelineMacdBarShape`
+  - Imports: `ALL_TRADE_TIMES` from `@/lib/trading-times`, `formatVolume`/`computeMiniMACD` from `@/lib/chart-shared`
+- Updated `/src/components/time-sharing-panel.tsx`:
+  - Added `import dynamic from "next/dynamic"` and dynamic import for `MiniTimelinePanel` with `{ ssr: false }`
+  - Added `import { ALL_TRADE_TIMES } from "@/lib/trading-times"` (replacing inline constant)
+  - Removed: `MiniTimelinePanel` component, `MiniPercentYTick`, inline `ALL_TRADE_TIMES` constant
+  - Kept: `timelineVolumeBarShape` and `timelineMacdBarShape` (still used by main `TimeSharingPanel`)
+  - Removed `computeMiniMACD` from imports (no longer used in this file after extraction)
+- Lint passed with no errors
+
+Stage Summary:
+- `MiniTimelinePanel` code-split via `next/dynamic` with SSR disabled — reduces initial bundle for pages that don't need the mini chart
+- `ALL_TRADE_TIMES` shared from `@/lib/trading-times` — single source of truth for both files
+- Shape renderers duplicated in both files (both main and mini charts need them)
+- No functionality changes, pure code reorganization

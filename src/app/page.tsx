@@ -35,6 +35,7 @@ const TradingRulesCard = dynamic(() => import("@/components/trading-rules-card")
 const PositionSignalCard = dynamic(() => import("@/components/position-signal-card").then(m => ({ default: m.PositionSignalCard })), { ssr: false, loading: () => <div className="h-[60px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载仓位信号...</span></div> });
 const PasswordManageDialog = dynamic(() => import("@/components/password-manage-dialog").then(m => ({ default: m.PasswordManageDialog })), { ssr: false });
 import { PasswordGate } from "@/components/password-gate";
+import { LazyMount } from "@/components/lazy-mount";
 import { calculateMACD } from "@/lib/indicators";
 import { getTimeWindow, detectMarketRegimeDetail, buildFactorOverridesFromDB, computeKeyPriceLevels, type FactorOverride, type RegimeDetail } from "@/lib/t-strategy";
 import { generateTimelineSignals, detectPulseVolumeMarkers, type TSignal, type PulseVolumeMarker, type CustomFactorDefinition, formatVolume, formatNum, formatMarketCap, REGIME_CONFIG, T_MODE_CONFIG, DEFAULT_ASHARES, INTERVALS, INDEX_CONFIG, INDEX_KEYS, SIGNAL_PULSE_CSS, playAlertSound, getTIndexColor, getTIndexLabel, getTIndexLabelColor, BUILT_IN_CUSTOM_FACTORS, CUSTOM_FACTORS_STORAGE_KEY, type IndexKey } from "@/lib/chart-shared";
@@ -758,23 +759,31 @@ export default function StockTAssistant() {
 
         {/* T-Suitability Score + Risk Dashboard — only in timeline mode */}
         {chartMode === "timeline" && liveTimeline.length > 0 && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <TSuitabilityScore symbol={symbol} quote={quote} liveTimeline={liveTimeline} sectorRegime={sectorRegime} szIndexRegime={szIndexRegime} />
-            <RiskAlertPanel symbol={symbol} quote={quote} liveTimeline={liveTimeline} sectorRegime={sectorRegime} szIndexRegime={szIndexRegime} signalCounts={signalCounts} />
-          </div>
+          <LazyMount height={80} className="mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <TSuitabilityScore symbol={symbol} quote={quote} liveTimeline={liveTimeline} sectorRegime={sectorRegime} szIndexRegime={szIndexRegime} />
+              <RiskAlertPanel symbol={symbol} quote={quote} liveTimeline={liveTimeline} sectorRegime={sectorRegime} szIndexRegime={szIndexRegime} signalCounts={signalCounts} />
+            </div>
+          </LazyMount>
         )}
 
         {/* T-Trading Signals Summary */}
         {(chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
-          <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
+          <LazyMount height={120}>
+            <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
+          </LazyMount>
         )}
 
 
         {/* News Analysis Panel */}
-        <NewsAnalysisPanel symbol={symbol} stockName={quote?.name} isAShare={isAShareStock} quote={quote} sectorInfo={sectorInfo} newsData={newsData} setNewsData={setNewsData} newsLoading={newsLoading} setNewsLoading={setNewsLoading} showNewsAnalysis={showNewsAnalysis} setShowNewsAnalysis={setShowNewsAnalysis} />
+        <LazyMount height={100}>
+          <NewsAnalysisPanel symbol={symbol} stockName={quote?.name} isAShare={isAShareStock} quote={quote} sectorInfo={sectorInfo} newsData={newsData} setNewsData={setNewsData} newsLoading={newsLoading} setNewsLoading={setNewsLoading} showNewsAnalysis={showNewsAnalysis} setShowNewsAnalysis={setShowNewsAnalysis} />
+        </LazyMount>
 
         {/* Strategy Admin Panel */}
-        <StrategyAdminPanel onFactorsChanged={(factors) => setFactorOverrides(buildFactorOverridesFromDB(factors))} />
+        <LazyMount height={100}>
+          <StrategyAdminPanel onFactorsChanged={(factors) => setFactorOverrides(buildFactorOverridesFromDB(factors))} />
+        </LazyMount>
         </>
         )}
 
