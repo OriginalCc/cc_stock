@@ -32,10 +32,10 @@ const BaotaDeployGuide = dynamic(() => import("@/components/baota-deploy-guide")
 const TSuitabilityScore = dynamic(() => import("@/components/t-suitability-score").then(m => ({ default: m.TSuitabilityScore })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载适宜度评分...</span></div> });
 const TTradeJournal = dynamic(() => import("@/components/t-trade-journal").then(m => ({ default: m.TTradeJournal })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载做T记录...</span></div> });
 const RiskAlertPanel = dynamic(() => import("@/components/risk-alert-panel").then(m => ({ default: m.RiskAlertPanel })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载风险仪表盘...</span></div> });
-import { TradingRulesCard } from "@/components/trading-rules-card";
-import { PositionSignalCard } from "@/components/position-signal-card";
+const TradingRulesCard = dynamic(() => import("@/components/trading-rules-card").then(m => ({ default: m.TradingRulesCard })), { ssr: false, loading: () => <div className="h-[120px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载交易规矩...</span></div> });
+const PositionSignalCard = dynamic(() => import("@/components/position-signal-card").then(m => ({ default: m.PositionSignalCard })), { ssr: false, loading: () => <div className="h-[60px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载仓位信号...</span></div> });
+const PasswordManageDialog = dynamic(() => import("@/components/password-manage-dialog").then(m => ({ default: m.PasswordManageDialog })), { ssr: false });
 import { PasswordGate } from "@/components/password-gate";
-import { PasswordManageDialog } from "@/components/password-manage-dialog";
 import { calculateMACD } from "@/lib/indicators";
 import { getTimeWindow, detectMarketRegimeDetail, buildFactorOverridesFromDB, computeKeyPriceLevels, type FactorOverride, type RegimeDetail } from "@/lib/t-strategy";
 import { generateTimelineSignals, detectPulseVolumeMarkers, type TSignal, type PulseVolumeMarker, type CustomFactorDefinition, formatVolume, formatNum, formatMarketCap, REGIME_CONFIG, T_MODE_CONFIG, DEFAULT_ASHARES, INTERVALS, INDEX_CONFIG, INDEX_KEYS, SIGNAL_PULSE_CSS, playAlertSound, getTIndexColor, getTIndexLabel, getTIndexLabelColor, BUILT_IN_CUSTOM_FACTORS, CUSTOM_FACTORS_STORAGE_KEY, type IndexKey } from "@/lib/chart-shared";
