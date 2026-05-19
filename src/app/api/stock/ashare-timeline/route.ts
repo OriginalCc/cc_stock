@@ -4,7 +4,7 @@ import { fetchGuarded } from "@/lib/fetch-guard";
 
 /**
  * Determine cache TTL based on trading status:
- * - During trading hours: 2s (supports 3s client-side refresh)
+ * - During trading hours: 1s (supports 1.5s client-side refresh, fresher data)
  * - Outside trading hours: 300s (data is static)
  */
 function getTimelineCacheTTL(): number {
@@ -20,7 +20,7 @@ function getTimelineCacheTTL(): number {
   const isMorningSession = (chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35);
   const isAfternoonSession = (chinaHour === 13) || (chinaHour === 14) || (chinaHour === 15 && chinaMinute <= 5);
 
-  if (isMorningSession || isAfternoonSession) return 2000; // 2s during trading (3s client refresh)
+  if (isMorningSession || isAfternoonSession) return 1000; // 1s during trading (1.5s client refresh)
   return 300000; // 5 min outside trading hours
 }
 
@@ -37,43 +37,50 @@ export async function GET(request: NextRequest) {
   }
 
   const cacheTTL = getTimelineCacheTTL();
-  // FIX: was `cacheTTL <= 1000` but trading TTL is 2000, so isTrading was always false
-  const isTrading = cacheTTL <= 3000;
+  // FIX: was `cacheTTL <= 1000` but trading TTL was 2000, so isTrading was always false
+  // Now trading TTL is 1000, so cacheTTL <= 2000 catches both 1000 (trading) and edge cases
+  const isTrading = cacheTTL <= 2000;
   const maxAge = isTrading ? 0 : Math.min(Math.floor(cacheTTL / 1000), 30);
   const cacheHeaders = { "Cache-Control": `public, max-age=${maxAge}, must-revalidate` };
 
   try {
-    // When includeQuote=true, fetch quote FIRST, then pass prevClose to timeline
-    // This avoids getAShareTimeline making a duplicate quote API call internally
+    // When includeQuote=true, fetch quote and timeline IN PARALLEL
+    // getAShareTimeline can work without prevClose (has internal default),
+    // so we can parallelize for faster response. We merge prevClose from quote
+    // into timeline result only if timeline didn't return its own.
     if (includeQuote) {
-      const quoteResult = await fetchGuarded(
-        `quote:${symbol}`,
-        async (signal) => {
-          try {
-            return await getAShareQuote(symbol);
-          } catch {
-            return null;
-          }
-        },
-        cacheTTL
-      );
+      const [quoteResult, timelineResult] = await Promise.all([
+        fetchGuarded(
+          `quote:${symbol}`,
+          async (signal) => {
+            try {
+              return await getAShareQuote(symbol);
+            } catch {
+              return null;
+            }
+          },
+          cacheTTL
+        ),
+        fetchGuarded(
+          `timeline:${symbol}`,
+          async (signal) => {
+            try {
+              return await getAShareTimeline(symbol);
+            } catch {
+              return { items: [], prevClose: 0 };
+            }
+          },
+          cacheTTL
+        ),
+      ]);
 
-      const prevClose = quoteResult?.prevClose || 0;
-
-      const timelineResult = await fetchGuarded(
-        `timeline:${symbol}`,
-        async (signal) => {
-          try {
-            return await getAShareTimeline(symbol, prevClose);
-          } catch {
-            return { items: [], prevClose: 0 };
-          }
-        },
-        cacheTTL
-      );
+      // If timeline didn't return a prevClose (or returned 0), use quote's prevClose
+      const prevClose = timelineResult.prevClose || quoteResult?.prevClose || 0;
 
       const response: any = {
         ...timelineResult,
+        // Use the merged prevClose (prefer timeline's, fallback to quote's)
+        prevClose,
         quote: quoteResult ? {
           symbol: quoteResult.symbol,
           name: quoteResult.name,

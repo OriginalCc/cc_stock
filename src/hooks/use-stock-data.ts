@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, startTransition } from "react";
 import { isAShare } from "@/lib/ashare-api";
-import { getCachedData, setCacheData, cachedFetch } from "@/lib/client-cache";
+import { getCachedData, setCacheData, cachedFetch, fetchWithSWR } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -80,18 +80,27 @@ const DEFAULT_SYMBOL = "600519";
 const DEFAULT_CHART_MODE: ChartMode = "timeline";
 
 // ── Cache TTL constants ──
-const QUOTE_CACHE_TTL = 1000; // 1s for quote data (slightly less than refresh interval for smoother updates)
-const TIMELINE_CACHE_TTL = 1000; // 1s for timeline data (slightly less than refresh interval)
+const QUOTE_CACHE_TTL = 1000; // 1s for quote data
+const TIMELINE_CACHE_TTL = 1000; // 1s for timeline data
 const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
 
 // ── Auto-refresh interval ──
 const TIMELINE_REFRESH_INTERVAL = 1500; // 1.5s for timeline/quote auto-refresh during trading hours
 
+// ── Helper: Try to read cached timeline+quote data for a symbol ──
+function tryGetCachedTimelineQuote(sym: string): { items: TimelineItem[]; prevClose: number; quote?: StockQuote } | null {
+  try {
+    // Read from the same cache key that fetchTimelineWithQuote uses
+    const cached = getCachedData<{ items: TimelineItem[]; prevClose: number; quote?: StockQuote }>(`timeline+quote:${sym}`);
+    if (cached && cached.items && cached.items.length > 0) return cached;
+  } catch {}
+  return null;
+}
+
 // ── Hook ──────────────────────────────────────────────
 
 export function useStockData() {
   // Read from localStorage during initialization to avoid hydration race
-  // Component is "use client" and won't SSR, so localStorage is safe here
   const [symbol, setSymbol] = useState<string>(() => {
     if (typeof window === 'undefined') return DEFAULT_SYMBOL;
     try {
@@ -100,10 +109,28 @@ export function useStockData() {
     } catch {}
     return DEFAULT_SYMBOL;
   });
-  const [quote, setQuote] = useState<StockQuote | null>(null);
+
+  // Pre-populate from client cache on mount for instant display
+  const initialSymbolRef = useRef(symbol);
+  const [quote, setQuote] = useState<StockQuote | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const cached = tryGetCachedTimelineQuote(initialSymbolRef.current);
+    return cached?.quote || null;
+  });
+
   const [history, setHistory] = useState<KLineItem[]>([]);
-  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
-  const [timelinePrevClose, setTimelinePrevClose] = useState<number>(0);
+  const [timeline, setTimeline] = useState<TimelineItem[]>(() => {
+    if (typeof window === 'undefined') return [];
+    const cached = tryGetCachedTimelineQuote(initialSymbolRef.current);
+    return cached?.items || [];
+  });
+
+  const [timelinePrevClose, setTimelinePrevClose] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    const cached = tryGetCachedTimelineQuote(initialSymbolRef.current);
+    return cached?.prevClose || 0;
+  });
+
   const [interval, setInterval_] = useState<TimeInterval>("1d");
   const [chartMode, setChartMode] = useState<ChartMode>(() => {
     if (typeof window === 'undefined') return DEFAULT_CHART_MODE;
@@ -114,7 +141,12 @@ export function useStockData() {
     return DEFAULT_CHART_MODE;
   });
   const [loading, setLoading] = useState(false);
-  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineLoading, setTimelineLoading] = useState(() => {
+    // If we have cached timeline data, don't show loading skeleton
+    if (typeof window === 'undefined') return true;
+    const cached = tryGetCachedTimelineQuote(initialSymbolRef.current);
+    return !cached || cached.items.length === 0;
+  });
   const [error, setError] = useState<string | null>(null);
   const [latestSignal, setLatestSignal] = useState<{
     type: "buy" | "sell" | "hold";
@@ -126,7 +158,6 @@ export function useStockData() {
   const initialFetchDone = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Request ID to ignore stale responses when stock changes mid-flight
   const requestIdRef = useRef(0);
 
   const checkAShare = useCallback((sym: string) => isAShare(sym), []);
@@ -155,16 +186,15 @@ export function useStockData() {
     }
   }, [checkAShare]);
 
-  // ── Fetch timeline + quote in a single request (optimized for initial page load) ──
-  // Ref to track last data fingerprint for skip-if-unchanged optimization
+  // ── Fetch timeline + quote using SWR for instant cache display ──
   const lastTimelineFingerprint = useRef("");
   const fetchTimelineWithQuote = useCallback(async (sym: string, isRefresh = false) => {
     if (!checkAShare(sym)) return;
-    // Only show loading state on initial fetch, not on auto-refresh
-    // This prevents skeleton flash every 1.5s during trading hours
-    if (!isRefresh) setTimelineLoading(true);
+    // Only show loading skeleton on initial fetch when we have no cached data
+    if (!isRefresh && timeline.length === 0) setTimelineLoading(true);
     try {
-      const data = await cachedFetch<{
+      // Use SWR pattern: return cached data instantly, revalidate in background
+      const result = await fetchWithSWR<{
         items: TimelineItem[];
         prevClose: number;
         quote?: StockQuote;
@@ -179,8 +209,30 @@ export function useStockData() {
           if (!res.ok) throw new Error("fetch failed");
           return res.json();
         },
-        TIMELINE_CACHE_TTL
+        TIMELINE_CACHE_TTL,
+        {
+          // On background revalidation, update state with fresh data
+          onRevalidate: (freshData) => {
+            if (!freshData.error) {
+              const items = freshData.items || [];
+              const lastItem = items[items.length - 1];
+              const fp = `${items.length}:${lastItem?.time}:${lastItem?.price}:${lastItem?.volume}:${freshData.prevClose}:${freshData.quote?.price}`;
+              if (fp !== lastTimelineFingerprint.current) {
+                lastTimelineFingerprint.current = fp;
+                startTransition(() => {
+                  setTimeline(items);
+                  setTimelinePrevClose(freshData.prevClose || 0);
+                  if (freshData.quote) {
+                    setQuote(freshData.quote);
+                  }
+                });
+              }
+            }
+          }
+        }
       );
+
+      const data = result.data;
       if (!data.error) {
         // Skip state update if data hasn't actually changed (price & length fingerprint)
         const items = data.items || [];
@@ -203,7 +255,7 @@ export function useStockData() {
     } finally {
       if (!isRefresh) setTimelineLoading(false);
     }
-  }, [checkAShare]);
+  }, [checkAShare, timeline.length]);
 
   // ── Fetch history with MACD ──
   const fetchHistory = useCallback(async (sym: string, intv: TimeInterval) => {
@@ -294,18 +346,16 @@ export function useStockData() {
   const selectStock = useCallback(
     (sym: string) => {
       setSymbol(sym);
-      // Increment request ID to invalidate any in-flight requests for the old symbol
       requestIdRef.current++;
       const currentRequestId = requestIdRef.current;
-      // Abort previous requests
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = new AbortController();
-      // Persist last selected stock to localStorage
       try { localStorage.setItem(LAST_STOCK_KEY, sym); } catch {}
       // Clear stale data immediately for snappier UI
       setTimeline([]);
       setQuote(null);
       setHistory([]);
+      lastTimelineFingerprint.current = ""; // Reset fingerprint for new stock
       // Use combined timeline+quote fetch for faster loading when in timeline mode
       if (checkAShare(sym) && chartMode !== "kline") {
         fetchTimelineWithQuote(sym);
@@ -332,7 +382,6 @@ export function useStockData() {
       setChartMode(mode);
       try { localStorage.setItem(LAST_CHART_MODE_KEY, mode); } catch {}
       if ((mode === "timeline" || mode === "5d-timeline") && checkAShare(symbol)) {
-        // Use combined fetch for faster mode switching
         fetchTimelineWithQuote(symbol);
         fetchHistory(symbol, "1d");
         setInterval_("1d");
@@ -346,8 +395,6 @@ export function useStockData() {
   );
 
   // ── Initial load: fetch immediately on mount (no mounted gate) ──
-  // The symbol and chartMode are already initialized from localStorage
-  // via the function initializer, so we can start fetching right away.
   useEffect(() => {
     if (initialFetchDone.current) return;
     initialFetchDone.current = true;
@@ -355,6 +402,7 @@ export function useStockData() {
     const currentMode = chartMode;
     if (checkAShare(symbol) && currentMode !== "kline") {
       // Combined timeline+quote fetch saves one network roundtrip on initial load
+      // If we already have cached data from preload, the SWR pattern will return it instantly
       fetchTimelineWithQuote(symbol);
       fetchHistory(symbol, interval);
     } else {
@@ -363,7 +411,7 @@ export function useStockData() {
     }
   }, []); // Empty deps - only run once on mount
 
-  // ── Auto-refresh: 1s interval for timeline/quote during trading hours ──
+  // ── Auto-refresh: 1.5s interval for timeline/quote during trading hours ──
   useEffect(() => {
     // Only auto-refresh when in timeline mode for A-share stocks
     if (chartMode === "kline") return;
@@ -390,6 +438,7 @@ export function useStockData() {
       const currentMode = chartMode;
       if (currentMode === "timeline" || currentMode === "5d-timeline") {
         // Refresh timeline + quote together (single request, isRefresh=true to skip loading state)
+        // SWR pattern: returns cached data instantly, revalidates in background
         fetchTimelineWithQuote(symbol, true);
       } else {
         fetchQuote(symbol);

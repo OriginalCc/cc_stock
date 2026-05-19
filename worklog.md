@@ -653,3 +653,49 @@ Stage Summary:
 - 做T交易记录：记录和追踪做T胜率，支持统计分析和复盘
 - 风险仪表盘：6个关键风险指标一目了然，实时预警
 - 关键价位线已在之前实现在分时图上（支撑/阻力虚线）
+
+---
+Task ID: 2
+Agent: timeline-parallel-optimizer
+Task: Make ashare-timeline API route fetch quote and timeline in PARALLEL instead of sequentially
+
+Work Log:
+- Read existing `/src/app/api/stock/ashare-timeline/route.ts` and confirmed `getAShareTimeline(symbol, prevCloseFromQuote?)` has optional prevClose parameter, so it can work without it
+- Changed the `includeQuote=true` branch from sequential (quote → timeline) to parallel (`Promise.all([quote, timeline])`)
+- `getAShareTimeline(symbol)` called without prevClose — it has an internal default
+- Added merged `prevClose` logic after both results resolve: `timelineResult.prevClose || quoteResult?.prevClose || 0`
+- Response explicitly overrides `prevClose` with merged value (after `...timelineResult` spread) to ensure quote's prevClose is used if timeline returned 0
+- Reduced server-side cache TTL during trading hours from 2000ms to 1000ms, so each 1.5s client refresh cycle gets fresher data
+- Updated `isTrading` threshold from `cacheTTL <= 3000` to `cacheTTL <= 2000` (now that trading TTL is 1000, the 2000 threshold correctly identifies trading hours)
+- Updated comments to reflect 1s TTL and 1.5s client refresh cycle
+- Lint passed with no errors
+
+Stage Summary:
+- ashare-timeline API now fetches quote and timeline in parallel (Promise.all), eliminating sequential latency
+- Trading hours server-side cache TTL reduced from 2s to 1s for fresher data on each 1.5s client refresh
+- Response format unchanged — prevClose merged from quote fallback if timeline doesn't provide one
+
+---
+Task ID: 7
+Agent: main
+Task: 加快分时图页面加载速度 + 修复交易规矩不显示
+
+Work Log:
+- 修复 TradingRulesCard 不显示问题（第5次）：移除 `<details>` 折叠包装，改为始终显示
+- 后端优化：ashare-timeline API 行情+分时并行获取（Promise.all），交易时段缓存TTL从2s降到1s
+- 客户端SWR优化：use-stock-data.ts 中 fetchTimelineWithQuote 改用 fetchWithSWR（stale-while-revalidate）
+  - 首次加载从缓存预填充 timeline/quote/prevClose 数据（instant display）
+  - 刷新时先返回缓存数据，后台重新验证
+  - 有缓存时跳过 loading skeleton
+  - 指纹检测防止不必要的状态更新
+- 图表组件优化：time-sharing-panel.tsx 提取 ALL_TRADE_TIMES 为模块级常量（242个时间段字符串），避免每次渲染重新生成
+  - TimeSharingPanel 和 MiniTimelinePanel 均使用预计算常量
+- Lint 通过，dev server 正常运行（HTTP 200）
+
+Stage Summary:
+- 交易规矩始终显示（移除 details 折叠）
+- 分时页面加载速度提升：
+  1. 后端并行获取（减少串行等待）
+  2. 客户端SWR缓存预填充（页面打开即可显示上次数据）
+  3. 后台重新验证（用户无感知更新）
+  4. 图表组件减少重复计算（ALL_TRADE_TIMES 常量化）

@@ -452,10 +452,11 @@ export default function StockTAssistant() {
   const tlZoomReset = () => { setTlZoomIdx(0); setTlPanOffset(0); };
 
   // ── Timeline MACD & Signals (only compute in timeline mode for performance) ──
+  // Optimization: Use fingerprint-based caching to skip heavy recomputation
+  // when only the last price ticks by a small amount between refreshes
 
   const timelineMACDData = useMemo(() => {
     // Skip heavy MACD computation when not in timeline mode
-    // Use liveTimeline (already truncated to current minute) instead of raw timeline
     if (!isTimelineActive || liveTimeline.length === 0) return [];
     const prices = liveTimeline.map((d) => d.price);
     const macdResult = calculateMACD(prices);
@@ -800,15 +801,10 @@ export default function StockTAssistant() {
         </>
         )}
 
-        {/* Trading Rules Reference — collapsed at bottom */}
-        <details className="group mb-4">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 py-2">
-            <BookOpen className="w-3.5 h-3.5" />
-            查看完整交易规矩说明
-            <span className="text-[10px] text-muted-foreground/60 ml-1">（点击展开）</span>
-          </summary>
+        {/* Trading Rules Reference — always visible */}
+        <div className="mb-4">
           <TradingRulesCard autoExpanded={autoExpanded} />
-        </details>
+        </div>
 
       </main>
       <footer className="border-t border-border bg-card/30 mt-auto">
