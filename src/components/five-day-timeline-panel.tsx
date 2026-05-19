@@ -16,9 +16,11 @@ import {
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
 import { formatVolume, formatAmount } from "@/lib/chart-shared";
+import { analyzeFiveDayIntent, type FiveDayIntentResult, type DayIntentResult } from "@/lib/institutional-intent";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { RefreshCw, ZoomIn, ZoomOut, Maximize2, ShieldAlert, TrendingUp, TrendingDown, Activity, Eye } from "lucide-react";
 
 // ── Types ──
 
@@ -356,6 +358,83 @@ function VolumeBarShape(props: any) {
   return <rect x={x} y={y} width={barWidth} height={height} fill={isUp ? "rgba(239,68,68,1)" : "rgba(22,163,74,1)"} />;
 }
 
+// ── Institutional Intent Analysis Panel ──
+
+function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
+  const { overallIntent, dailyIntents, trendPhase, riskLevel } = result;
+
+  const riskLabel = ["", "低", "较低", "中等", "较高", "高"][riskLevel] || "中等";
+  const riskColor = riskLevel >= 4 ? "text-red-500" : riskLevel >= 3 ? "text-yellow-500" : "text-green-500";
+
+  return (
+    <div className={`rounded-lg border-2 ${overallIntent.borderColor} ${overallIntent.bgColor} p-2.5 mb-1.5`}>
+      {/* Overall header */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-base font-bold">{overallIntent.icon}</span>
+        <span className={`text-sm font-bold ${overallIntent.color}`}>
+          主力意图：{overallIntent.intent}
+        </span>
+        <Badge variant="outline" className={`text-[10px] h-5 ${overallIntent.color} ${overallIntent.borderColor}`}>
+          置信度 {overallIntent.confidence}%
+        </Badge>
+        <Badge variant="outline" className={`text-[10px] h-5 ${riskColor} border-current/30`}>
+          风险{riskLabel}
+        </Badge>
+        <span className="text-xs text-muted-foreground">·</span>
+        <span className="text-xs text-muted-foreground font-medium">{trendPhase}</span>
+        <div className="ml-auto flex items-center gap-1">
+          <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className={`text-xs font-medium ${overallIntent.color}`}>{overallIntent.suggestion}</span>
+        </div>
+      </div>
+
+      {/* Reasons */}
+      {overallIntent.reasons.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
+          {overallIntent.reasons.map((r, i) => (
+            <span key={i}>• {r}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Daily breakdown */}
+      {dailyIntents.length > 0 && (
+        <div className="mt-1.5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
+          {dailyIntents.map((d, i) => (
+            <div
+              key={i}
+              className={`rounded-md border ${d.intent.borderColor} ${d.intent.bgColor} px-2 py-1`}
+            >
+              <div className="flex items-center gap-1 mb-0.5">
+                <span className="text-xs font-medium text-foreground">{d.dayLabel}</span>
+                <span className="text-[10px]">{d.intent.icon}</span>
+                <span className={`text-[10px] font-bold ${d.intent.color}`}>{d.intent.intent}</span>
+              </div>
+              <div className="flex items-center gap-1 text-[10px]">
+                <span className={`font-mono ${d.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
+                  {d.changePercent >= 0 ? "+" : ""}{d.changePercent.toFixed(2)}%
+                </span>
+                <span className="text-muted-foreground">量{formatVolume(d.totalVolume)}</span>
+              </div>
+              {d.intent.reasons.length > 0 && (
+                <div className="text-[9px] text-muted-foreground mt-0.5 leading-tight">
+                  {d.intent.reasons[0]}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Volume/Price pattern summary */}
+      <div className="mt-1.5 flex items-center gap-4 text-[10px] text-muted-foreground">
+        <span>量能特征：{overallIntent.volumePattern}</span>
+        <span>价格特征：{overallIntent.pricePattern}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ──
 
 const MIN_VISIBLE_POINTS = 60;  // ~1 hour of 1-min data
@@ -421,6 +500,12 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
     if (kline5Min.length === 0 && timeline.length === 0) return { items: [], dayBoundaries: [], dayLabels: [], prevClose: 0, firstDayRefClose: 0 };
     return convertTo5DayTimeline(kline5Min, timeline, quote, timelinePrevClose);
   }, [kline5Min, timeline, quote, timelinePrevClose]);
+
+  // ── Institutional Intent Analysis ──
+  const intentResult = useMemo(() => {
+    if (items.length < 10 || dayBoundaries.length === 0) return null;
+    return analyzeFiveDayIntent(items, dayBoundaries, dayLabels, prevClose);
+  }, [items, dayBoundaries, dayLabels, prevClose]);
 
   // ── Visible slice ──
   const totalItems = items.length;
@@ -626,6 +711,9 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
           </CardContent>
         </Card>
       )}
+
+      {/* ── Institutional Intent Analysis ── */}
+      {intentResult && <InstitutionalIntentPanel result={intentResult} />}
 
       {/* Zoom Controls & Indicator */}
       <div className="flex items-center gap-1 px-1 mb-1">
