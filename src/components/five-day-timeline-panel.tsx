@@ -367,30 +367,30 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
   const riskColor = riskLevel >= 4 ? "text-red-500" : riskLevel >= 3 ? "text-yellow-500" : "text-green-500";
 
   return (
-    <div className={`rounded-lg border-2 ${overallIntent.borderColor} ${overallIntent.bgColor} p-2.5 mb-1.5`}>
+    <div className={`rounded-lg border-2 ${overallIntent.borderColor} ${overallIntent.bgColor} p-4 mb-2`}>
       {/* Overall header */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-base font-bold">{overallIntent.icon}</span>
-        <span className={`text-sm font-bold ${overallIntent.color}`}>
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <span className="text-xl font-bold">{overallIntent.icon}</span>
+        <span className={`text-base font-bold ${overallIntent.color}`}>
           主力意图：{overallIntent.intent}
         </span>
-        <Badge variant="outline" className={`text-[10px] h-5 ${overallIntent.color} ${overallIntent.borderColor}`}>
+        <Badge variant="outline" className={`text-xs h-6 ${overallIntent.color} ${overallIntent.borderColor}`}>
           置信度 {overallIntent.confidence}%
         </Badge>
-        <Badge variant="outline" className={`text-[10px] h-5 ${riskColor} border-current/30`}>
+        <Badge variant="outline" className={`text-xs h-6 ${riskColor} border-current/30`}>
           风险{riskLabel}
         </Badge>
-        <span className="text-xs text-muted-foreground">·</span>
-        <span className="text-xs text-muted-foreground font-medium">{trendPhase}</span>
-        <div className="ml-auto flex items-center gap-1">
-          <Eye className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className={`text-xs font-medium ${overallIntent.color}`}>{overallIntent.suggestion}</span>
+        <span className="text-sm text-muted-foreground">·</span>
+        <span className="text-sm text-muted-foreground font-medium">{trendPhase}</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <Eye className="w-4 h-4 text-muted-foreground" />
+          <span className={`text-sm font-medium ${overallIntent.color}`}>{overallIntent.suggestion}</span>
         </div>
       </div>
 
       {/* Reasons */}
       {overallIntent.reasons.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
           {overallIntent.reasons.map((r, i) => (
             <span key={i}>• {r}</span>
           ))}
@@ -399,25 +399,25 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
 
       {/* Daily breakdown */}
       {dailyIntents.length > 0 && (
-        <div className="mt-1.5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
           {dailyIntents.map((d, i) => (
             <div
               key={i}
-              className={`rounded-md border ${d.intent.borderColor} ${d.intent.bgColor} px-2 py-1`}
+              className={`rounded-md border ${d.intent.borderColor} ${d.intent.bgColor} px-3 py-2`}
             >
-              <div className="flex items-center gap-1 mb-0.5">
-                <span className="text-xs font-medium text-foreground">{d.dayLabel}</span>
-                <span className="text-[10px]">{d.intent.icon}</span>
-                <span className={`text-[10px] font-bold ${d.intent.color}`}>{d.intent.intent}</span>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-sm font-medium text-foreground">{d.dayLabel}</span>
+                <span className="text-sm">{d.intent.icon}</span>
+                <span className={`text-xs font-bold ${d.intent.color}`}>{d.intent.intent}</span>
               </div>
-              <div className="flex items-center gap-1 text-[10px]">
+              <div className="flex items-center gap-1.5 text-xs">
                 <span className={`font-mono ${d.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
                   {d.changePercent >= 0 ? "+" : ""}{d.changePercent.toFixed(2)}%
                 </span>
                 <span className="text-muted-foreground">量{formatVolume(d.totalVolume)}</span>
               </div>
               {d.intent.reasons.length > 0 && (
-                <div className="text-[9px] text-muted-foreground mt-0.5 leading-tight">
+                <div className="text-[11px] text-muted-foreground mt-1 leading-snug">
                   {d.intent.reasons[0]}
                 </div>
               )}
@@ -427,7 +427,7 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
       )}
 
       {/* Volume/Price pattern summary */}
-      <div className="mt-1.5 flex items-center gap-4 text-[10px] text-muted-foreground">
+      <div className="mt-3 flex items-center gap-5 text-xs text-muted-foreground">
         <span>量能特征：{overallIntent.volumePattern}</span>
         <span>价格特征：{overallIntent.pricePattern}</span>
       </div>
