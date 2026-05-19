@@ -98,24 +98,24 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                 <span className="text-[10px] text-yellow-500/60 shrink-0">20-25%</span>
               </div>
               <div className="flex items-center gap-2 p-2 rounded-md border border-blue-500/20 bg-blue-500/5">
-                <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20 shrink-0">30%</span>
+                <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20 shrink-0">45%</span>
                 <div className="flex-1">
                   <span className="text-blue-600 dark:text-blue-400 font-bold text-xs">🔹 四级·积极</span>
                   <span className="text-blue-500/70 text-[10px] ml-1">至少两维度上涨+一维度震荡</span>
                 </div>
-                <span className="text-[10px] text-blue-500/60 shrink-0">25-35%</span>
+                <span className="text-[10px] text-blue-500/60 shrink-0">40-50%</span>
               </div>
               <div className="flex items-center gap-2 p-2 rounded-md border border-green-500/25 bg-green-500/8">
-                <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">40%</span>
+                <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">55%</span>
                 <div className="flex-1">
                   <span className="text-green-600 dark:text-green-400 font-bold text-xs">✅ 五级·最安全</span>
                   <span className="text-green-500/70 text-[10px] ml-1">深证↑+板块↑+个股↑（三涨）</span>
                 </div>
-                <span className="text-[10px] text-green-500/60 shrink-0">30-40%</span>
+                <span className="text-[10px] text-green-500/60 shrink-0">50-60%</span>
               </div>
             </div>
             <div className="mt-1.5 p-1.5 rounded border border-orange-500/10 bg-orange-500/5">
-              <p className="text-orange-600 dark:text-orange-400 font-medium text-[10px]">💡 记忆口诀：三跌1/4、双跌1/3、单弱2成、双强3成、三涨4成</p>
+              <p className="text-orange-600 dark:text-orange-400 font-medium text-[10px]">💡 记忆口诀：三跌1/4、双跌1/3、单弱2成、双强5成、三涨6成</p>
             </div>
           </div>
         </div>
@@ -305,8 +305,8 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
               <div className="p-2 rounded border border-green-500/15 bg-green-500/5">
                 <p className="text-green-600 dark:text-green-400 font-medium text-[11px] mb-1">🔺 深证上涨：适度放宽</p>
                 <div className="space-y-0.5 text-[11px]">
-                  <p>• 三涨场景 → 可达30-40%</p>
-                  <p>• 双涨场景 → 上限提升5%</p>
+                  <p>• 三涨场景 → 可达50-60%</p>
+                  <p>• 双涨场景 → 上限提升至40-50%</p>
                   <p>• 个股回调 → 低吸好时机</p>
                   <p>• 翻红信号 → 仓位可提升一级</p>
                 </div>
@@ -397,7 +397,7 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                   <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                   <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                   <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
-                  <td className="py-1.5 px-2 font-bold text-green-600">30-40%</td>
+                  <td className="py-1.5 px-2 font-bold text-green-600">50-60%</td>
                   <td className="py-1.5 px-2"><span className="text-green-600 font-medium">正T/反T(先卖再买)均可</span></td>
                   <td className="py-1.5 px-2"><span className="text-green-600 dark:text-green-400 font-medium">三涨！最安全</span></td>
                 </tr>
@@ -532,9 +532,9 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
             <div className="p-2 rounded-md border border-green-500/10 bg-green-500/5">
               <p className="text-green-600 dark:text-green-400 font-medium mb-1">场景2（三涨）：深证涨1.2% + 半导体涨0.8% + 个股涨1.5%</p>
               <div className="space-y-0.5">
-                <p>→ <span className="text-green-500 font-bold">五级·30-40%仓</span>，策略：<span className="text-green-500 font-medium">正T/反T(先卖再买)均可</span>，1万资金可用3000-4000</p>
-                <p>• 正T：回调时买入3万，反弹1.5%赚450元</p>
-                <p>• 反T(先卖再买)：冲高卖出3万，回落买回赚差价</p>
+                <p>→ <span className="text-green-500 font-bold">五级·50-60%仓</span>，策略：<span className="text-green-500 font-medium">正T/反T(先卖再买)均可</span>，1万资金可用5000-6000</p>
+                <p>• 正T：回调时买入5万，反弹1.5%赚750元</p>
+                <p>• 反T(先卖再买)：冲高卖出5万，回落买回赚差价</p>
                 <p>• 但大盘突然翻绿 → 立即降仓至1/3以下</p>
               </div>
             </div>
