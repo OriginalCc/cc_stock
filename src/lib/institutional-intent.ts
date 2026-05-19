@@ -909,3 +909,273 @@ export function analyzeFiveDayIntent(
     crossDayPattern: crossDay.pattern,
   };
 }
+
+// ── Intraday Segment Intent Analysis ──
+// Analyzes each time segment of a single trading day to determine
+// the dominant institutional intent (吸筹/出货/洗盘/拉升/震荡) in each segment.
+// Used to display intent hints on the intraday timeline chart.
+
+export interface IntradaySegmentIntent {
+  label: string;            // e.g., "开盘", "上午", "下午", "尾盘"
+  startTime: string;        // e.g., "09:30"
+  endTime: string;          // e.g., "10:00"
+  intent: InstitutionalIntent;
+  confidence: number;       // 0-100
+  topReason: string;        // brief reason
+  /** SVG fill color for chart overlay — red for 吸筹/拉升, green for 出货, yellow for 洗盘, gray for 震荡/观察 */
+  fillColor: string;
+  /** Tailwind text color class */
+  textColor: string;
+}
+
+export interface IntradayIntentResult {
+  overall: IntentSignal;
+  segments: IntradaySegmentIntent[];
+}
+
+/**
+ * Analyze a single day's intraday timeline for segment-level institutional intent.
+ * Splits the day into 4 natural trading periods and scores each one.
+ */
+export function analyzeIntradayIntent(
+  data: TimelineItem[],
+  prevClose: number,
+): IntradayIntentResult {
+  if (data.length < 20 || prevClose <= 0) {
+    return {
+      overall: buildIntentSignal("观察", 10, ["数据不足"], 0, 0.5),
+      segments: [],
+    };
+  }
+
+  // ── Overall analysis ──
+  const { signal: overallSignal } = analyzeDayIntent(data, prevClose);
+
+  // ── Segment-level analysis ──
+  // Split into 4 time-based periods (A-share natural trading periods)
+  // Period 1: 开盘 (09:30-10:00) — first 30 min, high volatility
+  // Period 2: 上午 (10:00-11:30) — morning session
+  // Period 3: 下午 (13:00-14:00) — afternoon session
+  // Period 4: 尾盘 (14:00-15:00) — late session
+
+  const periodDefs = [
+    { label: "开盘", startMin: 570, endMin: 600, startTime: "09:30", endTime: "10:00" },
+    { label: "上午", startMin: 600, endMin: 690, startTime: "10:00", endTime: "11:30" },
+    { label: "下午", startMin: 780, endMin: 840, startTime: "13:00", endTime: "14:00" },
+    { label: "尾盘", startMin: 840, endMin: 900, startTime: "14:00", endTime: "15:00" },
+  ];
+
+  // Convert data time to minutes for easy slicing
+  const timeToMin = (t: string): number => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  const segments: IntradaySegmentIntent[] = [];
+
+  for (const pd of periodDefs) {
+    const periodData = data.filter(d => {
+      const m = timeToMin(d.time);
+      return m >= pd.startMin && m < pd.endMin;
+    });
+
+    if (periodData.length < 5) {
+      segments.push({
+        label: pd.label,
+        startTime: pd.startTime,
+        endTime: pd.endTime,
+        intent: "观察",
+        confidence: 10,
+        topReason: "数据不足",
+        fillColor: "rgba(156,163,175,0.08)",   // gray
+        textColor: "text-gray-500",
+      });
+      continue;
+    }
+
+    const segOpen = periodData[0].price;
+    const segClose = periodData[periodData.length - 1].price;
+    const segHigh = Math.max(...periodData.map(d => d.price));
+    const segLow = Math.min(...periodData.map(d => d.price));
+    const segChange = prevClose > 0 ? ((segClose - segOpen) / prevClose) * 100 : 0;
+    const segTotalVol = periodData.reduce((s, d) => s + d.volume, 0);
+
+    // Up/down volume ratio
+    let upVol = 0, downVol = 0;
+    for (let i = 1; i < periodData.length; i++) {
+      if (periodData[i].price >= periodData[i - 1].price) upVol += periodData[i].volume;
+      else downVol += periodData[i].volume;
+    }
+    const totalVol = upVol + downVol || 1;
+    const upVolRatio = upVol / totalVol;
+    const downVolRatio = downVol / totalVol;
+
+    // Volume vs overall average
+    const overallAvgVol = data.reduce((s, d) => s + d.volume, 0) / data.length || 1;
+    const segAvgVol = segTotalVol / periodData.length;
+    const volRatioVsAvg = segAvgVol / overallAvgVol;
+
+    // VWAP for this segment
+    const segVwap = periodData[periodData.length - 1].avgPrice;
+    const closeVsVwap = segVwap > 0 ? ((segClose - segVwap) / segVwap) * 100 : 0;
+
+    // Range analysis
+    const segRange = prevClose > 0 ? ((segHigh - segLow) / prevClose) * 100 : 0;
+    const upperWick = segHigh - Math.max(segOpen, segClose);
+    const lowerWick = Math.min(segOpen, segClose) - segLow;
+    const body = Math.abs(segClose - segOpen);
+    const range = segHigh - segLow || 1;
+    const upperWickRatio = upperWick / range;
+    const lowerWickRatio = lowerWick / range;
+
+    // ── Score each intent type for this segment ──
+    let acc = 0, dist = 0, shake = 0, markup = 0;
+    const reasons: string[] = [];
+
+    // -- Accumulation (吸筹) --
+    if (upVolRatio > 0.55 && segChange > -0.5 && segChange < 1.5) {
+      acc += 25;
+      reasons.push("上涨放量");
+    }
+    if (closeVsVwap > -0.3 && closeVsVwap < 0.5 && segLow < segVwap) {
+      acc += 15;
+      reasons.push("围绕均价线");
+    }
+    // Quiet accumulation (low range, low volume)
+    if (segRange < 1 && Math.abs(segChange) < 0.5 && volRatioVsAvg < 0.8) {
+      acc += 20;
+      reasons.push("缩量整理");
+    }
+    // V-recovery within segment
+    if (periodData.length >= 10) {
+      const firstHalf = periodData.slice(0, Math.floor(periodData.length / 2));
+      const secondHalf = periodData.slice(Math.floor(periodData.length / 2));
+      const firstChange = firstHalf.length >= 2
+        ? ((firstHalf[firstHalf.length - 1].price - firstHalf[0].price) / firstHalf[0].price) * 100
+        : 0;
+      const secondChange = secondHalf.length >= 2
+        ? ((secondHalf[secondHalf.length - 1].price - secondHalf[0].price) / secondHalf[0].price) * 100
+        : 0;
+      if (firstChange < -0.2 && secondChange > 0.1) {
+        acc += 15;
+        reasons.push("探底回升");
+      }
+    }
+
+    // -- Distribution (出货) --
+    if (downVolRatio > 0.55 && segChange < -0.3) {
+      dist += 25;
+      reasons.push("下跌放量");
+    }
+    if (upperWickRatio > 0.4 && segChange < 0.3) {
+      dist += 20;
+      reasons.push("冲高回落");
+    }
+    // Volume surge but weak close (bull trap)
+    if (volRatioVsAvg > 1.5 && segChange < 0.3) {
+      dist += 15;
+      reasons.push("放量滞涨");
+    }
+    // Late-day dump
+    if (pd.label === "尾盘" && segChange < -0.3 && volRatioVsAvg > 1.2) {
+      dist += 20;
+      reasons.push("尾盘放量下杀");
+    }
+
+    // -- Shakeout (洗盘) --
+    if (segRange > 1.5 && Math.abs(segChange) < 0.5) {
+      shake += 20;
+      reasons.push("大幅震荡");
+    }
+    if (lowerWickRatio > 0.35 && segClose > segOpen) {
+      shake += 15;
+      reasons.push("下影线长");
+    }
+    // Quick dip recovery
+    if (segLow < prevClose * 0.98 && segClose > prevClose * 0.995) {
+      shake += 20;
+      reasons.push("快速下探收回");
+    }
+
+    // -- Markup (拉升) --
+    if (segChange > 1 && upVolRatio > 0.6) {
+      markup += 25;
+      reasons.push("放量拉升");
+    }
+    if (segClose > segHigh * 0.995 && segChange > 0.5) {
+      markup += 15;
+      reasons.push("接近日高");
+    }
+    if (closeVsVwap > 0.5 && segChange > 0.5) {
+      markup += 10;
+      reasons.push("远超均价线");
+    }
+
+    // ── Determine dominant intent ──
+    const maxS = Math.max(acc, dist, shake, markup);
+    let intent: InstitutionalIntent;
+    let confidence: number;
+    let topReason: string;
+
+    if (maxS < 10) {
+      intent = "震荡";
+      confidence = 25;
+      topReason = "无明显方向";
+    } else if (acc === maxS) {
+      intent = "吸筹";
+      confidence = Math.min(85, 30 + acc);
+      topReason = reasons.filter(r => ["上涨放量", "围绕均价线", "缩量整理", "探底回升"].includes(r))[0] || "吸筹特征";
+    } else if (dist === maxS) {
+      intent = "出货";
+      confidence = Math.min(85, 30 + dist);
+      topReason = reasons.filter(r => ["下跌放量", "冲高回落", "放量滞涨", "尾盘放量下杀"].includes(r))[0] || "出货特征";
+    } else if (shake === maxS) {
+      intent = "洗盘";
+      confidence = Math.min(80, 25 + shake);
+      topReason = reasons.filter(r => ["大幅震荡", "下影线长", "快速下探收回"].includes(r))[0] || "洗盘特征";
+    } else {
+      intent = "拉升";
+      confidence = Math.min(85, 30 + markup);
+      topReason = reasons.filter(r => ["放量拉升", "接近日高", "远超均价线"].includes(r))[0] || "拉升特征";
+    }
+
+    // Color mapping: 吸筹=红, 出货=绿, 洗盘=黄, 拉升=红, 震荡=灰
+    let fillColor: string;
+    let textColor: string;
+    switch (intent) {
+      case "吸筹":
+        fillColor = "rgba(239,68,68,0.10)";   // red
+        textColor = "text-red-500";
+        break;
+      case "出货":
+        fillColor = "rgba(22,163,74,0.10)";    // green
+        textColor = "text-green-500";
+        break;
+      case "洗盘":
+        fillColor = "rgba(234,179,8,0.10)";    // yellow
+        textColor = "text-yellow-500";
+        break;
+      case "拉升":
+        fillColor = "rgba(239,68,68,0.10)";    // red (bullish like 吸筹)
+        textColor = "text-red-500";
+        break;
+      default:
+        fillColor = "rgba(156,163,175,0.06)";  // gray
+        textColor = "text-gray-500";
+        break;
+    }
+
+    segments.push({
+      label: pd.label,
+      startTime: pd.startTime,
+      endTime: pd.endTime,
+      intent,
+      confidence,
+      topReason,
+      fillColor,
+      textColor,
+    });
+  }
+
+  return { overall: overallSignal, segments };
+}

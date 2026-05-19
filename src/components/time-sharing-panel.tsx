@@ -35,6 +35,7 @@ import {
   type Strength,
   type RegimeDetail,
 } from "@/lib/t-strategy";
+import { analyzeIntradayIntent, type IntradayIntentResult, type IntradaySegmentIntent } from "@/lib/institutional-intent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -989,6 +990,222 @@ function computeTimelineSignalElements(
   return { signalElements, bubbleElements };
 }
 
+// ── Intraday Intent Segment Overlay Renderer ──
+// Renders colored background bands and text labels on the price chart
+// to indicate institutional intent (吸筹/出货/洗盘/拉升) for each time period.
+
+function IntentSegmentOverlay(props: any) {
+  const { formattedGraphicalItems, xAxisMap, yAxisMap, intentSegments, allTimes } = props;
+  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap || !intentSegments || intentSegments.length === 0) return null;
+
+  const xAxis = Object.values(xAxisMap)[0] as any;
+  const yAxis = Object.values(yAxisMap)[0] as any;
+  if (!xAxis || !yAxis) return null;
+
+  const xScale = xAxis.scale;
+  const yScale = yAxis.scale;
+  const offset = props.offset;
+  if (!xScale || !yScale || !offset) return null;
+
+  // Find the index range for each intent segment based on time strings
+  const timeToMin = (t: string): number => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  // Get the price line data points for coordinate mapping
+  let priceLineData: any[] = [];
+  for (const item of formattedGraphicalItems) {
+    if (item?.props?.points && Array.isArray(item.props.points)) {
+      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+      if (stroke === "#eab308" || stroke === "#facc15" || stroke === "#ca8a04") continue;
+      if (priceLineData.length === 0) {
+        priceLineData = item.props.points;
+      }
+    }
+  }
+  if (priceLineData.length === 0) return null;
+
+  const elements: React.ReactNode[] = [];
+
+  for (let si = 0; si < intentSegments.length; si++) {
+    const seg = intentSegments[si] as IntradaySegmentIntent;
+    if (seg.intent === "观察") continue;
+
+    const segStartMin = timeToMin(seg.startTime);
+    const segEndMin = timeToMin(seg.endTime);
+
+    // Find the x coordinates for the start and end times
+    // by looking at the price line data points
+    let xStart: number | null = null;
+    let xEnd: number | null = null;
+    let segMinY = Infinity;
+    let segMaxY = -Infinity;
+
+    for (const point of priceLineData) {
+      const pointTime = point?.payload?.time;
+      if (!point?.payload?.hasData) continue;
+      if (!pointTime) continue;
+      const ptMin = timeToMin(pointTime);
+      if (ptMin >= segStartMin && ptMin < segEndMin) {
+        if (xStart === null) xStart = point.x;
+        xEnd = point.x;
+        if (point.y < segMinY) segMinY = point.y;
+        if (point.y > segMaxY) segMaxY = point.y;
+      }
+    }
+
+    if (xStart === null || xEnd === null) continue;
+
+    // Expand x range slightly for visual continuity
+    const xPad = 2;
+    const rectX = xStart - xPad;
+    const rectWidth = (xEnd - xStart) + xPad * 2;
+    const plotTop = offset.top;
+    const plotHeight = offset.height;
+    const rectY = plotTop;
+    const rectHeight = plotHeight;
+
+    // Background band
+    elements.push(
+      <rect
+        key={`intent-bg-${si}`}
+        x={rectX}
+        y={rectY}
+        width={rectWidth}
+        height={rectHeight}
+        fill={seg.fillColor}
+        rx={2}
+      />
+    );
+
+    // Top border line
+    elements.push(
+      <line
+        key={`intent-line-${si}`}
+        x1={rectX}
+        y1={plotTop + 1}
+        x2={rectX + rectWidth}
+        y2={plotTop + 1}
+        stroke={seg.intent === "吸筹" || seg.intent === "拉升" ? "rgba(239,68,68,0.35)" : seg.intent === "出货" ? "rgba(22,163,74,0.35)" : seg.intent === "洗盘" ? "rgba(234,179,8,0.35)" : "rgba(156,163,175,0.2)"}
+        strokeWidth={2}
+      />
+    );
+
+    // Label pill at the top of the segment
+    const intentLabel = seg.intent;
+    const labelW = intentLabel.length * 9 + 16;
+    const labelH = 16;
+    const labelX = rectX + rectWidth / 2;
+    const labelY = plotTop + 10;
+
+    let pillFill: string;
+    let pillStroke: string;
+    let textFill: string;
+    if (seg.intent === "吸筹" || seg.intent === "拉升") {
+      pillFill = "rgba(239,68,68,0.18)";
+      pillStroke = "rgba(239,68,68,0.6)";
+      textFill = "#dc2626";
+    } else if (seg.intent === "出货") {
+      pillFill = "rgba(22,163,74,0.18)";
+      pillStroke = "rgba(22,163,74,0.6)";
+      textFill = "#16a34a";
+    } else if (seg.intent === "洗盘") {
+      pillFill = "rgba(234,179,8,0.18)";
+      pillStroke = "rgba(234,179,8,0.6)";
+      textFill = "#ca8a04";
+    } else {
+      pillFill = "rgba(156,163,175,0.12)";
+      pillStroke = "rgba(156,163,175,0.4)";
+      textFill = "#6b7280";
+    }
+
+    elements.push(
+      <g key={`intent-label-${si}`}>
+        {/* White glow behind pill */}
+        <rect
+          x={labelX - labelW / 2 - 1}
+          y={labelY - labelH / 2 - 1}
+          width={labelW + 2}
+          height={labelH + 2}
+          rx={4}
+          fill="white"
+          fillOpacity={0.8}
+        />
+        {/* Pill background */}
+        <rect
+          x={labelX - labelW / 2}
+          y={labelY - labelH / 2}
+          width={labelW}
+          height={labelH}
+          rx={3}
+          fill={pillFill}
+          stroke={pillStroke}
+          strokeWidth={0.8}
+        />
+        {/* Intent text */}
+        <text
+          x={labelX}
+          y={labelY + 1}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize={9}
+          fontWeight={700}
+          fill={textFill}
+        >
+          {intentLabel}
+        </text>
+        {/* Small reason text below */}
+        {seg.topReason && seg.topReason !== "无明显方向" && (
+          <text
+            x={labelX}
+            y={labelY + labelH / 2 + 8}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize={7}
+            fill={textFill}
+            opacity={0.6}
+          >
+            {seg.topReason}
+          </text>
+        )}
+      </g>
+    );
+
+    // Confidence badge (small)
+    const confX = labelX + labelW / 2 + 6;
+    const confY = labelY;
+    elements.push(
+      <g key={`intent-conf-${si}`}>
+        <rect
+          x={confX}
+          y={confY - 5}
+          width={20}
+          height={10}
+          rx={2}
+          fill={pillFill}
+          stroke={pillStroke}
+          strokeWidth={0.5}
+        />
+        <text
+          x={confX + 10}
+          y={confY + 1}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize={6}
+          fontWeight={600}
+          fill={textFill}
+          opacity={0.7}
+        >
+          {seg.confidence}%
+        </text>
+      </g>
+    );
+  }
+
+  return elements.length > 0 ? <g className="intent-segment-overlay">{elements}</g> : null;
+}
+
 // ── Combined Chart Overlay Renderer ──────────────────────
 // Ensures proper layer order:
 //   Layer 1 (bottom): 分时因子 signal markers & labels
@@ -996,7 +1213,7 @@ function computeTimelineSignalElements(
 //   Layer 3 (top):    Expanded bubbles (interactive, must be on top for usability)
 
 function CombinedChartOverlay(props: any) {
-  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  const { formattedGraphicalItems, xAxisMap, yAxisMap, intentSegments } = props;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggleExpand = useCallback((id: string) => {
@@ -1019,11 +1236,18 @@ function CombinedChartOverlay(props: any) {
   // Resolve PV label overlaps
   const pvPlacedLabels = pvPoints.length > 0 ? resolvePvLabelOverlaps(pvPoints) : [];
 
-  if (!signalResult && pvPoints.length === 0) return null;
+  // Intent segment overlay (rendered as the bottom layer)
+  const intentOverlay = intentSegments && intentSegments.length > 0
+    ? <IntentSegmentOverlay formattedGraphicalItems={formattedGraphicalItems} xAxisMap={xAxisMap} yAxisMap={yAxisMap} intentSegments={intentSegments} offset={props.offset} />
+    : null;
+
+  if (!signalResult && pvPoints.length === 0 && !intentOverlay) return null;
 
   return (
     <g>
-      {/* Layer 1 (bottom): 分时因子 signal markers & labels */}
+      {/* Layer 0 (bottom-most): Intent segment bands & labels */}
+      {intentOverlay}
+      {/* Layer 1: 分时因子 signal markers & labels */}
       {signalResult?.signalElements}
       {/* Layer 2 (middle): 选股标记 pulse/volume markers — ON TOP of factor signals */}
       {pvPlacedLabels.length > 0 && (
@@ -1555,6 +1779,12 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   // ── Memoize detectMarketRegimeDetail (was called inside IIFE on every render) ──
   const regimeDetail = useMemo(() => detectMarketRegimeDetail(data, prevClose), [data, prevClose]);
 
+  // ── Intraday institutional intent analysis ──
+  const intradayIntent = useMemo(() => {
+    if (data.length < 20 || prevClose <= 0) return null;
+    return analyzeIntradayIntent(data, prevClose);
+  }, [data, prevClose]);
+
   // ── Memoize tooltip components (stable references to avoid re-renders) ──
   const timelineTooltipEl = useMemo(() => <TimelineTooltip />, []);
   const volumeTooltipEl = useMemo(() => <TimelineVolumeTooltip />, []);
@@ -1735,6 +1965,34 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             </span>
           </span>
         )}
+        {/* Intraday Intent Badge */}
+        {intradayIntent && intradayIntent.overall.intent !== "观察" && intradayIntent.overall.intent !== "震荡" && (() => {
+          const { overall, segments } = intradayIntent;
+          const isAccOrMarkup = overall.intent === "吸筹" || overall.intent === "拉升";
+          const isDist = overall.intent === "出货";
+          const badgeBg = isAccOrMarkup
+            ? "bg-red-500/10 border-red-500/30"
+            : isDist
+              ? "bg-green-500/10 border-green-500/30"
+              : "bg-yellow-500/10 border-yellow-500/30";
+          const badgeText = isAccOrMarkup
+            ? "text-red-600 dark:text-red-400"
+            : isDist
+              ? "text-green-600 dark:text-green-400"
+              : "text-yellow-600 dark:text-yellow-400";
+          return (
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold ${badgeBg} ${badgeText}`}>
+              <span>{overall.icon}</span>
+              <span>主力:{overall.intent}</span>
+              <span className="opacity-60">{overall.confidence}%</span>
+              {segments.length > 0 && (
+                <span className="text-[8px] opacity-50">
+                  ({segments.map(s => s.intent === "观察" ? "" : `${s.label}${s.intent}`).filter(Boolean).join("→")})
+                </span>
+              )}
+            </span>
+          );
+        })()}
         {buySignals > 0 && (
           <span className="flex items-center gap-1 text-red-500">
             ▲ 买{buySignals}
@@ -2345,7 +2603,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {deferredCrosshairIdx != null && crosshairItem?.hasData && (
               <ReferenceLine yAxisId="price" x={deferredCrosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
             )}
-            <Customized component={CombinedChartOverlay} />
+            <Customized component={CombinedChartOverlay} intentSegments={intradayIntent?.segments} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

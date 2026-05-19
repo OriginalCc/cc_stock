@@ -723,3 +723,35 @@ Stage Summary:
 - `ALL_TRADE_TIMES` shared from `@/lib/trading-times` — single source of truth for both files
 - Shape renderers duplicated in both files (both main and mini charts need them)
 - No functionality changes, pure code reorganization
+
+---
+Task ID: 1
+Agent: main
+Task: 在分时图上添加吸筹/出货提示
+
+Work Log:
+- 在 institutional-intent.ts 中新增 `analyzeIntradayIntent` 函数
+  - 将交易日分为4个时段：开盘(09:30-10:00)、上午(10:00-11:30)、下午(13:00-14:00)、尾盘(14:00-15:00)
+  - 每个时段独立计算吸筹/出货/洗盘/拉升评分
+  - 评分依据：上涨/下跌量比、均价线位置、缩量整理、冲高回落、放量滞涨、下影线等
+  - 颜色映射：吸筹=红色、出货=绿色、洗盘=黄色、拉升=红色、震荡=灰色
+  - 导出 IntradaySegmentIntent 和 IntradayIntentResult 接口
+- 在 time-sharing-panel.tsx 中新增 IntentSegmentOverlay 渲染器
+  - 渲染半透明彩色背景带（按意图类型着色）
+  - 在每个时段顶部渲染意图标签（吸筹/出货/洗盘/拉升 + 置信度）
+  - 每个标签下方显示简要原因（如"上涨放量"、"冲高回落"）
+- 修改 CombinedChartOverlay，新增 Layer 0（意图背景带层），在信号标记层之下渲染
+  - 接收 intentSegments 属性，传递给 IntentSegmentOverlay
+- 在 TimeSharingPanel 中计算 intradayIntent（useMemo，依赖 data 和 prevClose）
+- 将 intentSegments 传递给 Customized 组件
+- 在分时图头部添加"主力意图"徽章
+  - 显示整体意图（如"主力:吸筹 65%"）
+  - 显示各时段意图流转（如"开盘吸筹→上午出货→尾盘吸筹"）
+  - 颜色：吸筹/拉升=红色，出货=绿色，洗盘=黄色
+- Lint通过，dev server正常运行
+
+Stage Summary:
+- 分时图现在显示4个时段的主力意图提示：吸筹(红)/出货(绿)/洗盘(黄)/拉升(红)
+- 图表上有彩色背景带+标签+原因+置信度
+- 头部有整体意图徽章+各时段流转
+- 复用已有的 institutional-intent.ts 分析引擎
