@@ -66,7 +66,7 @@ export default function StockTAssistant() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [rulesExpanded, setRulesExpanded] = useState<boolean>(false);
+  const [rulesExpanded, setRulesExpanded] = useState<boolean>(true);
   const [autoExpanded, setAutoExpanded] = useState<boolean>(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 

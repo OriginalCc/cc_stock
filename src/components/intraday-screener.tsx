@@ -258,7 +258,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
   const [statsExpanded, setStatsExpanded] = useState(false);
 
   // Trading rules panel state
-  const [rulesExpanded, setRulesExpanded] = useState(false);
+  const [rulesExpanded, setRulesExpanded] = useState(true);
 
   // Mini timeline preview state
   const [previewStock, setPreviewStock] = useState<IntradayStock | null>(null);
