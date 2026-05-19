@@ -2122,7 +2122,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         <ResponsiveContainer width="100%" height={isZoomed ? 620 : 530}>
           <ComposedChart
             data={zoomData}
-            margin={{ top: 36, right: 82, left: 2, bottom: 1 }}
+            margin={{ top: 36, right: 82, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
                 startTransition(() => setCrosshairIdx(state.activeTooltipIndex));
