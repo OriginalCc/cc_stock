@@ -769,8 +769,8 @@ export default function StockTAssistant() {
           </LazyMount>
         )}
 
-        {/* T-Trading Signals Summary */}
-        {(chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
+        {/* T-Trading Signals Summary — hidden in 5d-timeline mode */}
+        {chartMode !== "5d-timeline" && (chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
           <LazyMount height={120}>
             <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
           </LazyMount>
