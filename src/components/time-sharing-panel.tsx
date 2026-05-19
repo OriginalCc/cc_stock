@@ -2354,7 +2354,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
 
       {/* ─── Panel 1: Price Chart ─── */}
       <div className="relative">
-        <ResponsiveContainer width="100%" height={isZoomed ? 420 : 360}>
+        <ResponsiveContainer width="100%" height={isZoomed ? 520 : 440}>
           <ComposedChart
             data={zoomData}
             margin={{ top: 36, right: 82, left: 2, bottom: 16 }}
