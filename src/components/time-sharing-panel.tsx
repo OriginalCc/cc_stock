@@ -1357,6 +1357,14 @@ function timeSharingPropsEqual(
   if (prev.sectorRegime?.regime !== next.sectorRegime?.regime) return false;
   if (prev.sectorInfo?.code !== next.sectorInfo?.code) return false;
 
+  // Index timeline data: compare items length for active key
+  const prevIdxData = prev.indexTimelineData?.[prev.activeIndexKey || "sz"];
+  const nextIdxData = next.indexTimelineData?.[next.activeIndexKey || "sz"];
+  if ((prevIdxData?.items.length || 0) !== (nextIdxData?.items.length || 0)) return false;
+
+  // Sector timeline data: compare items length
+  if ((prev.sectorTimelineData?.items.length || 0) !== (next.sectorTimelineData?.items.length || 0)) return false;
+
   // Callbacks and config are stable refs (useCallback in parent)
   return true;
 }
@@ -1405,6 +1413,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   sectorInfo,
   pvMarkers,
   stockName,
+  indexTimelineData,
+  sectorTimelineData,
 }: {
   data: TimelineItem[];
   prevClose: number;
@@ -1429,6 +1439,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   sectorInfo?: { code: string; name: string } | null;
   pvMarkers?: PulseVolumeMarker[];
   stockName?: string;
+  indexTimelineData?: Record<string, { items: TimelineItem[]; prevClose: number }>;
+  sectorTimelineData?: { items: TimelineItem[]; prevClose: number };
 }) {
   // ── Build full-day timeline template (240 minutes total) ──
   // A-share trading day: 09:30-11:30 (120min) + 13:00-15:00 (120min)
@@ -2734,6 +2746,30 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      {/* ─── Market Index & Sector Mini Timelines ─── */}
+      {(() => {
+        const szData = indexTimelineData?.[activeIndexKey || "sz"];
+        const idxInfo = indexConfig?.[activeIndexKey || "sz"];
+        const hasIdxData = szData && szData.items.length > 0;
+        const hasSectorData = sectorTimelineData.items.length > 0 && sectorInfo;
+        if (!hasIdxData && !hasSectorData) return null;
+
+        const regimeBadge = (regime: RegimeDetail | null) => {
+          if (!regime) return null;
+          const cfg = REGIME_CONFIG[regime.regime] || REGIME_CONFIG["震荡市"];
+          return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}><span>{cfg.icon}</span><span>{regime.regime}</span></span>;
+        };
+
+        return (
+          <div className="mt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime)}{onCycleIndex && <span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={onCycleIndex} title="点击切换指数">切换</span>}</div>} />}
+              {hasSectorData && <MiniTimelinePanel title={`${sectorInfo.name}板块`} data={sectorTimelineData.items} prevClose={sectorTimelineData.prevClose} badge={<div className="ml-auto">{regimeBadge(sectorRegime)}</div>} />}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }, timeSharingPropsEqual);

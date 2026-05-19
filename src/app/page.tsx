@@ -18,7 +18,6 @@ const TimeSharingPanel = dynamic(() => import("@/components/time-sharing-panel")
   ssr: false,
   loading: () => <div className="h-[500px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载分时图...</span></div>,
 });
-const MiniTimelinePanel = dynamic(() => import("@/components/time-sharing-panel").then(m => ({ default: m.MiniTimelinePanel })), { ssr: false, loading: () => <div className="h-[400px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载分时图...</span></div> });
 const KLineChartPanel = dynamic(() => import("@/components/kline-chart-panel").then(m => ({ default: m.KLineChartPanel })), {
   ssr: false,
   loading: () => <div className="h-[400px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载K线图...</span></div>,
@@ -48,7 +47,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, TrendingUp, TrendingDown, Activity, ArrowUpRight, ArrowDownRight,
-  X, Clock, Zap, LineChart, CandlestickChart, GitBranch, Filter,
+  X, Clock, Zap, LineChart, CandlestickChart, Filter,
   Star, Bell, BellOff, Volume2, Newspaper, CalendarDays, Flame,
   History, ShieldCheck, Server, Scale, AlertTriangle, BookOpen, Info,
 } from "lucide-react";
@@ -748,7 +747,7 @@ export default function StockTAssistant() {
           <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
-            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={deferredTimelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={deferredPvMarkers} stockName={quote?.name} />
+            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={deferredTimelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={deferredPvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />
           </div>
         ) : chartMode === "kline" && chartData.length > 0 ? (
           <KLineChartPanel allChartData={allChartData} klineVisibleBars={klineVisibleBars} setKlineVisibleBars={setKlineVisibleBars} klinePanOffset={klinePanOffset} setKlinePanOffset={setKlinePanOffset} interval={interval} />
@@ -765,23 +764,6 @@ export default function StockTAssistant() {
             <RiskAlertPanel symbol={symbol} quote={quote} liveTimeline={liveTimeline} sectorRegime={sectorRegime} szIndexRegime={szIndexRegime} signalCounts={signalCounts} />
           </div>
         )}
-
-        {/* Market Index & Sector Overview */}
-        {chartMode === "timeline" && liveTimeline.length > 0 && (() => {
-          const szData = indexTimelineData[activeIndexKey]; const idxInfo = INDEX_CONFIG[activeIndexKey];
-          const hasIdxData = szData && szData.items.length > 0; const hasSectorData = sectorTimelineData.items.length > 0 && sectorInfo;
-          const regimeBadge = (regime: RegimeDetail | null) => { if (!regime) return null; const cfg = REGIME_CONFIG[regime.regime] || REGIME_CONFIG["震荡市"]; return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}><span>{cfg.icon}</span><span>{regime.regime}</span></span>; };
-          if (!hasIdxData && !hasSectorData) return null;
-          return (
-            <div className="mt-4">
-              <div className="flex items-center gap-2 mb-2"><GitBranch className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-medium text-foreground">大盘 & 板块走势</span><span className="text-[10px] text-muted-foreground">— 与个股联动参考</span></div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime)}<span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={cycleIndexKey} title="点击切换指数">切换</span></div>} />}
-                {hasSectorData && <MiniTimelinePanel title={`${sectorInfo.name}板块`} data={sectorTimelineData.items} prevClose={sectorTimelineData.prevClose} badge={<div className="ml-auto">{regimeBadge(sectorRegime)}</div>} />}
-              </div>
-            </div>
-          );
-        })()}
 
         {/* T-Trading Signals Summary */}
         {(chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
