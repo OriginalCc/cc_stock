@@ -469,7 +469,11 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
   );
 }
 
-// ── Intent Explanation Panel (V2, collapsible) ──
+// ── Intent Explanation Panel (V3, collapsible) ──
+
+function V3Badge() {
+  return <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-purple-500 border-purple-500/40">V3</Badge>;
+}
 
 function IntentExplanationPanel() {
   const [expanded, setExpanded] = useState(false);
@@ -481,8 +485,8 @@ function IntentExplanationPanel() {
         onClick={() => setExpanded(prev => !prev)}
       >
         <BookOpen className="w-4 h-4 text-muted-foreground shrink-0" />
-        <span className="text-sm font-medium text-foreground">主力意图识别原理说明 (V2)</span>
-        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-1">优化版</Badge>
+        <span className="text-sm font-medium text-foreground">主力意图识别原理说明 (V3)</span>
+        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-1 bg-purple-500/10 text-purple-600 border-purple-500/30">精准版</Badge>
         {expanded
           ? <ChevronUp className="w-4 h-4 text-muted-foreground ml-auto" />
           : <ChevronDown className="w-4 h-4 text-muted-foreground ml-auto" />
@@ -493,11 +497,30 @@ function IntentExplanationPanel() {
           {/* 核心原理 */}
           <div>
             <h4 className="text-sm font-semibold text-foreground mb-1.5">核心原理</h4>
-            <p>主力资金的操作必然在<strong className="text-foreground">量价关系</strong>上留下痕迹。V2引擎通过三维度分析来识别主力意图：</p>
+            <p>主力资金的操作必然在<strong className="text-foreground">量价关系</strong>上留下痕迹。V3引擎通过<strong className="text-foreground">七大维度</strong>综合分析，大幅提升识别精准度：</p>
             <div className="mt-1.5 space-y-0.5">
               <p>• <strong className="text-foreground">量能趋势分析</strong> — 成交量递增/递减/脉冲/集中度</p>
               <p>• <strong className="text-foreground">价格形态分析</strong> — K线实体/上下影线/均价线位置</p>
+              <p>• <strong className="text-foreground">MACD背离检测</strong> — 顶背离/底背离识别趋势衰竭 <V3Badge /></p>
+              <p>• <strong className="text-foreground">RSI超买超卖</strong> — 极端区域判断主力介入时机 <V3Badge /></p>
+              <p>• <strong className="text-foreground">动量衰减分析</strong> — 上涨/下跌动力衰退识别 <V3Badge /></p>
+              <p>• <strong className="text-foreground">VWAP深度分析</strong> — 穿越频率/斜率/时间分布 <V3Badge /></p>
               <p>• <strong className="text-foreground">跨日关联分析</strong> — 多日意图演进模式识别</p>
+            </div>
+          </div>
+
+          {/* V3新增因子说明 */}
+          <div className="rounded-md border border-purple-500/20 bg-purple-500/5 p-3">
+            <h4 className="text-sm font-semibold text-purple-600 dark:text-purple-400 mb-1.5">🧬 V3 新增核心因子</h4>
+            <div className="space-y-1.5">
+              <p><strong className="text-foreground">MACD背离检测：</strong>价格创新高但MACD未创新高→顶背离（上涨衰竭/出货信号）；价格创新低但MACD未创新低→底背离（下跌衰竭/吸筹信号）。这是识别趋势转折最可靠的指标之一。</p>
+              <p><strong className="text-foreground">RSI超买超卖：</strong>RSI&gt;70超买区+价格走弱→出货风险；RSI&lt;30超卖区+价格企稳→吸筹机会。RSI从超卖区回升是洗盘结束的信号。</p>
+              <p><strong className="text-foreground">动量衰减分析：</strong>连续上涨但每次涨幅递减→上涨动量衰减（主力边拉边出）；连续下跌但每次跌幅递减→下跌动量衰减（空头衰竭/洗盘尾声）。</p>
+              <p><strong className="text-foreground">VWAP深度分析：</strong>均价线斜率方向反映资金流向；穿越次数反映多空争夺激烈程度；价格在VWAP上方时间占比反映控盘程度。</p>
+              <p><strong className="text-foreground">量价分布偏度：</strong>量能集中在低价区→主力在低位积极买入（吸筹）；量能集中在高价区→主力在高位积极卖出（出货）。</p>
+              <p><strong className="text-foreground">价格加速度：</strong>上涨加速→多头增强（拉升确认）；上涨减速→多头衰竭（出货预警）；下跌加速→空头增强（出逃信号）；下跌减速→空头衰竭（洗盘尾声）。</p>
+              <p><strong className="text-foreground">大单行为推断：</strong>从脉冲量能（量能突然放大2倍以上）+价格方向推断主力行为：脉冲向上=大单买入，脉冲向下=大单卖出。</p>
+              <p><strong className="text-foreground">关键价位测试：</strong>价格测试高位被拒→抛压重（出货）；价格测试低位获支撑→承接强（吸筹）；VWAP支撑/压力确认。</p>
             </div>
           </div>
 
@@ -509,9 +532,16 @@ function IntentExplanationPanel() {
               <p><strong className="text-foreground">均价线回归：</strong>价格围绕均价线震荡回升，说明主力在均价线附近持续吸筹</p>
               <p><strong className="text-foreground">V型回升：</strong>早盘下探后午后回升，主力利用早盘打压吸筹</p>
               <p><strong className="text-foreground">尾盘放量：</strong>尾盘成交量大于开盘量，主力在收盘前抢筹</p>
-              <p><strong className="text-foreground">缩量横盘整理：</strong>振幅小、量能平稳，主力暗中吸筹避免引起注意 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
-              <p><strong className="text-foreground">放量上攻后缩量回踩：</strong>先放量上涨再缩量回调，确认吸筹而非出货 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
-              <p><strong className="text-foreground">量能递增微涨：</strong>成交量逐步放大但涨幅不大，主力持续低调吸筹 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-red-500">V2</Badge></p>
+              <p><strong className="text-foreground">缩量横盘整理：</strong>振幅小、量能平稳，主力暗中吸筹避免引起注意</p>
+              <p><strong className="text-foreground">放量上攻后缩量回踩：</strong>先放量上涨再缩量回调，确认吸筹而非出货</p>
+              <p><strong className="text-foreground">量能递增微涨：</strong>成交量逐步放大但涨幅不大，主力持续低调吸筹</p>
+              <p><strong className="text-foreground">MACD底背离：</strong>价格新低但MACD未新低，下跌动能衰竭，主力低位吸筹 <V3Badge /></p>
+              <p><strong className="text-foreground">RSI超卖+企稳：</strong>RSI进入超卖区但价格止跌，主力逢低介入 <V3Badge /></p>
+              <p><strong className="text-foreground">VWAP斜率上移+站稳：</strong>均价线支撑上移，主力稳步吸筹 <V3Badge /></p>
+              <p><strong className="text-foreground">量能集中在低价区：</strong>主力在低位积极买入 <V3Badge /></p>
+              <p><strong className="text-foreground">下跌动量衰减：</strong>越跌越无力，主力不在低位抛售 <V3Badge /></p>
+              <p><strong className="text-foreground">大单买入为主：</strong>脉冲量能方向向上，大资金在买入 <V3Badge /></p>
+              <p><strong className="text-foreground">VWAP支撑确认：</strong>跌破均价线后收回，支撑有效 <V3Badge /></p>
             </div>
           </div>
 
@@ -522,12 +552,20 @@ function IntentExplanationPanel() {
               <p><strong className="text-foreground">下跌放量：</strong>价格下跌伴随大量成交（下跌量占比&gt;55%），主力集中抛售筹码</p>
               <p><strong className="text-foreground">冲高回落：</strong>价格冲高后跌破均价线，主力拉高引诱跟风后出货</p>
               <p><strong className="text-foreground">早盘冲高回落：</strong>开盘快速拉高后持续下跌，利用开盘人气派发</p>
-              <p><strong className="text-foreground">诱多出货：</strong>盘中放量拉升但收盘偏弱，制造突破假象吸引买盘后出货 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
+              <p><strong className="text-foreground">诱多出货：</strong>盘中放量拉升但收盘偏弱，制造突破假象吸引买盘后出货</p>
               <p><strong className="text-foreground">假突破：</strong>放量上攻但收盘偏弱，主力制造突破假象吸引买盘后出货</p>
               <p><strong className="text-foreground">开盘放量滞涨：</strong>开盘成交量很大但涨幅有限，主力趁开盘活跃出货</p>
               <p><strong className="text-foreground">尾盘放量下杀：</strong>收盘前放量下跌，主力尾盘集中抛售</p>
-              <p><strong className="text-foreground">长上影线：</strong>上影线占比超40%，高位抛压沉重 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
-              <p><strong className="text-foreground">高位放量震荡：</strong>价格远超均价线且量能剧烈波动，高位派发 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-green-500">V2</Badge></p>
+              <p><strong className="text-foreground">长上影线：</strong>上影线占比超40%，高位抛压沉重</p>
+              <p><strong className="text-foreground">高位放量震荡：</strong>价格远超均价线且量能剧烈波动，高位派发</p>
+              <p><strong className="text-foreground">MACD顶背离：</strong>价格新高但MACD未新高，上涨动能衰竭，主力高位派发 <V3Badge /></p>
+              <p><strong className="text-foreground">RSI超买+走弱：</strong>RSI进入超买区但价格开始走弱，主力高位出货 <V3Badge /></p>
+              <p><strong className="text-foreground">VWAP斜率下移+跌破：</strong>均价线压力下移，空头压制 <V3Badge /></p>
+              <p><strong className="text-foreground">量能集中在高价区：</strong>主力在高位积极卖出 <V3Badge /></p>
+              <p><strong className="text-foreground">上涨动量衰减：</strong>越涨越无力，主力边拉边出 <V3Badge /></p>
+              <p><strong className="text-foreground">大单卖出为主：</strong>脉冲量能方向向下，大资金在卖出 <V3Badge /></p>
+              <p><strong className="text-foreground">VWAP压力确认：</strong>突破均价线后回落，压力有效 <V3Badge /></p>
+              <p><strong className="text-foreground">价格加速下跌：</strong>下行趋势加速，主力集中出逃 <V3Badge /></p>
             </div>
           </div>
 
@@ -538,9 +576,13 @@ function IntentExplanationPanel() {
               <p><strong className="text-foreground">快速下探收回：</strong>日内大幅下探后迅速收回，主力故意打压制造恐慌</p>
               <p><strong className="text-foreground">大振幅小涨跌：</strong>日内振幅大但收盘变化小，说明主力在震荡中清洗浮筹</p>
               <p><strong className="text-foreground">低位放量缩量回升：</strong>低位出现放量（恐慌盘涌出），随后缩量回升（主力不再抛售）</p>
-              <p><strong className="text-foreground">缩量下跌：</strong>量缩价跌但无恐慌抛售，说明主力并未出逃 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-yellow-500">V2</Badge></p>
-              <p><strong className="text-foreground">长下影线收盘偏强：</strong>下影线长+收盘在区间上半部，下方承接有力 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-yellow-500">V2</Badge></p>
-              <p><strong className="text-foreground">V型洗盘：</strong>深跌后快速拉回，主力借恐慌吸筹 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-yellow-500">V2</Badge></p>
+              <p><strong className="text-foreground">缩量下跌：</strong>量缩价跌但无恐慌抛售，说明主力并未出逃</p>
+              <p><strong className="text-foreground">长下影线收盘偏强：</strong>下影线长+收盘在区间上半部，下方承接有力</p>
+              <p><strong className="text-foreground">V型洗盘：</strong>深跌后快速拉回，主力借恐慌吸筹</p>
+              <p><strong className="text-foreground">RSI超卖区回升：</strong>恐慌抛售后主力接盘 <V3Badge /></p>
+              <p><strong className="text-foreground">均价线多次穿越：</strong>多空激烈争夺，洗盘特征 <V3Badge /></p>
+              <p><strong className="text-foreground">下跌减速：</strong>空头力量衰减，洗盘接近尾声 <V3Badge /></p>
+              <p><strong className="text-foreground">大单暗中偏买：</strong>震仓中主力悄悄吸筹 <V3Badge /></p>
             </div>
           </div>
 
@@ -552,37 +594,46 @@ function IntentExplanationPanel() {
               <p><strong className="text-foreground">收盘近高点：</strong>收盘价接近日内最高价，说明主力全天控盘且无出货意愿</p>
               <p><strong className="text-foreground">午后突破：</strong>午后放量突破早盘高点，主力选择午后发力</p>
               <p><strong className="text-foreground">远超均价线：</strong>价格远高于均价线，说明主力持续推升</p>
-              <p><strong className="text-foreground">量能递增：</strong>成交量逐步放大，资金持续涌入</p>
-              <p><strong className="text-foreground">量价齐升：</strong>量能递增+脉冲方向朝上，强劲上攻动能 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-orange-500">V2</Badge></p>
-              <p><strong className="text-foreground">跳空高开全天强势：</strong>高开后全天维持高位 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-orange-500">V2</Badge></p>
-              <p><strong className="text-foreground">K线实体饱满：</strong>实体占振幅60%以上，上攻坚决 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-orange-500">V2</Badge></p>
+              <p><strong className="text-foreground">量价齐升：</strong>量能递增+脉冲方向朝上，强劲上攻动能</p>
+              <p><strong className="text-foreground">跳空高开全天强势：</strong>高开后全天维持高位</p>
+              <p><strong className="text-foreground">K线实体饱满：</strong>实体占振幅60%以上，上攻坚决</p>
+              <p><strong className="text-foreground">MACD金叉：</strong>DIF上穿DEA，趋势向上确认 <V3Badge /></p>
+              <p><strong className="text-foreground">RSI强势区上升：</strong>多头掌控局面 <V3Badge /></p>
+              <p><strong className="text-foreground">VWAP强劲上扬：</strong>资金持续流入 <V3Badge /></p>
+              <p><strong className="text-foreground">上涨动量加速：</strong>多头力量不断增强 <V3Badge /></p>
+              <p><strong className="text-foreground">大单强买入：</strong>主力大举进攻 <V3Badge /></p>
             </div>
           </div>
 
-          {/* V2: 跨日形态 */}
+          {/* V3: 跨日形态 */}
           <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-3">
-            <h4 className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-1.5">🔗 跨日形态识别 <Badge variant="outline" className="text-[9px] h-3.5 px-1 ml-0.5 text-blue-500">V2</Badge></h4>
+            <h4 className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-1.5">🔗 跨日形态识别</h4>
             <div className="space-y-1">
               <p><strong className="text-foreground">连续吸筹蓄势：</strong>多日吸筹后有望拉升，关注放量突破信号</p>
               <p><strong className="text-foreground">吸筹转拉升：</strong>主力吸筹完毕开始拉升，上涨有量能支撑</p>
+              <p><strong className="text-foreground">吸筹→洗盘→拉升（经典三步曲）：</strong>主力完成吸筹→洗盘→拉升全流程，趋势最健康 <V3Badge /></p>
               <p><strong className="text-foreground">拉升转出货：</strong>主力拉高后开始派发，警惕继续下跌</p>
+              <p><strong className="text-foreground">出货后反弹（警惕诱多）：</strong>出货后快速拉高可能是诱多 <V3Badge /></p>
               <p><strong className="text-foreground">连续出货：</strong>多日呈现出货特征，主力持续派发，风险较高</p>
               <p><strong className="text-foreground">洗盘后再次拉升：</strong>上涨中继形态，洗盘后继续上攻，趋势健康</p>
+              <p><strong className="text-foreground">连续拉升后整理：</strong>连续拉升后进入整理，关注后续方向选择 <V3Badge /></p>
+              <p><strong className="text-foreground">洗盘后吸筹：</strong>洗盘后主力重新吸筹，可能即将启动新行情 <V3Badge /></p>
               <p><strong className="text-foreground">拉升中洗盘 / 吸筹后洗盘：</strong>上涨途中的洗盘整理，可能是拉升前最后一次清洗</p>
             </div>
           </div>
 
           {/* 综合判断 */}
           <div>
-            <h4 className="text-sm font-semibold text-foreground mb-1.5">五日综合判断逻辑 (V2)</h4>
+            <h4 className="text-sm font-semibold text-foreground mb-1.5">五日综合判断逻辑 (V3)</h4>
             <div className="space-y-1">
               <p>1. 每日独立分析量价特征，使用8段细分计算吸筹/出货/洗盘/拉升各项评分</p>
-              <p>2. V2新增<strong className="text-foreground">量能趋势分析</strong>：递增/递减/脉冲/集中度，提供更精细的量能判断</p>
-              <p>3. V2新增<strong className="text-foreground">价格形态分析</strong>：K线实体比/上下影线/均价线偏离度</p>
-              <p>4. 取评分最高的意图作为当日判断，<strong className="text-foreground">置信度基于评分差距</strong>计算（差距越大越确定）</p>
-              <p>5. 五日综合采用<strong className="text-foreground">指数时间加权</strong>（1.6的幂次）：越近的日期权重越大</p>
-              <p>6. V2新增<strong className="text-foreground">跨日形态识别</strong>：识别吸筹→拉升、拉升→出货等演进模式</p>
-              <p>7. 根据综合得分判断主力阶段：底部吸筹区 / 震荡吸筹区 / 拉升初期 / 拉升后期 / 高位出货区 / 洗盘整理区</p>
+              <p>2. V3新增<strong className="text-foreground">7大技术因子</strong>：MACD背离/RSI/动量衰减/VWAP深度/量价偏度/价格加速度/大单推断</p>
+              <p>3. V3新增<strong className="text-foreground">多因子共识度</strong>：7大因子方向一致时置信度加成，不一致时降低</p>
+              <p>4. 取评分最高的意图作为当日判断，<strong className="text-foreground">置信度=评分差距+因子共识度</strong></p>
+              <p>5. 五日综合采用<strong className="text-foreground">指数时间加权+信号强度加权</strong>：近期且信号强的日期权重更大</p>
+              <p>6. V3新增<strong className="text-foreground">跨日量价趋势</strong>：量能逐日放大等趋势影响风险评估</p>
+              <p>7. V3新增<strong className="text-foreground">多日一致性</strong>：各日判断方向一致时综合置信度更高</p>
+              <p>8. 根据综合得分判断主力阶段：底部吸筹区 / 震荡吸筹区 / 拉升初期 / 拉升后期 / 高位出货区 / 洗盘整理区</p>
             </div>
           </div>
 

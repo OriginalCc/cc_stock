@@ -1,13 +1,18 @@
-// ── 主力意图识别引擎 (V2 优化版) ──
-// Based on price-volume pattern analysis to identify institutional behavior:
+// ── 主力意图识别引擎 (V3 精准版) ──
+// Based on multi-factor price-volume pattern analysis to identify institutional behavior:
 // 吸筹 (accumulation), 出货 (distribution), 洗盘 (shakeout), 拉升 (markup)
 //
-// V2 优化点:
-// 1. 增加成交量趋势/集中度/脉冲分析
-// 2. 价格位置感知（5日区间相对位置）
-// 3. 更精细的评分规则（缩量横盘、诱多、回踩确认等）
-// 4. 跨日关联分析（吸筹→拉升、拉升→出货演进）
-// 5. 置信度基于评分差距和信号一致性
+// V3 优化点 (相比V2):
+// 1. 新增 MACD 背离检测（顶背离/底背离）— 识别趋势衰竭
+// 2. 新增 RSI 超买超卖分析 — 识别极端区域
+// 3. 新增 动量衰减分析 — 识别上涨/下跌动力的衰退
+// 4. 新增 VWAP 深度分析（穿越频率/斜率/时间分布）— 均价线行为
+// 5. 新增 量价分布偏度 — 量能集中在高价还是低价
+// 6. 新增 价格加速度分析 — 趋势的二阶导数
+// 7. 新增 大单行为推断 — 从脉冲量能+方向推断主力行为
+// 8. 新增 关键价位测试行为 — 支撑/压力位的试探
+// 9. 改进跨日形态 — 增加量价配合的跨日演进
+// 10. 改进置信度 — 多因子共识度影响置信度
 
 import type { TimelineItem } from "@/hooks/use-stock-data";
 
@@ -38,7 +43,7 @@ export interface DayIntentResult {
   changePercent: number;
   totalVolume: number;
   intent: IntentSignal;
-  scores: IntentScores;     // V2: expose raw scores for transparency
+  scores: IntentScores;     // V2+: expose raw scores for transparency
 }
 
 export interface FiveDayIntentResult {
@@ -46,7 +51,7 @@ export interface FiveDayIntentResult {
   dailyIntents: DayIntentResult[];
   trendPhase: string;       // e.g., "底部吸筹区", "拉升初期", "高位出货区"
   riskLevel: number;        // 1-5, 5=highest risk
-  crossDayPattern: string;  // V2: cross-day pattern description
+  crossDayPattern: string;  // V2+: cross-day pattern description
 }
 
 // ── Score Types ──
@@ -57,6 +62,430 @@ export interface IntentScores {
   shakeout: number;
   markup: number;
 }
+
+// ══════════════════════════════════════════════════════════════
+// ── V3: New Technical Indicator Computation ──
+// ══════════════════════════════════════════════════════════════
+
+// ── EMA Computation ──
+function computeEMA(values: number[], period: number): number[] {
+  if (values.length === 0) return [];
+  const k = 2 / (period + 1);
+  const ema: number[] = [values[0]];
+  for (let i = 1; i < values.length; i++) {
+    ema.push(values[i] * k + ema[i - 1] * (1 - k));
+  }
+  return ema;
+}
+
+// ── MACD Computation ──
+interface MACDResult {
+  dif: number[];      // EMA12 - EMA26
+  dea: number[];      // EMA9 of DIF
+  macd: number[];     // (DIF - DEA) * 2
+}
+
+function computeMACD(prices: number[]): MACDResult {
+  if (prices.length < 26) {
+    return { dif: [], dea: [], macd: [] };
+  }
+  const ema12 = computeEMA(prices, 12);
+  const ema26 = computeEMA(prices, 26);
+  const dif = ema12.map((v, i) => v - ema26[i]);
+  const dea = computeEMA(dif, 9);
+  const macd = dif.map((v, i) => (v - dea[i]) * 2);
+  return { dif, dea, macd };
+}
+
+// ── V3: MACD Divergence Detection ──
+interface MACDDivergence {
+  topDivergence: boolean;    // 顶背离: price new high + MACD lower high
+  bottomDivergence: boolean; // 底背离: price new low + MACD higher low
+  strength: number;          // 0-1, divergence strength
+}
+
+function detectMACDDivergence(prices: number[], macdResult: MACDResult): MACDDivergence {
+  if (macdResult.macd.length < 20 || prices.length < 20) {
+    return { topDivergence: false, bottomDivergence: false, strength: 0 };
+  }
+
+  // Find local peaks and troughs in the last portion of data
+  const lookback = Math.min(prices.length, 60);
+  const recentPrices = prices.slice(-lookback);
+  const recentMacd = macdResult.macd.slice(-lookback);
+
+  // Find local maxima (peaks) and minima (troughs)
+  const peaks: { priceIdx: number; price: number; macd: number }[] = [];
+  const troughs: { priceIdx: number; price: number; macd: number }[] = [];
+
+  for (let i = 2; i < recentPrices.length - 2; i++) {
+    if (recentPrices[i] > recentPrices[i - 1] && recentPrices[i] > recentPrices[i - 2] &&
+        recentPrices[i] > recentPrices[i + 1] && recentPrices[i] > recentPrices[i + 2]) {
+      peaks.push({ priceIdx: i, price: recentPrices[i], macd: recentMacd[i] });
+    }
+    if (recentPrices[i] < recentPrices[i - 1] && recentPrices[i] < recentPrices[i - 2] &&
+        recentPrices[i] < recentPrices[i + 1] && recentPrices[i] < recentPrices[i + 2]) {
+      troughs.push({ priceIdx: i, price: recentPrices[i], macd: recentMacd[i] });
+    }
+  }
+
+  let topDivergence = false;
+  let bottomDivergence = false;
+  let strength = 0;
+
+  // Top divergence: recent peak price higher but MACD peak lower
+  if (peaks.length >= 2) {
+    const last2 = peaks.slice(-2);
+    if (last2[1].price > last2[0].price && last2[1].macd < last2[0].macd) {
+      topDivergence = true;
+      const priceDiff = (last2[1].price - last2[0].price) / last2[0].price;
+      const macdDiff = last2[0].macd - last2[1].macd;
+      strength = Math.min(1, Math.abs(priceDiff) * 50 + Math.abs(macdDiff) * 10);
+    }
+  }
+
+  // Bottom divergence: recent trough price lower but MACD trough higher
+  if (troughs.length >= 2) {
+    const last2 = troughs.slice(-2);
+    if (last2[1].price < last2[0].price && last2[1].macd > last2[0].macd) {
+      bottomDivergence = true;
+      const priceDiff = (last2[0].price - last2[1].price) / last2[0].price;
+      const macdDiff = last2[1].macd - last2[0].macd;
+      strength = Math.min(1, Math.abs(priceDiff) * 50 + Math.abs(macdDiff) * 10);
+    }
+  }
+
+  return { topDivergence, bottomDivergence, strength };
+}
+
+// ── RSI Computation ──
+function computeRSI(prices: number[], period: number = 14): number {
+  if (prices.length < period + 1) return 50; // neutral
+
+  let gainSum = 0, lossSum = 0;
+  for (let i = prices.length - period; i < prices.length; i++) {
+    const change = prices[i] - prices[i - 1];
+    if (change > 0) gainSum += change;
+    else lossSum += Math.abs(change);
+  }
+
+  const avgGain = gainSum / period;
+  const avgLoss = lossSum / period;
+
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+// ── V3: Momentum Decay Analysis ──
+// Track the strength of successive price pushes to detect momentum loss
+interface MomentumDecayAnalysis {
+  upMomentumDecaying: boolean;   // successive up-pushes weakening
+  downMomentumDecaying: boolean; // successive down-pushes weakening
+  decayStrength: number;         // 0-1
+}
+
+function analyzeMomentumDecay(data: TimelineItem[]): MomentumDecayAnalysis {
+  if (data.length < 20) {
+    return { upMomentumDecaying: false, downMomentumDecaying: false, decayStrength: 0 };
+  }
+
+  // Find successive up-pushes and down-pushes
+  const pushes: { direction: "up" | "down"; magnitude: number }[] = [];
+  let currentDir: "up" | "down" | null = null;
+  let startPrice = data[0].price;
+
+  for (let i = 1; i < data.length; i++) {
+    const dir = data[i].price >= data[i - 1].price ? "up" : "down";
+    if (dir !== currentDir && currentDir !== null) {
+      const magnitude = Math.abs(data[i - 1].price - startPrice) / startPrice * 100;
+      pushes.push({ direction: currentDir, magnitude });
+      startPrice = data[i - 1].price;
+    }
+    if (dir !== currentDir) {
+      currentDir = dir;
+      startPrice = data[i - 1].price;
+    }
+  }
+  // Last push
+  if (currentDir !== null) {
+    const magnitude = Math.abs(data[data.length - 1].price - startPrice) / startPrice * 100;
+    pushes.push({ direction: currentDir, magnitude });
+  }
+
+  // Check if recent up-pushes are decaying (each weaker than the last)
+  const upPushes = pushes.filter(p => p.direction === "up").slice(-3);
+  const downPushes = pushes.filter(p => p.direction === "down").slice(-3);
+
+  let upMomentumDecaying = false;
+  let downMomentumDecaying = false;
+  let decayStrength = 0;
+
+  if (upPushes.length >= 2) {
+    const recent2 = upPushes.slice(-2);
+    if (recent2[1].magnitude < recent2[0].magnitude * 0.7) {
+      upMomentumDecaying = true;
+      decayStrength = Math.min(1, (recent2[0].magnitude - recent2[1].magnitude) / (recent2[0].magnitude || 0.01));
+    }
+  }
+
+  if (downPushes.length >= 2) {
+    const recent2 = downPushes.slice(-2);
+    if (recent2[1].magnitude < recent2[0].magnitude * 0.7) {
+      downMomentumDecaying = true;
+      decayStrength = Math.max(decayStrength, Math.min(1, (recent2[0].magnitude - recent2[1].magnitude) / (recent2[0].magnitude || 0.01)));
+    }
+  }
+
+  return { upMomentumDecaying, downMomentumDecaying, decayStrength };
+}
+
+// ── V3: VWAP Deep Analysis ──
+interface VWAPDeepAnalysis {
+  crossCount: number;          // how many times price crosses VWAP
+  timeAboveVwap: number;       // 0-1, fraction of time above VWAP
+  vwapSlope: number;           // VWAP change rate (per period)
+  vwapSlopeDirection: "up" | "down" | "flat";
+  avgDistanceFromVwap: number; // average % distance from VWAP
+  lastCrossDirection: "up" | "down" | null; // last cross direction
+}
+
+function analyzeVWAPDeep(data: TimelineItem[]): VWAPDeepAnalysis {
+  if (data.length < 10) {
+    return { crossCount: 0, timeAboveVwap: 0.5, vwapSlope: 0, vwapSlopeDirection: "flat", avgDistanceFromVwap: 0, lastCrossDirection: null };
+  }
+
+  let crossCount = 0;
+  let timeAbove = 0;
+  let totalDistance = 0;
+  let lastCrossDir: "up" | "down" | null = null;
+
+  for (let i = 1; i < data.length; i++) {
+    const prevAbove = data[i - 1].price >= data[i - 1].avgPrice;
+    const currAbove = data[i].price >= data[i].avgPrice;
+    if (prevAbove !== currAbove) {
+      crossCount++;
+      lastCrossDir = currAbove ? "up" : "down";
+    }
+    if (currAbove) timeAbove++;
+    totalDistance += Math.abs(data[i].price - data[i].avgPrice) / (data[i].avgPrice || 1) * 100;
+  }
+
+  // VWAP slope: compare first half VWAP to second half VWAP
+  const midIdx = Math.floor(data.length / 2);
+  const firstVwap = data.slice(0, midIdx).reduce((s, d) => s + d.avgPrice, 0) / midIdx;
+  const secondVwap = data.slice(midIdx).reduce((s, d) => s + d.avgPrice, 0) / (data.length - midIdx);
+  const vwapSlope = firstVwap > 0 ? ((secondVwap - firstVwap) / firstVwap) * 100 : 0;
+
+  let slopeDir: VWAPDeepAnalysis["vwapSlopeDirection"] = "flat";
+  if (vwapSlope > 0.05) slopeDir = "up";
+  else if (vwapSlope < -0.05) slopeDir = "down";
+
+  return {
+    crossCount,
+    timeAboveVwap: data.length > 1 ? timeAbove / (data.length - 1) : 0.5,
+    vwapSlope,
+    vwapSlopeDirection: slopeDir,
+    avgDistanceFromVwap: totalDistance / (data.length - 1),
+    lastCrossDirection: lastCrossDir,
+  };
+}
+
+// ── V3: Volume-Price Distribution Skewness ──
+// Is volume concentrated more at high prices or low prices?
+interface VolumePriceSkewness {
+  highPriceVolRatio: number;   // 0-1, fraction of volume at above-average prices
+  lowPriceVolRatio: number;    // 0-1, fraction of volume at below-average prices
+  skewDirection: "high" | "low" | "balanced"; // where volume is concentrated
+}
+
+function analyzeVolumePriceSkewness(data: TimelineItem[]): VolumePriceSkewness {
+  if (data.length < 5) {
+    return { highPriceVolRatio: 0.5, lowPriceVolRatio: 0.5, skewDirection: "balanced" };
+  }
+
+  const avgPrice = data.reduce((s, d) => s + d.price, 0) / data.length;
+  let highVol = 0, lowVol = 0;
+
+  for (const d of data) {
+    if (d.price >= avgPrice) highVol += d.volume;
+    else lowVol += d.volume;
+  }
+
+  const total = highVol + lowVol || 1;
+  const highRatio = highVol / total;
+  const lowRatio = lowVol / total;
+
+  let skewDir: VolumePriceSkewness["skewDirection"] = "balanced";
+  if (highRatio > 0.6) skewDir = "high";
+  else if (lowRatio > 0.6) skewDir = "low";
+
+  return { highPriceVolRatio: highRatio, lowPriceVolRatio: lowRatio, skewDirection: skewDir };
+}
+
+// ── V3: Price Acceleration Analysis ──
+// Second derivative of price movement
+interface PriceAccelerationAnalysis {
+  acceleration: number;   // positive = accelerating, negative = decelerating
+  direction: "accelerating_up" | "decelerating_up" | "accelerating_down" | "decelerating_down" | "stable";
+}
+
+function analyzePriceAcceleration(data: TimelineItem[]): PriceAccelerationAnalysis {
+  if (data.length < 15) {
+    return { acceleration: 0, direction: "stable" };
+  }
+
+  // Compute velocity (first derivative) at three points
+  const third = Math.floor(data.length / 3);
+  const vel1 = data[third].price - data[0].price;
+  const vel2 = data[third * 2].price - data[third].price;
+  const vel3 = data[data.length - 1].price - data[third * 2].price;
+
+  // Acceleration = change in velocity
+  const accel1to2 = vel2 - vel1;
+  const accel2to3 = vel3 - vel2;
+  const acceleration = (accel1to2 + accel2to3) / 2;
+
+  // Determine direction
+  let direction: PriceAccelerationAnalysis["direction"] = "stable";
+  const overallVel = data[data.length - 1].price - data[0].price;
+
+  if (overallVel > 0) {
+    direction = acceleration > 0 ? "accelerating_up" : "decelerating_up";
+  } else if (overallVel < 0) {
+    direction = acceleration < 0 ? "accelerating_down" : "decelerating_down";
+  }
+
+  return { acceleration, direction };
+}
+
+// ── V3: Large Order Behavior Inference ──
+// From volume spikes + price direction, infer institutional behavior
+interface LargeOrderBehavior {
+  dominantDirection: "buy" | "sell" | "mixed";  // inferred large order direction
+  intensity: number;  // 0-1, how dominant
+  spikeBuyRatio: number;  // fraction of spike volume on up-moves
+}
+
+function analyzeLargeOrderBehavior(data: TimelineItem[]): LargeOrderBehavior {
+  if (data.length < 10) {
+    return { dominantDirection: "mixed", intensity: 0, spikeBuyRatio: 0.5 };
+  }
+
+  const avgVol = data.reduce((s, d) => s + d.volume, 0) / data.length;
+  let spikeBuyVol = 0, spikeSellVol = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i].volume > avgVol * 2) {  // Volume spike
+      if (data[i].price >= data[i - 1].price) {
+        spikeBuyVol += data[i].volume;
+      } else {
+        spikeSellVol += data[i].volume;
+      }
+    }
+  }
+
+  const totalSpike = spikeBuyVol + spikeSellVol || 1;
+  const buyRatio = spikeBuyVol / totalSpike;
+
+  let dominant: LargeOrderBehavior["dominantDirection"] = "mixed";
+  let intensity = 0;
+
+  if (buyRatio > 0.6) {
+    dominant = "buy";
+    intensity = buyRatio - 0.5;
+  } else if (buyRatio < 0.4) {
+    dominant = "sell";
+    intensity = 0.5 - buyRatio;
+  }
+
+  return { dominantDirection: dominant, intensity, spikeBuyRatio: buyRatio };
+}
+
+// ── V3: Key Level Test Behavior ──
+// How price behaves when approaching VWAP, day's high/low
+interface KeyLevelTestResult {
+  highRejection: boolean;    // rejected at day's high (touched high but fell)
+  lowSupport: boolean;       // supported at day's low (touched low but bounced)
+  vwapSupport: boolean;      // VWAP acts as support
+  vwapResistance: boolean;   // VWAP acts as resistance
+  testCount: number;         // number of key level tests
+}
+
+function analyzeKeyLevelTests(data: TimelineItem[]): KeyLevelTestResult {
+  if (data.length < 10) {
+    return { highRejection: false, lowSupport: false, vwapSupport: false, vwapResistance: false, testCount: 0 };
+  }
+
+  const high = Math.max(...data.map(d => d.price));
+  const low = Math.min(...data.map(d => d.price));
+  const range = high - low;
+  if (range <= 0) return { highRejection: false, lowSupport: false, vwapSupport: false, vwapResistance: false, testCount: 0 };
+
+  const close = data[data.length - 1].price;
+  const highZone = high - range * 0.1;   // top 10% of range
+  const lowZone = low + range * 0.1;     // bottom 10% of range
+  const vwap = data[data.length - 1].avgPrice;
+
+  let highRejection = false;
+  let lowSupport = false;
+  let vwapSupport = false;
+  let vwapResistance = false;
+  let testCount = 0;
+
+  // High rejection: price approached high but close is far from high
+  if (high > 0 && close < high * 0.99) {
+    const nearHighBars = data.filter(d => d.price >= highZone).length;
+    if (nearHighBars >= 3 && close < (high + low) / 2) {
+      highRejection = true;
+      testCount++;
+    }
+  }
+
+  // Low support: price approached low but close is far from low
+  if (low > 0 && close > low * 1.01) {
+    const nearLowBars = data.filter(d => d.price <= lowZone).length;
+    if (nearLowBars >= 3 && close > (high + low) / 2) {
+      lowSupport = true;
+      testCount++;
+    }
+  }
+
+  // VWAP support/resistance
+  if (vwap > 0) {
+    const vwapZone = range * 0.05;
+    // VWAP support: price dips below VWAP then recovers
+    let dippedBelow = false;
+    let recoveredAbove = false;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i].price < vwap - vwapZone) dippedBelow = true;
+      if (dippedBelow && data[i].price > vwap + vwapZone) recoveredAbove = true;
+    }
+    if (dippedBelow && recoveredAbove && close > vwap) {
+      vwapSupport = true;
+      testCount++;
+    }
+
+    // VWAP resistance: price rises above VWAP then falls back
+    let roseAbove = false;
+    let fellBelow = false;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i].price > vwap + vwapZone) roseAbove = true;
+      if (roseAbove && data[i].price < vwap - vwapZone) fellBelow = true;
+    }
+    if (roseAbove && fellBelow && close < vwap) {
+      vwapResistance = true;
+      testCount++;
+    }
+  }
+
+  return { highRejection, lowSupport, vwapSupport, vwapResistance, testCount };
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// ── V2 Retained: Helper Functions ──
+// ══════════════════════════════════════════════════════════════
 
 // ── Helper: segment a day's data into periods ──
 
@@ -134,7 +563,6 @@ function analyzeVolumeTrend(segments: VolumePriceSegment[], totalVol: number): V
     };
   }
 
-  // Volume trend: are segments generally increasing or decreasing?
   let increasingPairs = 0;
   let decreasingPairs = 0;
   for (let i = 1; i < segments.length; i++) {
@@ -146,12 +574,10 @@ function analyzeVolumeTrend(segments: VolumePriceSegment[], totalVol: number): V
   else if (decreasingPairs > segments.length * 0.6) trend = "decreasing";
   else if (increasingPairs > 1 && decreasingPairs > 1) trend = "volatile";
 
-  // Concentration ratio: what % of volume is in the top 2 segments?
   const sortedVols = segments.map(s => s.totalVolume).sort((a, b) => b - a);
   const top2Vol = sortedVols.slice(0, Math.min(2, sortedVols.length)).reduce((a, b) => a + b, 0);
   const concentrationRatio = totalVol > 0 ? top2Vol / totalVol : 0.5;
 
-  // Volume spikes
   const avgSegVol = totalVol / segments.length;
   let spikeCount = 0;
   let spikeUpVol = 0;
@@ -167,7 +593,6 @@ function analyzeVolumeTrend(segments: VolumePriceSegment[], totalVol: number): V
     spikeUpVol > spikeDownVol * 1.5 ? "up" :
     spikeDownVol > spikeUpVol * 1.5 ? "down" : "mixed";
 
-  // Volume by direction
   let volumeOnUpMoves = 0, volumeOnDownMoves = 0, volumeOnFlatMoves = 0;
   for (const seg of segments) {
     if (seg.priceChange > 0.1) volumeOnUpMoves += seg.totalVolume;
@@ -219,7 +644,9 @@ function analyzePricePosition(
   };
 }
 
-// ── Core: Analyze one day's data for institutional intent (V2) ──
+// ══════════════════════════════════════════════════════════════
+// ── Core: Analyze one day's data for institutional intent (V3) ──
+// ══════════════════════════════════════════════════════════════
 
 function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: IntentSignal; scores: IntentScores } {
   if (data.length < 10) return { signal: defaultIntent("观察"), scores: { accumulation: 0, distribution: 0, shakeout: 0, markup: 0 } };
@@ -229,6 +656,7 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
   const high = Math.max(...data.map(d => d.price));
   const low = Math.min(...data.map(d => d.price));
   const changePct = prevClose > 0 ? ((close - prevClose) / prevClose) * 100 : 0;
+  const prices = data.map(d => d.price);
 
   // Split into 4 periods
   const midPoint = Math.floor(data.length / 2);
@@ -244,7 +672,6 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
   const totalVol = data.reduce((s, d) => s + d.volume, 0);
   const openVol = openPeriod.reduce((s, d) => s + d.volume, 0);
   const closeVol = closePeriod.reduce((s, d) => s + d.volume, 0);
-  const midVol = morningPeriod.reduce((s, d) => s + d.volume, 0) + afternoonOpen.reduce((s, d) => s + d.volume, 0);
 
   const openVolRatio = totalVol > 0 ? openVol / totalVol : 0;
   const closeVolRatio = totalVol > 0 ? closeVol / totalVol : 0;
@@ -273,7 +700,34 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
   // Intraday range
   const range = prevClose > 0 ? ((high - low) / prevClose) * 100 : 0;
 
-  // ══════ V2 SCORING RULES ══════
+  // ══════ V3: New Technical Analysis ══════
+
+  // V3: MACD computation + divergence detection
+  const macdResult = computeMACD(prices);
+  const macdDivergence = detectMACDDivergence(prices, macdResult);
+
+  // V3: RSI
+  const rsi = computeRSI(prices, 14);
+
+  // V3: Momentum decay
+  const momentumDecay = analyzeMomentumDecay(data);
+
+  // V3: VWAP deep analysis
+  const vwapDeep = analyzeVWAPDeep(data);
+
+  // V3: Volume-price skewness
+  const vpSkewness = analyzeVolumePriceSkewness(data);
+
+  // V3: Price acceleration
+  const priceAccel = analyzePriceAcceleration(data);
+
+  // V3: Large order behavior
+  const largeOrder = analyzeLargeOrderBehavior(data);
+
+  // V3: Key level tests
+  const keyLevelTests = analyzeKeyLevelTests(data);
+
+  // ══════ V3 SCORING RULES ══════
 
   let score = { accumulation: 0, distribution: 0, shakeout: 0, markup: 0 };
   const reasons: string[] = [];
@@ -307,13 +761,13 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     reasons.push("尾盘放量拉升");
   }
 
-  // E. V2: 缩量横盘 (quiet consolidation - accumulation in tight range)
+  // E. 缩量横盘 (quiet consolidation - accumulation in tight range)
   if (range < 1.5 && Math.abs(changePct) < 0.8 && volTrend.trend === "stable" && volTrend.concentrationRatio < 0.4) {
     score.accumulation += 18;
     reasons.push("缩量横盘整理（主力暗中吸筹）");
   }
 
-  // F. V2: 放量突破后缩量回踩 (breakout then quiet pullback - confirmation)
+  // F. 放量突破后缩量回踩 (breakout then quiet pullback - confirmation)
   if (segments.length >= 4) {
     const firstHalf = segments.slice(0, Math.floor(segments.length / 2));
     const secondHalf = segments.slice(Math.floor(segments.length / 2));
@@ -321,7 +775,6 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     const secondAvgVol = secondHalf.length > 0 ? secondHalf.reduce((s, seg) => s + seg.avgVolume, 0) / secondHalf.length : firstAvgVol;
     const firstAvgChange = firstHalf.reduce((s, seg) => s + seg.priceChange, 0);
     const secondAvgChange = secondHalf.reduce((s, seg) => s + seg.priceChange, 0);
-    // First half up with volume, second half quiet pullback
     if (firstAvgChange > 0.3 && secondAvgChange < 0 && secondAvgVol < firstAvgVol * 0.7) {
       score.accumulation += 15;
       reasons.push("放量上攻后缩量回踩（吸筹确认）");
@@ -335,11 +788,71 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     reasons.push("成交量分布均匀（稳步吸筹）");
   }
 
-  // H. V2: 成交量递增 + 价格微涨 (volume creeping up with price = accumulation)
+  // H. 成交量递增 + 价格微涨
   if (volTrend.trend === "increasing" && changePct > 0 && changePct < 2) {
     score.accumulation += 12;
     reasons.push("量能递增微涨（主力持续吸筹）");
   }
+
+  // ── V3: NEW ACCUMULATION FACTORS ──
+
+  // I. V3: MACD底背离 — 价格新低但MACD未创新低，下跌动能衰竭
+  if (macdDivergence.bottomDivergence && changePct < 1) {
+    const bonus = macdDivergence.strength > 0.3 ? 8 : 0;
+    score.accumulation += 18 + bonus;
+    reasons.push(macdDivergence.strength > 0.3
+      ? "MACD强底背离（下跌动能衰竭，主力低位吸筹）"
+      : "MACD底背离（下跌动能减弱）");
+  }
+
+  // J. V3: RSI偏低区域 + 价格企稳 — 超卖后主力介入
+  if (rsi < 40 && changePct > -0.5) {
+    const bonus = rsi < 30 ? 8 : 0;
+    score.accumulation += 12 + bonus;
+    reasons.push(rsi < 30
+      ? "RSI深度超卖+价格企稳（主力逢低介入）"
+      : "RSI偏低+价格企稳（低位有承接）");
+  }
+
+  // K. V3: VWAP斜率向上 + 价格在VWAP上方 — 均价线支撑上移
+  if (vwapDeep.vwapSlopeDirection === "up" && vwapDeep.timeAboveVwap > 0.5 && close > vwap) {
+    score.accumulation += 10;
+    reasons.push("均价线斜率上移+价格站稳其上（主力稳步吸筹）");
+  }
+
+  // L. V3: 量能集中在低价区 — 主力在低位积极买入
+  if (vpSkewness.skewDirection === "low" && vpSkewness.lowPriceVolRatio > 0.6 && changePct < 1) {
+    score.accumulation += 12;
+    reasons.push("量能集中在低价区（主力低位积极买入）");
+  }
+
+  // M. V3: 下跌动量衰减 — 越跌越无力，主力不在低位抛售
+  if (momentumDecay.downMomentumDecaying && changePct < 0) {
+    score.accumulation += 10;
+    reasons.push("下跌动量衰减（空头力量衰竭，主力未抛售）");
+  }
+
+  // N. V3: 大单买入为主 — 脉冲量能方向向上
+  if (largeOrder.dominantDirection === "buy" && largeOrder.intensity > 0.1) {
+    const bonus = largeOrder.spikeBuyRatio > 0.7 ? 8 : 0;
+    score.accumulation += 15 + bonus;
+    reasons.push(largeOrder.spikeBuyRatio > 0.7
+      ? "大单强力买入（脉冲量能集中向上）"
+      : "大单偏向买入（量能脉冲以上涨为主）");
+  }
+
+  // O. V3: VWAP支撑确认 — 价格跌破VWAP后收回
+  if (keyLevelTests.vwapSupport && changePct > -0.5) {
+    score.accumulation += 10;
+    reasons.push("均价线支撑确认（跌破后收回）");
+  }
+
+  // P. V3: 低价区支撑 — 低位有承接
+  if (keyLevelTests.lowSupport) {
+    score.accumulation += 8;
+    reasons.push("低价区获支撑（下方承接有力）");
+  }
+
 
   // ── DISTRIBUTION (出货) patterns ──
 
@@ -364,7 +877,7 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     reasons.push("早盘冲高后持续回落");
   }
 
-  // D. V2: 诱多出货 (bull trap) - volume spike on up-move but close weak
+  // D. 诱多出货 (bull trap)
   if (volTrend.spikeCount >= 1 && volTrend.avgSpikeDirection === "up" && pricePos.positionInRange < 0.4) {
     score.distribution += 20;
     reasons.push("放量诱多后回落（诱多出货）");
@@ -388,23 +901,89 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     reasons.push("尾盘放量下杀");
   }
 
-  // H. V2: 上影线过长 (long upper wick = rejection at highs)
+  // H. 上影线过长
   if (pricePos.upperWickRatio > 0.4 && changePct < 1) {
     score.distribution += 15;
     reasons.push("长上影线（高位抛压重）");
   }
 
-  // I. V2: 量能递减下跌 (volume declining on down trend = slow distribution)
+  // I. 量能递减下跌
   if (volTrend.trend === "decreasing" && changePct < -0.3) {
     score.distribution += 10;
     reasons.push("量能递减下行（主力缓慢出货）");
   }
 
-  // J. V2: 高位震荡出货 (high price + volatile volume = distribution at top)
+  // J. 高位震荡出货
   if (pricePos.highVsVwap > 1 && volTrend.trend === "volatile" && Math.abs(changePct) < 1) {
     score.distribution += 12;
     reasons.push("高位放量震荡（高位出货）");
   }
+
+  // ── V3: NEW DISTRIBUTION FACTORS ──
+
+  // K. V3: MACD顶背离 — 价格新高但MACD未创新高，上涨动能衰竭
+  if (macdDivergence.topDivergence && changePct > -0.5) {
+    const bonus = macdDivergence.strength > 0.3 ? 8 : 0;
+    score.distribution += 18 + bonus;
+    reasons.push(macdDivergence.strength > 0.3
+      ? "MACD强顶背离（上涨动能衰竭，主力高位派发）"
+      : "MACD顶背离（上涨动能减弱）");
+  }
+
+  // L. V3: RSI偏高区域 + 价格走弱 — 超买后主力出货
+  if (rsi > 60 && changePct < 0.5 && pricePos.positionInRange < 0.6) {
+    const bonus = rsi > 70 ? 8 : 0;
+    score.distribution += 12 + bonus;
+    reasons.push(rsi > 70
+      ? "RSI深度超买+价格走弱（主力高位出货）"
+      : "RSI偏高+价格走弱（上涨动力不足）");
+  }
+
+  // M. V3: VWAP斜率向下 + 价格在VWAP下方 — 均价线压力下移
+  if (vwapDeep.vwapSlopeDirection === "down" && vwapDeep.timeAboveVwap < 0.4 && close < vwap) {
+    score.distribution += 10;
+    reasons.push("均价线斜率下移+价格在其下方（空头压制）");
+  }
+
+  // N. V3: 量能集中在高价区 — 主力在高位积极出货
+  if (vpSkewness.skewDirection === "high" && vpSkewness.highPriceVolRatio > 0.6 && changePct < 0.5) {
+    score.distribution += 12;
+    reasons.push("量能集中在高价区（主力高位积极出货）");
+  }
+
+  // O. V3: 上涨动量衰减 — 越涨越无力，主力边拉边出
+  if (momentumDecay.upMomentumDecaying && changePct > 0) {
+    score.distribution += 10;
+    reasons.push("上涨动量衰减（多头力量衰竭，主力边拉边出）");
+  }
+
+  // P. V3: 大单卖出为主 — 脉冲量能方向向下
+  if (largeOrder.dominantDirection === "sell" && largeOrder.intensity > 0.1) {
+    const bonus = largeOrder.spikeBuyRatio < 0.3 ? 8 : 0;
+    score.distribution += 15 + bonus;
+    reasons.push(largeOrder.spikeBuyRatio < 0.3
+      ? "大单强力卖出（脉冲量能集中向下）"
+      : "大单偏向卖出（量能脉冲以下跌为主）");
+  }
+
+  // Q. V3: VWAP压力确认 — 价格突破VWAP后回落
+  if (keyLevelTests.vwapResistance && changePct < 0.5) {
+    score.distribution += 10;
+    reasons.push("均价线压力确认（突破后回落）");
+  }
+
+  // R. V3: 高价区被拒 — 上涨受阻
+  if (keyLevelTests.highRejection) {
+    score.distribution += 8;
+    reasons.push("高价区受阻（上方抛压沉重）");
+  }
+
+  // S. V3: 价格加速下跌 — 趋势向下且在加速
+  if (priceAccel.direction === "accelerating_down") {
+    score.distribution += 10;
+    reasons.push("价格加速下跌（下行趋势加速，主力集中出逃）");
+  }
+
 
   // ── SHAKEOUT (洗盘) patterns ──
 
@@ -435,19 +1014,19 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     }
   }
 
-  // D. V2: 缩量下跌（量缩价跌 = 无恐慌盘，主力不卖）
+  // D. 缩量下跌（量缩价跌 = 无恐慌盘，主力不卖）
   if (volTrend.trend === "decreasing" && changePct < -0.3 && changePct > -2 && volTrend.downVolumeRatio < 0.45) {
     score.shakeout += 18;
     reasons.push("缩量下跌（无恐慌抛售，洗盘特征）");
   }
 
-  // E. V2: 下影线长 + 收盘偏强 (long lower wick = buyers step in)
+  // E. 下影线长 + 收盘偏强
   if (pricePos.lowerWickRatio > 0.35 && pricePos.positionInRange > 0.5) {
     score.shakeout += 15;
     reasons.push("长下影线收盘偏强（下方承接有力）");
   }
 
-  // F. V2: V型反转（深跌后快速拉回）
+  // F. V型反转（深跌后快速拉回）
   if (changePct > -0.5 && low < prevClose * 0.97 && close > low * 1.01) {
     const depthPct = prevClose > 0 ? ((low - prevClose) / prevClose) * 100 : 0;
     const recoveryPct = low > 0 ? ((close - low) / low) * 100 : 0;
@@ -456,6 +1035,33 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
       reasons.push("深跌后快速拉回（V型洗盘）");
     }
   }
+
+  // ── V3: NEW SHAKEOUT FACTORS ──
+
+  // G. V3: RSI从超卖区回升 — 恐慌后主力介入
+  if (rsi < 45 && rsi > 25 && changePct > -0.5 && vwapDeep.lastCrossDirection === "up") {
+    score.shakeout += 10;
+    reasons.push("RSI超卖区回升（恐慌抛售后主力接盘）");
+  }
+
+  // H. V3: VWAP多次穿越 — 多空激烈争夺
+  if (vwapDeep.crossCount >= 4 && Math.abs(changePct) < 1) {
+    score.shakeout += 12;
+    reasons.push("均价线多次穿越（多空激烈争夺，洗盘特征）");
+  }
+
+  // I. V3: 价格减速下跌 — 下跌趋势在减缓，可能在洗盘底部
+  if (priceAccel.direction === "decelerating_down" && changePct < 0) {
+    score.shakeout += 10;
+    reasons.push("下跌减速（空头力量衰减，洗盘接近尾声）");
+  }
+
+  // J. V3: 大单混合但整体偏买 — 洗盘时主力暗中吸筹
+  if (largeOrder.dominantDirection === "buy" && largeOrder.intensity < 0.15 && range > 1.5) {
+    score.shakeout += 8;
+    reasons.push("大单暗中偏买（震仓中主力悄悄吸筹）");
+  }
+
 
   // ── MARKUP (拉升) patterns ──
 
@@ -492,36 +1098,87 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     reasons.push("量能递增上攻");
   }
 
-  // F. V2: 量价齐升 (volume and price rising together, strong momentum)
+  // F. 量价齐升
   if (volTrend.trend === "increasing" && volTrend.avgSpikeDirection === "up" && changePct > 1) {
     score.markup += 15;
     reasons.push("量价齐升（强劲上攻动能）");
   }
 
-  // G. V2: 开盘强势且全天维持 (gap up + hold)
+  // G. 跳空高开全天强势
   if (openChange > 0.5 && pricePos.positionInRange > 0.7 && changePct > 0.8) {
     score.markup += 15;
     reasons.push("跳空高开全天强势");
   }
 
-  // H. V2: 实体饱满 (strong body ratio = decisive move)
+  // H. 实体饱满
   if (pricePos.bodyRatio > 0.6 && changePct > 1) {
     score.markup += 10;
     reasons.push("K线实体饱满（坚决上攻）");
   }
 
-  // ── Determine primary intent with V2 confidence ──
+  // ── V3: NEW MARKUP FACTORS ──
+
+  // I. V3: MACD金叉 — DIF上穿DEA，趋势向上确认
+  if (macdResult.dif.length >= 2 && macdResult.dea.length >= 2) {
+    const lastDif = macdResult.dif[macdResult.dif.length - 1];
+    const lastDea = macdResult.dea[macdResult.dea.length - 1];
+    const prevDif = macdResult.dif[macdResult.dif.length - 2];
+    const prevDea = macdResult.dea[macdResult.dea.length - 2];
+    if (prevDif <= prevDea && lastDif > lastDea && changePct > 0) {
+      score.markup += 12;
+      reasons.push("MACD金叉（趋势向上确认）");
+    }
+  }
+
+  // J. V3: RSI强势区且上升 — 多头掌控
+  if (rsi > 50 && rsi < 80 && changePct > 0.5 && pricePos.positionInRange > 0.5) {
+    score.markup += 10;
+    reasons.push("RSI强势区上升（多头掌控局面）");
+  }
+
+  // K. V3: VWAP斜率强向上 — 均价线强劲上扬
+  if (vwapDeep.vwapSlopeDirection === "up" && vwapDeep.vwapSlope > 0.1 && close > vwap) {
+    score.markup += 8;
+    reasons.push("均价线强劲上扬（资金持续流入）");
+  }
+
+  // L. V3: 量能集中在高价区且持续 — 主力高位仍积极买入
+  if (vpSkewness.skewDirection === "high" && vpSkewness.highPriceVolRatio > 0.6 && changePct > 0.5 && pricePos.positionInRange > 0.6) {
+    score.markup += 10;
+    reasons.push("量能集中在高价区且持续（主力高位仍积极买入）");
+  }
+
+  // M. V3: 上涨动量加速 — 多头力量增强
+  if (priceAccel.direction === "accelerating_up") {
+    score.markup += 12;
+    reasons.push("上涨动量加速（多头力量不断增强）");
+  }
+
+  // N. V3: 大单强买入 — 主力大举进攻
+  if (largeOrder.dominantDirection === "buy" && largeOrder.intensity > 0.15 && changePct > 0.5) {
+    const bonus = largeOrder.spikeBuyRatio > 0.75 ? 8 : 0;
+    score.markup += 12 + bonus;
+    reasons.push(largeOrder.spikeBuyRatio > 0.75
+      ? "大单强买入+价格上行（主力大举进攻）"
+      : "大单偏买入+价格上行（主力积极推升）");
+  }
+
+
+  // ══════ V3: Determine primary intent with multi-factor confidence ══════
 
   const maxScore = Math.max(score.accumulation, score.distribution, score.shakeout, score.markup);
   let intent: InstitutionalIntent;
   let confidence: number;
 
-  // V2: Calculate confidence based on score separation and signal clarity
-  const secondScore = [score.accumulation, score.distribution, score.shakeout, score.markup]
-    .filter(s => s !== maxScore)
-    .reduce((a, b) => Math.max(a, b), 0);
+  // V3: Calculate confidence based on score separation, signal clarity, AND factor consensus
+  const allScores = [score.accumulation, score.distribution, score.shakeout, score.markup];
+  const secondScore = allScores.filter(s => s !== maxScore).reduce((a, b) => Math.max(a, b), 0);
   const scoreGap = maxScore - secondScore;
   const scoreGapRatio = maxScore > 0 ? scoreGap / maxScore : 0;
+
+  // V3: Factor consensus — how many different factor categories agree
+  // Categories: volume-price, technical (MACD/RSI), VWAP, momentum, large-order
+  const factorConsensus = countFactorConsensus(score, macdDivergence, rsi, momentumDecay, vwapDeep, vpSkewness, largeOrder, priceAccel);
 
   if (maxScore < 15) {
     intent = "震荡";
@@ -530,17 +1187,17 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     reasons.push("量价无明显方向，观望为主");
   } else if (score.accumulation === maxScore) {
     intent = "吸筹";
-    // V2: Higher confidence when gap is large
-    confidence = Math.min(95, 35 + score.accumulation + Math.round(scoreGapRatio * 20));
+    // V3: confidence boosted by factor consensus
+    confidence = Math.min(95, 35 + score.accumulation + Math.round(scoreGapRatio * 20) + factorConsensus * 3);
   } else if (score.distribution === maxScore) {
     intent = "出货";
-    confidence = Math.min(95, 35 + score.distribution + Math.round(scoreGapRatio * 20));
+    confidence = Math.min(95, 35 + score.distribution + Math.round(scoreGapRatio * 20) + factorConsensus * 3);
   } else if (score.shakeout === maxScore) {
     intent = "洗盘";
-    confidence = Math.min(90, 30 + score.shakeout + Math.round(scoreGapRatio * 15));
+    confidence = Math.min(90, 30 + score.shakeout + Math.round(scoreGapRatio * 15) + factorConsensus * 3);
   } else {
     intent = "拉升";
-    confidence = Math.min(95, 35 + score.markup + Math.round(scoreGapRatio * 20));
+    confidence = Math.min(95, 35 + score.markup + Math.round(scoreGapRatio * 20) + factorConsensus * 3);
   }
 
   return {
@@ -548,6 +1205,64 @@ function analyzeDayIntent(data: TimelineItem[], prevClose: number): { signal: In
     scores: { ...score },
   };
 }
+
+// ── V3: Count how many factor categories agree with the dominant intent ──
+function countFactorConsensus(
+  score: IntentScores,
+  macdDiv: MACDDivergence,
+  rsi: number,
+  momentum: MomentumDecayAnalysis,
+  vwapDeep: VWAPDeepAnalysis,
+  vpSkew: VolumePriceSkewness,
+  largeOrder: LargeOrderBehavior,
+  priceAccel: PriceAccelerationAnalysis,
+): number {
+  const maxScore = Math.max(score.accumulation, score.distribution, score.shakeout, score.markup);
+  if (maxScore === 0) return 0;
+
+  let consensus = 0;
+  const isAccum = score.accumulation === maxScore;
+  const isDist = score.distribution === maxScore;
+  const isShake = score.shakeout === maxScore;
+  const isMarkup = score.markup === maxScore;
+
+  // Factor 1: MACD divergence agrees?
+  if ((isAccum || isShake) && macdDiv.bottomDivergence) consensus++;
+  if ((isDist) && macdDiv.topDivergence) consensus++;
+  if (isMarkup && !macdDiv.topDivergence) consensus++;
+
+  // Factor 2: RSI agrees?
+  if ((isAccum || isShake) && rsi < 40) consensus++;
+  if (isDist && rsi > 60) consensus++;
+  if (isMarkup && rsi > 50 && rsi < 80) consensus++;
+
+  // Factor 3: Momentum agrees?
+  if ((isAccum || isShake) && momentum.downMomentumDecaying) consensus++;
+  if (isDist && momentum.upMomentumDecaying) consensus++;
+  if (isMarkup && !momentum.upMomentumDecaying) consensus++;
+
+  // Factor 4: VWAP agrees?
+  if ((isAccum || isMarkup) && vwapDeep.vwapSlopeDirection === "up") consensus++;
+  if (isDist && vwapDeep.vwapSlopeDirection === "down") consensus++;
+  if (isShake && vwapDeep.crossCount >= 3) consensus++;
+
+  // Factor 5: Volume skewness agrees?
+  if ((isAccum || isShake) && vpSkew.skewDirection === "low") consensus++;
+  if (isDist && vpSkew.skewDirection === "high") consensus++;
+  if (isMarkup && vpSkew.skewDirection === "high") consensus++;
+
+  // Factor 6: Large order agrees?
+  if ((isAccum || isMarkup) && largeOrder.dominantDirection === "buy") consensus++;
+  if (isDist && largeOrder.dominantDirection === "sell") consensus++;
+
+  // Factor 7: Price acceleration agrees?
+  if (isMarkup && priceAccel.direction === "accelerating_up") consensus++;
+  if (isDist && priceAccel.direction === "accelerating_down") consensus++;
+  if ((isAccum || isShake) && priceAccel.direction === "decelerating_down") consensus++;
+
+  return consensus;
+}
+
 
 function defaultIntent(intent: InstitutionalIntent): IntentSignal {
   return buildIntentSignal(intent, 20, ["数据不足，无法判断"], 0, 0.5);
@@ -635,7 +1350,9 @@ function buildIntentSignal(
   };
 }
 
-// ── V2: Cross-day Pattern Analysis ──
+// ══════════════════════════════════════════════════════════════
+// ── V3: Enhanced Cross-day Pattern Analysis ──
+// ══════════════════════════════════════════════════════════════
 
 interface CrossDayPattern {
   pattern: string;
@@ -651,13 +1368,20 @@ function analyzeCrossDayPattern(dailyIntents: DayIntentResult[]): CrossDayPatter
   const intentSequence = dailyIntents.map(d => d.intent.intent);
   const len = intentSequence.length;
 
+  // V3: Also consider volume trends across days
+  const volTrends = dailyIntents.map(d => d.totalVolume);
+  const isVolIncreasing = volTrends.length >= 3 &&
+    volTrends[volTrends.length - 1] > volTrends[volTrends.length - 2] &&
+    volTrends[volTrends.length - 2] > volTrends[volTrends.length - 3];
+
   // Pattern: 连续吸筹 → 可能即将拉升
   const recentAccumulation = intentSequence.slice(-3).filter(i => i === "吸筹").length;
   if (recentAccumulation >= 2 && intentSequence[len - 1] === "吸筹") {
+    const volBonus = isVolIncreasing ? "，量能逐步放大" : "";
     return {
       pattern: "连续吸筹蓄势",
-      description: "多日吸筹后有望拉升，关注放量突破信号",
-      confidence: 0.7,
+      description: `多日吸筹后有望拉升${volBonus}，关注放量突破信号`,
+      confidence: isVolIncreasing ? 0.8 : 0.7,
     };
   }
 
@@ -670,6 +1394,18 @@ function analyzeCrossDayPattern(dailyIntents: DayIntentResult[]): CrossDayPatter
     };
   }
 
+  // V3: Pattern: 吸筹 → 洗盘 → 拉升（经典三步曲）
+  if (len >= 3) {
+    const last3 = intentSequence.slice(-3);
+    if (last3[0] === "吸筹" && last3[1] === "洗盘" && last3[2] === "拉升") {
+      return {
+        pattern: "吸筹-洗盘-拉升（经典三步曲）",
+        description: "主力完成吸筹→洗盘→拉升全流程，趋势最健康",
+        confidence: 0.85,
+      };
+    }
+  }
+
   // Pattern: 拉升 → 出货（典型派发）
   if (len >= 2 && intentSequence[len - 2] === "拉升" && intentSequence[len - 1] === "出货") {
     return {
@@ -677,6 +1413,18 @@ function analyzeCrossDayPattern(dailyIntents: DayIntentResult[]): CrossDayPatter
       description: "主力拉高后开始派发，警惕继续下跌",
       confidence: 0.75,
     };
+  }
+
+  // V3: Pattern: 出货 → 出货/洗盘 → 拉升（诱多出货）
+  if (len >= 3) {
+    const last3 = intentSequence.slice(-3);
+    if (last3[1] === "出货" && last3[2] === "拉升" && dailyIntents[dailyIntents.length - 1].changePercent > 2) {
+      return {
+        pattern: "出货后反弹（警惕诱多）",
+        description: "出货后快速拉高可能是诱多，谨慎追高",
+        confidence: 0.65,
+      };
+    }
   }
 
   // Pattern: 连续出货（危险）
@@ -699,6 +1447,27 @@ function analyzeCrossDayPattern(dailyIntents: DayIntentResult[]): CrossDayPatter
         confidence: 0.8,
       };
     }
+  }
+
+  // V3: Pattern: 拉升 → 拉升 → 洗盘/震荡（高位整理）
+  if (len >= 3) {
+    const last3 = intentSequence.slice(-3);
+    if (last3[0] === "拉升" && last3[1] === "拉升" && (last3[2] === "洗盘" || last3[2] === "震荡")) {
+      return {
+        pattern: "连续拉升后整理",
+        description: "连续拉升后进入整理，关注后续方向选择",
+        confidence: 0.6,
+      };
+    }
+  }
+
+  // V3: Pattern: 洗盘 → 吸筹（底部蓄势）
+  if (len >= 2 && intentSequence[len - 2] === "洗盘" && intentSequence[len - 1] === "吸筹") {
+    return {
+      pattern: "洗盘后吸筹",
+      description: "洗盘后主力重新吸筹，可能即将启动新一轮行情",
+      confidence: 0.7,
+    };
   }
 
   // Pattern: 洗盘后方向选择
@@ -739,7 +1508,9 @@ function analyzeCrossDayPattern(dailyIntents: DayIntentResult[]): CrossDayPatter
   };
 }
 
-// ── Public: Analyze 5-day data for institutional intent (V2) ──
+// ══════════════════════════════════════════════════════════════
+// ── Public: Analyze 5-day data for institutional intent (V3) ──
+// ══════════════════════════════════════════════════════════════
 
 export function analyzeFiveDayIntent(
   items: TimelineItem[],
@@ -798,7 +1569,7 @@ export function analyzeFiveDayIntent(
     dayPrevClose = dayClose;
   }
 
-  // ── Determine overall intent (V2: improved weighting) ──
+  // ── Determine overall intent (V3: improved weighting + momentum adjustment) ──
   if (dailyIntents.length === 0) {
     return {
       overallIntent: buildIntentSignal("观察", 10, ["数据不足"], 0, 0.5),
@@ -809,15 +1580,19 @@ export function analyzeFiveDayIntent(
     };
   }
 
-  // V2: Exponential weighting (more aggressive time decay)
-  const weights = dailyIntents.map((_, i) => Math.pow(1.6, i));
+  // V3: Exponential weighting with momentum bias
+  // More recent days get higher weight, and days with strong signals get boosted
+  const weights = dailyIntents.map((d, i) => {
+    const timeWeight = Math.pow(1.6, i);
+    const signalBoost = 1 + (d.intent.confidence / 100) * 0.3; // strong signals get 30% boost
+    return timeWeight * signalBoost;
+  });
   const totalWeight = weights.reduce((a, b) => a + b, 0);
 
   const overallScores = { accumulation: 0, distribution: 0, shakeout: 0, markup: 0 };
   for (let i = 0; i < dailyIntents.length; i++) {
     const d = dailyIntents[i];
     const w = weights[i] / totalWeight;
-    // V2: Use weighted confidence * score ratio for more nuanced aggregation
     const maxDayScore = Math.max(d.scores.accumulation, d.scores.distribution, d.scores.shakeout, d.scores.markup, 1);
     overallScores.accumulation += w * (d.scores.accumulation / maxDayScore) * d.intent.confidence;
     overallScores.distribution += w * (d.scores.distribution / maxDayScore) * d.intent.confidence;
@@ -825,7 +1600,7 @@ export function analyzeFiveDayIntent(
     overallScores.markup += w * (d.scores.markup / maxDayScore) * d.intent.confidence;
   }
 
-  // V2: Cross-day pattern analysis
+  // V3: Enhanced cross-day pattern analysis
   const crossDay = analyzeCrossDayPattern(dailyIntents);
 
   // Trend phase detection
@@ -834,6 +1609,11 @@ export function analyzeFiveDayIntent(
   const overallChange = dailyIntents.length > 1
     ? ((lastDay.close - firstDay.open) / firstDay.open) * 100
     : lastDay.changePercent;
+
+  // V3: Volume trend across days
+  const dayVolumes = dailyIntents.map(d => d.totalVolume);
+  const isVolTrending = dayVolumes.length >= 3 &&
+    dayVolumes[dayVolumes.length - 1] > dayVolumes[dayVolumes.length - 2];
 
   let trendPhase: string;
   let riskLevel: number;
@@ -857,11 +1637,20 @@ export function analyzeFiveDayIntent(
     riskLevel = 3;
   }
 
-  // V2: Adjust risk level based on cross-day pattern
+  // V3: Adjust risk level based on cross-day pattern + volume trend
   if (crossDay.pattern === "拉升转出货" || crossDay.pattern === "连续出货") {
+    riskLevel = Math.max(riskLevel, 4);
+  } else if (crossDay.pattern === "出货后反弹（警惕诱多）") {
     riskLevel = Math.max(riskLevel, 4);
   } else if (crossDay.pattern === "吸筹转拉升" || crossDay.pattern === "洗盘后再次拉升") {
     riskLevel = Math.min(riskLevel, 2);
+  } else if (crossDay.pattern === "吸筹-洗盘-拉升（经典三步曲）") {
+    riskLevel = Math.min(riskLevel, 1); // safest pattern
+  }
+
+  // V3: Volume trend risk adjustment
+  if (isVolTrending && overallChange < -2) {
+    riskLevel = Math.max(riskLevel, 4); // volume increasing on down trend = danger
   }
 
   // Build overall intent
@@ -885,7 +1674,7 @@ export function analyzeFiveDayIntent(
     overallReasons.push("多日呈现拉升特征");
   }
 
-  // V2: Add cross-day pattern info to reasons
+  // V3: Add cross-day pattern info to reasons
   if (crossDay.confidence >= 0.5) {
     overallReasons.push(crossDay.description);
   }
@@ -894,12 +1683,26 @@ export function analyzeFiveDayIntent(
   if (overallChange > 3) overallReasons.push(`5日累计涨幅${overallChange.toFixed(1)}%`);
   else if (overallChange < -3) overallReasons.push(`5日累计跌幅${Math.abs(overallChange).toFixed(1)}%`);
 
-  // V2: Confidence based on score separation and cross-day consistency
+  // V3: Volume trend context
+  if (isVolTrending && overallChange > 0) overallReasons.push("量能逐日放大（资金持续流入）");
+  if (isVolTrending && overallChange < 0) overallReasons.push("量能逐日放大但下跌（放量下跌风险）");
+
+  // V3: Confidence based on score separation, cross-day consistency, AND factor consensus
   const secondOverall = [overallScores.accumulation, overallScores.distribution, overallScores.shakeout, overallScores.markup]
     .filter(s => s !== maxOverall)
     .reduce((a, b) => Math.max(a, b), 0);
   const overallGapRatio = maxOverall > 0 ? (maxOverall - secondOverall) / maxOverall : 0;
-  const overallConfidence = Math.min(92, Math.round(maxOverall * 80 + overallGapRatio * 20 + crossDay.confidence * 10));
+
+  // V3: Count how many daily intents agree with the overall
+  const agreementCount = dailyIntents.filter(d => d.intent.intent === overallIntent).length;
+  const agreementRatio = dailyIntents.length > 0 ? agreementCount / dailyIntents.length : 0;
+
+  const overallConfidence = Math.min(95, Math.round(
+    maxOverall * 70 +
+    overallGapRatio * 20 +
+    crossDay.confidence * 10 +
+    agreementRatio * 10
+  ));
 
   return {
     overallIntent: buildIntentSignal(overallIntent, overallConfidence, overallReasons, overallChange, 0.5),
@@ -910,10 +1713,9 @@ export function analyzeFiveDayIntent(
   };
 }
 
-// ── Intraday Segment Intent Analysis ──
-// Analyzes each time segment of a single trading day to determine
-// the dominant institutional intent (吸筹/出货/洗盘/拉升/震荡) in each segment.
-// Used to display intent hints on the intraday timeline chart.
+// ══════════════════════════════════════════════════════════════
+// ── Intraday Segment Intent Analysis (V3 enhanced) ──
+// ══════════════════════════════════════════════════════════════
 
 export interface IntradaySegmentIntent {
   label: string;            // e.g., "开盘", "上午", "下午", "尾盘"
@@ -922,9 +1724,7 @@ export interface IntradaySegmentIntent {
   intent: InstitutionalIntent;
   confidence: number;       // 0-100
   topReason: string;        // brief reason
-  /** SVG fill color for chart overlay — red for 吸筹/拉升, green for 出货, yellow for 洗盘, gray for 震荡/观察 */
   fillColor: string;
-  /** Tailwind text color class */
   textColor: string;
 }
 
@@ -934,8 +1734,8 @@ export interface IntradayIntentResult {
 }
 
 /**
- * Analyze a single day's intraday timeline for segment-level institutional intent.
- * Splits the day into 4 natural trading periods and scores each one.
+ * V3: Analyze a single day's intraday timeline for segment-level institutional intent.
+ * Enhanced with MACD divergence, RSI, momentum decay, VWAP deep analysis, etc.
  */
 export function analyzeIntradayIntent(
   data: TimelineItem[],
@@ -952,12 +1752,6 @@ export function analyzeIntradayIntent(
   const { signal: overallSignal } = analyzeDayIntent(data, prevClose);
 
   // ── Segment-level analysis ──
-  // Split into 4 time-based periods (A-share natural trading periods)
-  // Period 1: 开盘 (09:30-10:00) — first 30 min, high volatility
-  // Period 2: 上午 (10:00-11:30) — morning session
-  // Period 3: 下午 (13:00-14:00) — afternoon session
-  // Period 4: 尾盘 (14:00-15:00) — late session
-
   const periodDefs = [
     { label: "开盘", startMin: 570, endMin: 600, startTime: "09:30", endTime: "10:00" },
     { label: "上午", startMin: 600, endMin: 690, startTime: "10:00", endTime: "11:30" },
@@ -965,7 +1759,6 @@ export function analyzeIntradayIntent(
     { label: "尾盘", startMin: 840, endMin: 900, startTime: "14:00", endTime: "15:00" },
   ];
 
-  // Convert data time to minutes for easy slicing
   const timeToMin = (t: string): number => {
     const [h, m] = t.split(":").map(Number);
     return h * 60 + m;
@@ -987,7 +1780,7 @@ export function analyzeIntradayIntent(
         intent: "观察",
         confidence: 10,
         topReason: "数据不足",
-        fillColor: "rgba(156,163,175,0.08)",   // gray
+        fillColor: "rgba(156,163,175,0.08)",
         textColor: "text-gray-500",
       });
       continue;
@@ -1023,10 +1816,19 @@ export function analyzeIntradayIntent(
     const segRange = prevClose > 0 ? ((segHigh - segLow) / prevClose) * 100 : 0;
     const upperWick = segHigh - Math.max(segOpen, segClose);
     const lowerWick = Math.min(segOpen, segClose) - segLow;
-    const body = Math.abs(segClose - segOpen);
-    const range = segHigh - segLow || 1;
-    const upperWickRatio = upperWick / range;
-    const lowerWickRatio = lowerWick / range;
+    const rangeVal = segHigh - segLow || 1;
+    const upperWickRatio = upperWick / rangeVal;
+    const lowerWickRatio = lowerWick / rangeVal;
+
+    // V3: Segment-level RSI
+    const segPrices = periodData.map(d => d.price);
+    const segRSI = computeRSI(segPrices, Math.min(14, Math.floor(segPrices.length / 2)));
+
+    // V3: Segment-level momentum
+    const segMomentum = analyzeMomentumDecay(periodData);
+
+    // V3: Segment-level large order
+    const segLargeOrder = analyzeLargeOrderBehavior(periodData);
 
     // ── Score each intent type for this segment ──
     let acc = 0, dist = 0, shake = 0, markup = 0;
@@ -1041,12 +1843,10 @@ export function analyzeIntradayIntent(
       acc += 15;
       reasons.push("围绕均价线");
     }
-    // Quiet accumulation (low range, low volume)
     if (segRange < 1 && Math.abs(segChange) < 0.5 && volRatioVsAvg < 0.8) {
       acc += 20;
       reasons.push("缩量整理");
     }
-    // V-recovery within segment
     if (periodData.length >= 10) {
       const firstHalf = periodData.slice(0, Math.floor(periodData.length / 2));
       const secondHalf = periodData.slice(Math.floor(periodData.length / 2));
@@ -1061,6 +1861,16 @@ export function analyzeIntradayIntent(
         reasons.push("探底回升");
       }
     }
+    // V3: Large order buy in segment
+    if (segLargeOrder.dominantDirection === "buy" && segLargeOrder.intensity > 0.1) {
+      acc += 12;
+      reasons.push("大单买入");
+    }
+    // V3: RSI low + recovery
+    if (segRSI < 40 && segClose > segOpen) {
+      acc += 8;
+      reasons.push("RSI低位回升");
+    }
 
     // -- Distribution (出货) --
     if (downVolRatio > 0.55 && segChange < -0.3) {
@@ -1071,15 +1881,28 @@ export function analyzeIntradayIntent(
       dist += 20;
       reasons.push("冲高回落");
     }
-    // Volume surge but weak close (bull trap)
     if (volRatioVsAvg > 1.5 && segChange < 0.3) {
       dist += 15;
       reasons.push("放量滞涨");
     }
-    // Late-day dump
     if (pd.label === "尾盘" && segChange < -0.3 && volRatioVsAvg > 1.2) {
       dist += 20;
       reasons.push("尾盘放量下杀");
+    }
+    // V3: Large order sell in segment
+    if (segLargeOrder.dominantDirection === "sell" && segLargeOrder.intensity > 0.1) {
+      dist += 12;
+      reasons.push("大单卖出");
+    }
+    // V3: RSI high + weakening
+    if (segRSI > 65 && segClose < segOpen) {
+      dist += 8;
+      reasons.push("RSI高位回落");
+    }
+    // V3: Up-momentum decaying
+    if (segMomentum.upMomentumDecaying) {
+      dist += 8;
+      reasons.push("上涨动量衰减");
     }
 
     // -- Shakeout (洗盘) --
@@ -1091,10 +1914,14 @@ export function analyzeIntradayIntent(
       shake += 15;
       reasons.push("下影线长");
     }
-    // Quick dip recovery
     if (segLow < prevClose * 0.98 && segClose > prevClose * 0.995) {
       shake += 20;
       reasons.push("快速下探收回");
+    }
+    // V3: Down-momentum decaying in segment
+    if (segMomentum.downMomentumDecaying && segChange < 0) {
+      shake += 8;
+      reasons.push("下跌动量衰减");
     }
 
     // -- Markup (拉升) --
@@ -1110,6 +1937,11 @@ export function analyzeIntradayIntent(
       markup += 10;
       reasons.push("远超均价线");
     }
+    // V3: Strong buy + momentum not decaying
+    if (segLargeOrder.dominantDirection === "buy" && !segMomentum.upMomentumDecaying && segChange > 0.3) {
+      markup += 10;
+      reasons.push("大单强买+动量持续");
+    }
 
     // ── Determine dominant intent ──
     const maxS = Math.max(acc, dist, shake, markup);
@@ -1124,19 +1956,19 @@ export function analyzeIntradayIntent(
     } else if (acc === maxS) {
       intent = "吸筹";
       confidence = Math.min(85, 30 + acc);
-      topReason = reasons.filter(r => ["上涨放量", "围绕均价线", "缩量整理", "探底回升"].includes(r))[0] || "吸筹特征";
+      topReason = reasons.filter(r => ["上涨放量", "围绕均价线", "缩量整理", "探底回升", "大单买入", "RSI低位回升"].includes(r))[0] || "吸筹特征";
     } else if (dist === maxS) {
       intent = "出货";
       confidence = Math.min(85, 30 + dist);
-      topReason = reasons.filter(r => ["下跌放量", "冲高回落", "放量滞涨", "尾盘放量下杀"].includes(r))[0] || "出货特征";
+      topReason = reasons.filter(r => ["下跌放量", "冲高回落", "放量滞涨", "尾盘放量下杀", "大单卖出", "RSI高位回落", "上涨动量衰减"].includes(r))[0] || "出货特征";
     } else if (shake === maxS) {
       intent = "洗盘";
       confidence = Math.min(80, 25 + shake);
-      topReason = reasons.filter(r => ["大幅震荡", "下影线长", "快速下探收回"].includes(r))[0] || "洗盘特征";
+      topReason = reasons.filter(r => ["大幅震荡", "下影线长", "快速下探收回", "下跌动量衰减"].includes(r))[0] || "洗盘特征";
     } else {
       intent = "拉升";
       confidence = Math.min(85, 30 + markup);
-      topReason = reasons.filter(r => ["放量拉升", "接近日高", "远超均价线"].includes(r))[0] || "拉升特征";
+      topReason = reasons.filter(r => ["放量拉升", "接近日高", "远超均价线", "大单强买+动量持续"].includes(r))[0] || "拉升特征";
     }
 
     // Color mapping: 吸筹=红, 出货=绿, 洗盘=黄, 拉升=红, 震荡=灰
@@ -1144,23 +1976,23 @@ export function analyzeIntradayIntent(
     let textColor: string;
     switch (intent) {
       case "吸筹":
-        fillColor = "rgba(239,68,68,0.10)";   // red
+        fillColor = "rgba(239,68,68,0.10)";
         textColor = "text-red-500";
         break;
       case "出货":
-        fillColor = "rgba(22,163,74,0.10)";    // green
+        fillColor = "rgba(22,163,74,0.10)";
         textColor = "text-green-500";
         break;
       case "洗盘":
-        fillColor = "rgba(234,179,8,0.10)";    // yellow
+        fillColor = "rgba(234,179,8,0.10)";
         textColor = "text-yellow-500";
         break;
       case "拉升":
-        fillColor = "rgba(239,68,68,0.10)";    // red (bullish like 吸筹)
+        fillColor = "rgba(239,68,68,0.10)";
         textColor = "text-red-500";
         break;
       default:
-        fillColor = "rgba(156,163,175,0.06)";  // gray
+        fillColor = "rgba(156,163,175,0.06)";
         textColor = "text-gray-500";
         break;
     }
