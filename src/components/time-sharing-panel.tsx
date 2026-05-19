@@ -248,11 +248,12 @@ function computePvLabelRect(x: number, layout: PvLabelLayout): { x: number; y: n
 
 interface PlacedLabel {
   idx: number;
-  x: number;         // marker x
+  x: number;         // marker x (original price point)
   y: number;         // marker y (price point)
   marker: PulseVolumeMarker;
   layout: PvLabelLayout;
   adjustedLabelY: number; // may be shifted for overlap avoidance
+  adjustedX: number;     // label x may be shifted horizontally for same-time markers
 }
 
 function resolvePvLabelOverlaps(
@@ -260,21 +261,47 @@ function resolvePvLabelOverlaps(
 ): PlacedLabel[] {
   if (markerPoints.length === 0) return [];
 
-  // Step 1: Compute default layouts
+  // Step 0: Detect markers at the same time point and spread them horizontally
+  // so pulse and progressive_vol each get their own connection line
+  const timeGroups = new Map<string, number[]>(); // time -> indices into markerPoints
+  markerPoints.forEach((pt, idx) => {
+    const t = pt.marker.time;
+    if (!timeGroups.has(t)) timeGroups.set(t, []);
+    timeGroups.get(t)!.push(idx);
+  });
+
+  const HORIZONTAL_SPREAD = 28; // pixels to spread each marker from center
+  const xOffsets = new Map<number, number>(); // markerPoints index -> x offset
+  for (const [, indices] of timeGroups) {
+    if (indices.length <= 1) {
+      xOffsets.set(indices[0], 0);
+    } else {
+      // Spread evenly around center
+      const total = indices.length;
+      indices.forEach((mpIdx, i) => {
+        const offset = (i - (total - 1) / 2) * HORIZONTAL_SPREAD;
+        xOffsets.set(mpIdx, offset);
+      });
+    }
+  }
+
+  // Step 1: Compute default layouts (use adjusted x for label positioning)
   const placed: PlacedLabel[] = markerPoints.map((pt, idx) => {
-    const layout = computePvLabelLayout(pt.x, pt.y, pt.marker);
-    return { idx, x: pt.x, y: pt.y, marker: pt.marker, layout, adjustedLabelY: layout.labelY };
+    const xOff = xOffsets.get(idx) || 0;
+    const adjustedX = pt.x + xOff;
+    const layout = computePvLabelLayout(adjustedX, pt.y, pt.marker);
+    return { idx, x: pt.x, y: pt.y, marker: pt.marker, layout, adjustedLabelY: layout.labelY, adjustedX };
   });
 
   // Step 2: Compute label rects and resolve overlaps
-  // Sort by x to make overlap detection efficient
-  placed.sort((a, b) => a.x - b.x);
+  // Sort by adjustedX to make overlap detection efficient
+  placed.sort((a, b) => a.adjustedX - b.adjustedX);
 
   const GAP = 3; // minimum gap between labels
   const placedRects: { x: number; y: number; width: number; height: number }[] = [];
 
   for (const p of placed) {
-    let rect = computePvLabelRect(p.x, { ...p.layout, labelY: p.adjustedLabelY });
+    let rect = computePvLabelRect(p.adjustedX, { ...p.layout, labelY: p.adjustedLabelY });
 
     // Try placing at default position first
     let overlapFound = true;
@@ -298,7 +325,7 @@ function resolvePvLabelOverlaps(
           } else {
             p.adjustedLabelY += 18; // shift down more
           }
-          rect = computePvLabelRect(p.x, { ...p.layout, labelY: p.adjustedLabelY });
+          rect = computePvLabelRect(p.adjustedX, { ...p.layout, labelY: p.adjustedLabelY });
           break;
         }
       }
@@ -309,7 +336,7 @@ function resolvePvLabelOverlaps(
     if (overlapFound) {
       // Reset vertical position to default
       p.adjustedLabelY = p.layout.labelY;
-      rect = computePvLabelRect(p.x, { ...p.layout, labelY: p.adjustedLabelY });
+      rect = computePvLabelRect(p.adjustedX, { ...p.layout, labelY: p.adjustedLabelY });
 
       // Try shifting right
       const shiftedRight = { ...rect, x: rect.x + rect.width * 0.7 };
@@ -363,6 +390,7 @@ function renderPulseVolumeMarker(
   marker: PulseVolumeMarker,
   idx: number,
   adjustedLabelY?: number,
+  adjustedX?: number,
 ): React.ReactNode {
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
@@ -374,8 +402,9 @@ function renderPulseVolumeMarker(
   // Decline markers use green tones (bearish in Chinese markets)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
   const isAbove = isPulse || isProgressiveVol;
-  const defaultLabelY = isAbove ? y - 38 : y + 26;
+  const defaultLabelY = isAbove ? y - 52 : y + 36;
   const labelY = adjustedLabelY ?? defaultLabelY;
+  const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
 
   if (isPulse) {
     bgColor = "rgba(245, 158, 11, 0.25)";
@@ -421,9 +450,9 @@ function renderPulseVolumeMarker(
 
   return (
     <g key={`pv-${marker.type}-${idx}`}>
-      {/* Connecting line from marker to price point */}
+      {/* Connecting line from price point to label (may be offset horizontally) */}
       <line
-        x1={x} y1={y} x2={x} y2={labelY}
+        x1={x} y1={y} x2={labelX} y2={labelY}
         stroke={borderColor} strokeWidth={1} strokeDasharray="3 2"
       />
       {/* Marker dot on price line — larger & bolder */}
@@ -447,21 +476,21 @@ function renderPulseVolumeMarker(
       </text>
       {/* White glow behind label pill for readability */}
       <rect
-        x={x - pillW / 2 - 1.5} y={(isAbove ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
+        x={labelX - pillW / 2 - 1.5} y={(isAbove ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
         width={pillW + 3} height={pillH + 3}
         rx={pillRx + 1} ry={pillRx + 1}
         fill="white" fillOpacity={0.85}
       />
       {/* Label background pill */}
       <rect
-        x={x - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
+        x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
         fill={bgColor} stroke={borderColor} strokeWidth={1}
       />
       {/* Label text — larger & bolder */}
       <text
-        x={x} y={isAbove ? labelY + 1 : labelY + 7}
+        x={labelX} y={isAbove ? labelY + 1 : labelY + 7}
         textAnchor="middle" dominantBaseline="middle"
         fontSize={9} fontWeight={700} fill={textColor}
       >
@@ -489,7 +518,7 @@ function PulseVolumeRenderer(props: any) {
 
   return (
     <g className="pulse-volume-markers">
-      {placedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY))}
+      {placedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY, p.adjustedX))}
     </g>
   );
 }
@@ -995,7 +1024,7 @@ function CombinedChartOverlay(props: any) {
       {/* Layer 2 (middle): 选股标记 pulse/volume markers — ON TOP of factor signals */}
       {pvPlacedLabels.length > 0 && (
         <g className="pulse-volume-markers">
-          {pvPlacedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY))}
+          {pvPlacedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY, p.adjustedX))}
         </g>
       )}
       {/* Layer 3 (top): Expanded bubbles — interactive, must be on top for usability */}
