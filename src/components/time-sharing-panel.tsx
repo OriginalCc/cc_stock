@@ -1427,6 +1427,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   sectorRegime?: RegimeDetail | null;
   sectorInfo?: { code: string; name: string } | null;
   pvMarkers?: PulseVolumeMarker[];
+  stockName?: string;
 }) {
   // ── Build full-day timeline template (240 minutes total) ──
   // A-share trading day: 09:30-11:30 (120min) + 13:00-15:00 (120min)
@@ -1993,6 +1994,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cfg.bg} ${cfg.text}`}
                 title={detail.description}
               >
+                {stockName && <span className="opacity-80">{stockName}</span>}
                 <span>{cfg.icon}</span>
                 <span>{detail.regime}</span>
                 <span className="opacity-60">{detail.confidence}%</span>
