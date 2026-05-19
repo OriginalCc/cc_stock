@@ -34,6 +34,7 @@ const TSuitabilityScore = dynamic(() => import("@/components/t-suitability-score
 const TTradeJournal = dynamic(() => import("@/components/t-trade-journal").then(m => ({ default: m.TTradeJournal })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载做T记录...</span></div> });
 const RiskAlertPanel = dynamic(() => import("@/components/risk-alert-panel").then(m => ({ default: m.RiskAlertPanel })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载风险仪表盘...</span></div> });
 import { TradingRulesCard } from "@/components/trading-rules-card";
+import { PositionSignalCard } from "@/components/position-signal-card";
 import { PasswordGate } from "@/components/password-gate";
 import { PasswordManageDialog } from "@/components/password-manage-dialog";
 import { calculateMACD } from "@/lib/indicators";
@@ -665,8 +666,15 @@ export default function StockTAssistant() {
           </CardContent>
         </Card>
 
-        {/* Trading Rules Card — prominent position, always visible in t-assistant mode */}
-        <TradingRulesCard autoExpanded={autoExpanded} />
+        {/* Position Signal Card — dynamic 3-dimension position indicator */}
+        <PositionSignalCard
+          indexRegime={szIndexRegime}
+          sectorRegime={sectorRegime}
+          stockChangePercent={quote?.changePercent}
+          stockName={quote?.name}
+          indexLabel={INDEX_CONFIG[activeIndexKey]?.label || "深证"}
+          sectorName={sectorInfo?.name}
+        />
 
         {/* T-Index & Smart Action Panel (only in timeline modes) */}
         {quote && isTimelineActive && liveTimeline.length > 0 && (
@@ -792,7 +800,15 @@ export default function StockTAssistant() {
         </>
         )}
 
-        <TradingRulesCard autoExpanded={autoExpanded} />
+        {/* Trading Rules Reference — collapsed at bottom */}
+        <details className="group mb-4">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 py-2">
+            <BookOpen className="w-3.5 h-3.5" />
+            查看完整交易规矩说明
+            <span className="text-[10px] text-muted-foreground/60 ml-1">（点击展开）</span>
+          </summary>
+          <TradingRulesCard autoExpanded={autoExpanded} />
+        </details>
 
       </main>
       <footer className="border-t border-border bg-card/30 mt-auto">
