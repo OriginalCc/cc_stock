@@ -665,6 +665,9 @@ export default function StockTAssistant() {
           </CardContent>
         </Card>
 
+        {/* Trading Rules Card — prominent position, always visible in t-assistant mode */}
+        <TradingRulesCard autoExpanded={autoExpanded} />
+
         {/* T-Index & Smart Action Panel (only in timeline modes) */}
         {quote && isTimelineActive && liveTimeline.length > 0 && (
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
