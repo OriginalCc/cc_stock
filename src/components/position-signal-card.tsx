@@ -216,7 +216,7 @@ export function PositionSignalCard({
 
   return (
     <Card className={`border-2 ${level.borderColor} ${level.bgColor} shadow-lg`}>
-      <CardContent className="p-3 sm:p-4">
+      <CardContent className="p-2 sm:p-2.5">
         {/* 主信号行 */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`flex items-center gap-1.5 text-lg font-bold ${level.color}`}>
@@ -237,7 +237,7 @@ export function PositionSignalCard({
         </div>
 
         {/* 三维度指标 */}
-        <div className="flex items-center gap-3 mt-2 text-xs">
+        <div className="flex items-center gap-3 mt-1 text-xs">
           <div className="flex items-center gap-1">
             <span className="text-muted-foreground">{indexLabel}</span>
             <span className={`font-bold ${directionColor(indexDir)}`}>
@@ -270,7 +270,7 @@ export function PositionSignalCard({
         </div>
 
         {/* 仓位速查条 */}
-        <div className="mt-2 flex items-center gap-1">
+        <div className="mt-1 flex items-center gap-1">
           {[
             { label: "≤1/4", active: level.key === "3down", color: "bg-red-500" },
             { label: "≤1/3", active: level.key === "2down", color: "bg-orange-500" },
