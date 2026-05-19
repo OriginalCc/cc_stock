@@ -1640,8 +1640,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             posColor = 'text-blue-600 dark:text-blue-400';
             posBg = 'bg-blue-500/15 border-blue-500/30';
           } else if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp) {
-            // 五级：三涨 → 50-60%，正T/反T(先卖再买)均可
-            posLabel = '60%仓';
+            // 五级：三涨 → 90-100%，正T/反T(先卖再买)均可
+            posLabel = '满仓';
             tDir = '正反T';
             posColor = 'text-green-600 dark:text-green-400';
             posBg = 'bg-green-500/15 border-green-500/30';
@@ -1657,7 +1657,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             posColor = 'text-amber-600 dark:text-amber-400';
             posBg = 'bg-amber-500/15 border-amber-500/30';
           } else if (!hasMktInfo && hasSectorInfo && sectorUp && stockUp) {
-            posLabel = '45%仓';
+            posLabel = '75%仓';
             tDir = '正T';
             posColor = 'text-green-600 dark:text-green-400';
             posBg = 'bg-green-500/15 border-green-500/30';
@@ -1969,7 +1969,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
               <span className="text-green-500 text-xs">✅</span>
               <span className="text-xs font-bold text-green-600 dark:text-green-400">
-                三涨！深证↑+板块↑+个股↑ 50-60%仓
+                三涨！深证↑+板块↑+个股↑ 90-100%仓
               </span>
               <span className="text-[10px] text-green-400 font-bold">| 正T/反T(先卖再买)均可</span>
               <span className="text-[10px] text-green-500/70">最安全，积极做T</span>

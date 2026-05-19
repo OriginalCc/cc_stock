@@ -108,7 +108,7 @@ const LEVELS: Record<string, PositionLevel> = {
     label: "双涨",
     detail: "积极，可适度操作",
     strategy: "正T低吸/反T(先卖再买)均可",
-    position: "40-50%",
+    position: "70-80%",
     color: "text-red-600 dark:text-red-400",
     bgColor: "bg-red-500/10",
     borderColor: "border-red-500/30",
@@ -120,7 +120,7 @@ const LEVELS: Record<string, PositionLevel> = {
     label: "三涨",
     detail: "最安全，可积极做T",
     strategy: "正T/反T(先卖再买)均可",
-    position: "50-60%",
+    position: "90-100%",
     color: "text-red-600 dark:text-red-400",
     bgColor: "bg-red-500/10",
     borderColor: "border-red-500/40",
@@ -275,8 +275,8 @@ export function PositionSignalCard({
             { label: "≤1/4", active: level.key === "3down", color: "bg-green-500" },
             { label: "≤1/3", active: level.key === "2down", color: "bg-green-500" },
             { label: "20%", active: level.key === "1down1flat" || level.key === "1up1down", color: "bg-yellow-500" },
-            { label: "40-50%", active: level.key === "2up", color: "bg-red-500" },
-            { label: "50-60%", active: level.key === "3up", color: "bg-red-500" },
+            { label: "70-80%", active: level.key === "2up", color: "bg-red-500" },
+            { label: "90-100%", active: level.key === "3up", color: "bg-red-500" },
           ].map((item, i) => (
             <div
               key={i}
