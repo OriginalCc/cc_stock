@@ -441,7 +441,7 @@ function IntentExplanationPanel() {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="rounded-lg border border-border bg-card/50 mt-2 mb-1">
+    <div className="rounded-lg border border-border bg-card/50 mt-3 mb-2">
       <button
         className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors"
         onClick={() => setExpanded(prev => !prev)}
@@ -809,9 +809,6 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
       {/* ── Institutional Intent Analysis ── */}
       {intentResult && <InstitutionalIntentPanel result={intentResult} />}
 
-      {/* Intent Explanation Panel */}
-      <IntentExplanationPanel />
-
       {/* Zoom Controls & Indicator */}
       <div className="flex items-center gap-1 px-1 mb-1">
         <div className="flex items-center gap-1 mr-2">
@@ -985,6 +982,9 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
           </CardContent>
         </Card>
       </div>
+
+      {/* Intent Explanation Panel — 底部说明 */}
+      <IntentExplanationPanel />
     </div>
   );
 });
