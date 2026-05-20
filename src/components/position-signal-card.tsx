@@ -185,7 +185,7 @@ function directionLabel(dir: Direction): string {
   switch (dir) {
     case "up": return "↑ 涨";
     case "down": return "↓ 跌";
-    case "flat": return "— 盘";
+    case "flat": return "横盘震荡";
   }
 }
 
