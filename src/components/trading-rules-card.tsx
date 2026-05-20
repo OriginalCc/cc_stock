@@ -756,11 +756,219 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
           </div>
         </div>
 
-        {/* ── 十、动态调节规矩 ── */}
+        {/* ── 十、缩量下跌专题 ── */}
+        <div className="p-3 rounded-lg border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/8 via-amber-500/3 to-transparent">
+          <div className="flex items-center gap-1.5 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-xs font-bold text-amber-700 dark:text-amber-300">十、缩量下跌专题（阴跌陷阱必读）</span>
+            <span className="text-[10px] text-amber-500/60 ml-auto">⚠ 谨慎观望</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+
+            {/* 什么是缩量下跌 */}
+            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
+              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">📌 什么是缩量下跌？</p>
+              <div className="space-y-1 text-[11px]">
+                <p>指股价持续下跌，但成交量逐步萎缩的走势。与<span className="text-red-500 font-medium">放量下跌</span>（主力出逃）不同，缩量下跌更像<span className="text-foreground font-medium">"温水煮青蛙"</span>——不知不觉中被深套。</p>
+                <p>核心特征：<span className="text-foreground font-medium">成交量低于均量50%以下 + 价格持续走低</span>。看似卖压不大，实则无人接盘，阴跌不止。</p>
+              </div>
+            </div>
+
+            {/* 缩量下跌 vs 放量下跌 */}
+            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
+              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">🔄 缩量下跌 vs 放量下跌（本质区别）</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-1.5 rounded border border-red-500/15 bg-red-500/3">
+                  <p className="text-red-500 font-medium text-[10px] mb-0.5">🔴 放量下跌</p>
+                  <p className="text-[10px]">• 主力出逃，卖压沉重</p>
+                  <p className="text-[10px]">• 恐慌性抛售，短期急跌</p>
+                  <p className="text-[10px]">• 下跌猛烈但可能见底</p>
+                  <p className="text-[10px]">• 放量=多空分歧大</p>
+                  <p className="text-[10px]">• 应对：立即空仓</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <p className="text-amber-500 font-medium text-[10px] mb-0.5">🟡 缩量下跌</p>
+                  <p className="text-[10px]">• 无人接盘，阴跌不止</p>
+                  <p className="text-[10px]">• 悄无声息，持续磨底</p>
+                  <p className="text-[10px]">• 下跌缓慢但看不到底</p>
+                  <p className="text-[10px]">• 缩量=无人愿意买</p>
+                  <p className="text-[10px]">• 应对：不抄底，等信号</p>
+                </div>
+              </div>
+              <p className="mt-1.5 text-amber-500/80 text-[10px] font-medium">💡 放量下跌像暴风雨——猛烈但可能快速过去；缩量下跌像绵绵阴雨——虽不猛烈但看不到尽头。两种都不能抄底。</p>
+            </div>
+
+            {/* 为什么缩量下跌危险 */}
+            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
+              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">⚠️ 为什么缩量下跌也危险？</p>
+              <div className="space-y-1 text-[11px]">
+                <p>• <span className="text-foreground font-medium">无买盘支撑</span>：缩量说明没人愿意买，价格下跌不是因为抛压大，而是因为完全没有承接</p>
+                <p>• <span className="text-foreground font-medium">阴跌深不见底</span>：没有恐慌盘释放，就没有底部。每天跌一点，累计跌幅惊人</p>
+                <p>• <span className="text-foreground font-medium">容易麻痹大意</span>：不像放量暴跌那样触目惊心，缩量下跌让人放松警惕，不知不觉深套</p>
+                <p>• <span className="text-foreground font-medium">随时可能放量加速</span>：缩量阴跌到临界点后，一根放量长阴随时出现（"缩量蓄力→放量爆发"向下）</p>
+                <p>• <span className="text-foreground font-medium">反弹更弱</span>：缩量下跌后的反弹通常也是缩量的，反弹高度有限，无法回本</p>
+                <p>• <span className="text-foreground font-medium">时间成本高</span>：做T最怕阴跌——反复小仓位买入，每次都被套一点点，累积亏损不小</p>
+              </div>
+            </div>
+
+            {/* 缩量下跌的四种典型场景 */}
+            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
+              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">📉 缩量下跌的四种典型场景</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="p-1.5 rounded border border-red-500/15 bg-red-500/3">
+                  <span className="text-red-500 font-medium">场景A（最危险·30%）：放量暴跌后的缩量阴跌</span>
+                  <p>早盘放量暴跌 → 午后缩量继续跌 → 次日继续阴跌</p>
+                  <p className="text-red-400">→ 放量下跌的延续！主力出完货后无人接盘，最危险组合。全天禁止买入</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <span className="text-amber-500 font-medium">场景B（常见·35%）：全天缩量阴跌</span>
+                  <p>开盘后缓慢下跌 → 全天缩量 → 跌幅不大但从未企稳</p>
+                  <p className="text-amber-500">→ 典型阴跌。看似跌幅不大（0.5%-1.5%），但做T很难赚钱——买入后不涨反跌</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <span className="text-amber-600 font-medium">场景C（20%）：冲高回落后缩量阴跌</span>
+                  <p>早盘冲高 → 10:00后缩量回落 → 午后持续走低</p>
+                  <p className="text-amber-500">→ 诱多后的阴跌。冲高吸引买盘，随后缩量回落，买入者全部被套</p>
+                </div>
+                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
+                  <span className="text-green-500 font-medium">场景D（15%）：缩量下跌后放量企稳</span>
+                  <p>缩量下跌持续一段时间 → 突然放量止跌 → 价格企稳不再创新低</p>
+                  <p className="text-green-500">→ 唯一可参与的场景！但必须确认"放量企稳"后才可轻仓试探</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 判断缩量下跌的关键指标 */}
+            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
+              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">🔍 判断缩量下跌的关键指标</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <p className="text-amber-600 font-medium mb-0.5">① 量能萎缩程度</p>
+                  <p>• 当前成交量低于均量50% → 量能萎缩</p>
+                  <p>• 当前成交量低于均量30% → 极度萎缩（地量）</p>
+                  <p className="text-amber-500/80 text-[10px]">注意：地量不等于地价，地量后可能继续缩量阴跌</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <p className="text-amber-600 font-medium mb-0.5">② 下跌斜率（速度）</p>
+                  <p>• 缓跌（每5分钟跌0.1%-0.3%）→ 典型阴跌，最磨人</p>
+                  <p>• 中速跌（每5分钟跌0.3%-0.5%）→ 阴跌加速，可能有放量下杀</p>
+                  <p>• 急跌（每5分钟跌超0.5%）→ 已不是缩量阴跌，按放量下跌处理</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <p className="text-amber-600 font-medium mb-0.5">③ 均线关系</p>
+                  <p>• 价格持续在均价线下方 → 空头主导，不碰</p>
+                  <p>• 价格靠近均价线但无法突破 → 弱势，等突破确认</p>
+                  <p>• 价格放量站上均价线 → 可能企稳，观察中</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <p className="text-amber-600 font-medium mb-0.5">④ 下跌持续时间</p>
+                  <p>• 缩量下跌不足30分钟 → 可能是正常回调，观察</p>
+                  <p>• 缩量下跌30-60分钟 → 阴跌确认，不做T</p>
+                  <p>• 缩量下跌超60分钟 → 深度阴跌，全天不做该股</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <p className="text-amber-600 font-medium mb-0.5">⑤ 大盘/板块环境</p>
+                  <p>• 大盘也缩量下跌 → 系统性弱势，全场谨慎</p>
+                  <p>• 大盘涨+个股缩量跌 → 个股独立弱势，坚决不碰</p>
+                  <p>• 大盘稳+板块缩量跌 → 行业弱势，等板块企稳</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 何时可以参与缩量下跌的股票 */}
+            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
+              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">✅ 缩量下跌后何时可以参与？（严格条件）</p>
+              <div className="space-y-1 text-[11px]">
+                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
+                  <p className="text-green-500 font-medium">必须同时满足以下5个条件，方可轻仓试探：</p>
+                  <div className="space-y-0.5 mt-1">
+                    <p>1. <span className="text-foreground font-medium">放量止跌</span>：出现成交量明显放大（量比≥1.5x）且价格不再创新低的K线</p>
+                    <p>2. <span className="text-foreground font-medium">站上均价线</span>：价格放量突破当日均价线并站稳3分钟以上</p>
+                    <p>3. <span className="text-foreground font-medium">大盘配合</span>：大盘不在下跌趋势中，最好是翻红或横盘</p>
+                    <p>4. <span className="text-foreground font-medium">板块共振</span>：所属板块也在企稳或转强，不是独立弱势</p>
+                    <p>5. <span className="text-foreground font-medium">时间窗口</span>：10:00以后或午后，方向更明确。尾盘（14:30后）最可靠</p>
+                  </div>
+                </div>
+                <p className="text-amber-500/80 text-[10px] font-medium">⚠️ 5个条件缺一不可！不满足就继续等待。宁可错过反弹，也不在缩量阴跌中接飞刀。</p>
+              </div>
+            </div>
+
+            {/* 缩量下跌应对策略 */}
+            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
+              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">🛡️ 缩量下跌分时应对策略</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-600 border border-amber-500/25 shrink-0">1</span>
+                  <div>
+                    <span className="text-foreground font-medium">识别确认 → 不急于买入</span>
+                    <p>发现缩量下跌 → 不抄底、不低吸。缩量说明买盘不积极，你买入就是唯一的买盘，大概率继续跌</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/25 shrink-0">2</span>
+                  <div>
+                    <span className="text-foreground font-medium">已持仓 → 反弹减仓</span>
+                    <p>若已持有：缩量反弹是减仓机会，不要加仓。缩量反弹高度有限，无法回本</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-yellow-500/15 text-yellow-600 border border-yellow-500/25 shrink-0">3</span>
+                  <div>
+                    <span className="text-foreground font-medium">观察是否放量企稳</span>
+                    <p>耐心等待5个条件同时满足。缩量下跌转放量企稳是最可靠的买入信号，但需要时间确认</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-red-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-red-500/15 text-red-600 border border-red-500/25 shrink-0">4</span>
+                  <div>
+                    <span className="text-red-600 dark:text-red-400 font-medium">警惕缩量→放量加速下跌</span>
+                    <p>缩量阴跌后突然放量，不是企稳而是加速下跌！辨别关键：放量方向。放量向下=加速下杀（更危险），放量向上=企稳信号</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/25 shrink-0">5</span>
+                  <div>
+                    <span className="text-foreground font-medium">尾盘评估次日策略</span>
+                    <p>若全天缩量阴跌未企稳 → 次日继续观察。若尾盘放量企稳 → 次日可关注开盘是否延续</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 缩量下跌做T的陷阱 */}
+            <div className="p-2 rounded-md border border-red-500/15 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">💀 缩量下跌做T的致命陷阱</p>
+              <div className="space-y-1 text-[11px]">
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">✗</span>
+                  <p><span className="text-foreground font-medium">"跌得不多，做个小T"</span> — 缩量下跌时做T成功率极低。买入后不涨，卖出后也不跌，白交手续费还可能被套</p>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">✗</span>
+                  <p><span className="text-foreground font-medium">"量这么小，卖压不大"</span> — 缩量不是卖压小，而是没有买盘！一根放量阴线随时可能出现</p>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">✗</span>
+                  <p><span className="text-foreground font-medium">"缩量地量就是底部"</span> — 地量之后还有地量，地价只有在放量确认后才能判断</p>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">✗</span>
+                  <p><span className="text-foreground font-medium">"连续缩量下跌后肯定要反弹"</span> — 可能继续缩量阴跌数日。没有放量企稳信号，反弹只是想象</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-1.5 rounded border-2 border-amber-500/25 bg-amber-500/8">
+              <p className="text-amber-600 dark:text-amber-400 font-bold text-[10px]">⚠ 铁律：缩量下跌 = 不买入！等放量企稳确认再参与。缩量阴跌中接飞刀，只会被磨得越来越薄。做T的核心是"量价配合"，缩量=没有配合，就没有交易机会。</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 十一、动态调节规矩 ── */}
         <div className="p-3 rounded-lg border border-orange-500/20 bg-orange-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Activity className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">十、动态调节规矩（根据盘面实时调整）</span>
+            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">十一、动态调节规矩（根据盘面实时调整）</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1.5">
             <div className="grid grid-cols-1 gap-1.5">
@@ -810,11 +1018,11 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
           </div>
         </div>
 
-        {/* ── 十一、实战案例 ── */}
+        {/* ── 十二、实战案例 ── */}
         <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Info className="w-3.5 h-3.5 text-rose-500" />
-            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十一、实战案例</span>
+            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十二、实战案例</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
             <div className="p-2 rounded-md border border-red-500/10 bg-red-500/5">
@@ -861,6 +1069,16 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                 <p>• 若已持有 → 任何反弹都是减仓机会</p>
                 <p>• 13:00后若大盘翻红+个股放量企稳 → 方可20%轻仓试探</p>
                 <p>• 正确做法：全天不做该股，等待次日方向确认</p>
+              </div>
+            </div>
+            <div className="p-2 rounded-md border-2 border-amber-500/25 bg-amber-500/8">
+              <p className="text-amber-600 dark:text-amber-400 font-bold mb-1">场景6（缩量阴跌·陷阱）：全天量能萎缩至均量40%，价格缓慢下跌1.2%</p>
+              <div className="space-y-0.5">
+                <p>→ <span className="text-amber-500 font-bold">⚠ 缩量阴跌，不做T</span></p>
+                <p>• 看似跌幅不大（1.2%），但每分钟买入都会被套</p>
+                <p>• 缩量反弹0.3%就回落，正T买不到低点，卖不到高点</p>
+                <p>• 14:00突然放量下杀0.8% → 缩量蓄力后的加速下跌</p>
+                <p>• 正确做法：全天不做该股，等次日放量企稳再考虑</p>
               </div>
             </div>
           </div>
