@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  AlertTriangle, Zap, Clock, Volume2, Activity, Scale, BookOpen, Info, ChevronDown, ChevronRight,
+  AlertTriangle, Zap, Clock, Volume2, Activity, Scale, BookOpen, Info, ChevronDown, ChevronRight, Eye,
 } from "lucide-react";
 
 interface TradingRulesCardProps {
@@ -964,11 +964,240 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
           </div>
         </div>
 
-        {/* ── 十一、动态调节规矩 ── */}
+        {/* ── 十一、洗盘下跌识别专题 ── */}
+        <div className="p-3 rounded-lg border-2 border-blue-500/30 bg-gradient-to-br from-blue-500/8 via-blue-500/3 to-transparent">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Eye className="w-3.5 h-3.5 text-blue-500" />
+            <span className="text-xs font-bold text-blue-700 dark:text-blue-300">十一、洗盘下跌识别专题（辨别真假下跌）</span>
+            <span className="text-[10px] text-blue-500/60 ml-auto">🔍 关键技能</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+
+            {/* 什么是洗盘 */}
+            <div className="p-2 rounded-md border border-blue-500/20 bg-blue-500/5">
+              <p className="text-blue-600 dark:text-blue-400 font-bold text-xs mb-1.5">📌 什么是洗盘下跌？</p>
+              <div className="space-y-1 text-[11px]">
+                <p>洗盘是<span className="text-foreground font-medium">主力在拉升前故意打压股价</span>，迫使不坚定的散户卖出，从而收集更多廉价筹码的行为。洗盘下跌看似凶猛，实则是"假摔"，跌完后会快速拉回并创出新高。</p>
+                <p>识别洗盘是做T最核心的技能之一：<span className="text-blue-500 font-bold">洗盘时低吸=暴利机会，真跌时低吸=深套陷阱</span>。</p>
+              </div>
+            </div>
+
+            {/* 洗盘 vs 真跌 核心区别 */}
+            <div className="p-2 rounded-md border border-blue-500/20 bg-blue-500/5">
+              <p className="text-blue-600 dark:text-blue-400 font-bold text-xs mb-1.5">🔑 洗盘 vs 真跌：7大核心区别</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
+                    <p className="text-green-500 font-medium text-[10px] mb-0.5">✅ 洗盘下跌特征</p>
+                    <p className="text-[10px]">1. 缩量下跌或温和放量</p>
+                    <p className="text-[10px]">2. 下跌速度快，反弹也快</p>
+                    <p className="text-[10px]">3. 不破关键支撑位</p>
+                    <p className="text-[10px]">4. 均价线始终向上或走平</p>
+                    <p className="text-[10px]">5. 大盘/板块环境健康</p>
+                    <p className="text-[10px]">6. 下跌后快速收回跌幅</p>
+                    <p className="text-[10px]">7. 低点逐步抬高</p>
+                  </div>
+                  <div className="p-1.5 rounded border border-red-500/15 bg-red-500/3">
+                    <p className="text-red-500 font-medium text-[10px] mb-0.5">❌ 真跌特征</p>
+                    <p className="text-[10px]">1. 放量下跌，量能持续放大</p>
+                    <p className="text-[10px]">2. 下跌持续，反弹无力</p>
+                    <p className="text-[10px]">3. 跌破关键支撑位</p>
+                    <p className="text-[10px]">4. 均价线持续向下</p>
+                    <p className="text-[10px]">5. 大盘/板块同步下跌</p>
+                    <p className="text-[10px]">6. 反弹幅度不超过跌幅1/3</p>
+                    <p className="text-[10px]">7. 低点逐步降低</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 7大识别维度详解 */}
+            <div className="p-2 rounded-md border border-blue-500/20 bg-blue-500/5">
+              <p className="text-blue-600 dark:text-blue-400 font-bold text-xs mb-1.5">🔍 洗盘识别7大维度（逐一详解）</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="p-1.5 rounded border border-blue-500/15 bg-blue-500/3">
+                  <p className="text-blue-500 font-medium mb-0.5">维度① 量能特征（最重要的判断依据）</p>
+                  <div className="space-y-0.5">
+                    <p><span className="text-green-500 font-medium">洗盘量能</span>：下跌时缩量，反弹时放量。主力不出货所以缩量，吸筹完毕后拉升所以放量</p>
+                    <p><span className="text-red-500 font-medium">真跌量能</span>：下跌时放量，反弹时缩量。主力在卖所以放量，无买盘所以反弹缩量</p>
+                    <p className="text-blue-400/80 text-[10px]">💡 核心口诀：缩量跌+放量涨=洗盘；放量跌+缩量涨=真跌。量价配合方向是第一判断标准</p>
+                  </div>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/15 bg-blue-500/3">
+                  <p className="text-blue-500 font-medium mb-0.5">维度② 下跌速度与形态</p>
+                  <div className="space-y-0.5">
+                    <p><span className="text-green-500 font-medium">洗盘形态</span>：急跌慢涨或急跌急涨。主力故意快速打压制造恐慌，但很快拉回</p>
+                    <p><span className="text-red-500 font-medium">真跌形态</span>：慢跌急弹或持续阴跌。缓慢但持续地向下，反弹只是短暂</p>
+                    <p className="text-blue-400/80 text-[10px]">💡 典型洗盘走势：3分钟内急跌1%→10分钟内缓慢拉回→再创新高。V型或U型底是洗盘标志</p>
+                  </div>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/15 bg-blue-500/3">
+                  <p className="text-blue-500 font-medium mb-0.5">维度③ 关键支撑位是否守住</p>
+                  <div className="space-y-0.5">
+                    <p><span className="text-green-500 font-medium">洗盘</span>：跌破均价线/前低/关键价位后快速收回，不有效跌破。探底即反弹</p>
+                    <p><span className="text-red-500 font-medium">真跌</span>：跌破关键位后无法收回，在下方横盘或继续下行。破位即确认</p>
+                    <p className="text-blue-400/80 text-[10px]">💡 "有效跌破"定义：跌破关键位后3分钟以上无法收回。3分钟内收回=假破=洗盘</p>
+                  </div>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/15 bg-blue-500/3">
+                  <p className="text-blue-500 font-medium mb-0.5">维度④ 均价线方向</p>
+                  <div className="space-y-0.5">
+                    <p><span className="text-green-500 font-medium">洗盘</span>：均价线保持向上或走平，股价短暂跌破均价线后站回</p>
+                    <p><span className="text-red-500 font-medium">真跌</span>：均价线持续向下，股价始终在均价线下方运行</p>
+                    <p className="text-blue-400/80 text-[10px]">💡 均价线是多空分水岭。均价线向上的前提下，下跌都是洗盘性质；均价线向下的前提下，反弹都是减仓机会</p>
+                  </div>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/15 bg-blue-500/3">
+                  <p className="text-blue-500 font-medium mb-0.5">维度⑤ 大盘/板块环境</p>
+                  <div className="space-y-0.5">
+                    <p><span className="text-green-500 font-medium">洗盘环境</span>：大盘和板块走势健康（涨或横盘），个股逆势下跌→故意打压</p>
+                    <p><span className="text-red-500 font-medium">真跌环境</span>：大盘和板块也在下跌，个股跟跌→系统性风险，不是洗盘</p>
+                    <p className="text-blue-400/80 text-[10px]">💡 逆市下跌+快速收回=典型洗盘。但大盘暴跌时的个股下跌几乎不可能是洗盘</p>
+                  </div>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/15 bg-blue-500/3">
+                  <p className="text-blue-500 font-medium mb-0.5">维度⑥ 反弹力度（最直观的判断）</p>
+                  <div className="space-y-0.5">
+                    <p><span className="text-green-500 font-medium">洗盘反弹</span>：反弹超过跌幅的1/2以上，甚至创出新高。主力洗完后立即拉升</p>
+                    <p><span className="text-red-500 font-medium">真跌反弹</span>：反弹不到跌幅的1/3，随后继续下跌。反弹只是空头回补</p>
+                    <p className="text-blue-400/80 text-[10px]">💡 反弹力度是最终验证标准。如果跌1%反弹0.6%以上=洗盘概率大；跌1%反弹0.2%=真跌</p>
+                  </div>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/15 bg-blue-500/3">
+                  <p className="text-blue-500 font-medium mb-0.5">维度⑦ 低点变化趋势</p>
+                  <div className="space-y-0.5">
+                    <p><span className="text-green-500 font-medium">洗盘</span>：每次回调的低点都比上一次高（底抬升），整体趋势向上</p>
+                    <p><span className="text-red-500 font-medium">真跌</span>：每次反弹的高点都比上一次低（顶降低），整体趋势向下</p>
+                    <p className="text-blue-400/80 text-[10px]">💡 连续3次底抬升=强洗盘确认；连续3次顶降低=真跌确认</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 洗盘的5种常见手法 */}
+            <div className="p-2 rounded-md border border-blue-500/20 bg-blue-500/5">
+              <p className="text-blue-600 dark:text-blue-400 font-bold text-xs mb-1.5">🎭 洗盘的5种常见手法</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
+                  <span className="text-green-500 font-medium">手法1：早盘急跌洗盘（最常见）</span>
+                  <p>9:30-9:35快速打压1%-2% → 9:35-10:00缓慢拉回 → 午后创新高</p>
+                  <p className="text-green-500/80 text-[10px]">识别要点：急跌时缩量，拉回时放量；均价线不转向；10:00前收复跌幅</p>
+                </div>
+                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
+                  <span className="text-green-500 font-medium">手法2：盘中跳水洗盘</span>
+                  <p>10:00-11:00或13:00-14:00突然急跌0.5%-1% → 5-10分钟内快速拉回</p>
+                  <p className="text-green-500/80 text-[10px]">识别要点：跳水时间短、速度快、拉回更快；V型底；不破均价线</p>
+                </div>
+                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
+                  <span className="text-green-500 font-medium">手法3：尾盘打压洗盘</span>
+                  <p>14:00-14:30突然下跌 → 14:30后企稳或拉回 → 次日高开拉升</p>
+                  <p className="text-green-500/80 text-[10px]">识别要点：尾盘跌但量不大，次日开盘即拉。目的是让持股者过夜焦虑而卖出</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <span className="text-amber-500 font-medium">手法4：横盘震荡洗盘（最磨人）</span>
+                  <p>股价在均价线附近窄幅震荡30-60分钟 → 突然放量突破拉升</p>
+                  <p className="text-amber-500/80 text-[10px]">识别要点：震荡区间收窄+量能萎缩=蓄势；放量突破=洗盘结束信号。横盘期间不操作</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
+                  <span className="text-amber-500 font-medium">手法5：冲高回落洗盘（诱多反洗）</span>
+                  <p>先拉升1%-2% → 快速回落至原位 → 散户以为诱多而卖出 → 再次拉升创新高</p>
+                  <p className="text-amber-500/80 text-[10px]">识别要点：回落时缩量=洗盘（主力没跑）；回落低点高于前低。冲高回落放量=真出货</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 洗盘确认后的操作策略 */}
+            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
+              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">✅ 洗盘确认后的操作策略</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">1</span>
+                  <div>
+                    <span className="text-green-600 dark:text-green-400 font-bold">确认洗盘 → 逢低正T买入</span>
+                    <p>满足5个以上洗盘特征后，在下跌低点小仓位买入，等主力拉回后卖出获利</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">2</span>
+                  <div>
+                    <span className="text-foreground font-medium">买入时机：急跌低点或放量回升时</span>
+                    <p>最佳买点：①急跌缩量止跌瞬间 ②放量回升站上均价线时。不要在下跌途中接飞刀，等止跌信号</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">3</span>
+                  <div>
+                    <span className="text-foreground font-medium">卖出时机：拉回到下跌起点附近</span>
+                    <p>洗盘后拉回通常至少回到下跌起点。如果创出新高可以多持一会，但注意止盈</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-red-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-red-500/15 text-red-600 border border-red-500/25 shrink-0">4</span>
+                  <div>
+                    <span className="text-red-600 dark:text-red-400 font-medium">止损位：跌破低点或均价线3分钟不回</span>
+                    <p>如果判断错误（以为是洗盘实际是真跌），必须止损。止损位=洗盘低点下方0.3%或均价线以下3分钟</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 误判的代价 */}
+            <div className="p-2 rounded-md border border-red-500/15 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">💀 误判的代价：把真跌当洗盘 vs 把洗盘当真跌</p>
+              <div className="space-y-1 text-[11px]">
+                <div className="p-1.5 rounded border border-red-500/10 bg-red-500/3">
+                  <span className="text-red-500 font-medium">把真跌当洗盘（严重错误）</span>
+                  <p>以为主力在洗盘，越跌越买 → 结果是主力出货，深套10%以上。亏损=无上限</p>
+                  <p className="text-red-400 text-[10px]">代价：重大亏损。宁可错过洗盘机会，也不要在真跌中抄底</p>
+                </div>
+                <div className="p-1.5 rounded border border-amber-500/10 bg-amber-500/3">
+                  <span className="text-amber-500 font-medium">把洗盘当真跌（轻微错误）</span>
+                  <p>以为是真跌不敢买 → 结果洗盘后拉升3%，错过一次做T机会。亏损=0</p>
+                  <p className="text-amber-500 text-[10px]">代价：错失机会但不亏钱。做T第一原则是保本，错过机会远好于做错方向</p>
+                </div>
+              </div>
+              <p className="mt-1.5 text-red-500/80 text-[10px] font-medium">⚠️ 不对称风险：误判真跌的代价远大于误判洗盘。所以：存疑时按真跌处理！只有7个维度中5个以上指向洗盘时才可参与。</p>
+            </div>
+
+            {/* 快速判断流程 */}
+            <div className="p-2 rounded-md border border-blue-500/20 bg-blue-500/5">
+              <p className="text-blue-600 dark:text-blue-400 font-bold text-xs mb-1.5">⚡ 洗盘快速判断流程（1分钟决策）</p>
+              <div className="space-y-1 text-[11px]">
+                <div className="p-1.5 rounded border border-blue-500/10 bg-blue-500/3 space-y-0.5">
+                  <p className="text-blue-500 font-medium">Step 1：看均价线方向</p>
+                  <p>• 均价线向上 → 可能洗盘，继续判断 ↓</p>
+                  <p>• 均价线向下 → 大概率真跌，不参与 ✋</p>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/10 bg-blue-500/3 space-y-0.5">
+                  <p className="text-blue-500 font-medium">Step 2：看量价关系</p>
+                  <p>• 缩量跌+放量涨 → 洗盘概率大，继续判断 ↓</p>
+                  <p>• 放量跌+缩量涨 → 真跌，不参与 ✋</p>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/10 bg-blue-500/3 space-y-0.5">
+                  <p className="text-blue-500 font-medium">Step 3：看大盘/板块</p>
+                  <p>• 大盘/板块健康 → 洗盘概率增大 ↓</p>
+                  <p>• 大盘/板块下跌 → 真跌概率增大 ✋</p>
+                </div>
+                <div className="p-1.5 rounded border border-blue-500/10 bg-blue-500/3 space-y-0.5">
+                  <p className="text-blue-500 font-medium">Step 4：看反弹力度</p>
+                  <p>• 反弹超跌幅1/2 → 洗盘确认 ✅ 可低吸</p>
+                  <p>• 反弹不到1/3 → 真跌确认 ✋ 不参与</p>
+                </div>
+              </div>
+              <p className="mt-1.5 text-blue-500/80 text-[10px] font-medium">💡 4步中有任何一步指向真跌，就不参与。只有全部指向洗盘才可低吸——宁可错过，不可做错。</p>
+            </div>
+
+            <div className="p-1.5 rounded border-2 border-blue-500/25 bg-blue-500/8">
+              <p className="text-blue-600 dark:text-blue-400 font-bold text-[10px]">⚠ 铁律：存疑即真跌！不确定是不是洗盘时，一律按真跌处理。洗盘机会错过了还有下一个，真跌抄底被套可能一套就是几个月。做T第一原则：保本永远优先于盈利。</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 十二、动态调节规矩 ── */}
         <div className="p-3 rounded-lg border border-orange-500/20 bg-orange-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Activity className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">十一、动态调节规矩（根据盘面实时调整）</span>
+            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">十二、动态调节规矩（根据盘面实时调整）</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1.5">
             <div className="grid grid-cols-1 gap-1.5">
@@ -1018,11 +1247,11 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
           </div>
         </div>
 
-        {/* ── 十二、实战案例 ── */}
+        {/* ── 十三、实战案例 ── */}
         <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Info className="w-3.5 h-3.5 text-rose-500" />
-            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十二、实战案例</span>
+            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十三、实战案例</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
             <div className="p-2 rounded-md border border-red-500/10 bg-red-500/5">
@@ -1079,6 +1308,16 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                 <p>• 缩量反弹0.3%就回落，正T买不到低点，卖不到高点</p>
                 <p>• 14:00突然放量下杀0.8% → 缩量蓄力后的加速下跌</p>
                 <p>• 正确做法：全天不做该股，等次日放量企稳再考虑</p>
+              </div>
+            </div>
+            <div className="p-2 rounded-md border-2 border-blue-500/25 bg-blue-500/8">
+              <p className="text-blue-600 dark:text-blue-400 font-bold mb-1">场景7（洗盘确认·机会）：9:32急跌1.2%后V型收回，缩量跌+放量涨，均价线向上</p>
+              <div className="space-y-0.5">
+                <p>→ <span className="text-blue-500 font-bold">🔍 洗盘概率大，可低吸正T</span></p>
+                <p>• 7大维度检查：均价线向上✅、缩量跌放量涨✅、大盘稳✅、V型收回超跌幅1/2✅、3分钟内收复✅</p>
+                <p>• 操作：急跌低点买入20%仓位，拉回起点卖出，获利0.8%</p>
+                <p>• 止损：若跌破急跌低点3分钟不回，立即止损出局</p>
+                <p>• 关键：5/7维度确认才操作，任何一维度存疑则放弃</p>
               </div>
             </div>
           </div>
