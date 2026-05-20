@@ -1595,6 +1595,35 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       ref={chartContainerRef}
       className="bg-card rounded-lg border border-border overflow-hidden"
     >
+      {/* ─── Early Morning Volume Drop DANGER Banner (禁止买入) ─── */}
+      {pvMarkers && pvMarkers.some(m => m.type === "early_vol_drop") && (() => {
+        const earlyDrop = pvMarkers.find(m => m.type === "early_vol_drop")!;
+        const isExtreme = Math.abs(earlyDrop.score) >= 60;
+        const isHigh = Math.abs(earlyDrop.score) >= 40;
+        return (
+          <div className={`relative overflow-hidden ${isExtreme ? 'bg-red-600' : isHigh ? 'bg-red-500' : 'bg-red-500/90'}`}>
+            {/* Animated diagonal stripes for extreme danger */}
+            {isExtreme && (
+              <div className="stripe-move absolute inset-0 opacity-20" style={{
+                backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(0,0,0,0.3) 8px, rgba(0,0,0,0.3) 16px)',
+              }} />
+            )}
+            <div className="relative px-4 py-2 flex items-center justify-center gap-3">
+              <span className="text-white text-base animate-pulse">🚫</span>
+              <span className="text-white text-sm font-black tracking-wide">
+                {isExtreme ? '极危(一级警告)！' : '危险(二级警告)！'}早盘放量下跌，禁止买入！
+              </span>
+              <span className="text-white/80 text-xs font-semibold border-l border-white/40 pl-3">
+                {earlyDrop.detail}
+              </span>
+              <span className="text-white/60 text-[10px] font-mono">
+                {Math.abs(earlyDrop.score)}分
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Header - 同花顺 style info bar */}
       <div className="px-3 py-2 border-b border-border/50 flex items-center gap-3 text-xs flex-wrap">
         <span className="font-medium text-sm text-foreground">{symbol}</span>
@@ -1986,35 +2015,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           )}
         </div>
       </div>
-
-      {/* ─── Early Morning Volume Drop DANGER Banner (禁止买入) ─── */}
-      {pvMarkers && pvMarkers.some(m => m.type === "early_vol_drop") && (() => {
-        const earlyDrop = pvMarkers.find(m => m.type === "early_vol_drop")!;
-        const isExtreme = Math.abs(earlyDrop.score) >= 60;
-        const isHigh = Math.abs(earlyDrop.score) >= 40;
-        return (
-          <div className={`relative overflow-hidden ${isExtreme ? 'bg-red-600' : isHigh ? 'bg-red-500' : 'bg-red-500/90'}`}>
-            {/* Animated diagonal stripes for extreme danger */}
-            {isExtreme && (
-              <div className="stripe-move absolute inset-0 opacity-20" style={{
-                backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(0,0,0,0.3) 8px, rgba(0,0,0,0.3) 16px)',
-              }} />
-            )}
-            <div className="relative px-4 py-2.5 flex items-center justify-center gap-3">
-              <span className="text-white text-lg animate-pulse">🚫</span>
-              <span className="text-white text-sm font-black tracking-wide">
-                {isExtreme ? '极危(一级警告)！' : '危险(二级警告)！'}早盘放量下跌，禁止买入！
-              </span>
-              <span className="text-white/80 text-xs font-semibold border-l border-white/40 pl-3">
-                {earlyDrop.detail}
-              </span>
-              <span className="text-white/60 text-[10px] font-mono">
-                {Math.abs(earlyDrop.score)}分
-              </span>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* ─── Position Rule Banner on Chart (5-tier + T-direction) ─── */}
       {/* 中国股市颜色惯例：红=涨，绿=跌 */}
