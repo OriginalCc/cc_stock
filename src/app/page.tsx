@@ -746,7 +746,7 @@ export default function StockTAssistant() {
         {(chartMode === "timeline" || chartMode === "5d-timeline") && liveTimeline.length === 0 && timelineLoading ? (
           <div className="space-y-4"><Skeleton className="h-[400px] w-full" /><Skeleton className="h-[150px] w-full" /><Skeleton className="h-[100px] w-full" /></div>
         ) : chartMode === "5d-timeline" ? (
-          <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
+          <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} szIndexRegime={szIndexRegime} sectorRegime={sectorRegime} sectorInfo={sectorInfo} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
             <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={deferredTimelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={deferredPvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />

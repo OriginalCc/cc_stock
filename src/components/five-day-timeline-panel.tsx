@@ -18,10 +18,16 @@ import type { TimelineItem } from "@/hooks/use-stock-data";
 import { formatVolume, formatAmount } from "@/lib/chart-shared";
 import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { analyzeFiveDayIntent, type FiveDayIntentResult, type DayIntentResult } from "@/lib/institutional-intent";
+import { REGIME_CONFIG, INDEX_KEYS, type IndexKey } from "@/lib/chart-shared";
+import type { RegimeDetail } from "@/lib/t-strategy";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, ZoomIn, ZoomOut, Maximize2, ShieldAlert, TrendingUp, TrendingDown, Activity, Eye, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
+import dynamic from "next/dynamic";
+
+// Dynamic import for MiniTimelinePanel (code-split for faster page load)
+const MiniTimelinePanel = dynamic(() => import("@/components/mini-timeline-panel").then(m => ({ default: m.MiniTimelinePanel })), { ssr: false });
 
 // ── Types ──
 
@@ -38,6 +44,15 @@ interface FiveDayTimelinePanelProps {
   quote: any;
   timeline: TimelineItem[];
   timelinePrevClose: number;
+  // Index & sector mini timeline data
+  indexTimelineData?: Record<string, { items: TimelineItem[]; prevClose: number }>;
+  sectorTimelineData?: { items: TimelineItem[]; prevClose: number };
+  activeIndexKey?: string;
+  indexConfig?: Record<string, { symbol: string; label: string; shortLabel: string }>;
+  onCycleIndex?: () => void;
+  szIndexRegime?: RegimeDetail | null;
+  sectorRegime?: RegimeDetail | null;
+  sectorInfo?: { code: string; name: string } | null;
 }
 
 // ── Constants ──
@@ -654,7 +669,11 @@ function IntentExplanationPanel() {
 const MIN_VISIBLE_POINTS = 60;  // ~1 hour of 1-min data
 const ZOOM_STEP = 0.15;         // 15% zoom per scroll tick
 
-export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClose }: FiveDayTimelinePanelProps) {
+export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({
+  symbol, quote, timeline, timelinePrevClose,
+  indexTimelineData, sectorTimelineData, activeIndexKey, indexConfig, onCycleIndex,
+  szIndexRegime, sectorRegime, sectorInfo,
+}: FiveDayTimelinePanelProps) {
   const [kline5Min, setKline5Min] = useState<KLine5Min[]>([]);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -1144,6 +1163,30 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
 
       {/* Intent Explanation Panel — 底部说明 */}
       <IntentExplanationPanel />
+
+      {/* ─── Market Index & Sector Mini Timelines ─── */}
+      {(() => {
+        const szData = indexTimelineData?.[activeIndexKey || "sz"];
+        const idxInfo = indexConfig?.[activeIndexKey || "sz"];
+        const hasIdxData = szData && szData.items.length > 0;
+        const hasSectorData = sectorTimelineData && sectorTimelineData.items.length > 0 && sectorInfo;
+        if (!hasIdxData && !hasSectorData) return null;
+
+        const regimeBadge = (regime: RegimeDetail | null) => {
+          if (!regime) return null;
+          const cfg = REGIME_CONFIG[regime.regime] || REGIME_CONFIG["震荡市"];
+          return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}><span>{cfg.icon}</span><span>{regime.regime}</span></span>;
+        };
+
+        return (
+          <div className="mt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime)}{onCycleIndex && <span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={onCycleIndex} title="点击切换指数">切换</span>}</div>} />}
+              {hasSectorData && <MiniTimelinePanel title={`${sectorInfo!.name}板块`} data={sectorTimelineData.items} prevClose={sectorTimelineData.prevClose} badge={<div className="ml-auto">{regimeBadge(sectorRegime)}</div>} />}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 });
