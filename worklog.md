@@ -805,3 +805,36 @@ Stage Summary:
 - 依赖稳定：quote不再导致每1.5s重算1210项数据
 - 减少请求：5日模式下跳过fetchHistory，省去一次服务端请求+MACD/KDJ计算
 - 延迟计算：主力意图分析不阻塞UI渲染
+
+---
+Task ID: 11
+Agent: main
+Task: 修复板块分时图不显示问题
+
+Work Log:
+- 分析板块分时图数据流：客户端 page.tsx → API /ashare-sector → getStockSector() → searchSectorCode() → getSectorTimeline()
+- 发现6个关键问题：
+  1. searchSectorCode 只依赖东方财富suggest API，该API不稳定，经常返回空结果
+  2. getStockSector 无持久化缓存，每次都依赖不稳定的suggest API
+  3. 客户端 sectorFailCountRef 达到5次就永久放弃（不会自动恢复）
+  4. 服务端 sectorErrors 冷却时间10s过长，客户端超时15s不够
+  5. 本地 STOCK_SECTOR_MAP 只有30个常见A股，覆盖面太窄
+  6. 服务端 ashare-sector 路由在 timeline 获取失败时连 sectorInfo 也不返回
+- 修复方案：
+  1. 添加 SectorInfoCache 数据库模型，使用 raw SQL（db.$queryRawUnsafe）绕过 Prisma HMR 缓存问题
+  2. getStockSector 增加4步查找：DB缓存 → 东方财富push2 API → searchSectorCode → searchSectorByListAPI → 缩短名称重试 → 本地fallback → 写入DB
+  3. 新增 searchSectorByListAPI 备用查找方法（东方财富板块列表API + 模糊匹配）
+  4. 扩展 STOCK_SECTOR_MAP 从30个增加到约80个常见A股
+  5. 客户端 failCount 阈值从5提升到10，2分钟后自动重置
+  6. 客户端超时从15s增加到20s
+  7. 服务端 sectorErrors 冷却从10s降到5s，清理间隔从60s降到30s
+  8. 服务端 timeline 获取失败时不阻塞 sectorInfo 返回（try-catch 包裹）
+  9. 客户端 fetch 失败不清空 sectorInfo（保留上次已知状态）
+
+Stage Summary:
+- 板块分时图查找链路从1层（suggest API）增强到4层（DB → push2 → suggest → list API → 缩名重试 → fallback）
+- 新增 SectorInfoCache 数据库持久化缓存（使用 raw SQL 绕过 Prisma HMR 问题）
+- 新增 searchSectorByListAPI 备用查找（支持精确/包含/前缀匹配）
+- 本地 fallback 映射从30扩展到约80个常见A股
+- 客户端容错能力大幅增强（10次阈值、2分钟自动恢复、保留上次状态）
+- 服务端更友好（timeline失败不阻塞info、更短冷却时间）

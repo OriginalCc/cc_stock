@@ -132,3 +132,16 @@ model AppConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// ── 板块信息缓存（避免重复调用东方财富API） ──────────────────
+
+model SectorInfoCache {
+  id         String   @id @default(cuid())
+  symbol     String   @unique                // 股票代码 e.g. "600519"
+  sectorCode String                          // 板块代码 e.g. "BK0896"
+  sectorName String                          // 板块名称 e.g. "白酒"
+  quoteId    String   @default("")            // 东方财富行情ID e.g. "90.BK0896"
+  market     Int      @default(90)            // 市场代码 (板块固定为90)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

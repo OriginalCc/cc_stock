@@ -184,30 +184,43 @@ export default function StockTAssistant() {
   const sectorInfo = isAShareStock ? sectorInfoRaw : null;
   const sectorRegime = isAShareStock ? sectorRegimeRaw : null;
   const sectorFailCountRef = useRef(0);
+  const sectorLastFailTimeRef = useRef(0);
 
   useEffect(() => {
     if (!symbol || !isAShareStock) return;
     // Reset fail count when switching stocks — previous failures shouldn't block new stock
     sectorFailCountRef.current = 0;
+    sectorLastFailTimeRef.current = 0;
     let cancelled = false;
     let abortCtrl: AbortController | null = null;
     const fetchSectorData = async () => {
-      // If sector failed too many times for THIS stock, stop trying (but allow reset on symbol change)
-      if (sectorFailCountRef.current >= 5) return;
+      // Relaxed fail threshold: increased from 5 to 10, and auto-reset after 2 minutes
+      // This prevents transient network issues from permanently disabling sector chart
+      if (sectorFailCountRef.current >= 10) {
+        const timeSinceLastFail = Date.now() - sectorLastFailTimeRef.current;
+        // Auto-reset fail count after 2 minutes of silence — allows retry
+        if (timeSinceLastFail > 120000) {
+          sectorFailCountRef.current = 0;
+          sectorLastFailTimeRef.current = 0;
+        } else {
+          return;
+        }
+      }
       try {
         // Abort previous request if still pending
         if (abortCtrl) abortCtrl.abort();
         abortCtrl = new AbortController();
-        const timeoutId = setTimeout(() => abortCtrl?.abort(), 15000); // 15s timeout for chained API calls
+        const timeoutId = setTimeout(() => abortCtrl?.abort(), 20000); // 20s timeout (increased from 15s for chained API calls + DB cache)
 
         const infoRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(symbol)}&type=full`, { signal: abortCtrl.signal });
         clearTimeout(timeoutId);
-        if (!infoRes.ok) { sectorFailCountRef.current++; if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } return; }
+        if (!infoRes.ok) { sectorFailCountRef.current++; sectorLastFailTimeRef.current = Date.now(); return; }
         const infoData = await infoRes.json();
-        if (!infoData.success || !infoData.sectorInfo) { sectorFailCountRef.current++; if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } return; }
+        if (!infoData.success || !infoData.sectorInfo) { sectorFailCountRef.current++; sectorLastFailTimeRef.current = Date.now(); return; }
         const sInfo = infoData.sectorInfo;
         if (cancelled) return;
         sectorFailCountRef.current = 0; // Reset on success
+        sectorLastFailTimeRef.current = 0;
         setSectorInfoRaw({ code: sInfo.code, name: sInfo.name });
         // Relax threshold: show sector chart even with few data points (early morning, inactive sectors)
         if (infoData.data && infoData.data.items && infoData.data.items.length > 0) {
@@ -216,10 +229,12 @@ export default function StockTAssistant() {
           if (!cancelled) { setSectorRegimeRaw(regime); setSectorTimelineData({ items: infoData.data.items, prevClose: sectorPrevClose }); }
         } else { if (!cancelled) { setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } }
       } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") { sectorFailCountRef.current++; return; }
+        if (e instanceof DOMException && e.name === "AbortError") { sectorFailCountRef.current++; sectorLastFailTimeRef.current = Date.now(); return; }
         console.error("Sector regime fetch error:", e);
         sectorFailCountRef.current++;
-        if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
+        sectorLastFailTimeRef.current = Date.now();
+        // Don't clear sector info on fetch error — keep the last known state
+        // Only clear timeline data since it may be stale
       }
     };
     // Start immediately - no idle callback delay for sector data

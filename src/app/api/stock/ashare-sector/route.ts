@@ -4,15 +4,15 @@ import { fetchGuarded } from "@/lib/fetch-guard";
 
 // Track recent failures per-key (not global) to avoid blocking ALL stocks
 const sectorErrors = new Map<string, number>();
-const SECTOR_ERROR_COOLDOWN = 10000; // 10s cooldown per key after failure (was 60s global)
+const SECTOR_ERROR_COOLDOWN = 5000; // Reduced from 10s to 5s — shorter cooldown allows faster recovery
 
 // Cleanup old error entries periodically
 setInterval(() => {
   const now = Date.now();
   for (const [key, timestamp] of sectorErrors) {
-    if (now - timestamp > 60000) sectorErrors.delete(key);
+    if (now - timestamp > 30000) sectorErrors.delete(key); // Clean up entries older than 30s (was 60s)
   }
-}, 60000);
+}, 30000);
 
 // Trading-hour-aware TTL for sector timeline data
 function getSectorCacheTTL(): number {
@@ -87,6 +87,8 @@ export async function GET(request: NextRequest) {
         symbol,
         sectorInfo: null,
         data: null,
+        // Add hint about why sector info might be null
+        _debug: "Sector lookup returned no result — stock may not have sector classification",
       });
     }
 
@@ -96,12 +98,20 @@ export async function GET(request: NextRequest) {
     }
 
     // type === "full": also fetch timeline
-    const timelineData = await fetchGuarded(
-      `sector-timeline:${sectorInfo.code}`,
-      async () => getSectorTimeline(sectorInfo.code),
-      cacheTTL
-    );
-    const result = { success: true, symbol, sectorInfo, data: timelineData };
+    // Use try-catch for timeline fetch so that sector info is still returned even if timeline fails
+    let timelineData: { items: any[]; prevClose: number } | null = null;
+    try {
+      timelineData = await fetchGuarded(
+        `sector-timeline:${sectorInfo.code}`,
+        async () => getSectorTimeline(sectorInfo.code),
+        cacheTTL
+      );
+    } catch (timelineError) {
+      console.error("Sector timeline fetch failed (non-fatal):", timelineError);
+      // Return sector info even without timeline data
+    }
+
+    const result = { success: true, symbol, sectorInfo, data: timelineData || { items: [], prevClose: 0 } };
     return NextResponse.json(result);
   } catch (error: any) {
     console.error("Sector API error:", error);
