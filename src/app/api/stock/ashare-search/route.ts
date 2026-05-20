@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchAShare } from "@/lib/ashare-api";
 import { searchStocks } from "@/lib/finance-api";
+import { fetchGuarded } from "@/lib/fetch-guard";
 
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q") || "";
@@ -12,22 +13,39 @@ export async function GET(request: NextRequest) {
 
   try {
     if (mode === "ashare") {
-      const results = await searchAShare(query);
+      const results = await fetchGuarded(
+        `search:ashare:${query}`,
+        async () => searchAShare(query),
+        15000 // 15s server-side cache for search results
+      );
       return NextResponse.json({ results });
     }
 
     if (mode === "us") {
-      const results = await searchStocks(query);
+      const results = await fetchGuarded(
+        `search:us:${query}`,
+        async () => searchStocks(query),
+        15000
+      );
       return NextResponse.json({ results });
     }
 
     // Auto mode: try A-share first, then US
-    const aShareResults = await searchAShare(query);
+    // Use server-side cache + dedup to avoid redundant external API calls
+    const aShareResults = await fetchGuarded(
+      `search:ashare:${query}`,
+      async () => searchAShare(query),
+      15000
+    );
     if (aShareResults.length > 0) {
       return NextResponse.json({ results: aShareResults });
     }
 
-    const usResults = await searchStocks(query);
+    const usResults = await fetchGuarded(
+      `search:us:${query}`,
+      async () => searchStocks(query),
+      15000
+    );
     return NextResponse.json({ results: usResults });
   } catch (error: any) {
     console.error("Search API error:", error);

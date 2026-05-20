@@ -838,3 +838,26 @@ Stage Summary:
 - 本地 fallback 映射从30扩展到约80个常见A股
 - 客户端容错能力大幅增强（10次阈值、2分钟自动恢复、保留上次状态）
 - 服务端更友好（timeline失败不阻塞info、更短冷却时间）
+---
+Task ID: 1
+Agent: main
+Task: Optimize stock search window to fix frequent lag/stuttering
+
+Work Log:
+- Investigated all search-related code: page.tsx, use-stock-data.ts, ashare-search/route.ts, ashare-api.ts, client-cache.ts, fetch-guard.ts
+- Identified 5 key performance bottlenecks
+- Added client-side search result caching via cachedFetch (30s TTL) in use-stock-data.ts
+- Added AbortController to cancel stale search requests (prevents race conditions)
+- Added server-side fetchGuarded caching (15s TTL) to ashare-search API route
+- Added POPULAR_ASHARES_SEARCH_MAP with 50+ stocks and pinyin for instant local matching (0ms)
+- Reduced debounce from 400ms to 300ms
+- Added keyboard navigation (Arrow Up/Down, Enter, Escape)
+- Improved loading states: show results while fetching more, don't replace results with loading spinner
+- All changes compile and lint clean
+
+Stage Summary:
+- Search is now 3-tier: instant local match (0ms) → client cache hit (0ms) → API with server cache (300ms+)
+- Stale request cancellation prevents race conditions and wasted bandwidth
+- Server-side dedup prevents duplicate external API calls for same query within 15s
+- Keyboard navigation makes search usable without mouse
+- Loading UX no longer flashes "搜索中..." over existing results

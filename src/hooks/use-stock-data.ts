@@ -327,16 +327,37 @@ export function useStockData() {
     }
   }, [checkAShare]);
 
-  // ── Search stocks ──
+  // ── Search stocks (with client-side caching + AbortController) ──
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const SEARCH_CACHE_TTL = 30_000; // 30s cache for search results (same query won't re-fetch)
+
   const searchStocks = useCallback(async (query: string): Promise<StockSearchResult[]> => {
     if (!query.trim()) return [];
     try {
-      const res = await fetch(`/api/stock/ashare-search?q=${encodeURIComponent(query)}`);
-      if (res.ok) {
-        const data = await res.json();
-        return data.results || [];
+      // Cancel any in-flight search request
+      if (searchAbortRef.current) {
+        searchAbortRef.current.abort();
       }
-    } catch (err) {
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
+
+      const result = await cachedFetch<StockSearchResult[]>(
+        `search:${query.trim()}`,
+        async () => {
+          const res = await fetch(
+            `/api/stock/ashare-search?q=${encodeURIComponent(query)}`,
+            { signal: controller.signal }
+          );
+          if (!res.ok) throw new Error("Search failed");
+          const data = await res.json();
+          return data.results || [];
+        },
+        SEARCH_CACHE_TTL
+      );
+      return result;
+    } catch (err: any) {
+      // Silently ignore abort errors (user typed more characters)
+      if (err?.name === "AbortError") return [];
       console.error("Search error:", err);
     }
     return [];

@@ -52,6 +52,82 @@ import {
   History, ShieldCheck, Server, Scale, AlertTriangle, BookOpen, Info,
 } from "lucide-react";
 
+// ── Local search map for instant results (no API call needed) ──
+// Includes pinyin abbreviations for common stocks/ETFs
+const POPULAR_ASHARES_SEARCH_MAP: Record<string, { name: string; exchange: string; type: string; pinyin: string }> = {
+  "600519": { name: "贵州茅台", exchange: "SH", type: "A股", pinyin: "gzmt" },
+  "000858": { name: "五粮液", exchange: "SZ", type: "A股", pinyin: "wly" },
+  "601318": { name: "中国平安", exchange: "SH", type: "A股", pinyin: "zgpa" },
+  "000001": { name: "平安银行", exchange: "SZ", type: "A股", pinyin: "payh" },
+  "600036": { name: "招商银行", exchange: "SH", type: "A股", pinyin: "zsyh" },
+  "002594": { name: "比亚迪", exchange: "SZ", type: "A股", pinyin: "byd" },
+  "300750": { name: "宁德时代", exchange: "SZ", type: "A股", pinyin: "ndsd" },
+  "601899": { name: "紫金矿业", exchange: "SH", type: "A股", pinyin: "zjky" },
+  "000333": { name: "美的集团", exchange: "SZ", type: "A股", pinyin: "mdjt" },
+  "600900": { name: "长江电力", exchange: "SH", type: "A股", pinyin: "cjdl" },
+  "601012": { name: "隆基绿能", exchange: "SH", type: "A股", pinyin: "ljln" },
+  "002475": { name: "立讯精密", exchange: "SZ", type: "A股", pinyin: "lxjm" },
+  "000568": { name: "泸州老窖", exchange: "SZ", type: "A股", pinyin: "lzljj" },
+  "600276": { name: "恒瑞医药", exchange: "SH", type: "A股", pinyin: "hryy" },
+  "601398": { name: "工商银行", exchange: "SH", type: "A股", pinyin: "gsyh" },
+  "000651": { name: "格力电器", exchange: "SZ", type: "A股", pinyin: "gldq" },
+  "600809": { name: "山西汾酒", exchange: "SH", type: "A股", pinyin: "sxfj" },
+  "002714": { name: "牧原股份", exchange: "SZ", type: "A股", pinyin: "mygf" },
+  "601919": { name: "中远海控", exchange: "SH", type: "A股", pinyin: "zyhk" },
+  "600887": { name: "伊利股份", exchange: "SH", type: "A股", pinyin: "ylgf" },
+  "000002": { name: "万科A", exchange: "SZ", type: "A股", pinyin: "wka" },
+  "601166": { name: "兴业银行", exchange: "SH", type: "A股", pinyin: "xyyh" },
+  "600030": { name: "中信证券", exchange: "SH", type: "A股", pinyin: "zxzq" },
+  "300059": { name: "东方财富", exchange: "SZ", type: "A股", pinyin: "dfcf" },
+  "601888": { name: "中国中免", exchange: "SH", type: "A股", pinyin: "zgzdm" },
+  "002415": { name: "海康威视", exchange: "SZ", type: "A股", pinyin: "hkws" },
+  "600585": { name: "海螺水泥", exchange: "SH", type: "A股", pinyin: "hlsn" },
+  "000725": { name: "京东方A", exchange: "SZ", type: "A股", pinyin: "jdfa" },
+  "601668": { name: "中国建筑", exchange: "SH", type: "A股", pinyin: "zgjz" },
+  "600050": { name: "中国联通", exchange: "SH", type: "A股", pinyin: "zglt" },
+  "300274": { name: "阳光电源", exchange: "SZ", type: "A股", pinyin: "ygdy" },
+  "002230": { name: "科大讯飞", exchange: "SZ", type: "A股", pinyin: "kdxf" },
+  "688981": { name: "中芯国际", exchange: "SH", type: "A股", pinyin: "zxgj" },
+  "600104": { name: "上汽集团", exchange: "SH", type: "A股", pinyin: "sqjt" },
+  "601127": { name: "赛力斯", exchange: "SH", type: "A股", pinyin: "sls" },
+  "000625": { name: "长安汽车", exchange: "SZ", type: "A股", pinyin: "caqc" },
+  "601985": { name: "中国核电", exchange: "SH", type: "A股", pinyin: "zghd" },
+  "002049": { name: "紫光国微", exchange: "SZ", type: "A股", pinyin: "zggw" },
+  "603501": { name: "韦尔股份", exchange: "SH", type: "A股", pinyin: "wlgf" },
+  "000538": { name: "云南白药", exchange: "SZ", type: "A股", pinyin: "ynby" },
+  "600085": { name: "同仁堂", exchange: "SH", type: "A股", pinyin: "trt" },
+  "601088": { name: "中国神华", exchange: "SH", type: "A股", pinyin: "zgsh" },
+  "601857": { name: "中国石油", exchange: "SH", type: "A股", pinyin: "zgsy" },
+  "600028": { name: "中国石化", exchange: "SH", type: "A股", pinyin: "zgsh" },
+  "600019": { name: "宝钢股份", exchange: "SH", type: "A股", pinyin: "bggf" },
+  "300760": { name: "迈瑞医疗", exchange: "SZ", type: "A股", pinyin: "mryl" },
+  "002460": { name: "赣锋锂业", exchange: "SZ", type: "A股", pinyin: "gfly" },
+  "300014": { name: "亿纬锂能", exchange: "SZ", type: "A股", pinyin: "ywln" },
+  "600547": { name: "山东黄金", exchange: "SH", type: "A股", pinyin: "sdhj" },
+  "600760": { name: "中航沈飞", exchange: "SH", type: "A股", pinyin: "zhsf" },
+  // ── Popular ETFs ──
+  "510300": { name: "沪深300ETF", exchange: "SH", type: "ETF", pinyin: "hs300" },
+  "510050": { name: "上证50ETF", exchange: "SH", type: "ETF", pinyin: "sz50" },
+  "510500": { name: "中证500ETF", exchange: "SH", type: "ETF", pinyin: "zz500" },
+  "512000": { name: "券商ETF", exchange: "SH", type: "ETF", pinyin: "qsetf" },
+  "512010": { name: "医药ETF", exchange: "SH", type: "ETF", pinyin: "yyetf" },
+  "512660": { name: "军工ETF", exchange: "SH", type: "ETF", pinyin: "jjetf" },
+  "512880": { name: "证券ETF", exchange: "SH", type: "ETF", pinyin: "zxetf" },
+  "515030": { name: "新能源车ETF", exchange: "SH", type: "ETF", pinyin: "xnycc" },
+  "515790": { name: "光伏ETF", exchange: "SH", type: "ETF", pinyin: "gfetf" },
+  "588000": { name: "科创50ETF", exchange: "SH", type: "ETF", pinyin: "kc50" },
+  "159919": { name: "沪深300ETF", exchange: "SZ", type: "ETF", pinyin: "hs300" },
+  "159915": { name: "创业板ETF", exchange: "SZ", type: "ETF", pinyin: "cybetf" },
+  "159949": { name: "创业板50ETF", exchange: "SZ", type: "ETF", pinyin: "cyb50" },
+  "159901": { name: "深证100ETF", exchange: "SZ", type: "ETF", pinyin: "sz100" },
+  "159922": { name: "中证500ETF", exchange: "SZ", type: "ETF", pinyin: "zz500" },
+  "159766": { name: "半导体ETF", exchange: "SZ", type: "ETF", pinyin: "bdtetf" },
+  "159869": { name: "游戏ETF", exchange: "SZ", type: "ETF", pinyin: "yxetf" },
+  "159992": { name: "创新药ETF", exchange: "SZ", type: "ETF", pinyin: "cxyetf" },
+  "159601": { name: "A50ETF", exchange: "SZ", type: "ETF", pinyin: "a50etf" },
+  "159632": { name: "半导体设备ETF", exchange: "SZ", type: "ETF", pinyin: "bdtsb" },
+};
+
 export default function StockTAssistant() {
   const {
     symbol, quote, history, timeline, timelinePrevClose, interval, chartMode,
@@ -68,6 +144,21 @@ export default function StockTAssistant() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [autoExpanded, setAutoExpanded] = useState<boolean>(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [searchHighlightIdx, setSearchHighlightIdx] = useState(-1);
+
+  // ── Instant local search for popular stocks (0ms, no API call) ──
+  const localSearchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.trim().toLowerCase();
+    const results: StockSearchResult[] = [];
+    for (const [code, info] of Object.entries(POPULAR_ASHARES_SEARCH_MAP)) {
+      if (code.includes(q) || info.name.toLowerCase().includes(q) || info.pinyin.toLowerCase().startsWith(q)) {
+        results.push({ symbol: code, name: info.name, exchange: info.exchange, type: info.type });
+        if (results.length >= 8) break;
+      }
+    }
+    return results;
+  }, [searchQuery]);
 
   // ── Auto-show opening reminder badge in first 3 minutes of market open ──
   useEffect(() => {
@@ -265,14 +356,28 @@ export default function StockTAssistant() {
     load(); const handler = () => load(); window.addEventListener('custom-factors-changed', handler); return () => window.removeEventListener('custom-factors-changed', handler);
   }, []);
 
-  // ── Debounced search ──
+  // ── Debounced search (300ms, shows local results instantly, API results when ready) ──
   const handleSearch = useCallback((value: string) => {
     setSearchQuery(value);
+    setSearchHighlightIdx(-1);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    if (!value.trim()) { setSearchResults([]); return; }
-    setSearchLoading(true);
-    searchTimeoutRef.current = setTimeout(async () => { const results = await searchStocks(value); setSearchResults(results); setSearchLoading(false); }, 400);
-  }, [searchStocks]);
+    if (!value.trim()) { setSearchResults([]); setSearchLoading(false); return; }
+    // Show local results immediately (no loading flash for common stocks)
+    if (localSearchResults.length > 0) {
+      setSearchResults(localSearchResults);
+      setSearchLoading(false);
+    } else {
+      setSearchLoading(true);
+    }
+    searchTimeoutRef.current = setTimeout(async () => {
+      const results = await searchStocks(value);
+      // Only update if API returns results (avoid clearing local results with empty)
+      if (results.length > 0) {
+        setSearchResults(results);
+      }
+      setSearchLoading(false);
+    }, 300);
+  }, [searchStocks, localSearchResults]);
 
   // ── K-line zoom state ──
   const [klineVisibleBars, setKlineVisibleBars] = useState<number>(80);
@@ -398,6 +503,7 @@ export default function StockTAssistant() {
 
   const handleSelectStock = useCallback((sym: string) => {
     selectStock(sym); setShowSearch(false); setSearchQuery(""); setSearchResults([]);
+    setSearchHighlightIdx(-1);
     setKlineVisibleBars(80); setTlZoomIdx(0);
   }, [selectStock]);
 
@@ -583,19 +689,25 @@ export default function StockTAssistant() {
             <div className="flex-1 max-w-md relative">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input value={searchQuery} onChange={(e) => { handleSearch(e.target.value); setShowSearch(true); }} onFocus={() => setShowSearch(true)} placeholder="搜索A股代码或名称..." className="pl-9 pr-8 h-9" />
+                <Input value={searchQuery} onChange={(e) => { handleSearch(e.target.value); setShowSearch(true); }} onFocus={() => setShowSearch(true)} onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") { e.preventDefault(); setSearchHighlightIdx(prev => Math.min(prev + 1, searchResults.length - 1)); }
+                  else if (e.key === "ArrowUp") { e.preventDefault(); setSearchHighlightIdx(prev => Math.max(prev - 1, -1)); }
+                  else if (e.key === "Enter" && searchHighlightIdx >= 0 && searchHighlightIdx < searchResults.length) { e.preventDefault(); handleSelectStock(searchResults[searchHighlightIdx].symbol); }
+                  else if (e.key === "Escape") { setShowSearch(false); }
+                }} placeholder="搜索A股代码或名称..." className="pl-9 pr-8 h-9" />
                 {searchQuery && (<button onClick={() => { setSearchQuery(""); setSearchResults([]); }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-3 w-3 text-muted-foreground" /></button>)}
               </div>
               {showSearch && (searchResults.length > 0 || searchLoading) && (
                 <div className="absolute top-full mt-1 left-0 right-0 bg-card border border-border rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-                  {searchLoading ? (<div className="p-4 text-center text-sm text-muted-foreground">搜索中...</div>) : (
-                    searchResults.map((stock) => (
-                      <button key={stock.symbol} onClick={() => handleSelectStock(stock.symbol)} className="w-full px-4 py-2.5 text-left hover:bg-accent flex items-center justify-between transition-colors">
+                  {searchLoading && searchResults.length === 0 ? (<div className="p-4 text-center text-sm text-muted-foreground animate-pulse">搜索中...</div>) : (
+                    searchResults.map((stock, idx) => (
+                      <button key={stock.symbol} onClick={() => handleSelectStock(stock.symbol)} className={`w-full px-4 py-2.5 text-left hover:bg-accent flex items-center justify-between transition-colors ${idx === searchHighlightIdx ? 'bg-accent' : ''}`}>
                         <div><span className="font-medium text-sm">{stock.symbol}</span><span className="ml-2 text-sm text-muted-foreground">{stock.name}</span></div>
                         <div className="flex items-center gap-1">{stock.type === "ETF" && <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-purple-500/10 text-purple-600 border-purple-500/20">ETF</Badge>}<Badge variant="outline" className="text-xs">{stock.exchange}</Badge></div>
                       </button>
                     ))
                   )}
+                  {searchLoading && searchResults.length > 0 && (<div className="px-4 py-1.5 text-xs text-muted-foreground border-t border-border animate-pulse">搜索更多...</div>)}
                 </div>
               )}
             </div>
