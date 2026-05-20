@@ -215,16 +215,17 @@ interface PvLabelLayout {
 function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): PvLabelLayout {
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
-  const isAbove = isPulse || isProgressiveVol;
+  const isEarlyVolDrop = marker.type === "early_vol_drop";
+  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop;
 
   const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
-  const estimatedCharWidth = 7.5;
-  const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = 16;
+  const estimatedCharWidth = isEarlyVolDrop ? 8.5 : 7.5;
+  const pillW = isEarlyVolDrop ? Math.max(120, Math.min(200, Math.round(displayLabel.length * estimatedCharWidth + 12))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = isEarlyVolDrop ? 20 : 16;
 
-  const labelY = isAbove ? y - 52 : y + 36;
+  const labelY = isAbove ? (isEarlyVolDrop ? y - 90 : y - 52) : y + 36;
 
   return { isAbove, labelY, pillW, pillH, displayLabel };
 }
@@ -409,7 +410,7 @@ function renderPulseVolumeMarker(
   // early_vol_drop uses RED for extreme danger (禁止买入)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
   const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop;
-  const defaultLabelY = isAbove ? y - 52 : y + 36;
+  const defaultLabelY = isAbove ? (isEarlyVolDrop ? y - 90 : y - 52) : y + 36;
   const labelY = adjustedLabelY ?? defaultLabelY;
   const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
 
