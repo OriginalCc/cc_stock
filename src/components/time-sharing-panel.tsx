@@ -221,9 +221,9 @@ function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): 
   const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
-  const estimatedCharWidth = isEarlyVolDrop ? 8.5 : 7.5;
-  const pillW = isEarlyVolDrop ? Math.max(120, Math.min(200, Math.round(displayLabel.length * estimatedCharWidth + 12))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = isEarlyVolDrop ? 20 : 16;
+  const estimatedCharWidth = isEarlyVolDrop ? 10.5 : 7.5;
+  const pillW = isEarlyVolDrop ? Math.max(140, Math.min(320, Math.round(displayLabel.length * estimatedCharWidth + 16))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = isEarlyVolDrop ? 22 : 16;
 
   const labelY = isAbove ? (isEarlyVolDrop ? y - 90 : y - 52) : y + 36;
 
@@ -460,9 +460,9 @@ function renderPulseVolumeMarker(
   // Dynamic pill width based on label length
   // early_vol_drop: wider pill + larger font for maximum visibility
   const isDanger = isEarlyVolDrop;
-  const estimatedCharWidth = isDanger ? 8.5 : 7.5;
-  const pillW = isDanger ? Math.max(120, Math.min(200, Math.round(displayLabel.length * estimatedCharWidth + 12))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = isDanger ? 20 : 16;
+  const estimatedCharWidth = isDanger ? 10.5 : 7.5;
+  const pillW = isDanger ? Math.max(140, Math.min(320, Math.round(displayLabel.length * estimatedCharWidth + 16))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = isDanger ? 22 : 16;
   const pillRx = isDanger ? 6 : 4;
 
   return (
