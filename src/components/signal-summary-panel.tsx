@@ -15,6 +15,7 @@ import {
   Zap,
   Shield,
   AlertTriangle,
+  Eye,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────
@@ -125,11 +126,13 @@ export const SignalSummaryPanel = React.memo(function SignalSummaryPanel({
                       ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300"
                       : m.type === "early_vol_drop"
                       ? "bg-red-500/10 border-red-500/40 text-red-700 dark:text-red-300 font-bold"
+                      : m.type === "wash_trade"
+                      ? "bg-blue-500/10 border-blue-500/40 text-blue-700 dark:text-blue-300 font-bold"
                       : "bg-cyan-500/5 border-cyan-500/20 text-cyan-700 dark:text-cyan-300"
                   }`}>
-                    {m.type === "pulse" ? <Zap className="w-3 h-3" /> : m.type === "pulse_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "volume_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "early_vol_drop" ? <AlertTriangle className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+                    {m.type === "pulse" ? <Zap className="w-3 h-3" /> : m.type === "pulse_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "volume_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "early_vol_drop" ? <AlertTriangle className="w-3 h-3" /> : m.type === "wash_trade" ? <Eye className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
                     <span className="font-mono">{m.time}</span>
-                    <span className={m.type === "early_vol_drop" ? "font-black" : "font-medium"}>{m.label}</span>
+                    <span className={m.type === "early_vol_drop" || m.type === "wash_trade" ? "font-black" : "font-medium"}>{m.label}</span>
                     {m.amount > 0 && <span className="font-mono text-muted-foreground">¥{formatAmount(m.amount)}</span>}
                     <span className="text-muted-foreground">{m.detail}</span>
                   </div>

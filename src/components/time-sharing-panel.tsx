@@ -216,16 +216,18 @@ function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): 
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
   const isEarlyVolDrop = marker.type === "early_vol_drop";
-  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop;
+  const isWashTrade = marker.type === "wash_trade";
+  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade;
 
   const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
-  const estimatedCharWidth = isEarlyVolDrop ? 10.5 : 7.5;
-  const pillW = isEarlyVolDrop ? Math.max(140, Math.min(320, Math.round(displayLabel.length * estimatedCharWidth + 16))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = isEarlyVolDrop ? 22 : 16;
+  const isBigLabel = isEarlyVolDrop || isWashTrade;
+  const estimatedCharWidth = isBigLabel ? 10.5 : 7.5;
+  const pillW = isBigLabel ? Math.max(140, Math.min(320, Math.round(displayLabel.length * estimatedCharWidth + 16))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = isBigLabel ? 22 : 16;
 
-  const labelY = isAbove ? (isEarlyVolDrop ? y - 90 : y - 52) : y + 36;
+  const labelY = isAbove ? (isEarlyVolDrop ? y - 90 : isWashTrade ? y - 80 : y - 52) : y + 36;
 
   return { isAbove, labelY, pillW, pillH, displayLabel };
 }
@@ -403,14 +405,16 @@ function renderPulseVolumeMarker(
   const isPulseDecline = marker.type === "pulse_decline";
   const isVolumeDecline = marker.type === "volume_decline";
   const isEarlyVolDrop = marker.type === "early_vol_drop";
+  const isWashTrade = marker.type === "wash_trade";
   const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop;
 
   // Color schemes — brighter & more saturated for visibility
   // Decline markers use green tones (bearish in Chinese markets)
   // early_vol_drop uses RED for extreme danger (禁止买入)
+  // wash_trade uses BLUE for opportunity (低吸机会)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
-  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop;
-  const defaultLabelY = isAbove ? (isEarlyVolDrop ? y - 90 : y - 52) : y + 36;
+  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade;
+  const defaultLabelY = isAbove ? (isEarlyVolDrop ? y - 90 : isWashTrade ? y - 80 : y - 52) : y + 36;
   const labelY = adjustedLabelY ?? defaultLabelY;
   const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
 
@@ -445,6 +449,13 @@ function renderPulseVolumeMarker(
     textColor = "#ffffff";
     iconColor = "#ef4444";
     glowColor = "rgba(239, 68, 68, 0.6)";
+  } else if (isWashTrade) {
+    // 洗盘 → 蓝色（低吸机会）
+    bgColor = "rgba(59, 130, 246, 0.30)";
+    borderColor = "rgba(59, 130, 246, 1)";
+    textColor = "#ffffff";
+    iconColor = "#3b82f6";
+    glowColor = "rgba(59, 130, 246, 0.5)";
   } else {
     bgColor = "rgba(6, 182, 212, 0.25)";
     borderColor = "rgba(6, 182, 212, 0.85)";
@@ -458,32 +469,32 @@ function renderPulseVolumeMarker(
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
   // Dynamic pill width based on label length
-  // early_vol_drop: wider pill + larger font for maximum visibility
-  const isDanger = isEarlyVolDrop;
-  const estimatedCharWidth = isDanger ? 10.5 : 7.5;
-  const pillW = isDanger ? Math.max(140, Math.min(320, Math.round(displayLabel.length * estimatedCharWidth + 16))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = isDanger ? 22 : 16;
-  const pillRx = isDanger ? 6 : 4;
+  // early_vol_drop & wash_trade: wider pill + larger font for maximum visibility
+  const isBigLabel = isEarlyVolDrop || isWashTrade;
+  const estimatedCharWidth = isBigLabel ? 10.5 : 7.5;
+  const pillW = isBigLabel ? Math.max(140, Math.min(320, Math.round(displayLabel.length * estimatedCharWidth + 16))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = isBigLabel ? 22 : 16;
+  const pillRx = isBigLabel ? 6 : 4;
 
   return (
     <g key={`pv-${marker.type}-${idx}`}>
       {/* Connecting line from price point to label (may be offset horizontally) */}
       <line
         x1={x} y1={y} x2={labelX} y2={labelY}
-        stroke={borderColor} strokeWidth={isDanger ? 2 : 1} strokeDasharray={isDanger ? "4 2" : "3 2"}
+        stroke={borderColor} strokeWidth={isBigLabel ? 2 : 1} strokeDasharray={isBigLabel ? "4 2" : "3 2"}
       />
-      {/* Marker dot on price line — larger & bolder for danger */}
+      {/* Marker dot on price line — larger & bolder for big labels */}
       <circle
-        cx={x} cy={y} r={isDanger ? 9 : 6}
-        fill={bgColor} stroke={iconColor} strokeWidth={isDanger ? 3 : 2}
+        cx={x} cy={y} r={isBigLabel ? 9 : 6}
+        fill={bgColor} stroke={iconColor} strokeWidth={isBigLabel ? 3 : 2}
       />
-      {/* Pulsing glow ring around dot — double ring for danger */}
+      {/* Pulsing glow ring around dot — double ring for big labels */}
       <circle
-        cx={x} cy={y} r={isDanger ? 14 : 9}
-        fill="none" stroke={glowColor} strokeWidth={isDanger ? 2.5 : 1.5}
-        strokeDasharray="2 2" opacity={isDanger ? 1 : 0.7}
+        cx={x} cy={y} r={isBigLabel ? 14 : 9}
+        fill="none" stroke={glowColor} strokeWidth={isBigLabel ? 2.5 : 1.5}
+        strokeDasharray="2 2" opacity={isBigLabel ? 1 : 0.7}
       />
-      {isDanger && (
+      {isBigLabel && (
         <circle
           cx={x} cy={y} r={19}
           fill="none" stroke={glowColor} strokeWidth={1}
@@ -494,29 +505,29 @@ function renderPulseVolumeMarker(
       <text
         x={x} y={y + 1}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={isDanger ? 10 : 7} fill={isDanger ? "#ffffff" : iconColor} fontWeight="bold"
+        fontSize={isBigLabel ? 10 : 7} fill={isBigLabel ? "#ffffff" : iconColor} fontWeight="bold"
       >
-        {isEarlyVolDrop ? "⚠" : isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
+        {isEarlyVolDrop ? "⚠" : isWashTrade ? "✓" : isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
       </text>
       {/* White glow behind label pill for readability */}
       <rect
-        x={labelX - pillW / 2 - (isDanger ? 2 : 1.5)} y={(isAbove ? labelY - pillH / 2 - (isDanger ? 3 : 2) : labelY - 2) - (isDanger ? 2 : 1.5)}
-        width={pillW + (isDanger ? 4 : 3)} height={pillH + (isDanger ? 4 : 3)}
+        x={labelX - pillW / 2 - (isBigLabel ? 2 : 1.5)} y={(isAbove ? labelY - pillH / 2 - (isBigLabel ? 3 : 2) : labelY - 2) - (isBigLabel ? 2 : 1.5)}
+        width={pillW + (isBigLabel ? 4 : 3)} height={pillH + (isBigLabel ? 4 : 3)}
         rx={pillRx + 1} ry={pillRx + 1}
-        fill={isDanger ? "rgba(0,0,0,0.5)" : "white"} fillOpacity={isDanger ? 0.6 : 0.85}
+        fill={isBigLabel ? "rgba(0,0,0,0.5)" : "white"} fillOpacity={isBigLabel ? 0.6 : 0.85}
       />
-      {/* Label background pill — danger uses thicker border + solid fill */}
+      {/* Label background pill — big labels use thicker border + solid fill */}
       <rect
-        x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - (isDanger ? 3 : 2) : labelY - 2}
+        x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - (isBigLabel ? 3 : 2) : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
-        fill={isDanger ? "rgba(239, 68, 68, 0.9)" : bgColor} stroke={borderColor} strokeWidth={isDanger ? 2.5 : 1}
+        fill={isEarlyVolDrop ? "rgba(239, 68, 68, 0.9)" : isWashTrade ? "rgba(59, 130, 246, 0.9)" : bgColor} stroke={borderColor} strokeWidth={isBigLabel ? 2.5 : 1}
       />
-      {/* Label text — danger uses larger font + white color */}
+      {/* Label text — big labels use larger font + white color */}
       <text
-        x={labelX} y={isAbove ? labelY + (isDanger ? 0 : 1) : labelY + 7}
+        x={labelX} y={isAbove ? labelY + (isBigLabel ? 0 : 1) : labelY + 7}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={isDanger ? 11 : 9} fontWeight={isDanger ? 900 : 700} fill={isDanger ? "#ffffff" : textColor}
+        fontSize={isBigLabel ? 11 : 9} fontWeight={isBigLabel ? 900 : 700} fill={isBigLabel ? "#ffffff" : textColor}
       >
         {displayLabel}
       </text>
@@ -1619,6 +1630,28 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               </span>
               <span className="text-white/60 text-[10px] font-mono">
                 {Math.abs(earlyDrop.score)}分
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ─── Wash Trade / Shakeout Banner (洗盘-低吸机会) ─── */}
+      {pvMarkers && pvMarkers.some(m => m.type === "wash_trade") && (() => {
+        const washMarker = pvMarkers.find(m => m.type === "wash_trade")!;
+        const isConfirmed = washMarker.score >= 50;
+        return (
+          <div className={`relative overflow-hidden ${isConfirmed ? 'bg-blue-600' : 'bg-blue-500/90'}`}>
+            <div className="relative px-4 py-2 flex items-center justify-center gap-3">
+              <span className="text-white text-base">{isConfirmed ? '✅' : '🔍'}</span>
+              <span className="text-white text-sm font-bold tracking-wide">
+                {isConfirmed ? '洗盘确认！' : '疑似洗盘'}急跌后快速拉回，可关注低吸机会
+              </span>
+              <span className="text-white/80 text-xs font-semibold border-l border-white/40 pl-3">
+                {washMarker.detail}
+              </span>
+              <span className="text-white/60 text-[10px] font-mono">
+                {washMarker.score}分
               </span>
             </div>
           </div>

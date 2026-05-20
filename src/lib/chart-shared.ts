@@ -35,7 +35,7 @@ export interface MergedSignal {
 
 export interface PulseVolumeMarker {
   time: string;
-  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop";
+  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop" | "wash_trade";
   score: number;
   label: string;
   detail: string;
@@ -1247,6 +1247,172 @@ export function detectPulseVolumeMarkers(
           detail: details.length > 0 ? details.join("，") : "早盘放量下跌",
           amount: earlyAmount,
         });
+      }
+    }
+  }
+
+  // ── Wash Trade / Shakeout Detection (洗盘识别 - 低吸机会) ──
+  // 检测主力洗盘行为：急跌后快速拉回、缩量下跌+放量上涨、均价线保持向上
+  // 评分制：5个维度综合评分，≥50分为强洗盘，≥30分为疑似洗盘
+  {
+    // 扫描整个交易日，用滑动窗口检测V型/急跌快涨模式
+    const washWindowSizes = [5, 8, 10]; // 5分钟、8分钟、10分钟窗口
+
+    for (const windowSize of washWindowSizes) {
+      for (let i = 0; i <= session.length - windowSize; i++) {
+        const window = session.slice(i, i + windowSize);
+        const firstPrice = window[0].price;
+        const lastPrice = window[window.length - 1].price;
+
+        // 找窗口内最低点
+        let troughIdx = 0;
+        let troughPrice = window[0].price;
+        for (let j = 1; j < window.length; j++) {
+          if (window[j].price < troughPrice) {
+            troughPrice = window[j].price;
+            troughIdx = j;
+          }
+        }
+
+        // 最低点不能在窗口最后2个（需要有回升空间）
+        if (troughIdx >= windowSize - 2) continue;
+        // 最低点不能在窗口前2个（需要有下跌过程）
+        if (troughIdx < 1) continue;
+
+        const dropRate = firstPrice > 0 ? ((firstPrice - troughPrice) / firstPrice) * 100 : 0;
+        const recoveryRate = troughPrice > 0 ? ((lastPrice - troughPrice) / troughPrice) * 100 : 0;
+        const netChange = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+
+        // 基本条件：下跌幅度≥0.5%，且回升幅度超过下跌幅度的50%
+        if (dropRate < 0.5) continue;
+        if (recoveryRate / dropRate < 0.5) continue;
+
+        // ── 计算量能特征 ──
+        const windowIncrements: { vol: number; priceChange: number }[] = [];
+        for (let j = 0; j < window.length; j++) {
+          const prevVol = j > 0 ? window[j - 1].volume : (i > 0 ? session[i - 1].volume : 0);
+          const curVol = window[j].volume;
+          const vol = j === 0 && i === 0 ? curVol : Math.max(0, curVol - prevVol);
+          const prevP = j > 0 ? window[j - 1].price : (i > 0 ? session[i - 1].price : prevClose);
+          const pc = prevP > 0 ? ((window[j].price - prevP) / prevP) * 100 : 0;
+          windowIncrements.push({ vol, priceChange: pc });
+        }
+
+        const avgVol = windowIncrements.reduce((s, t) => s + t.vol, 0) / windowIncrements.length;
+
+        // 下跌阶段量能 vs 回升阶段量能
+        const dropVols = windowIncrements.slice(0, troughIdx + 1);
+        const recoverVols = windowIncrements.slice(troughIdx + 1);
+        const avgDropVol = dropVols.length > 0 ? dropVols.reduce((s, t) => s + t.vol, 0) / dropVols.length : 0;
+        const avgRecoverVol = recoverVols.length > 0 ? recoverVols.reduce((s, t) => s + t.vol, 0) / recoverVols.length : 0;
+
+        // 量价配合：缩量跌+放量涨 = 洗盘特征
+        const volRatio = avgDropVol > 0 ? avgRecoverVol / avgDropVol : 1;
+
+        // ── 计算均价线方向 ──
+        // 使用截至该窗口的累计成交额/累计成交量计算均价
+        let cumAmount = 0, cumVol = 0;
+        for (let j = 0; j <= i + troughIdx; j++) {
+          const pv = j > 0 ? session[j - 1].volume : 0;
+          const cv = session[j].volume;
+          const v = j === 0 ? cv : Math.max(0, cv - pv);
+          cumAmount += session[j].price * v * 100;
+          cumVol += v;
+        }
+        const vwapAtTrough = cumVol > 0 ? cumAmount / (cumVol * 100) : prevClose;
+        const priceBelowVwap = troughPrice < vwapAtTrough;
+        const vwapGap = vwapAtTrough > 0 ? ((vwapAtTrough - troughPrice) / vwapAtTrough) * 100 : 0;
+
+        // ── 下跌速度（急跌=洗盘概率大）──
+        const dropMinutes = troughIdx + 1;
+        const dropSpeed = dropRate / dropMinutes; // 每分钟跌幅
+
+        // ── 回升速度 ──
+        const recoverMinutes = windowSize - troughIdx - 1;
+        const recoverSpeed = recoverMinutes > 0 ? recoveryRate / recoverMinutes : 0;
+
+        // ── 综合评分 ──
+        let washScore = 0;
+
+        // ① 量价配合：回升量/下跌量比（最核心）
+        if (volRatio >= 2) washScore += 30;
+        else if (volRatio >= 1.5) washScore += 22;
+        else if (volRatio >= 1.2) washScore += 15;
+        else if (volRatio >= 1) washScore += 8;
+        // 下跌缩量也加分
+        if (avgDropVol < avgVol * 0.8) washScore += 5;
+
+        // ② 回升力度：回升幅度占下跌幅度的比例
+        const recoveryPct = dropRate > 0 ? (recoveryRate / dropRate) * 100 : 0;
+        if (recoveryPct >= 80) washScore += 20;
+        else if (recoveryPct >= 60) washScore += 15;
+        else if (recoveryPct >= 50) washScore += 10;
+
+        // ③ 下跌速度（急跌=洗盘特征）
+        if (dropSpeed >= 0.3) washScore += 15;
+        else if (dropSpeed >= 0.2) washScore += 10;
+        else if (dropSpeed >= 0.1) washScore += 5;
+
+        // ④ 回升速度（快速拉回=洗盘确认）
+        if (recoverSpeed >= 0.2) washScore += 10;
+        else if (recoverSpeed >= 0.1) washScore += 6;
+        else if (recoverSpeed > 0) washScore += 3;
+
+        // ⑤ 均价线关系（短暂跌破后收回=洗盘特征）
+        if (priceBelowVwap && vwapGap < 1) washScore += 10; // 短暂小幅跌破均价线
+        else if (!priceBelowVwap) washScore += 8; // 未跌破均价线
+        else if (vwapGap >= 1 && vwapGap < 2) washScore += 3; // 跌破较多
+
+        // ⑥ 净变化（收红=强洗盘）
+        if (netChange > 0.3) washScore += 10;
+        else if (netChange > 0) washScore += 6;
+        else if (netChange > -0.3) washScore += 3;
+
+        washScore = Math.min(washScore, 100);
+
+        // 阈值：≥30分疑似洗盘，≥50分确认洗盘
+        if (washScore >= 30) {
+          const markTime = window[window.length - 1].time;
+          const details: string[] = [];
+          if (dropRate >= 0.5) details.push(`急跌${dropRate.toFixed(1)}%`);
+          if (recoveryPct >= 50) details.push(`回升${recoveryPct.toFixed(0)}%`);
+          if (volRatio >= 1.2) details.push(`回升量/跌量${volRatio.toFixed(1)}x`);
+          if (dropSpeed >= 0.2) details.push(`${dropMinutes}分钟急跌`);
+          if (priceBelowVwap && vwapGap < 1) details.push('探底均价线');
+          if (netChange > 0) details.push('收红');
+          if (recoverSpeed >= 0.2) details.push('快速拉回');
+
+          // 检查是否已有同时间段同类型的标记（避免重复）
+          const existingWash = markers.find(m => m.type === "wash_trade" && Math.abs(pvParseTime(m.time) - pvParseTime(markTime)) < 5);
+          if (existingWash) {
+            // 只保留评分更高的
+            if (washScore > existingWash.score) {
+              existingWash.score = washScore;
+              existingWash.label = washScore >= 50
+                ? `✅ 洗盘确认 ${washScore}分`
+                : `🔍 疑似洗盘 ${washScore}分`;
+              existingWash.detail = details.join("，");
+              existingWash.time = markTime;
+              existingWash.amount = window.reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+            }
+            continue;
+          }
+
+          // 排除与早盘放量下跌重叠的情况（如果是真跌就不标洗盘）
+          const hasEarlyVolDrop = markers.some(m => m.type === "early_vol_drop" && Math.abs(pvParseTime(m.time) - pvParseTime(markTime)) < 10);
+          if (hasEarlyVolDrop) continue;
+
+          markers.push({
+            time: markTime,
+            type: "wash_trade",
+            score: washScore,
+            label: washScore >= 50
+              ? `✅ 洗盘确认 ${washScore}分`
+              : `🔍 疑似洗盘 ${washScore}分`,
+            detail: details.length > 0 ? details.join("，") : "V型回升",
+            amount: window.reduce((sum, t) => sum + t.price * t.volume * 100, 0),
+          });
+        }
       }
     }
   }
