@@ -223,11 +223,11 @@ function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): 
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
   const isBigLabel = isEarlyVolDrop || isWashTrade;
-  const estimatedCharWidth = isBigLabel ? 10.5 : 7.5;
-  const pillW = isBigLabel ? Math.max(140, Math.min(320, Math.round(displayLabel.length * estimatedCharWidth + 16))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = isBigLabel ? 22 : 16;
+  const estimatedCharWidth = isBigLabel ? 8 : 7.5;
+  const pillW = isBigLabel ? Math.max(100, Math.min(220, Math.round(displayLabel.length * estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = isBigLabel ? 16 : 16;
 
-  const labelY = isAbove ? (isEarlyVolDrop ? y - 90 : isWashTrade ? y - 80 : y - 52) : y + 36;
+  const labelY = isAbove ? (isEarlyVolDrop ? y - 70 : isWashTrade ? y - 65 : y - 52) : y + 36;
 
   return { isAbove, labelY, pillW, pillH, displayLabel };
 }
@@ -471,63 +471,63 @@ function renderPulseVolumeMarker(
   // Dynamic pill width based on label length
   // early_vol_drop & wash_trade: wider pill + larger font for maximum visibility
   const isBigLabel = isEarlyVolDrop || isWashTrade;
-  const estimatedCharWidth = isBigLabel ? 10.5 : 7.5;
-  const pillW = isBigLabel ? Math.max(140, Math.min(320, Math.round(displayLabel.length * estimatedCharWidth + 16))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = isBigLabel ? 22 : 16;
-  const pillRx = isBigLabel ? 6 : 4;
+  const estimatedCharWidth = isBigLabel ? 8 : 7.5;
+  const pillW = isBigLabel ? Math.max(100, Math.min(220, Math.round(displayLabel.length * estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = isBigLabel ? 16 : 16;
+  const pillRx = isBigLabel ? 4 : 4;
 
   return (
     <g key={`pv-${marker.type}-${idx}`}>
       {/* Connecting line from price point to label (may be offset horizontally) */}
       <line
         x1={x} y1={y} x2={labelX} y2={labelY}
-        stroke={borderColor} strokeWidth={isBigLabel ? 2 : 1} strokeDasharray={isBigLabel ? "4 2" : "3 2"}
+        stroke={borderColor} strokeWidth={isBigLabel ? 1.5 : 1} strokeDasharray={isBigLabel ? "3 2" : "3 2"}
       />
-      {/* Marker dot on price line — larger & bolder for big labels */}
+      {/* Marker dot on price line */}
       <circle
-        cx={x} cy={y} r={isBigLabel ? 9 : 6}
-        fill={bgColor} stroke={iconColor} strokeWidth={isBigLabel ? 3 : 2}
+        cx={x} cy={y} r={isBigLabel ? 7 : 6}
+        fill={bgColor} stroke={iconColor} strokeWidth={isBigLabel ? 2.5 : 2}
       />
-      {/* Pulsing glow ring around dot — double ring for big labels */}
+      {/* Pulsing glow ring around dot */}
       <circle
-        cx={x} cy={y} r={isBigLabel ? 14 : 9}
-        fill="none" stroke={glowColor} strokeWidth={isBigLabel ? 2.5 : 1.5}
-        strokeDasharray="2 2" opacity={isBigLabel ? 1 : 0.7}
+        cx={x} cy={y} r={isBigLabel ? 11 : 9}
+        fill="none" stroke={glowColor} strokeWidth={isBigLabel ? 2 : 1.5}
+        strokeDasharray="2 2" opacity={isBigLabel ? 0.9 : 0.7}
       />
       {isBigLabel && (
         <circle
-          cx={x} cy={y} r={19}
+          cx={x} cy={y} r={15}
           fill="none" stroke={glowColor} strokeWidth={1}
-          strokeDasharray="3 3" opacity={0.5}
+          strokeDasharray="3 3" opacity={0.4}
         />
       )}
       {/* Icon inside dot */}
       <text
         x={x} y={y + 1}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={isBigLabel ? 10 : 7} fill={isBigLabel ? "#ffffff" : iconColor} fontWeight="bold"
+        fontSize={isBigLabel ? 8 : 7} fill={isBigLabel ? "#ffffff" : iconColor} fontWeight="bold"
       >
         {isEarlyVolDrop ? "⚠" : isWashTrade ? "✓" : isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
       </text>
       {/* White glow behind label pill for readability */}
       <rect
-        x={labelX - pillW / 2 - (isBigLabel ? 2 : 1.5)} y={(isAbove ? labelY - pillH / 2 - (isBigLabel ? 3 : 2) : labelY - 2) - (isBigLabel ? 2 : 1.5)}
-        width={pillW + (isBigLabel ? 4 : 3)} height={pillH + (isBigLabel ? 4 : 3)}
+        x={labelX - pillW / 2 - 1.5} y={(isAbove ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
+        width={pillW + 3} height={pillH + 3}
         rx={pillRx + 1} ry={pillRx + 1}
-        fill={isBigLabel ? "rgba(0,0,0,0.5)" : "white"} fillOpacity={isBigLabel ? 0.6 : 0.85}
+        fill={isBigLabel ? "rgba(0,0,0,0.5)" : "white"} fillOpacity={isBigLabel ? 0.5 : 0.85}
       />
-      {/* Label background pill — big labels use thicker border + solid fill */}
+      {/* Label background pill */}
       <rect
-        x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - (isBigLabel ? 3 : 2) : labelY - 2}
+        x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
-        fill={isEarlyVolDrop ? "rgba(239, 68, 68, 0.9)" : isWashTrade ? "rgba(59, 130, 246, 0.9)" : bgColor} stroke={borderColor} strokeWidth={isBigLabel ? 2.5 : 1}
+        fill={isEarlyVolDrop ? "rgba(239, 68, 68, 0.9)" : isWashTrade ? "rgba(59, 130, 246, 0.9)" : bgColor} stroke={borderColor} strokeWidth={isBigLabel ? 1.5 : 1}
       />
-      {/* Label text — big labels use larger font + white color */}
+      {/* Label text */}
       <text
         x={labelX} y={isAbove ? labelY + (isBigLabel ? 0 : 1) : labelY + 7}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={isBigLabel ? 11 : 9} fontWeight={isBigLabel ? 900 : 700} fill={isBigLabel ? "#ffffff" : textColor}
+        fontSize={isBigLabel ? 9 : 9} fontWeight={isBigLabel ? 800 : 700} fill={isBigLabel ? "#ffffff" : textColor}
       >
         {displayLabel}
       </text>
