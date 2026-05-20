@@ -35,7 +35,7 @@ export interface MergedSignal {
 
 export interface PulseVolumeMarker {
   time: string;
-  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline";
+  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop";
   score: number;
   label: string;
   detail: string;
@@ -167,9 +167,14 @@ export const SIGNAL_PULSE_CSS = `
   50% { box-shadow: 0 0 12px 4px rgba(34,197,94,0.3); }
   100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
 }
+@keyframes stripeMove {
+  0% { background-position: 0 0; }
+  100% { background-position: 22.6px 0; }
+}
 .animate-signal-pulse { animation: signalPulse 1.2s ease-in-out infinite; }
 .animate-flash-red { animation: flashBorder 0.8s ease-out; }
 .animate-flash-green { animation: flashBorderGreen 0.8s ease-out; }
+.stripe-move { animation: stripe-move 1s linear infinite; }
 `;
 
 // ── Custom Factor Constants ───────────────────────────
@@ -1049,6 +1054,147 @@ export function detectPulseVolumeMarkers(
         detail: details.length > 0 ? details.join("，") : "轻微放量下跌",
         amount: increments[maxVolIdx] ? increments[maxVolIdx].price * increments[maxVolIdx].vol * 100 : 0,
       });
+    }
+  }
+
+  // ── Early Morning Volume Drop Detection (早盘放量下跌 - 危险！禁止买入) ──
+  // 专门检测09:30-10:00早盘时段的放量下跌，给出高危警告
+  {
+    const earlyEnd = pvParseTime("10:00");
+    const earlySession = timeline.filter(t => {
+      const totalMin = pvParseTime(t.time);
+      return totalMin >= pvParseTime("09:30") && totalMin <= earlyEnd;
+    });
+
+    if (earlySession.length >= 8) {
+      const openPrice = earlySession[0].price;
+      const lastEarlyPrice = earlySession[earlySession.length - 1].price;
+
+      // 早盘整体跌幅
+      const earlyDropRate = openPrice > 0 ? ((openPrice - lastEarlyPrice) / openPrice) * 100 : 0;
+
+      // 早盘相对昨收的跌幅
+      const dropFromPrevClose = prevClose > 0 ? ((prevClose - lastEarlyPrice) / prevClose) * 100 : 0;
+
+      // 早盘成交量统计
+      const earlyIncrements: { time: string; price: number; vol: number; priceChange: number }[] = [];
+      for (let i = 0; i < earlySession.length; i++) {
+        const prevVol = i > 0 ? earlySession[i - 1].volume : 0;
+        const curVol = earlySession[i].volume;
+        const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+        const prevPrice = i > 0 ? earlySession[i - 1].price : prevClose;
+        const priceChange = prevPrice > 0 ? ((earlySession[i].price - prevPrice) / prevPrice) * 100 : 0;
+        earlyIncrements.push({ time: earlySession[i].time, price: earlySession[i].price, vol, priceChange });
+      }
+
+      const avgEarlyVol = earlyIncrements.reduce((s, t) => s + t.vol, 0) / earlyIncrements.length;
+      const maxEarlyVol = Math.max(...earlyIncrements.map(t => t.vol));
+      const maxEarlyVolIdx = earlyIncrements.findIndex(t => t.vol === maxEarlyVol);
+      const earlyVolRatio = avgEarlyVol > 0 ? maxEarlyVol / avgEarlyVol : 1;
+
+      // 下跌分钟中的高成交量占比
+      const downHighVol = earlyIncrements.filter(t => t.priceChange < 0 && t.vol > avgEarlyVol).length;
+      const downHighVolRatio = earlyIncrements.length > 0 ? downHighVol / earlyIncrements.length : 0;
+
+      // 最大急跌率（5分钟窗口）
+      let maxEarlyDropRate = 0;
+      let earlyDropStartIdx = 0;
+      for (let i = 0; i <= earlySession.length - 5; i++) {
+        const sp = earlySession[i].price;
+        const ep = earlySession[i + 4].price;
+        if (sp > 0) {
+          const rate = ((sp - ep) / sp) * 100;
+          if (rate > maxEarlyDropRate) {
+            maxEarlyDropRate = rate;
+            earlyDropStartIdx = i;
+          }
+        }
+      }
+
+      // 跳空低开率
+      const gapDownRate = openPrice > 0 && prevClose > 0 ? ((prevClose - openPrice) / prevClose) * 100 : 0;
+
+      // 递增放量+下跌
+      let progressiveDropLen = 1;
+      let curPLen = 1;
+      for (let i = 1; i < earlyIncrements.length; i++) {
+        if (earlyIncrements[i].vol > earlyIncrements[i - 1].vol && earlyIncrements[i].vol > 0) {
+          curPLen++;
+          if (curPLen > progressiveDropLen) progressiveDropLen = curPLen;
+        } else {
+          curPLen = 1;
+        }
+      }
+
+      // 综合评分
+      let earlyDropScore = 0;
+
+      // 早盘整体跌幅（最重要的指标）
+      if (earlyDropRate >= 3) earlyDropScore += 30;
+      else if (earlyDropRate >= 2) earlyDropScore += 25;
+      else if (earlyDropRate >= 1.5) earlyDropScore += 20;
+      else if (earlyDropRate >= 1) earlyDropScore += 15;
+      else if (earlyDropRate >= 0.5) earlyDropScore += 8;
+
+      // 相对昨收跌幅
+      if (dropFromPrevClose >= 3) earlyDropScore += 20;
+      else if (dropFromPrevClose >= 2) earlyDropScore += 15;
+      else if (dropFromPrevClose >= 1) earlyDropScore += 10;
+      else if (dropFromPrevClose >= 0.5) earlyDropScore += 5;
+
+      // 量比
+      if (earlyVolRatio >= 3) earlyDropScore += 15;
+      else if (earlyVolRatio >= 2) earlyDropScore += 10;
+      else if (earlyVolRatio >= 1.5) earlyDropScore += 5;
+
+      // 下跌放量占比
+      if (downHighVolRatio >= 0.4) earlyDropScore += 10;
+      else if (downHighVolRatio >= 0.3) earlyDropScore += 7;
+      else if (downHighVolRatio >= 0.2) earlyDropScore += 4;
+
+      // 急跌率
+      if (maxEarlyDropRate >= 2) earlyDropScore += 10;
+      else if (maxEarlyDropRate >= 1.5) earlyDropScore += 7;
+      else if (maxEarlyDropRate >= 1) earlyDropScore += 4;
+
+      // 跳空低开
+      if (gapDownRate >= 1) earlyDropScore += 8;
+      else if (gapDownRate >= 0.5) earlyDropScore += 4;
+
+      // 递增放量+下跌
+      if (progressiveDropLen >= 4) earlyDropScore += 7;
+      else if (progressiveDropLen >= 3) earlyDropScore += 4;
+
+      earlyDropScore = Math.min(earlyDropScore, 100);
+
+      // 阈值：30分以上触发早市放量下跌警告（比较严格，避免误报）
+      if (earlyDropScore >= 30 && earlyDropRate > 0.5) {
+        const negativeScore = -earlyDropScore;
+        const markTime = earlySession[earlySession.length - 1].time;
+        const details: string[] = [];
+        if (earlyDropRate >= 1) details.push(`早盘跌${earlyDropRate.toFixed(1)}%`);
+        if (dropFromPrevClose >= 1) details.push(`较昨收跌${dropFromPrevClose.toFixed(1)}%`);
+        if (earlyVolRatio >= 1.5) details.push(`量比${earlyVolRatio.toFixed(1)}x`);
+        if (maxEarlyDropRate >= 1) details.push(`急跌${maxEarlyDropRate.toFixed(1)}%`);
+        if (downHighVolRatio >= 0.2) details.push(`${(downHighVolRatio * 100).toFixed(0)}%放量下跌`);
+        if (gapDownRate >= 0.5) details.push(`低开${gapDownRate.toFixed(1)}%`);
+
+        // 计算早盘成交金额
+        const earlyAmount = earlySession.reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+
+        markers.push({
+          time: markTime,
+          type: "early_vol_drop",
+          score: negativeScore,
+          label: earlyDropScore >= 60
+            ? `⚠️ 极危！早盘放量暴跌 ${negativeScore}分`
+            : earlyDropScore >= 40
+              ? `🚫 危险！早盘放量下跌 ${negativeScore}分`
+              : `⚠ 早盘放量下跌 ${negativeScore}分`,
+          detail: details.length > 0 ? details.join("，") : "早盘放量下跌",
+          amount: earlyAmount,
+        });
+      }
     }
   }
 

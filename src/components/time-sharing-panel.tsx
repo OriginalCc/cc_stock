@@ -401,12 +401,14 @@ function renderPulseVolumeMarker(
   const isProgressiveVol = marker.type === "progressive_vol";
   const isPulseDecline = marker.type === "pulse_decline";
   const isVolumeDecline = marker.type === "volume_decline";
-  const isDecline = isPulseDecline || isVolumeDecline;
+  const isEarlyVolDrop = marker.type === "early_vol_drop";
+  const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop;
 
   // Color schemes — brighter & more saturated for visibility
   // Decline markers use green tones (bearish in Chinese markets)
+  // early_vol_drop uses RED for extreme danger (禁止买入)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
-  const isAbove = isPulse || isProgressiveVol;
+  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop;
   const defaultLabelY = isAbove ? y - 52 : y + 36;
   const labelY = adjustedLabelY ?? defaultLabelY;
   const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
@@ -435,6 +437,13 @@ function renderPulseVolumeMarker(
     textColor = "#15803d";
     iconColor = "#22c55e";
     glowColor = "rgba(34, 197, 94, 0.35)";
+  } else if (isEarlyVolDrop) {
+    // 早盘放量下跌 → 醒目红色（危险！禁止买入）
+    bgColor = "rgba(239, 68, 68, 0.35)";
+    borderColor = "rgba(239, 68, 68, 1)";
+    textColor = "#ffffff";
+    iconColor = "#ef4444";
+    glowColor = "rgba(239, 68, 68, 0.6)";
   } else {
     bgColor = "rgba(6, 182, 212, 0.25)";
     borderColor = "rgba(6, 182, 212, 0.85)";
@@ -448,56 +457,65 @@ function renderPulseVolumeMarker(
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
   // Dynamic pill width based on label length
-  const estimatedCharWidth = 7.5;
-  const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = 16;
-  const pillRx = 4;
+  // early_vol_drop: wider pill + larger font for maximum visibility
+  const isDanger = isEarlyVolDrop;
+  const estimatedCharWidth = isDanger ? 8.5 : 7.5;
+  const pillW = isDanger ? Math.max(120, Math.min(200, Math.round(displayLabel.length * estimatedCharWidth + 12))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = isDanger ? 20 : 16;
+  const pillRx = isDanger ? 6 : 4;
 
   return (
     <g key={`pv-${marker.type}-${idx}`}>
       {/* Connecting line from price point to label (may be offset horizontally) */}
       <line
         x1={x} y1={y} x2={labelX} y2={labelY}
-        stroke={borderColor} strokeWidth={1} strokeDasharray="3 2"
+        stroke={borderColor} strokeWidth={isDanger ? 2 : 1} strokeDasharray={isDanger ? "4 2" : "3 2"}
       />
-      {/* Marker dot on price line — larger & bolder */}
+      {/* Marker dot on price line — larger & bolder for danger */}
       <circle
-        cx={x} cy={y} r={6}
-        fill={bgColor} stroke={iconColor} strokeWidth={2}
+        cx={x} cy={y} r={isDanger ? 9 : 6}
+        fill={bgColor} stroke={iconColor} strokeWidth={isDanger ? 3 : 2}
       />
-      {/* Pulsing glow ring around dot */}
+      {/* Pulsing glow ring around dot — double ring for danger */}
       <circle
-        cx={x} cy={y} r={9}
-        fill="none" stroke={glowColor} strokeWidth={1.5}
-        strokeDasharray="2 2" opacity={0.7}
+        cx={x} cy={y} r={isDanger ? 14 : 9}
+        fill="none" stroke={glowColor} strokeWidth={isDanger ? 2.5 : 1.5}
+        strokeDasharray="2 2" opacity={isDanger ? 1 : 0.7}
       />
+      {isDanger && (
+        <circle
+          cx={x} cy={y} r={19}
+          fill="none" stroke={glowColor} strokeWidth={1}
+          strokeDasharray="3 3" opacity={0.5}
+        />
+      )}
       {/* Icon inside dot */}
       <text
         x={x} y={y + 1}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={7} fill={iconColor} fontWeight="bold"
+        fontSize={isDanger ? 10 : 7} fill={isDanger ? "#ffffff" : iconColor} fontWeight="bold"
       >
-        {isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
+        {isEarlyVolDrop ? "⚠" : isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
       </text>
       {/* White glow behind label pill for readability */}
       <rect
-        x={labelX - pillW / 2 - 1.5} y={(isAbove ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
-        width={pillW + 3} height={pillH + 3}
+        x={labelX - pillW / 2 - (isDanger ? 2 : 1.5)} y={(isAbove ? labelY - pillH / 2 - (isDanger ? 3 : 2) : labelY - 2) - (isDanger ? 2 : 1.5)}
+        width={pillW + (isDanger ? 4 : 3)} height={pillH + (isDanger ? 4 : 3)}
         rx={pillRx + 1} ry={pillRx + 1}
-        fill="white" fillOpacity={0.85}
+        fill={isDanger ? "rgba(0,0,0,0.5)" : "white"} fillOpacity={isDanger ? 0.6 : 0.85}
       />
-      {/* Label background pill */}
+      {/* Label background pill — danger uses thicker border + solid fill */}
       <rect
-        x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
+        x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - (isDanger ? 3 : 2) : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
-        fill={bgColor} stroke={borderColor} strokeWidth={1}
+        fill={isDanger ? "rgba(239, 68, 68, 0.9)" : bgColor} stroke={borderColor} strokeWidth={isDanger ? 2.5 : 1}
       />
-      {/* Label text — larger & bolder */}
+      {/* Label text — danger uses larger font + white color */}
       <text
-        x={labelX} y={isAbove ? labelY + 1 : labelY + 7}
+        x={labelX} y={isAbove ? labelY + (isDanger ? 0 : 1) : labelY + 7}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={9} fontWeight={700} fill={textColor}
+        fontSize={isDanger ? 11 : 9} fontWeight={isDanger ? 900 : 700} fill={isDanger ? "#ffffff" : textColor}
       >
         {displayLabel}
       </text>
@@ -1968,6 +1986,35 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           )}
         </div>
       </div>
+
+      {/* ─── Early Morning Volume Drop DANGER Banner (禁止买入) ─── */}
+      {pvMarkers && pvMarkers.some(m => m.type === "early_vol_drop") && (() => {
+        const earlyDrop = pvMarkers.find(m => m.type === "early_vol_drop")!;
+        const isExtreme = Math.abs(earlyDrop.score) >= 60;
+        const isHigh = Math.abs(earlyDrop.score) >= 40;
+        return (
+          <div className={`relative overflow-hidden ${isExtreme ? 'bg-red-600' : isHigh ? 'bg-red-500' : 'bg-red-500/90'}`}>
+            {/* Animated diagonal stripes for extreme danger */}
+            {isExtreme && (
+              <div className="stripe-move absolute inset-0 opacity-20" style={{
+                backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(0,0,0,0.3) 8px, rgba(0,0,0,0.3) 16px)',
+              }} />
+            )}
+            <div className="relative px-4 py-2.5 flex items-center justify-center gap-3">
+              <span className="text-white text-lg animate-pulse">🚫</span>
+              <span className="text-white text-sm font-black tracking-wide">
+                {isExtreme ? '极度危险！' : '危险！'}早盘放量下跌，禁止买入！
+              </span>
+              <span className="text-white/80 text-xs font-semibold border-l border-white/40 pl-3">
+                {earlyDrop.detail}
+              </span>
+              <span className="text-white/60 text-[10px] font-mono">
+                {Math.abs(earlyDrop.score)}分
+              </span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── Position Rule Banner on Chart (5-tier + T-direction) ─── */}
       {/* 中国股市颜色惯例：红=涨，绿=跌 */}
