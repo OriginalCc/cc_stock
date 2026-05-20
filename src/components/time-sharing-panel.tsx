@@ -1970,6 +1970,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       </div>
 
       {/* ─── Position Rule Banner on Chart (5-tier + T-direction) ─── */}
+      {/* 中国股市颜色惯例：红=涨，绿=跌 */}
       {(() => {
         const lastPoint = data[data.length - 1];
         const stockPct = lastPoint?.changePercent ?? 0;
@@ -1988,46 +1989,47 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         const isTripleDown = hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown;
         const isTripleUp = hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp;
 
+        // 三跌：绿色系（跌=绿）
         if (isTripleDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/15 border-b border-red-500/25 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">🚫</span>
-              <span className="text-xs font-bold text-red-700 dark:text-red-300">
+            <div className="px-3 py-1.5 bg-green-500/15 border-b border-green-500/25 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">🚫</span>
+              <span className="text-xs font-bold text-green-700 dark:text-green-300">
                 三跌！深证↓+板块↓+个股↓ ≤ 1/4仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)/空仓</span>
-              <span className="text-[10px] text-red-500/70">极度危险，保留3/4后备</span>
+              <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)/空仓</span>
+              <span className="text-[10px] text-green-500/70">极度危险，保留3/4后备</span>
             </div>
           );
         }
-        // 三涨：大盘↑+板块↑+个股↑
+        // 三涨：红色系（涨=红）
         if (isTripleUp) {
           return (
-            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">✅</span>
-              <span className="text-xs font-bold text-green-600 dark:text-green-400">
+            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">✅</span>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
                 三涨！深证↑+板块↑+个股↑ 90-100%仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T/反T(先卖再买)均可</span>
-              <span className="text-[10px] text-green-500/70">最安全，积极做T</span>
+              <span className="text-[10px] text-red-400 font-bold">| 正T/反T(先卖再买)均可</span>
+              <span className="text-[10px] text-red-500/70">最安全，积极做T</span>
             </div>
           );
         }
-        // 大盘↓+板块↓+个股↓ (无大盘数据时降级为双跌)
+        // 双跌：绿色系（跌=绿）
         const isDualDown = (hasMktInfo ? mktDown : true) && hasSectorInfo && sectorDown && stockDown;
         if (isDualDown && !isTripleDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">⛔</span>
-              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">⛔</span>
+              <span className="text-xs font-bold text-green-600 dark:text-green-400">
                 {hasMktInfo ? '深证↓+' : ''}板块↓+个股↓ = 双跌！≤ 1/3仓
               </span>
-              <span className="text-[10px] text-orange-400 font-bold">| 反T(先卖再买)冲高卖</span>
-              <span className="text-[10px] text-red-500/70">保留2/3后备资金</span>
+              <span className="text-[10px] text-amber-400 font-bold">| 反T(先卖再买)冲高卖</span>
+              <span className="text-[10px] text-green-500/70">保留2/3后备资金</span>
             </div>
           );
         }
-        // 大盘↓+板块↑+个股↑ (逆势板块+个股)
+        // 大盘↓+板块↑+个股↑ (逆势走强)：黄色系（谨慎）
         if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
           return (
             <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
@@ -2035,38 +2037,38 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
                 深证↓ 但板块↑+个股↑ 20-30%仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)冲高卖</span>
+              <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)冲高卖</span>
               <span className="text-[10px] text-yellow-500/70">大盘压制，适度参与</span>
             </div>
           );
         }
-        // 大盘↑+板块↓+个股↓ (大盘好但板块和个股差)
+        // 大盘↑+板块↓+个股↓ (大盘好但个股弱)：绿色系（个股跌=绿）
         if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-orange-500/8 border-b border-orange-500/15 flex items-center justify-center gap-2">
-              <span className="text-orange-500 text-xs">⚠️</span>
-              <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
+            <div className="px-3 py-1.5 bg-green-500/8 border-b border-green-500/15 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">⚠️</span>
+              <span className="text-xs font-bold text-green-600 dark:text-green-400">
                 深证↑ 但板块↓+个股↓ ≤ 1/3仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T低吸</span>
-              <span className="text-[10px] text-orange-500/70">大盘支撑但板块弱势</span>
+              <span className="text-[10px] text-red-400 font-bold">| 正T低吸</span>
+              <span className="text-[10px] text-green-500/70">大盘支撑但板块弱势</span>
             </div>
           );
         }
-        // 大盘↑+板块↑+个股↓ (回调低吸)
+        // 大盘↑+板块↑+个股↓ (回调低吸)：红色系（大盘+板块涨=红）
         if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-blue-500/8 border-b border-blue-500/15 flex items-center justify-center gap-2">
-              <span className="text-blue-500 text-xs">🔹</span>
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
+            <div className="px-3 py-1.5 bg-red-500/8 border-b border-red-500/15 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">🔹</span>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
                 深证↑+板块↑+个股↓ 25-30%仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T低吸良机</span>
-              <span className="text-[10px] text-blue-500/70">大盘+板块支撑</span>
+              <span className="text-[10px] text-red-400 font-bold">| 正T低吸良机</span>
+              <span className="text-[10px] text-red-500/70">大盘+板块支撑</span>
             </div>
           );
         }
-        // 板块↓+个股↑ (无大盘数据或大盘震荡)
+        // 板块↓+个股↑ (无大盘数据或大盘震荡)：琥珀色（逆板块走强需谨慎）
         if (hasSectorInfo && sectorDown && stockUp) {
           return (
             <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-center gap-2">
@@ -2079,36 +2081,36 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             </div>
           );
         }
-        // 板块↑+个股↓ (回调低吸)
+        // 板块↑+个股↓ (回调低吸)：红色系（板块涨=红）
         if (hasSectorInfo && sectorUp && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
-              <span className="text-yellow-500 text-xs">🔻</span>
-              <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
+            <div className="px-3 py-1.5 bg-red-500/8 border-b border-red-500/15 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">🔻</span>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
                 板块↑+个股↓ {hasMktInfo && mktUp ? '25-30%' : '20-30%'}仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T低吸</span>
-              <span className="text-[10px] text-yellow-500/70">回调可低吸</span>
+              <span className="text-[10px] text-red-400 font-bold">| 正T低吸</span>
+              <span className="text-[10px] text-red-500/70">回调可低吸</span>
             </div>
           );
         }
-        // No sector info - show simpler banner based on stock direction + market
+        // 无板块信息 - 仅大盘+个股
         if (!hasSectorInfo && hasMktInfo && mktDown && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/5 border-b border-red-500/10 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">🔻</span>
-              <span className="text-xs font-medium text-red-600/80 dark:text-red-400/80">
+            <div className="px-3 py-1.5 bg-green-500/5 border-b border-green-500/10 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">🔻</span>
+              <span className="text-xs font-medium text-green-600/80 dark:text-green-400/80">
                 深证↓+个股↓，大盘弱势注意控仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)</span>
+              <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)</span>
             </div>
           );
         }
         if (!hasSectorInfo && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-amber-500/5 border-b border-amber-500/10 flex items-center justify-center gap-2">
-              <span className="text-amber-500 text-xs">🔻</span>
-              <span className="text-xs font-medium text-amber-600/80 dark:text-amber-400/80">
+            <div className="px-3 py-1.5 bg-green-500/5 border-b border-green-500/10 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">🔻</span>
+              <span className="text-xs font-medium text-green-600/80 dark:text-green-400/80">
                 个股下跌，注意控制仓位
               </span>
             </div>
