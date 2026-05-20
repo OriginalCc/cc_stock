@@ -573,17 +573,17 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
               <div className="grid grid-cols-1 gap-1.5">
                 <div className="flex items-center gap-2 p-1.5 rounded border border-red-500/30 bg-red-600/10">
                   <span className="text-red-500 font-bold text-[10px] w-12 shrink-0">≥60分</span>
-                  <span className="text-red-600 dark:text-red-400 font-bold text-xs">⚠️ 极危！早盘放量暴跌</span>
+                  <span className="text-red-600 dark:text-red-400 font-bold text-xs">⚠️ 极危(一级警告)！早盘放量暴跌</span>
                   <span className="text-[10px] text-red-500/70 ml-auto shrink-0">空仓！全天禁止买入</span>
                 </div>
                 <div className="flex items-center gap-2 p-1.5 rounded border border-red-500/20 bg-red-500/8">
                   <span className="text-red-500 font-bold text-[10px] w-12 shrink-0">40-59分</span>
-                  <span className="text-red-600 dark:text-red-400 font-bold text-xs">🚫 危险！早盘放量下跌</span>
+                  <span className="text-red-600 dark:text-red-400 font-bold text-xs">🚫 危险(二级警告)！早盘放量下跌</span>
                   <span className="text-[10px] text-red-500/70 ml-auto shrink-0">禁止买入，10点后再评估</span>
                 </div>
                 <div className="flex items-center gap-2 p-1.5 rounded border border-red-500/15 bg-red-500/5">
                   <span className="text-red-500 font-bold text-[10px] w-12 shrink-0">30-39分</span>
-                  <span className="text-amber-600 dark:text-amber-400 font-bold text-xs">⚠ 早盘放量下跌</span>
+                  <span className="text-amber-600 dark:text-amber-400 font-bold text-xs">⚠ 早盘放量下跌(三级警告)</span>
                   <span className="text-[10px] text-amber-500/70 ml-auto shrink-0">谨慎，仓位减半</span>
                 </div>
               </div>

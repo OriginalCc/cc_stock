@@ -2003,7 +2003,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <div className="relative px-4 py-2.5 flex items-center justify-center gap-3">
               <span className="text-white text-lg animate-pulse">🚫</span>
               <span className="text-white text-sm font-black tracking-wide">
-                {isExtreme ? '极度危险！' : '危险！'}早盘放量下跌，禁止买入！
+                {isExtreme ? '极危(一级警告)！' : '危险(二级警告)！'}早盘放量下跌，禁止买入！
               </span>
               <span className="text-white/80 text-xs font-semibold border-l border-white/40 pl-3">
                 {earlyDrop.detail}

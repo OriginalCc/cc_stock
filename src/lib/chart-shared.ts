@@ -1187,10 +1187,10 @@ export function detectPulseVolumeMarkers(
           type: "early_vol_drop",
           score: negativeScore,
           label: earlyDropScore >= 60
-            ? `⚠️ 极危！早盘放量暴跌 ${negativeScore}分`
+            ? `⚠️ 极危(一级警告)！早盘放量暴跌 ${negativeScore}分`
             : earlyDropScore >= 40
-              ? `🚫 危险！早盘放量下跌 ${negativeScore}分`
-              : `⚠ 早盘放量下跌 ${negativeScore}分`,
+              ? `🚫 危险(二级警告)！早盘放量下跌 ${negativeScore}分`
+              : `⚠ 早盘放量下跌(三级警告) ${negativeScore}分`,
           detail: details.length > 0 ? details.join("，") : "早盘放量下跌",
           amount: earlyAmount,
         });
