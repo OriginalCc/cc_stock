@@ -290,7 +290,7 @@ function CustomFactorsTab() {
         const userFactors = parsed.filter(f => !builtInIds.includes(f.id));
         const mergedBuiltIn = BUILT_IN_CUSTOM_FACTORS.map(bf => {
           const savedBf = parsed.find(f => f.id === bf.id);
-          if (savedBf) return { ...bf, enabled: savedBf.enabled };
+          if (savedBf) return { ...bf, enabled: savedBf.enabled, strength: savedBf.strength || bf.strength };
           return bf;
         });
         // Use microtask to avoid lint warning about setState in effect
@@ -309,6 +309,7 @@ function CustomFactorsTab() {
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [expandedFactorId, setExpandedFactorId] = useState<string | null>(null);
   const [conditionFilter, setConditionFilter] = useState<string>("all");
+  const [editingStrengthId, setEditingStrengthId] = useState<string | null>(null);
 
   // 保存到 localStorage
   useEffect(() => {
@@ -320,6 +321,11 @@ function CustomFactorsTab() {
 
   const toggleFactor = (id: string) => {
     setCustomFactors(prev => prev.map(f => f.id === id ? { ...f, enabled: !f.enabled } : f));
+  };
+
+  const updateFactorStrength = (id: string, strength: "strong" | "medium" | "weak") => {
+    setCustomFactors(prev => prev.map(f => f.id === id ? { ...f, strength } : f));
+    setEditingStrengthId(null);
   };
 
   const deleteFactor = (id: string) => {
@@ -415,6 +421,56 @@ function CustomFactorsTab() {
     ? CONDITION_LIBRARY
     : CONDITION_LIBRARY.filter(c => c.category === conditionFilter);
 
+  // ── Inline strength editor component ──
+  const renderStrengthEditor = (factor: CustomFactorDefinition) => {
+    const isEditing = editingStrengthId === factor.id;
+    const strengthConfig: Record<string, { label: string; badgeClass: string; activeClass: string }> = {
+      strong: { label: "强", badgeClass: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300", activeClass: "bg-red-500 text-white dark:bg-red-600" },
+      medium: { label: "中", badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300", activeClass: "bg-amber-500 text-white dark:bg-amber-600" },
+      weak: { label: "弱", badgeClass: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300", activeClass: "bg-gray-500 text-white dark:bg-gray-600" },
+    };
+
+    if (isEditing) {
+      return (
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {(["strong", "medium", "weak"] as const).map(s => (
+            <button
+              key={s}
+              className={`h-5 px-1.5 rounded text-[9px] font-bold transition-all ${
+                factor.strength === s ? strengthConfig[s].activeClass + " ring-1 ring-offset-1 ring-current" : strengthConfig[s].badgeClass + " opacity-60 hover:opacity-100"
+              }`}
+              onClick={(e) => { e.stopPropagation(); updateFactorStrength(factor.id, s); }}
+            >
+              {strengthConfig[s].label}
+            </button>
+          ))}
+          <button
+            className="shrink-0 h-5 w-5 rounded flex items-center justify-center hover:bg-muted/80 transition-colors ml-0.5"
+            onClick={(e) => { e.stopPropagation(); setEditingStrengthId(null); }}
+          >
+            <X className="h-3 w-3 text-muted-foreground" />
+          </button>
+        </div>
+      );
+    }
+
+    const cfg = strengthConfig[factor.strength];
+    return (
+      <div className="flex items-center gap-0.5">
+        <Badge className={`text-[9px] h-4 px-1 ${cfg.badgeClass}`}>
+          {cfg.label}
+        </Badge>
+        <button
+          className="shrink-0 h-4 w-4 rounded flex items-center justify-center hover:bg-violet-100 dark:hover:bg-violet-950/50 transition-colors"
+          onClick={(e) => { e.stopPropagation(); setEditingStrengthId(factor.id); }}
+          title="编辑强度"
+        >
+          <Pencil className="h-2.5 w-2.5 text-muted-foreground hover:text-violet-600 dark:hover:text-violet-400" />
+        </button>
+      </div>
+    );
+  };
+
   const enabledCount = customFactors.filter(f => f.enabled).length;
   const builtInFactors = customFactors.filter(f => f.isBuiltIn);
   const userFactors = customFactors.filter(f => !f.isBuiltIn);
@@ -487,9 +543,7 @@ function CustomFactorsTab() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-bold">{factor.name}</span>
-                    <Badge className={`text-[9px] h-4 px-1 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
-                      {factor.strength === "strong" ? "强" : factor.strength === "medium" ? "中" : "弱"}
-                    </Badge>
+                    {renderStrengthEditor(factor)}
                     <Badge variant="outline" className="text-[9px] h-4 px-1">{factor.tMode}</Badge>
                     <Badge variant="outline" className="text-[9px] h-4 px-1 bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
                       {factor.dataSource}
@@ -540,9 +594,7 @@ function CustomFactorsTab() {
                     <Badge variant={factor.signalType === "buy" ? "default" : "destructive"} className="text-[9px] h-4">
                       {factor.signalType === "buy" ? "买入" : "卖出"}
                     </Badge>
-                    <Badge className={`text-[9px] h-4 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
-                      {factor.strength === "strong" ? "强信号" : factor.strength === "medium" ? "中信号" : "弱信号"}
-                    </Badge>
+                    {renderStrengthEditor(factor)}
                     <Badge variant="outline" className="text-[9px] h-4">{factor.tMode}</Badge>
                   </div>
                 </div>
@@ -584,9 +636,7 @@ function CustomFactorsTab() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-bold">{factor.name}</span>
-                      <Badge className={`text-[9px] h-4 px-1 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
-                        {factor.strength === "strong" ? "强" : factor.strength === "medium" ? "中" : "弱"}
-                      </Badge>
+                      {renderStrengthEditor(factor)}
                       <Badge variant="outline" className="text-[9px] h-4 px-1">{factor.tMode}</Badge>
                       {factor.enabled && (
                         <Badge className="text-[8px] h-4 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 animate-pulse">
@@ -641,9 +691,7 @@ function CustomFactorsTab() {
                       <Badge variant={factor.signalType === "buy" ? "default" : "destructive"} className="text-[9px] h-4">
                         {factor.signalType === "buy" ? "买入" : "卖出"}
                       </Badge>
-                      <Badge className={`text-[9px] h-4 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
-                        {factor.strength === "strong" ? "强信号" : factor.strength === "medium" ? "中信号" : "弱信号"}
-                      </Badge>
+                      {renderStrengthEditor(factor)}
                       <Badge variant="outline" className="text-[9px] h-4">{factor.tMode}</Badge>
                     </div>
                   </div>
