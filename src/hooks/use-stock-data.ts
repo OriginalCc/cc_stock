@@ -383,7 +383,10 @@ export function useStockData() {
       try { localStorage.setItem(LAST_CHART_MODE_KEY, mode); } catch {}
       if ((mode === "timeline" || mode === "5d-timeline") && checkAShare(symbol)) {
         fetchTimelineWithQuote(symbol);
-        fetchHistory(symbol, "1d");
+        // Skip fetchHistory for 5d-timeline — the FiveDayTimelinePanel fetches its own 5min kline data
+        if (mode !== "5d-timeline") {
+          fetchHistory(symbol, "1d");
+        }
         setInterval_("1d");
       } else if (mode === "kline") {
         const klineInterval: TimeInterval = "1d";
@@ -404,7 +407,10 @@ export function useStockData() {
       // Combined timeline+quote fetch saves one network roundtrip on initial load
       // If we already have cached data from preload, the SWR pattern will return it instantly
       fetchTimelineWithQuote(symbol);
-      fetchHistory(symbol, interval);
+      // Skip fetchHistory for 5d-timeline — the panel fetches its own 5min kline data
+      if (currentMode !== "5d-timeline") {
+        fetchHistory(symbol, interval);
+      }
     } else {
       fetchQuote(symbol);
       fetchHistory(symbol, interval);

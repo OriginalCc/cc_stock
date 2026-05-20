@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef, useDeferredValue } from "react";
 import {
   ComposedChart,
   Bar,
@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
 import { formatVolume, formatAmount } from "@/lib/chart-shared";
+import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { analyzeFiveDayIntent, type FiveDayIntentResult, type DayIntentResult } from "@/lib/institutional-intent";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -74,36 +75,37 @@ interface KLine5Min {
 }
 
 async function fetch5MinKLine(symbol: string, retryCount = 1): Promise<KLine5Min[]> {
+  const enc = encodeURIComponent(symbol);
   for (let attempt = 0; attempt <= retryCount; attempt++) {
     try {
-      // Try the lightweight 5min-kline endpoint first (no MACD computation = faster)
-      const res = await fetch(
-        `/api/stock/ashare-5min-kline?symbol=${encodeURIComponent(symbol)}&limit=250`,
-        { signal: AbortSignal.timeout(8000) }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (!data.error && Array.isArray(data.data) && data.data.length > 0) {
-          return data.data.filter((d: any) => d.close > 0);
-        }
-      }
-      // Fallback to full history endpoint (slower, has MACD/KDJ computation)
-      const res2 = await fetch(
-        `/api/stock/ashare-history?symbol=${encodeURIComponent(symbol)}&interval=5m&limit=250`,
-        { signal: AbortSignal.timeout(12000) }
-      );
-      if (res2.ok) {
-        const data = await res2.json();
-        if (!data.error && Array.isArray(data.data) && data.data.length > 0) {
-          return data.data.filter((d: any) => d.close > 0);
-        }
-      }
+      // Fire both endpoints in PARALLEL — take whichever resolves first with valid data
+      // Primary: lightweight 5min-kline endpoint (no MACD computation = faster)
+      // Fallback: full history endpoint (slower but reliable)
+      const result = await Promise.any([
+        // Primary endpoint
+        fetch(`/api/stock/ashare-5min-kline?symbol=${enc}&limit=250`, { signal: AbortSignal.timeout(8000) })
+          .then(async (res) => {
+            if (!res.ok) throw new Error('primary failed');
+            const data = await res.json();
+            if (data.error || !Array.isArray(data.data) || data.data.length === 0) throw new Error('no data');
+            return data.data.filter((d: any) => d.close > 0);
+          }),
+        // Fallback endpoint
+        fetch(`/api/stock/ashare-history?symbol=${enc}&interval=5m&limit=250`, { signal: AbortSignal.timeout(12000) })
+          .then(async (res) => {
+            if (!res.ok) throw new Error('fallback failed');
+            const data = await res.json();
+            if (data.error || !Array.isArray(data.data) || data.data.length === 0) throw new Error('no data');
+            return data.data.filter((d: any) => d.close > 0);
+          }),
+      ]);
+      if (result.length > 0) return result;
     } catch (e) {
-      console.error(`5min-kline fetch attempt ${attempt + 1} failed:`, e);
+      // Both endpoints failed on this attempt
+      if (attempt === 0) console.warn('5min-kline: both endpoints failed, retrying...');
     }
-    // Only wait before retry, not after the first attempt
     if (attempt < retryCount) {
-      await new Promise(r => setTimeout(r, 500)); // Reduced from 1500ms to 500ms
+      await new Promise(r => setTimeout(r, 500));
     }
   }
   return [];
@@ -209,7 +211,7 @@ function padLiveTimelineTo1Min(timelineData: TimelineItem[]): MinuteBar[] {
 function convertTo5DayTimeline(
   klines: KLine5Min[],
   currentTimeline: TimelineItem[],
-  quote: any,
+  quotePrevClose: number | undefined,
   timelinePrevClose: number
 ): { items: FiveDayTimelineItem[]; dayBoundaries: number[]; dayLabels: string[]; prevClose: number; firstDayRefClose: number } {
   if (klines.length === 0 && currentTimeline.length === 0) {
@@ -229,7 +231,7 @@ function convertTo5DayTimeline(
     const beforeKlines = dayMap.get(dates[dates.length - 6]);
     if (beforeKlines && beforeKlines.length > 0) prevClose = beforeKlines[beforeKlines.length - 1].close;
   }
-  if (prevClose <= 0) prevClose = timelinePrevClose || quote?.prevClose || 0;
+  if (prevClose <= 0) prevClose = timelinePrevClose || quotePrevClose || 0;
   let firstDayRefClose = prevClose;
   const dayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   const items: FiveDayTimelineItem[] = [];
@@ -360,25 +362,25 @@ function VolumeBarShape(props: any) {
 
 // ── Institutional Intent Analysis Panel (V2) ──
 
+// Score bar visualization (extracted to module-level for stable reference)
+function ScoreBar({ label, score, maxScore, colorClass }: { label: string; score: number; maxScore: number; colorClass: string }) {
+  const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="w-7 text-muted-foreground shrink-0">{label}</span>
+      <div className="flex-1 h-2.5 bg-muted/40 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${colorClass} transition-all duration-500`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`w-6 text-right font-mono ${pct > 50 ? colorClass : 'text-muted-foreground'}`}>{pct}%</span>
+    </div>
+  );
+}
+
 function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
   const { overallIntent, dailyIntents, trendPhase, riskLevel, crossDayPattern } = result;
 
   const riskLabel = ["", "低", "较低", "中等", "较高", "高"][riskLevel] || "中等";
   const riskColor = riskLevel >= 4 ? "text-red-500" : riskLevel >= 3 ? "text-yellow-500" : "text-green-500";
-
-  // Score bar visualization
-  const ScoreBar = ({ label, score, maxScore, colorClass }: { label: string; score: number; maxScore: number; colorClass: string }) => {
-    const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
-    return (
-      <div className="flex items-center gap-2 text-[11px]">
-        <span className="w-7 text-muted-foreground shrink-0">{label}</span>
-        <div className="flex-1 h-2.5 bg-muted/40 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${colorClass} transition-all duration-500`} style={{ width: `${pct}%` }} />
-        </div>
-        <span className={`w-6 text-right font-mono ${pct > 50 ? colorClass : 'text-muted-foreground'}`}>{pct}%</span>
-      </div>
-    );
-  };
 
   return (
     <div className={`rounded-lg border-2 ${overallIntent.borderColor} ${overallIntent.bgColor} p-4 mb-2`}>
@@ -668,6 +670,9 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
   const dragStartX = useRef(0);
   const dragStartRange = useRef<[number, number]>([0, 0]);
 
+  // ── Stabilize quote dependency — only extract prevClose to avoid 1.5s re-computation ──
+  const quotePrevClose = quote?.prevClose;
+
   // Auto-fit chart height
   useEffect(() => {
     const updateHeight = () => {
@@ -682,12 +687,45 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
     return () => { window.removeEventListener("resize", updateHeight); clearTimeout(timer); };
   }, []);
 
+  // ── Data loading with client-side SWR cache ──
   const loadData = useCallback(async (sym: string) => {
     const fetchId = ++fetchIdRef.current;
-    setFetching(true);
     setFetchError(null);
+
+    // Check SWR cache first — instant display if cached
+    const cacheKey = `5min-kline-${sym}`;
+    const cached = getCachedData<KLine5Min[]>(cacheKey);
+    if (cached && cached.length > 0) {
+      if (fetchId !== fetchIdRef.current) return;
+      setKline5Min(cached);
+      setDataLoaded(true);
+      setFetching(false);
+      // Background revalidation
+      if (!isCacheFresh(cacheKey, 60_000)) {
+        fetchWithSWR<KLine5Min[]>(
+          cacheKey,
+          () => fetch5MinKLine(sym, 1),
+          60_000,
+          {
+            onRevalidate: (freshData) => {
+              if (freshData.length > 0 && fetchIdRef.current === fetchId) {
+                setKline5Min(freshData);
+              }
+            }
+          }
+        );
+      }
+      return;
+    }
+
+    // No cache — show loading, fetch with SWR
+    setFetching(true);
     try {
-      const data = await fetch5MinKLine(sym, 1);
+      const { data } = await fetchWithSWR<KLine5Min[]>(
+        cacheKey,
+        () => fetch5MinKLine(sym, 1),
+        60_000
+      );
       if (fetchId !== fetchIdRef.current) return;
       setKline5Min(data);
       setDataLoaded(true);
@@ -707,17 +745,20 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
 
   const loading = fetching && !dataLoaded;
 
-  // Full data
+  // Full data — use quotePrevClose instead of quote to avoid 1.5s re-computation
   const { items, dayBoundaries, dayLabels, prevClose, firstDayRefClose } = useMemo(() => {
     if (kline5Min.length === 0 && timeline.length === 0) return { items: [], dayBoundaries: [], dayLabels: [], prevClose: 0, firstDayRefClose: 0 };
-    return convertTo5DayTimeline(kline5Min, timeline, quote, timelinePrevClose);
-  }, [kline5Min, timeline, quote, timelinePrevClose]);
+    return convertTo5DayTimeline(kline5Min, timeline, quotePrevClose, timelinePrevClose);
+  }, [kline5Min, timeline, quotePrevClose, timelinePrevClose]);
 
   // ── Institutional Intent Analysis ──
+  // Use deferred items to avoid blocking rendering on every 1.5s timeline tick
+  const deferredItems = useDeferredValue(items);
+  const deferredDayBoundaries = useDeferredValue(dayBoundaries);
   const intentResult = useMemo(() => {
-    if (items.length < 10 || dayBoundaries.length === 0) return null;
-    return analyzeFiveDayIntent(items, dayBoundaries, dayLabels, prevClose);
-  }, [items, dayBoundaries, dayLabels, prevClose]);
+    if (deferredItems.length < 10 || deferredDayBoundaries.length === 0) return null;
+    return analyzeFiveDayIntent(deferredItems, deferredDayBoundaries, dayLabels, prevClose);
+  }, [deferredItems, deferredDayBoundaries, dayLabels, prevClose]);
 
   // ── Visible slice ──
   const totalItems = items.length;

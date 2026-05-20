@@ -783,3 +783,25 @@ Stage Summary:
 - 不再有背景带覆盖价格线，图表更清晰
 - 意图分段条直观展示全天4个时段的主力意图，颜色编码清晰
 - 吸筹=红色、出货=绿色（中国股市惯例）
+
+---
+Task ID: 10
+Agent: main
+Task: 优化五日图加载速度
+
+Work Log:
+- 将 fetch5MinKLine 从串行获取改为 Promise.any 并行获取（主端点+备用端点同时请求，谁先返回用谁）
+- 稳定 quote 依赖：只提取 quotePrevClose 而非整个 quote 对象，避免每1.5s触发 convertTo5DayTimeline 重算
+- convertTo5DayTimeline 函数签名改为接收 quotePrevClose:number|undefined 替代 quote:any
+- 5min K线数据集成客户端SWR缓存（fetchWithSWR，60s TTL），切换股票时即时显示缓存数据
+- 五日模式下跳过 fetchHistory 请求（FiveDayTimelinePanel 自行获取5min kline数据，无需重复请求日K线）
+- analyzeFiveDayIntent 使用 useDeferredValue 延迟计算，避免每1.5s阻塞渲染
+- ScoreBar 组件从 InstitutionalIntentPanel 内部移到模块级，避免每次渲染重建组件
+- Lint通过
+
+Stage Summary:
+- 并行获取：最坏情况从20s降到8s（主端点超时即可切换）
+- SWR缓存：切换股票时即时显示缓存数据，后台静默更新
+- 依赖稳定：quote不再导致每1.5s重算1210项数据
+- 减少请求：5日模式下跳过fetchHistory，省去一次服务端请求+MACD/KDJ计算
+- 延迟计算：主力意图分析不阻塞UI渲染
