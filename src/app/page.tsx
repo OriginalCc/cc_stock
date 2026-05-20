@@ -260,7 +260,7 @@ export default function StockTAssistant() {
       return day >= 1 && day <= 5 && ((t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505));
     };
     if (isTradingHours()) {
-      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 30000);
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 10000);
     }
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
@@ -330,10 +330,10 @@ export default function StockTAssistant() {
     };
     // Start immediately - no idle callback delay for sector data
     fetchSectorData();
-    // Refresh sector data every 30s during trading hours
+    // Refresh sector data every 10s during trading hours
     const refreshInterval = setInterval(() => {
       if (!cancelled) fetchSectorData();
-    }, 30000);
+    }, 10000);
     return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
   }, [symbol, isAShareStock]);
 
@@ -852,6 +852,15 @@ export default function StockTAssistant() {
           stockName={quote?.name}
           indexLabel={INDEX_CONFIG[activeIndexKey]?.label || "深证"}
           sectorName={sectorInfo?.name}
+          indexChangePercent={(() => {
+            const td = indexTimelineData[activeIndexKey];
+            if (!td || !td.items.length || !td.prevClose || td.prevClose <= 0) return undefined;
+            return ((td.items[td.items.length - 1].price - td.prevClose) / td.prevClose) * 100;
+          })()}
+          sectorChangePercent={(() => {
+            if (!sectorTimelineData.items.length || !sectorTimelineData.prevClose || sectorTimelineData.prevClose <= 0) return undefined;
+            return ((sectorTimelineData.items[sectorTimelineData.items.length - 1].price - sectorTimelineData.prevClose) / sectorTimelineData.prevClose) * 100;
+          })()}
         />
         )}
 

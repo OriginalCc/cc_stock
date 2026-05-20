@@ -26,11 +26,27 @@ interface PositionSignalCardProps {
   indexLabel?: string;
   /** 板块名称 */
   sectorName?: string;
+  /** 大盘实时涨跌幅 % */
+  indexChangePercent?: number;
+  /** 板块实时涨跌幅 % */
+  sectorChangePercent?: number;
 }
 
 // ── Helpers ──
 
-function regimeToDirection(regime: RegimeDetail | null): Direction {
+/**
+ * 判断方向：结合宏观regime状态 + 实时涨跌幅
+ * 实时涨跌幅优先级更高，因为它反映最新盘面
+ * regime作为兜底（无实时数据时）
+ */
+function regimeToDirection(regime: RegimeDetail | null, changePercent?: number): Direction {
+  // 如果有实时涨跌幅，直接用它判断（最准确）
+  if (changePercent !== undefined && changePercent !== null) {
+    if (changePercent > 0.15) return "up";
+    if (changePercent < -0.15) return "down";
+    return "flat";
+  }
+  // 无实时涨跌幅时，用regime状态兜底
   if (!regime) return "flat";
   switch (regime.regime) {
     case "上升通道": return "up";
@@ -206,9 +222,11 @@ export function PositionSignalCard({
   stockName,
   indexLabel = "深证",
   sectorName,
+  indexChangePercent,
+  sectorChangePercent,
 }: PositionSignalCardProps) {
-  const indexDir = regimeToDirection(indexRegime);
-  const sectorDir = regimeToDirection(sectorRegime);
+  const indexDir = regimeToDirection(indexRegime, indexChangePercent);
+  const sectorDir = regimeToDirection(sectorRegime, sectorChangePercent);
   const stockDir = changeToDirection(stockChangePercent);
 
   const level = computePositionLevel(indexDir, sectorDir, stockDir);
@@ -242,6 +260,11 @@ export function PositionSignalCard({
             <span className="text-muted-foreground">{indexLabel}</span>
             <span className={`font-bold ${directionColor(indexDir)}`}>
               {directionLabel(indexDir)}
+              {indexChangePercent !== undefined && (
+                <span className="font-mono ml-0.5">
+                  ({indexChangePercent >= 0 ? "+" : ""}{indexChangePercent.toFixed(2)}%)
+                </span>
+              )}
             </span>
           </div>
           <span className="text-muted-foreground">+</span>
@@ -251,6 +274,11 @@ export function PositionSignalCard({
             </span>
             <span className={`font-bold ${directionColor(sectorDir)}`}>
               {directionLabel(sectorDir)}
+              {sectorChangePercent !== undefined && (
+                <span className="font-mono ml-0.5">
+                  ({sectorChangePercent >= 0 ? "+" : ""}{sectorChangePercent.toFixed(2)}%)
+                </span>
+              )}
             </span>
           </div>
           <span className="text-muted-foreground">+</span>
