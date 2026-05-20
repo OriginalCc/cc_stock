@@ -168,7 +168,7 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                 <div>
                   <span className="text-foreground font-medium">早盘观察期</span>
                   <span className="text-amber-500 text-[10px] ml-1">⚠ 仓位减半</span>
-                  <p>开盘波动剧烈，方向不明。按仓位表×50%执行，不追涨不抄底。</p>
+                  <p>开盘波动剧烈，方向不明。按仓位表×50%执行，不追涨不抄底。<span className="text-red-500 font-semibold">若出现放量下跌红色警告，禁止买入！</span></p>
                 </div>
               </div>
               <div className="flex items-start gap-2 p-1.5 rounded border border-cyan-500/10 bg-cyan-500/5">
@@ -274,7 +274,7 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                 <span className="text-amber-500 text-xs shrink-0">📉</span>
                 <div>
                   <span className="text-foreground font-medium">放量下跌 → 最危险，规避</span>
-                  <p>放量下跌说明抛压沉重，即使有买入信号也要降一个仓位等级。</p>
+                  <p>放量下跌说明抛压沉重，即使有买入信号也要降一个仓位等级。<span className="text-red-500 font-semibold">早盘放量下跌尤其危险，主力出逃信号，当日禁止买入。</span></p>
                 </div>
               </div>
             </div>
@@ -402,9 +402,9 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                   <td className="py-1.5 px-2"><span className="text-green-600 dark:text-green-400 font-medium">三涨！最安全</span></td>
                 </tr>
                 <tr>
-                  <td className="py-1.5 px-2"><span className="text-gray-400">— 盘</span></td>
-                  <td className="py-1.5 px-2"><span className="text-gray-400">— 盘</span></td>
-                  <td className="py-1.5 px-2"><span className="text-gray-400">— 盘</span></td>
+                  <td className="py-1.5 px-2"><span className="text-gray-400">横盘</span></td>
+                  <td className="py-1.5 px-2"><span className="text-gray-400">横盘</span></td>
+                  <td className="py-1.5 px-2"><span className="text-gray-400">横盘</span></td>
                   <td className="py-1.5 px-2 font-medium">15-25%</td>
                   <td className="py-1.5 px-2"><span className="text-gray-400 font-medium">观望</span></td>
                   <td className="py-1.5 px-2">方向不明，轻仓试探</td>
@@ -463,14 +463,143 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                 <p>跌停=流动性枯竭，无法卖出完成做T闭环。涨停同理，买入后可能无法卖出。</p>
               </div>
             </div>
+            <div className="flex items-start gap-2">
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-red-500/15 text-red-500 border border-red-500/25 shrink-0 mt-0.5">7</span>
+              <div>
+                <span className="text-red-600 dark:text-red-400 font-bold">早盘放量下跌 → 禁止买入！</span>
+                <p>9:30-10:00出现放量下跌（分时图红色警告），说明主力资金出逃、抛压沉重。此时抄底=接飞刀，下跌中继概率远大于触底反弹。即使盘中反弹也是诱多，大概率继续下探。</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold bg-red-500/15 text-red-500 border border-red-500/25 shrink-0 mt-0.5">8</span>
+              <div>
+                <span className="text-red-600 dark:text-red-400 font-bold">早盘放量下跌后的"V型反转"不追</span>
+                <p>早盘暴跌后的反弹多为空头回补或短线客博反弹，并非真正的买盘力量。常见走势：急跌→弱反弹→再破低。至少等到10:00后趋势确认再考虑参与。</p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ── 九、动态调节规矩 ── */}
+        {/* ── 九、早盘放量下跌专题 ── */}
+        <div className="p-3 rounded-lg border-2 border-red-500/40 bg-gradient-to-br from-red-500/10 via-red-500/5 to-transparent">
+          <div className="flex items-center gap-1.5 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+            <span className="text-xs font-bold text-red-700 dark:text-red-300">九、早盘放量下跌专题（高危场景必读）</span>
+            <span className="text-[10px] text-red-500/60 ml-auto">🚫 禁止买入</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+            {/* 什么是早盘放量下跌 */}
+            <div className="p-2 rounded-md border border-red-500/20 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">📌 什么是早盘放量下跌？</p>
+              <div className="space-y-1 text-[11px]">
+                <p>指<span className="text-foreground font-medium">9:30-10:00</span>时间段内，股价持续下跌且成交量显著放大的走势。系统会自动检测并在分时图上显示<span className="text-red-500 font-bold">红色警告标记</span>和<span className="text-red-500 font-bold">"禁止买入"横幅</span>。</p>
+                <p>判断依据：早盘跌幅、量比、下跌放量占比、急跌率、跳空低开等多维度综合评分，≥30分即触发警告。</p>
+              </div>
+            </div>
+
+            {/* 为什么危险 */}
+            <div className="p-2 rounded-md border border-red-500/20 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">⚠️ 为什么早盘放量下跌最危险？</p>
+              <div className="space-y-1 text-[11px]">
+                <p>• <span className="text-foreground font-medium">主力出逃信号</span>：开盘即放量砸盘，说明大资金在集中出货，不是散户行为</p>
+                <p>• <span className="text-foreground font-medium">信息不对称</span>：可能有利空消息市场尚未充分消化，机构先知先觉</p>
+                <p>• <span className="text-foreground font-medium">下跌中继概率高</span>：统计显示早盘放量下跌后，继续下探概率超70%</p>
+                <p>• <span className="text-foreground font-medium">反弹多为诱多</span>：缩量反弹→放量再跌是常见套路，抄底者成为下一波抛压</p>
+                <p>• <span className="text-foreground font-medium">流动性陷阱</span>：放量下跌说明买盘承接不住，越买套越深</p>
+              </div>
+            </div>
+
+            {/* 典型走势 */}
+            <div className="p-2 rounded-md border border-red-500/20 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">📉 早盘放量下跌的三种典型走势</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="p-1.5 rounded border border-red-500/15 bg-red-500/3">
+                  <span className="text-red-500 font-medium">走势A（最常见·60%）：单边下跌</span>
+                  <p>9:30放量下杀 → 10:00继续跌 → 午后加速 → 收盘全天最低附近</p>
+                  <p className="text-red-400">→ 抄底者全天被套，次日继续低开</p>
+                </div>
+                <div className="p-1.5 rounded border border-red-500/15 bg-red-500/3">
+                  <span className="text-amber-500 font-medium">走势B（25%）：先跌后弱反弹再跌</span>
+                  <p>9:30急跌 → 10:00-11:00反弹至开盘价附近 → 午后再次放量下破</p>
+                  <p className="text-red-400">→ 反弹是空头回补不是企稳，二次下跌更猛烈</p>
+                </div>
+                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
+                  <span className="text-green-500 font-medium">走势C（15%）：真V型反转</span>
+                  <p>9:30急跌 → 10:00后持续放量拉升 → 收盘翻红</p>
+                  <p className="text-amber-500">→ 极少出现，多为重大利好刺激，无法提前预判</p>
+                </div>
+              </div>
+              <p className="mt-1.5 text-red-500/80 text-[10px] font-medium">💡 结论：3种走势中只有15%是V型反转，但V型无法提前判断。按纪律空仓观望，错过这15%也远好于被套70%。</p>
+            </div>
+
+            {/* 应对策略 */}
+            <div className="p-2 rounded-md border border-red-500/20 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">🛡️ 早盘放量下跌应对策略</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-start gap-2 p-1.5 rounded border border-red-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-red-500/15 text-red-600 border border-red-500/25 shrink-0">1</span>
+                  <div>
+                    <span className="text-red-600 dark:text-red-400 font-bold">立即停止买入</span>
+                    <p>看到红色警告 → 不抄底、不低吸、不加仓，任何买入念头都是错的</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-red-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/25 shrink-0">2</span>
+                  <div>
+                    <span className="text-foreground font-medium">已有仓位考虑减仓</span>
+                    <p>若持有该股且已盈利 → 冲高减仓锁定利润；若已亏损 → 反弹减仓止损</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-red-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-600 border border-amber-500/25 shrink-0">3</span>
+                  <div>
+                    <span className="text-foreground font-medium">等待10:00后确认方向</span>
+                    <p>10:00前不操作。10:00后观察：若企稳放量反弹且大盘配合，方可小仓位试探</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-red-500/10">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-yellow-500/15 text-yellow-600 border border-yellow-500/25 shrink-0">4</span>
+                  <div>
+                    <span className="text-foreground font-medium">午后操作更安全</span>
+                    <p>13:00后方向更明确。若大盘翻红+个股放量企稳 → 可按仓位表20%轻仓正T</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 评分等级 */}
+            <div className="p-2 rounded-md border border-red-500/20 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">📊 警告等级说明</p>
+              <div className="grid grid-cols-1 gap-1.5">
+                <div className="flex items-center gap-2 p-1.5 rounded border border-red-500/30 bg-red-600/10">
+                  <span className="text-red-500 font-bold text-[10px] w-12 shrink-0">≥60分</span>
+                  <span className="text-red-600 dark:text-red-400 font-bold text-xs">⚠️ 极危！早盘放量暴跌</span>
+                  <span className="text-[10px] text-red-500/70 ml-auto shrink-0">空仓！全天禁止买入</span>
+                </div>
+                <div className="flex items-center gap-2 p-1.5 rounded border border-red-500/20 bg-red-500/8">
+                  <span className="text-red-500 font-bold text-[10px] w-12 shrink-0">40-59分</span>
+                  <span className="text-red-600 dark:text-red-400 font-bold text-xs">🚫 危险！早盘放量下跌</span>
+                  <span className="text-[10px] text-red-500/70 ml-auto shrink-0">禁止买入，10点后再评估</span>
+                </div>
+                <div className="flex items-center gap-2 p-1.5 rounded border border-red-500/15 bg-red-500/5">
+                  <span className="text-red-500 font-bold text-[10px] w-12 shrink-0">30-39分</span>
+                  <span className="text-amber-600 dark:text-amber-400 font-bold text-xs">⚠ 早盘放量下跌</span>
+                  <span className="text-[10px] text-amber-500/70 ml-auto shrink-0">谨慎，仓位减半</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-1.5 rounded border-2 border-red-500/25 bg-red-500/8">
+              <p className="text-red-600 dark:text-red-400 font-bold text-[10px]">⚠ 铁律：早盘放量下跌 = 禁止买入！宁可错过15%的V型反转，也不去承担70%的继续下跌风险。做T的第一原则是保住本金，不是抓住每一次机会。</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 十、动态调节规矩 ── */}
         <div className="p-3 rounded-lg border border-orange-500/20 bg-orange-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Activity className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">九、动态调节规矩（根据盘面实时调整）</span>
+            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">十、动态调节规矩（根据盘面实时调整）</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1.5">
             <div className="grid grid-cols-1 gap-1.5">
@@ -502,6 +631,13 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                   <p>抛压沉重时，所有仓位建议下调一个等级。如原30%→20%。</p>
                 </div>
               </div>
+              <div className="flex items-start gap-2 p-1.5 rounded border border-red-500/15 bg-red-500/5">
+                <span className="text-red-500 text-xs shrink-0">🚫</span>
+                <div>
+                  <span className="text-red-600 dark:text-red-400 font-bold">早盘放量下跌触发 → 全天空仓</span>
+                  <p>红色警告一旦触发，当日该股不做任何买入操作。即使午后反弹也不追，次日再评估。</p>
+                </div>
+              </div>
               <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
                 <span className="text-amber-500 text-xs shrink-0">🔄</span>
                 <div>
@@ -513,11 +649,11 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
           </div>
         </div>
 
-        {/* ── 十、实战案例 ── */}
+        {/* ── 十一、实战案例 ── */}
         <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Info className="w-3.5 h-3.5 text-rose-500" />
-            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十、实战案例</span>
+            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十一、实战案例</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
             <div className="p-2 rounded-md border border-red-500/10 bg-red-500/5">
@@ -554,6 +690,16 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                 <p>• 板块和个股逆大盘走强，有独立行情</p>
                 <p>• 但大盘压制下需控仓，冲高先卖后买回</p>
                 <p>• 若大盘转涨 → 提升至30-40%；板块转跌 → 降至1/4</p>
+              </div>
+            </div>
+            <div className="p-2 rounded-md border-2 border-red-500/30 bg-red-500/8">
+              <p className="text-red-600 dark:text-red-400 font-bold mb-1">场景5（早盘放量下跌·高危）：9:35放量下跌红色警告触发，跌幅1.5%，量比2.5x</p>
+              <div className="space-y-0.5">
+                <p>→ <span className="text-red-500 font-bold">🚫 禁止买入！空仓观望</span></p>
+                <p>• 即使午后反弹到+0.5%，也不追入（典型走势B：弱反弹再破低）</p>
+                <p>• 若已持有 → 任何反弹都是减仓机会</p>
+                <p>• 13:00后若大盘翻红+个股放量企稳 → 方可20%轻仓试探</p>
+                <p>• 正确做法：全天不做该股，等待次日方向确认</p>
               </div>
             </div>
           </div>
