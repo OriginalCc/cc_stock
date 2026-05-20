@@ -35,7 +35,7 @@ export interface MergedSignal {
 
 export interface PulseVolumeMarker {
   time: string;
-  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop" | "wash_trade";
+  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise";
   score: number;
   label: string;
   detail: string;
@@ -1413,6 +1413,314 @@ export function detectPulseVolumeMarkers(
             amount: window.reduce((sum, t) => sum + t.price * t.volume * 100, 0),
           });
         }
+      }
+    }
+  }
+
+  // ── Volume Rise Detection (放量上涨 - 量价齐升·强势确认) ──
+  // 检测价格上涨伴随成交量放大的健康上涨模式
+  {
+    const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
+    for (let i = 0; i < session.length; i++) {
+      const prevVol = i > 0 ? session[i - 1].volume : 0;
+      const curVol = session[i].volume;
+      const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+      const prevPrice = i > 0 ? session[i - 1].price : prevClose;
+      const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
+      increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
+    }
+
+    const avgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
+
+    // Find peak and trough in the session
+    let peakIdx = 0;
+    let peakPrice = 0;
+    for (let i = 0; i < session.length; i++) {
+      if (session[i].price > peakPrice) {
+        peakPrice = session[i].price;
+        peakIdx = i;
+      }
+    }
+
+    // Session price gain
+    const windowStartPrice = session[0].price;
+    const windowEndPrice = session[session.length - 1].price;
+    const windowPriceGain = windowStartPrice > 0 ? ((windowEndPrice - windowStartPrice) / windowStartPrice) * 100 : 0;
+
+    // Only detect if there's a meaningful price rise
+    if (windowPriceGain > 0.3 || peakPrice > windowStartPrice * 1.005) {
+      // Volume at peak vs average
+      const peakVol = session[peakIdx]?.volume || 0;
+      const volRatioAtPeak = avgVol > 0 ? peakVol / avgVol : 1;
+
+      // Up-minutes with high volume
+      const upWithHighVol = increments.filter(t => t.priceChange > 0 && t.vol > avgVol).length;
+      const upHighVolRatio = increments.length > 0 ? upWithHighVol / increments.length : 0;
+
+      // Find best rising segment with expanding volume
+      let bestRiseLen = 0;
+      let bestRiseStart = 0;
+      let curRiseLen = 0;
+      let curRiseStart = 0;
+      for (let i = 0; i < increments.length; i++) {
+        if (increments[i].priceChange > 0 && increments[i].vol > avgVol * 0.8) {
+          if (curRiseLen === 0) curRiseStart = i;
+          curRiseLen++;
+          if (curRiseLen > bestRiseLen) {
+            bestRiseLen = curRiseLen;
+            bestRiseStart = curRiseStart;
+          }
+        } else {
+          curRiseLen = 0;
+        }
+      }
+
+      const risePriceGain = bestRiseLen >= 3
+        ? (() => {
+            const startP = increments[bestRiseStart]?.price || 0;
+            const endP = increments[bestRiseStart + bestRiseLen - 1]?.price || 0;
+            return startP > 0 ? ((endP - startP) / startP) * 100 : 0;
+          })()
+        : 0;
+
+      // Gap up rate
+      const gapUpRate = windowStartPrice > 0 && prevClose > 0 ? ((windowStartPrice - prevClose) / prevClose) * 100 : 0;
+
+      // VWAP position (price above VWAP = stronger)
+      const lastItem = session[session.length - 1];
+      const priceAboveVwap = lastItem.avgPrice > 0 && lastItem.price > lastItem.avgPrice;
+      const vwapDeviation = lastItem.avgPrice > 0 ? ((lastItem.price - lastItem.avgPrice) / lastItem.avgPrice) * 100 : 0;
+
+      // Progressive volume with price rise
+      let maxProgRiseLen = 0;
+      let curProgRiseLen = 0;
+      for (let i = 1; i < increments.length; i++) {
+        if (increments[i].vol > increments[i - 1].vol && increments[i].vol > 0 && increments[i].priceChange > 0) {
+          curProgRiseLen++;
+          if (curProgRiseLen > maxProgRiseLen) maxProgRiseLen = curProgRiseLen;
+        } else {
+          curProgRiseLen = 0;
+        }
+      }
+
+      // ── 综合评分 ──
+      let volRiseScore = 0;
+
+      // ① 价格涨幅（最基础条件）
+      if (windowPriceGain >= 3) volRiseScore += 25;
+      else if (windowPriceGain >= 2) volRiseScore += 20;
+      else if (windowPriceGain >= 1.5) volRiseScore += 16;
+      else if (windowPriceGain >= 1) volRiseScore += 12;
+      else if (windowPriceGain >= 0.5) volRiseScore += 8;
+      else if (windowPriceGain >= 0.3) volRiseScore += 4;
+
+      // ② 量价配合度（核心指标）
+      if (upHighVolRatio >= 0.4) volRiseScore += 25;
+      else if (upHighVolRatio >= 0.3) volRiseScore += 20;
+      else if (upHighVolRatio >= 0.2) volRiseScore += 15;
+      else if (upHighVolRatio >= 0.15) volRiseScore += 10;
+      else if (upHighVolRatio >= 0.1) volRiseScore += 5;
+
+      // ③ 放量+上涨连续段
+      if (bestRiseLen >= 8 && risePriceGain > 1) volRiseScore += 20;
+      else if (bestRiseLen >= 5 && risePriceGain > 0.5) volRiseScore += 16;
+      else if (bestRiseLen >= 3 && risePriceGain > 0.3) volRiseScore += 12;
+      else if (bestRiseLen >= 3) volRiseScore += 6;
+
+      // ④ 峰值量比
+      if (volRatioAtPeak >= 3) volRiseScore += 12;
+      else if (volRatioAtPeak >= 2) volRiseScore += 8;
+      else if (volRatioAtPeak >= 1.5) volRiseScore += 5;
+
+      // ⑤ 递增放量+上涨
+      if (maxProgRiseLen >= 5) volRiseScore += 10;
+      else if (maxProgRiseLen >= 3) volRiseScore += 6;
+      else if (maxProgRiseLen >= 2) volRiseScore += 3;
+
+      // ⑥ 跳空高开
+      if (gapUpRate >= 1) volRiseScore += 8;
+      else if (gapUpRate >= 0.5) volRiseScore += 4;
+
+      // ⑦ 均线位置（价格在均线上方=强势确认）
+      if (priceAboveVwap && vwapDeviation >= 1) volRiseScore += 5;
+      else if (priceAboveVwap) volRiseScore += 3;
+
+      volRiseScore = Math.min(volRiseScore, 100);
+
+      // Must have both price rise AND volume expansion
+      if (volRiseScore >= 15 && upHighVolRatio >= 0.1) {
+        const markTime = session[peakIdx].time;
+        const details: string[] = [];
+        if (windowPriceGain >= 0.5) details.push(`时段涨${windowPriceGain.toFixed(1)}%`);
+        if (upHighVolRatio >= 0.15) details.push(`${(upHighVolRatio * 100).toFixed(0)}%放量上涨`);
+        if (bestRiseLen >= 3) details.push(`${bestRiseLen}分钟放量连涨`);
+        if (volRatioAtPeak >= 1.5) details.push(`量比${volRatioAtPeak.toFixed(1)}x`);
+        if (maxProgRiseLen >= 3) details.push(`${maxProgRiseLen}分钟递增放量涨`);
+        if (gapUpRate >= 0.5) details.push(`高开${gapUpRate.toFixed(1)}%`);
+        if (priceAboveVwap) details.push(`均线上方+${vwapDeviation.toFixed(1)}%`);
+
+        const volRiseAmount = session.slice(Math.max(0, peakIdx - 3), peakIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+
+        markers.push({
+          time: markTime,
+          type: "vol_rise",
+          score: volRiseScore,
+          label: volRiseScore >= 50 ? `✅ 强放量上涨 ${volRiseScore}分` : volRiseScore >= 30 ? `放量上涨 ${volRiseScore}分` : `放量上涨(弱) ${volRiseScore}分`,
+          detail: details.length > 0 ? details.join("，") : "放量上涨",
+          amount: volRiseAmount,
+        });
+      }
+    }
+  }
+
+  // ── Shrink Rise Detection (缩量上涨 - 量价背离·警惕信号) ──
+  // 检测价格上涨但成交量萎缩的背离模式（上涨动能不足，可能随时回调）
+  {
+    const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
+    for (let i = 0; i < session.length; i++) {
+      const prevVol = i > 0 ? session[i - 1].volume : 0;
+      const curVol = session[i].volume;
+      const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+      const prevPrice = i > 0 ? session[i - 1].price : prevClose;
+      const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
+      increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
+    }
+
+    const avgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
+
+    // Session price gain
+    const windowStartPrice = session[0].price;
+    const windowEndPrice = session[session.length - 1].price;
+    const windowPriceGain = windowStartPrice > 0 ? ((windowEndPrice - windowStartPrice) / windowStartPrice) * 100 : 0;
+
+    // Only detect if price is rising
+    if (windowPriceGain > 0.3) {
+      // Find peak
+      let peakIdx = 0;
+      let peakPrice = 0;
+      for (let i = 0; i < session.length; i++) {
+        if (session[i].price > peakPrice) {
+          peakPrice = session[i].price;
+          peakIdx = i;
+        }
+      }
+
+      // Up-minutes with LOW volume (below average) — key shrink-rise indicator
+      const upWithLowVol = increments.filter(t => t.priceChange > 0 && t.vol < avgVol * 0.7).length;
+      const upLowVolRatio = increments.length > 0 ? upWithLowVol / increments.length : 0;
+
+      // Volume trend: compare first half vs second half volume
+      const firstHalfVol = increments.slice(0, Math.floor(increments.length / 2)).reduce((s, t) => s + t.vol, 0);
+      const secondHalfVol = increments.slice(Math.floor(increments.length / 2)).reduce((s, t) => s + t.vol, 0);
+      const volTrendRatio = firstHalfVol > 0 ? secondHalfVol / firstHalfVol : 1; // < 1 = volume declining
+
+      // Find longest shrink-rise segment (price up + vol decreasing)
+      let maxShrinkRiseLen = 0;
+      let curShrinkRiseLen = 0;
+      let shrinkRiseStart = 0;
+      let bestShrinkRiseStart = 0;
+      for (let i = 1; i < increments.length; i++) {
+        if (increments[i].priceChange > 0 && increments[i].vol < increments[i - 1].vol) {
+          if (curShrinkRiseLen === 0) shrinkRiseStart = i - 1;
+          curShrinkRiseLen++;
+          if (curShrinkRiseLen > maxShrinkRiseLen) {
+            maxShrinkRiseLen = curShrinkRiseLen;
+            bestShrinkRiseStart = shrinkRiseStart;
+          }
+        } else {
+          curShrinkRiseLen = 0;
+        }
+      }
+
+      const shrinkRisePriceGain = maxShrinkRiseLen >= 2
+        ? (() => {
+            const startP = increments[bestShrinkRiseStart]?.price || 0;
+            const endP = increments[bestShrinkRiseStart + maxShrinkRiseLen]?.price || 0;
+            return startP > 0 ? ((endP - startP) / startP) * 100 : 0;
+          })()
+        : 0;
+
+      // Volume at peak vs average (low volume at peak = bearish divergence)
+      const peakVol = session[peakIdx]?.volume || 0;
+      const volRatioAtPeak = avgVol > 0 ? peakVol / avgVol : 1;
+
+      // VWAP deviation (price far above VWAP = overextended)
+      const lastItem = session[session.length - 1];
+      const vwapDeviation = lastItem.avgPrice > 0 ? ((lastItem.price - lastItem.avgPrice) / lastItem.avgPrice) * 100 : 0;
+
+      // Volume declining ratio: how much has volume dropped in the rising phase
+      const maxVol = Math.max(...increments.map(t => t.vol));
+      const recentAvgVol = increments.slice(-5).reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
+      const volDeclineRatio = maxVol > 0 ? recentAvgVol / maxVol : 1; // < 1 = volume declining
+
+      // ── 综合评分 ──
+      let shrinkRiseScore = 0;
+
+      // ① 上涨幅度（涨得越多+缩量=越危险）
+      if (windowPriceGain >= 3) shrinkRiseScore += 25;
+      else if (windowPriceGain >= 2) shrinkRiseScore += 20;
+      else if (windowPriceGain >= 1.5) shrinkRiseScore += 16;
+      else if (windowPriceGain >= 1) shrinkRiseScore += 12;
+      else if (windowPriceGain >= 0.5) shrinkRiseScore += 8;
+      else if (windowPriceGain >= 0.3) shrinkRiseScore += 4;
+
+      // ② 缩量上涨分钟占比（核心指标）
+      if (upLowVolRatio >= 0.4) shrinkRiseScore += 25;
+      else if (upLowVolRatio >= 0.3) shrinkRiseScore += 20;
+      else if (upLowVolRatio >= 0.2) shrinkRiseScore += 15;
+      else if (upLowVolRatio >= 0.15) shrinkRiseScore += 10;
+      else if (upLowVolRatio >= 0.1) shrinkRiseScore += 5;
+
+      // ③ 量能下降趋势
+      if (volTrendRatio <= 0.5) shrinkRiseScore += 15;
+      else if (volTrendRatio <= 0.7) shrinkRiseScore += 12;
+      else if (volTrendRatio <= 0.85) shrinkRiseScore += 8;
+      else if (volTrendRatio <= 1.0) shrinkRiseScore += 3;
+
+      // ④ 连续缩量上涨段
+      if (maxShrinkRiseLen >= 5 && shrinkRisePriceGain > 0.5) shrinkRiseScore += 15;
+      else if (maxShrinkRiseLen >= 4 && shrinkRisePriceGain > 0.3) shrinkRiseScore += 12;
+      else if (maxShrinkRiseLen >= 3) shrinkRiseScore += 8;
+      else if (maxShrinkRiseLen >= 2) shrinkRiseScore += 4;
+
+      // ⑤ 峰值量比低（高位缩量=上涨动能衰竭）
+      if (volRatioAtPeak < 0.8) shrinkRiseScore += 8;
+      else if (volRatioAtPeak < 1.0) shrinkRiseScore += 5;
+      else if (volRatioAtPeak < 1.2) shrinkRiseScore += 2;
+
+      // ⑥ 均线偏离（过度偏离=回调压力）
+      if (vwapDeviation >= 2) shrinkRiseScore += 8;
+      else if (vwapDeviation >= 1.5) shrinkRiseScore += 5;
+      else if (vwapDeviation >= 1) shrinkRiseScore += 3;
+
+      // ⑦ 近期量能衰减程度
+      if (volDeclineRatio <= 0.3) shrinkRiseScore += 6;
+      else if (volDeclineRatio <= 0.5) shrinkRiseScore += 4;
+      else if (volDeclineRatio <= 0.7) shrinkRiseScore += 2;
+
+      shrinkRiseScore = Math.min(shrinkRiseScore, 100);
+
+      if (shrinkRiseScore >= 15 && upLowVolRatio >= 0.1) {
+        const markTime = session[peakIdx].time;
+        const details: string[] = [];
+        if (windowPriceGain >= 0.5) details.push(`涨${windowPriceGain.toFixed(1)}%`);
+        if (upLowVolRatio >= 0.15) details.push(`${(upLowVolRatio * 100).toFixed(0)}%缩量上涨`);
+        if (volTrendRatio < 1) details.push(`量能趋势↓${(volTrendRatio * 100).toFixed(0)}%`);
+        if (maxShrinkRiseLen >= 2) details.push(`${maxShrinkRiseLen}分钟缩量连涨`);
+        if (volRatioAtPeak < 1.0) details.push(`高位量比${volRatioAtPeak.toFixed(1)}x`);
+        if (vwapDeviation >= 1) details.push(`偏离均价+${vwapDeviation.toFixed(1)}%`);
+        if (volDeclineRatio <= 0.7) details.push(`量能衰减${((1 - volDeclineRatio) * 100).toFixed(0)}%`);
+
+        const shrinkRiseAmount = session.slice(Math.max(0, peakIdx - 3), peakIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+
+        markers.push({
+          time: markTime,
+          type: "shrink_rise",
+          score: shrinkRiseScore,
+          label: shrinkRiseScore >= 50 ? `⚠️ 强缩量上涨 ${shrinkRiseScore}分` : shrinkRiseScore >= 30 ? `缩量上涨警惕 ${shrinkRiseScore}分` : `缩量上涨(弱) ${shrinkRiseScore}分`,
+          detail: details.length > 0 ? details.join("，") : "缩量上涨",
+          amount: shrinkRiseAmount,
+        });
       }
     }
   }

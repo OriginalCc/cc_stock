@@ -128,11 +128,15 @@ export const SignalSummaryPanel = React.memo(function SignalSummaryPanel({
                       ? "bg-red-500/10 border-red-500/40 text-red-700 dark:text-red-300 font-bold"
                       : m.type === "wash_trade"
                       ? "bg-blue-500/10 border-blue-500/40 text-blue-700 dark:text-blue-300 font-bold"
+                      : m.type === "vol_rise"
+                      ? "bg-orange-500/10 border-orange-500/40 text-orange-700 dark:text-orange-300 font-bold"
+                      : m.type === "shrink_rise"
+                      ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-700 dark:text-yellow-300 font-bold"
                       : "bg-cyan-500/5 border-cyan-500/20 text-cyan-700 dark:text-cyan-300"
                   }`}>
-                    {m.type === "pulse" ? <Zap className="w-3 h-3" /> : m.type === "pulse_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "volume_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "early_vol_drop" ? <AlertTriangle className="w-3 h-3" /> : m.type === "wash_trade" ? <Eye className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+                    {m.type === "pulse" ? <Zap className="w-3 h-3" /> : m.type === "pulse_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "volume_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "early_vol_drop" ? <AlertTriangle className="w-3 h-3" /> : m.type === "wash_trade" ? <Eye className="w-3 h-3" /> : m.type === "vol_rise" ? <TrendingUp className="w-3 h-3" /> : m.type === "shrink_rise" ? <AlertTriangle className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
                     <span className="font-mono">{m.time}</span>
-                    <span className={m.type === "early_vol_drop" || m.type === "wash_trade" ? "font-black" : "font-medium"}>{m.label}</span>
+                    <span className={m.type === "early_vol_drop" || m.type === "wash_trade" || m.type === "vol_rise" || m.type === "shrink_rise" ? "font-black" : "font-medium"}>{m.label}</span>
                     {m.amount > 0 && <span className="font-mono text-muted-foreground">¥{formatAmount(m.amount)}</span>}
                     <span className="text-muted-foreground">{m.detail}</span>
                   </div>

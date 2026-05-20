@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  AlertTriangle, Zap, Clock, Volume2, Activity, Scale, BookOpen, Info, ChevronDown, ChevronRight, Eye,
+  AlertTriangle, Zap, Clock, Volume2, Activity, Scale, BookOpen, Info, ChevronDown, ChevronRight, Eye, TrendingUp,
 } from "lucide-react";
 
 interface TradingRulesCardProps {
@@ -1322,296 +1322,216 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
             </div>
           </div>
         </div>
-        {/* ── 十四、放量上涨及缩量上涨专题 ── */}
-        <div className="p-3 rounded-lg border-2 border-green-500/30 bg-gradient-to-br from-green-500/8 via-green-500/3 to-transparent">
+        {/* ── 十四、放量上涨专题 ── */}
+        <div className="p-3 rounded-lg border-2 border-orange-500/40 bg-gradient-to-br from-orange-500/10 via-orange-500/5 to-transparent">
           <div className="flex items-center gap-1.5 mb-2">
-            <Volume2 className="w-3.5 h-3.5 text-green-500" />
-            <span className="text-xs font-bold text-green-700 dark:text-green-300">十四、放量上涨及缩量上涨专题（机会识别必读）</span>
-            <span className="text-[10px] text-green-500/60 ml-auto">✅ 做T良机</span>
+            <TrendingUp className="w-3.5 h-3.5 text-orange-500" />
+            <span className="text-xs font-bold text-orange-700 dark:text-orange-300">十四、放量上涨专题（量价齐升·强势确认）</span>
+            <span className="text-[10px] text-orange-500/60 ml-auto">✅ 强势信号</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
 
             {/* 什么是放量上涨 */}
-            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
-              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">📌 什么是放量上涨？</p>
+            <div className="p-2 rounded-md border border-orange-500/20 bg-orange-500/5">
+              <p className="text-orange-600 dark:text-orange-400 font-bold text-xs mb-1.5">📌 什么是放量上涨？</p>
               <div className="space-y-1 text-[11px]">
-                <p>指股价持续上涨的同时，成交量显著放大的走势。这是<span className="text-green-500 font-bold">最健康的上涨形态</span>，说明买盘积极、资金涌入，上涨有真实的量能支撑。</p>
-                <p>核心特征：<span className="text-foreground font-medium">成交量超过均量1.5倍以上 + 价格持续走高 + 量价同步上升</span>。量价齐升=趋势确认。</p>
+                <p>价格上涨同时成交量放大，量价配合良好，是<span className="text-orange-500 font-bold">最健康的上涨模式</span>。系统会自动检测并在分时图上显示<span className="text-orange-500 font-bold">橙色标记</span>。</p>
               </div>
             </div>
+
+            {/* 系统判断维度 */}
+            <div className="p-2 rounded-md border border-orange-500/20 bg-orange-500/5">
+              <p className="text-orange-600 dark:text-orange-400 font-bold text-xs mb-1.5">🔍 系统判断维度（7大维度综合评分）</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="p-1.5 rounded border border-orange-500/15 bg-orange-500/3">
+                  <p className="text-orange-500 font-medium mb-0.5">① 价格涨幅（最高25分）</p>
+                  <p>涨幅越大，放量上涨信号越强</p>
+                </div>
+                <div className="p-1.5 rounded border border-orange-500/15 bg-orange-500/3">
+                  <p className="text-orange-500 font-medium mb-0.5">② 量价配合度（最高25分）— 核心指标</p>
+                  <p>上涨分钟中放量占比，量价配合越好信号越可靠</p>
+                </div>
+                <div className="p-1.5 rounded border border-orange-500/15 bg-orange-500/3">
+                  <p className="text-orange-500 font-medium mb-0.5">③ 放量+上涨连续段（最高20分）</p>
+                  <p>连续放量上涨的分钟数，连续性越强越可靠</p>
+                </div>
+                <div className="p-1.5 rounded border border-orange-500/15 bg-orange-500/3">
+                  <p className="text-orange-500 font-medium mb-0.5">④ 峰值量比（最高12分）</p>
+                  <p>高点处成交量相对均量的倍数，峰值放量=资金集中涌入</p>
+                </div>
+                <div className="p-1.5 rounded border border-orange-500/15 bg-orange-500/3">
+                  <p className="text-orange-500 font-medium mb-0.5">⑤ 递增放量+上涨（最高10分）</p>
+                  <p>量递增且价格同步上涨，量价齐升最健康的走势</p>
+                </div>
+                <div className="p-1.5 rounded border border-orange-500/15 bg-orange-500/3">
+                  <p className="text-orange-500 font-medium mb-0.5">⑥ 跳空高开（最高8分）</p>
+                  <p>高开+放量上涨=更强的确认，主力强势做多信号</p>
+                </div>
+                <div className="p-1.5 rounded border border-orange-500/15 bg-orange-500/3">
+                  <p className="text-orange-500 font-medium mb-0.5">⑦ 均线位置（最高5分）</p>
+                  <p>价格在均线上方=强势格局确认，回踩均线就是低吸点</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 操作策略 */}
+            <div className="p-2 rounded-md border border-orange-500/20 bg-orange-500/5">
+              <p className="text-orange-600 dark:text-orange-400 font-bold text-xs mb-1.5">🎯 操作策略</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/15 bg-green-500/5">
+                  <span className="inline-flex items-center justify-center w-6 h-5 rounded text-[9px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">≥50</span>
+                  <div>
+                    <span className="text-green-600 dark:text-green-400 font-bold">强放量上涨</span>
+                    <p>多头强势，可在回调时按仓位表上限操作，正T为主</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-orange-500/10 bg-orange-500/3">
+                  <span className="inline-flex items-center justify-center w-6 h-5 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/25 shrink-0">≥30</span>
+                  <div>
+                    <span className="text-orange-600 dark:text-orange-400 font-bold">放量上涨</span>
+                    <p>量价配合良好，按正常仓位做T</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-yellow-500/10 bg-yellow-500/3">
+                  <span className="inline-flex items-center justify-center w-6 h-5 rounded text-[9px] font-bold bg-yellow-500/15 text-yellow-600 border border-yellow-500/25 shrink-0">≥15</span>
+                  <div>
+                    <span className="text-yellow-600 dark:text-yellow-400 font-bold">放量上涨(弱)</span>
+                    <p>放量不够持续，观察为主</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 常见陷阱 */}
+            <div className="p-2 rounded-md border border-red-500/15 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">⚠️ 常见陷阱</p>
+              <div className="space-y-1 text-[11px]">
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">⚠</span>
+                  <p><span className="text-foreground font-medium">早盘放量上涨后回落：</span>可能是主力诱多，需等10:00后确认</p>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">⚠</span>
+                  <p><span className="text-foreground font-medium">放量上涨但大盘弱势：</span>逆势上涨难以持续，仓位减半</p>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">⚠</span>
+                  <p><span className="text-foreground font-medium">尾盘放量上涨：</span>可能是资金尾盘突击，次日可能低开</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-1.5 rounded border-2 border-orange-500/25 bg-orange-500/8">
+              <p className="text-orange-600 dark:text-orange-400 font-bold text-[10px]">💡 铁律：放量上涨是最可靠的做多信号，但必须结合大盘方向！三涨+放量上涨=最佳做T时机，三跌+放量上涨=仅轻仓反T。</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 十五、缩量上涨专题 ── */}
+        <div className="p-3 rounded-lg border-2 border-yellow-500/40 bg-gradient-to-br from-yellow-500/10 via-yellow-500/5 to-transparent">
+          <div className="flex items-center gap-1.5 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
+            <span className="text-xs font-bold text-yellow-700 dark:text-yellow-300">十五、缩量上涨专题（量价背离·警惕回调）</span>
+            <span className="text-[10px] text-yellow-500/60 ml-auto">⚠️ 警惕信号</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
 
             {/* 什么是缩量上涨 */}
-            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
-              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">⚠️ 什么是缩量上涨？（量价背离的隐患）</p>
+            <div className="p-2 rounded-md border border-yellow-500/20 bg-yellow-500/5">
+              <p className="text-yellow-600 dark:text-yellow-400 font-bold text-xs mb-1.5">📌 什么是缩量上涨？</p>
               <div className="space-y-1 text-[11px]">
-                <p>指股价在上涨过程中，成交量逐步萎缩的走势。看似在涨，实则<span className="text-amber-500 font-bold">买盘在减少</span>，上涨缺乏量能支撑，随时可能反转下跌。</p>
-                <p>核心特征：<span className="text-foreground font-medium">成交量低于均量70%以下 + 价格仍在上涨 + 量价背离</span>。上涨无量=虚涨。</p>
+                <p>价格上涨但成交量萎缩，上涨缺乏量能支撑，是典型的<span className="text-yellow-500 font-bold">量价背离形态</span>。系统会自动检测并在分时图上显示<span className="text-yellow-500 font-bold">黄色警告标记</span>。</p>
               </div>
             </div>
 
-            {/* 放量上涨 vs 缩量上涨 核心对比 */}
-            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
-              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">🔄 放量上涨 vs 缩量上涨（核心对比）</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <p className="text-green-500 font-medium text-[10px] mb-0.5">✅ 放量上涨</p>
-                  <p className="text-[10px]">• 量价齐升，健康走势</p>
-                  <p className="text-[10px]">• 买盘积极，资金涌入</p>
-                  <p className="text-[10px]">• 上涨可持续性强</p>
-                  <p className="text-[10px]">• 回调后可继续加仓</p>
-                  <p className="text-[10px]">• 做T：正T低吸为主</p>
-                  <p className="text-[10px]">• 可靠性：⭐⭐⭐⭐⭐</p>
-                </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <p className="text-amber-500 font-medium text-[10px] mb-0.5">⚠️ 缩量上涨</p>
-                  <p className="text-[10px]">• 量价背离，虚涨走势</p>
-                  <p className="text-[10px]">• 买盘萎缩，跟风不足</p>
-                  <p className="text-[10px]">• 上涨持续性存疑</p>
-                  <p className="text-[10px]">• 随时可能反转下跌</p>
-                  <p className="text-[10px]">• 做T：冲高减仓为主</p>
-                  <p className="text-[10px]">• 可靠性：⭐⭐（需警惕）</p>
-                </div>
-              </div>
-              <p className="mt-1.5 text-green-500/80 text-[10px] font-medium">💡 放量上涨像上坡踩油门——动力十足可持续；缩量上涨像上坡溜车——看似在走实则在减速。做T要区分对待！</p>
-            </div>
-
-            {/* 放量上涨的4种典型场景 */}
-            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
-              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">📈 放量上涨的4种典型场景</p>
+            {/* 系统判断维度 */}
+            <div className="p-2 rounded-md border border-yellow-500/20 bg-yellow-500/5">
+              <p className="text-yellow-600 dark:text-yellow-400 font-bold text-xs mb-1.5">🔍 系统判断维度（7大维度综合评分）</p>
               <div className="space-y-1.5 text-[11px]">
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <span className="text-green-500 font-medium">场景A（最强势·30%）：跳空高开放量上攻</span>
-                  <p>9:30高开1%以上 → 量能持续放大 → 全天维持高位</p>
-                  <p className="text-green-500">→ 最强形态！主力强势做多的信号，回踩均价线就是低吸点，正T为主</p>
+                <div className="p-1.5 rounded border border-yellow-500/15 bg-yellow-500/3">
+                  <p className="text-yellow-500 font-medium mb-0.5">① 上涨幅度（最高25分）</p>
+                  <p>涨得越多+缩量=越危险的背离</p>
                 </div>
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <span className="text-green-500 font-medium">场景B（常见·35%）：放量稳步攀升</span>
-                  <p>开盘后缓慢放量上涨 → 量价同步 → 涨幅逐步扩大</p>
-                  <p className="text-green-500">→ 最健康的走势，每次回调都是加仓机会。持有为主，回调低吸正T</p>
+                <div className="p-1.5 rounded border border-yellow-500/15 bg-yellow-500/3">
+                  <p className="text-yellow-500 font-medium mb-0.5">② 缩量上涨分钟占比（最高25分）— 核心指标</p>
+                  <p>上涨分钟中缩量占比，占比越高量价背离越严重</p>
                 </div>
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <span className="text-green-500 font-medium">场景C（20%）：脉冲放量后横盘再放量突破</span>
-                  <p>早盘脉冲放量冲高 → 缩量横盘整理 → 再次放量突破前高</p>
-                  <p className="text-green-500">→ 主力分步拉升，横盘整理是蓄力。第二次放量突破时加仓最佳</p>
+                <div className="p-1.5 rounded border border-yellow-500/15 bg-yellow-500/3">
+                  <p className="text-yellow-500 font-medium mb-0.5">③ 量能下降趋势（最高15分）</p>
+                  <p>后半段量能vs前半段量能的比值，量能递减=上涨动能衰竭</p>
                 </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <span className="text-amber-600 font-medium">场景D（15%）：早盘放量冲高后缩量回落</span>
-                  <p>9:30-10:00放量冲高 → 10:00后量能萎缩 → 价格逐步回落</p>
-                  <p className="text-amber-500">→ 冲高诱多！放量冲高是短线资金推动，缩量回落说明后续买盘不足。冲高是减仓机会而非加仓</p>
+                <div className="p-1.5 rounded border border-yellow-500/15 bg-yellow-500/3">
+                  <p className="text-yellow-500 font-medium mb-0.5">④ 连续缩量上涨段（最高15分）</p>
+                  <p>连续缩量上涨的分钟数，连续时间越长背离越确认</p>
                 </div>
-              </div>
-            </div>
-
-            {/* 缩量上涨的4种典型场景 */}
-            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
-              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">⚠️ 缩量上涨的4种典型场景</p>
-              <div className="space-y-1.5 text-[11px]">
-                <div className="p-1.5 rounded border border-red-500/15 bg-red-500/3">
-                  <span className="text-red-500 font-medium">场景A（最危险·25%）：大盘跌+个股缩量涨</span>
-                  <p>大盘下跌 → 个股逆势上涨但量能萎缩 → 午后随大盘回落</p>
-                  <p className="text-red-400">→ 典型诱多！逆市缩量上涨不可持续，午后大盘持续下跌时个股必然跟跌。冲高是减仓时机</p>
+                <div className="p-1.5 rounded border border-yellow-500/15 bg-yellow-500/3">
+                  <p className="text-yellow-500 font-medium mb-0.5">⑤ 峰值量比低（最高8分）</p>
+                  <p>高位缩量=上涨动能衰竭，缺乏买盘支撑</p>
                 </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <span className="text-amber-500 font-medium">场景B（常见·30%）：缩量冲高后放量下跌</span>
-                  <p>缩量上涨一段时间 → 突然放量 → 但方向向下，股价急转直下</p>
-                  <p className="text-amber-500">→ 缩量上涨是主力出货前的诱多，放量下跌才是真实意图。缩量上涨区间是最后的逃命机会</p>
+                <div className="p-1.5 rounded border border-yellow-500/15 bg-yellow-500/3">
+                  <p className="text-yellow-500 font-medium mb-0.5">⑥ 均线偏离（最高8分）</p>
+                  <p>偏离均价越多=回调压力越大，引力效应明显</p>
                 </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <span className="text-amber-600 font-medium">场景C（25%）：缩量慢涨后放量加速（好信号）</span>
-                  <p>开盘缩量慢涨 → 10:00后放量加速上涨 → 量价齐升</p>
-                  <p className="text-green-500">→ 缩量慢涨=主力吸筹，放量加速=吸筹完毕开始拉升。放量加速后才是真正的入场信号</p>
-                </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <span className="text-amber-600 font-medium">场景D（20%）：涨停板附近缩量横盘</span>
-                  <p>涨停后打开 → 缩量横盘在涨停价附近 → 不再放量</p>
-                  <p className="text-amber-500">→ 涨停板封单不牢但也不跌，说明多空僵持。不追涨停板附近，等回落确认支撑后再考虑</p>
+                <div className="p-1.5 rounded border border-yellow-500/15 bg-yellow-500/3">
+                  <p className="text-yellow-500 font-medium mb-0.5">⑦ 近期量能衰减（最高6分）</p>
+                  <p>近5分钟量能相对峰值衰减程度，衰减越快越危险</p>
                 </div>
               </div>
             </div>
 
-            {/* 放量上涨识别维度 */}
-            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
-              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">🔍 放量上涨识别维度（6大维度确认强势）</p>
+            {/* 操作策略 */}
+            <div className="p-2 rounded-md border border-yellow-500/20 bg-yellow-500/5">
+              <p className="text-yellow-600 dark:text-yellow-400 font-bold text-xs mb-1.5">🎯 操作策略</p>
               <div className="space-y-1.5 text-[11px]">
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <p className="text-green-500 font-medium mb-0.5">维度① 量比</p>
-                  <p>• 量比≥2x→强势放量 | 量比≥1.5x→温和放量 | 量比≥1.2x→轻微放量</p>
-                  <p>• 量比越高说明资金参与度越强，上涨越可靠</p>
-                  <p className="text-green-400/80 text-[10px]">💡 但量比超5x的脉冲量要警惕，可能是诱多而非真实买盘</p>
-                </div>
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <p className="text-green-500 font-medium mb-0.5">维度② 上涨放量持续性</p>
-                  <p>• 连续3分钟以上放量上涨→确认强势</p>
-                  <p>• 仅1-2分钟脉冲量→可能是诱多，观察为主</p>
-                  <p className="text-green-400/80 text-[10px]">💡 持续性比瞬时量更重要。1分钟脉冲不可信，5分钟以上放量上涨才是真强势</p>
-                </div>
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <p className="text-green-500 font-medium mb-0.5">维度③ 均价线方向</p>
-                  <p>• 均价线持续向上→多头主导，每次回踩均价线都是低吸机会</p>
-                  <p>• 均价线走平但股价在上方→强势整理，突破前高可加仓</p>
-                  <p>• 均价线向下但股价在其上方→弱势反弹，不追</p>
-                  <p className="text-green-400/80 text-[10px]">💡 均价线是多空分水岭：放量+均价线向上=最强做多组合</p>
-                </div>
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <p className="text-green-500 font-medium mb-0.5">维度④ 回调缩量程度</p>
-                  <p>• 回调时成交量明显萎缩→卖盘不积极，上涨趋势健康</p>
-                  <p>• 回调时成交量不缩→有抛压，需谨慎</p>
-                  <p>• 回调放量→危险信号，可能是主力出货</p>
-                  <p className="text-green-400/80 text-[10px]">💡 上涨放量+回调缩量=最完美的量价配合，说明主力在控盘</p>
-                </div>
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <p className="text-green-500 font-medium mb-0.5">维度⑤ 大盘/板块配合</p>
-                  <p>• 大盘涨+板块涨+个股放量涨→三涨共振，最安全最可做</p>
-                  <p>• 大盘稳+板块涨+个股放量涨→板块带动的强势，可靠</p>
-                  <p>• 大盘跌+个股放量涨→逆势走强需警惕，可能次日补跌</p>
-                  <p className="text-green-400/80 text-[10px]">💡 三涨共振下的放量上涨最可靠。逆势放量涨要等次日确认</p>
-                </div>
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <p className="text-green-500 font-medium mb-0.5">维度⑥ 高点逐步抬高</p>
-                  <p>• 每次上涨都突破前高→多头强势，趋势向上</p>
-                  <p>• 上涨不过前高→上攻乏力，可能是假突破</p>
-                  <p>• 连续3次创新高→强趋势确认</p>
-                  <p className="text-green-400/80 text-[10px]">💡 高点逐步抬高=趋势确认。若上涨无法突破前高，说明买盘力量在衰减</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 缩量上涨识别维度 */}
-            <div className="p-2 rounded-md border border-amber-500/20 bg-amber-500/5">
-              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">🔍 缩量上涨识别维度（5大维度判断真假）</p>
-              <div className="space-y-1.5 text-[11px]">
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <p className="text-amber-600 font-medium mb-0.5">维度① 量能萎缩程度</p>
-                  <p>• 成交量低于均量50%→极度缩量上涨，极不可靠</p>
-                  <p>• 成交量低于均量70%→明显缩量上涨，需警惕</p>
-                  <p>• 成交量在均量80%-100%→轻微缩量，可观察</p>
-                  <p className="text-amber-500/80 text-[10px]">⚠️ 缩量越严重，上涨越不可信。地量上涨几乎都是假涨</p>
-                </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <p className="text-amber-600 font-medium mb-0.5">维度② 上涨斜率</p>
-                  <p>• 缓慢上涨+缩量→无人追高，上涨乏力</p>
-                  <p>• 急速上涨+缩量→更危险！无量急涨=诱多</p>
-                  <p>• 缓涨后放量加速→唯一好信号，见场景C</p>
-                  <p className="text-amber-500/80 text-[10px]">⚠️ 无量急涨比无量缓涨更危险，急涨吸引跟风盘后放量出货是常见套路</p>
-                </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <p className="text-amber-600 font-medium mb-0.5">维度③ 持续时间</p>
-                  <p>• 缩量上涨不足15分钟→可能只是盘中波动</p>
-                  <p>• 缩量上涨15-30分钟→需要警惕</p>
-                  <p>• 缩量上涨超30分钟→上涨乏力确认，随时反转</p>
-                  <p className="text-amber-500/80 text-[10px]">💡 缩量上涨时间越长越危险——说明买盘持续不足，一旦卖盘出现即崩</p>
-                </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <p className="text-amber-600 font-medium mb-0.5">维度④ 是否突破关键位</p>
-                  <p>• 缩量突破前高→假突破概率大，不追</p>
-                  <p>• 缩量站上均价线→站不稳，观察3分钟确认</p>
-                  <p>• 放量突破后缩量上涨→突破确认后的正常缩量整理，可持有</p>
-                  <p className="text-amber-500/80 text-[10px]">💡 区分"缩量突破"和"放量突破后缩量整理"：前者不可靠，后者正常</p>
-                </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <p className="text-amber-600 font-medium mb-0.5">维度⑤ 大盘/板块环境</p>
-                  <p>• 大盘涨+个股缩量涨→跟涨但买盘不足，大盘一弱就跌</p>
-                  <p>• 大盘跌+个股缩量涨→逆势虚涨，最危险的诱多</p>
-                  <p>• 大盘稳+板块涨+个股缩量涨→被板块拖着走，自身不强</p>
-                  <p className="text-amber-500/80 text-[10px]">⚠️ 大盘跌+个股缩量涨是最危险的组合，午后大概率补跌</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 做T策略 */}
-            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
-              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">🎯 上涨形态做T策略</p>
-              <div className="space-y-1.5 text-[11px]">
-                <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/10">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">1</span>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-red-500/15 bg-red-500/5">
+                  <span className="inline-flex items-center justify-center w-6 h-5 rounded text-[9px] font-bold bg-red-500/15 text-red-600 border border-red-500/25 shrink-0">≥50</span>
                   <div>
-                    <span className="text-green-600 dark:text-green-400 font-bold">放量上涨 → 正T为主（回踩低吸）</span>
-                    <p>放量上涨趋势中，每次回踩均价线都是低吸机会。买入后冲高卖出完成正T闭环。量价齐升时持仓不动，回调缩量时买入。</p>
+                    <span className="text-red-600 dark:text-red-400 font-bold">强缩量上涨</span>
+                    <p>量价严重背离，冲高卖出（反T），不追涨</p>
                   </div>
                 </div>
-                <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/10">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">2</span>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-yellow-500/10 bg-yellow-500/3">
+                  <span className="inline-flex items-center justify-center w-6 h-5 rounded text-[9px] font-bold bg-yellow-500/15 text-yellow-600 border border-yellow-500/25 shrink-0">≥30</span>
                   <div>
-                    <span className="text-green-600 dark:text-green-400 font-bold">放量上涨 → 反T(先卖再买)不轻易做</span>
-                    <p>放量上涨中做反T(先卖再买)容易卖飞！除非涨幅已达止盈目标（+1.5%以上），否则不轻易卖出。放量上涨卖飞是最大遗憾。</p>
+                    <span className="text-yellow-600 dark:text-yellow-400 font-bold">缩量上涨警惕</span>
+                    <p>上涨动能不足，持仓者逢高减仓，空仓者不追</p>
                   </div>
                 </div>
-                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-600 border border-amber-500/25 shrink-0">3</span>
+                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10 bg-amber-500/3">
+                  <span className="inline-flex items-center justify-center w-6 h-5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-600 border border-amber-500/25 shrink-0">≥15</span>
                   <div>
-                    <span className="text-amber-600 dark:text-amber-400 font-bold">缩量上涨 → 反T(先卖再买)为主（冲高减仓）</span>
-                    <p>缩量上涨不可持续，冲高就是减仓时机。在缩量冲高时卖出，等回落放量企稳后再买回，完成反T闭环。</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-600 border border-amber-500/25 shrink-0">4</span>
-                  <div>
-                    <span className="text-amber-600 dark:text-amber-400 font-bold">缩量上涨 → 不追涨买入</span>
-                    <p>缩量上涨中买入=高位接盘。缺乏量能支撑的上涨随时反转，买入即被套概率极大。等放量确认后再考虑。</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/10">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/25 shrink-0">5</span>
-                  <div>
-                    <span className="text-foreground font-medium">缩量→放量转换（关键判断）</span>
-                    <p>缩量慢涨→放量加速=主力吸筹完毕开始拉升，是最佳入场信号！但缩量涨→放量跌=诱多结束开始出货，必须立刻离场。关键看放量方向！</p>
+                    <span className="text-amber-600 dark:text-amber-400 font-bold">缩量上涨(弱)</span>
+                    <p>轻微背离，观察为主</p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 分时判断口诀 */}
-            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
-              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">📋 上涨形态分时快速判断口诀</p>
-              <div className="space-y-1 text-[11px]">
-                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/3">
-                  <p className="text-green-500 font-medium">放量上涨5句口诀：</p>
-                  <p className="mt-0.5">① 量价齐升最健康，回踩均线就加仓</p>
-                  <p>② 放量持续超5分，趋势确认可放心</p>
-                  <p>③ 回调缩量是洗盘，持有不动等新高</p>
-                  <p>④ 大盘配合三涨时，满仓正T大胆做</p>
-                  <p>⑤ 放量冲高不追涨，等回调低吸更稳当</p>
-                </div>
-                <div className="p-1.5 rounded border border-amber-500/15 bg-amber-500/3">
-                  <p className="text-amber-500 font-medium">缩量上涨5句口诀：</p>
-                  <p className="mt-0.5">① 无量上涨虚火旺，冲高减仓是方向</p>
-                  <p>② 缩量急涨更危险，诱多套路要看穿</p>
-                  <p>③ 逆市缩量最坑人，午后补跌泪两行</p>
-                  <p>④ 缩量突破不可信，放量确认才入场</p>
-                  <p>⑤ 缩量涨后放量变，向上跟涨向下跑</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 常见误区 */}
+            {/* 常见陷阱 */}
             <div className="p-2 rounded-md border border-red-500/15 bg-red-500/5">
-              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">❌ 常见致命误区</p>
+              <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">⚠️ 常见陷阱</p>
               <div className="space-y-1 text-[11px]">
                 <div className="flex items-start gap-1.5">
-                  <span className="text-red-500 shrink-0">✗</span>
-                  <p><span className="text-foreground font-medium">"在涨就说明强势，不管量不量"</span> — 缩量上涨不是真强势，无量上涨=虚涨，随时可能反转。放量才是强势的确认</p>
+                  <span className="text-red-500 shrink-0">⚠</span>
+                  <p><span className="text-foreground font-medium">缩量上涨≠一定会跌：</span>可能是浮筹清洗后轻装上涨，需看大盘配合</p>
                 </div>
                 <div className="flex items-start gap-1.5">
-                  <span className="text-red-500 shrink-0">✗</span>
-                  <p><span className="text-foreground font-medium">"缩量上涨说明抛压小，更安全"</span> — 缩量不是抛压小，而是买盘不足！一旦卖盘出现，没有买盘承接，下跌会非常迅速</p>
+                  <span className="text-red-500 shrink-0">⚠</span>
+                  <p><span className="text-foreground font-medium">缩量上涨+大盘强势：</span>大盘好时缩量上涨也可能是惜售，不急于卖出</p>
                 </div>
                 <div className="flex items-start gap-1.5">
-                  <span className="text-red-500 shrink-0">✗</span>
-                  <p><span className="text-foreground font-medium">"放量上涨一定会继续涨"</span> — 放量上涨后也可能冲高回落。关键看放量是否持续，以及回调是否缩量。一日脉冲量不可信</p>
+                  <span className="text-red-500 shrink-0">⚠</span>
+                  <p><span className="text-foreground font-medium">缩量上涨+大盘弱势：</span>这是最危险的组合，随时可能放量下跌</p>
                 </div>
                 <div className="flex items-start gap-1.5">
-                  <span className="text-red-500 shrink-0">✗</span>
-                  <p><span className="text-foreground font-medium">"涨停了肯定还会涨"</span> — 涨停板打开后的走势更重要。缩量涨停→封单不牢；放量涨停→封单坚实。不可一概而论</p>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <span className="text-red-500 shrink-0">✗</span>
-                  <p><span className="text-foreground font-medium">"放量冲高我追进去"</span> — 放量冲高是止盈时机不是追涨时机！放量冲高后必然有缩量回调，等回调确认支撑再买入</p>
+                  <span className="text-red-500 shrink-0">⚠</span>
+                  <p><span className="text-foreground font-medium">早盘缩量上涨：</span>可能是开盘试探性买盘，等10:00后再判断</p>
                 </div>
               </div>
             </div>
 
-            <div className="p-1.5 rounded border-2 border-green-500/25 bg-green-500/8">
-              <p className="text-green-600 dark:text-green-400 font-bold text-[10px]">💡 铁律：放量上涨=确认强势，可按仓位表上限做正T；缩量上涨=虚涨不可信，冲高减仓做反T(先卖再买)。量能是上涨的燃料——有量涨是真涨，无量涨是虚涨。做T的核心就是量价配合！</p>
+            <div className="p-1.5 rounded border-2 border-yellow-500/25 bg-yellow-500/8">
+              <p className="text-yellow-600 dark:text-yellow-400 font-bold text-[10px]">💡 铁律：缩量上涨是警示信号而非卖出信号！结合大盘判断：三跌+缩量上涨→立即减仓，三涨+缩量上涨→可持有观察但不宜追涨。</p>
             </div>
           </div>
         </div>

@@ -655,6 +655,23 @@ Stage Summary:
 - 关键价位线已在之前实现在分时图上（支撑/阻力虚线）
 
 ---
+Task ID: 2-b
+Agent: signal-panel-updater
+Task: Add vol_rise and shrink_rise display in signal-summary-panel.tsx
+
+Work Log:
+- Read signal-summary-panel.tsx and identified the 3 locations needing changes
+- Added className styling for "vol_rise" (orange theme) and "shrink_rise" (yellow theme) in the pvMarkers if-else chain
+- Updated icon rendering: vol_rise → TrendingUp, shrink_rise → AlertTriangle
+- Updated font-weight condition to include vol_rise and shrink_rise in the "font-black" group
+- Lint passed with no errors
+
+Stage Summary:
+- Added 2 new marker type styles: vol_rise (orange) and shrink_rise (yellow) with font-bold
+- vol_rise uses TrendingUp icon, shrink_rise uses AlertTriangle icon
+- Both new types render with font-black weight (same as early_vol_drop and wash_trade)
+
+---
 Task ID: 2
 Agent: timeline-parallel-optimizer
 Task: Make ashare-timeline API route fetch quote and timeline in PARALLEL instead of sequentially
@@ -861,3 +878,105 @@ Stage Summary:
 - Server-side dedup prevents duplicate external API calls for same query within 15s
 - Keyboard navigation makes search usable without mouse
 - Loading UX no longer flashes "搜索中..." over existing results
+
+---
+Task ID: 2-a
+Agent: subagent
+Task: Add chart rendering support for vol_rise and shrink_rise markers in time-sharing-panel.tsx
+
+Work Log:
+- Read worklog.md and time-sharing-panel.tsx to understand current marker rendering logic
+- Updated `computePvLabelLayout` function:
+  - Added `isVolRise` and `isShrinkRise` boolean checks
+  - Updated `isAbove`: added `|| isVolRise` (vol_rise placed above price line)
+  - Updated `isBigLabel`: added `|| isVolRise || isShrinkRise` (both use big label style)
+  - Updated `labelY`: added `isVolRise ? y - 65` offset (above, same as wash_trade)
+- Updated `renderPulseVolumeMarker` function:
+  - Added `isVolRise` and `isShrinkRise` boolean checks (after isWashTrade)
+  - Updated `isAbove`: added `|| isVolRise`
+  - Updated `defaultLabelY`: added `isVolRise ? y - 80` for consistent positioning
+  - Added color scheme for `isVolRise`: orange-red (rgba 234, 88, 12) — 量价齐升·强势确认
+  - Added color scheme for `isShrinkRise`: yellow-amber (rgba 202, 138, 4) — 量价背离·警惕回调
+  - Updated `isBigLabel`: added `|| isVolRise || isShrinkRise`
+  - Updated icon text: `isVolRise ? "▲"` and `isShrinkRise ? "!"`
+  - Updated pill fill: added `isVolRise ? "rgba(234, 88, 12, 0.9)"` and `isShrinkRise ? "rgba(202, 138, 4, 0.9)"`
+- Lint passed with no errors
+
+Stage Summary:
+- vol_rise markers: placed ABOVE price line, orange-red color scheme, ▲ icon, big label style
+- shrink_rise markers: placed BELOW price line, yellow-amber color scheme, ! icon, big label style
+- Both types use the prominent "big label" rendering (larger pill, wider width, bold text, extra glow ring)
+- computePvLabelLayout and renderPulseVolumeMarker are now consistent in their positioning logic
+---
+Task ID: 1
+Agent: chart-shared-updater
+Task: Add 放量上涨 (vol_rise) and 缩量上涨 (shrink_rise) detection algorithms to chart-shared.ts
+
+Work Log:
+- Read chart-shared.ts and worklog.md to understand current codebase
+- Updated PulseVolumeMarker type (line 38) to include "vol_rise" and "shrink_rise" in the type union
+- Added 放量上涨 (vol_rise) detection block before `return markers;`:
+  - 7-dimension scoring: price gain, up+high-volume ratio, rising segment with expanding volume, peak volume ratio, progressive volume+rise, gap up, VWAP position
+  - Score ≥15 with upHighVolRatio ≥0.1 required to show
+  - Labels: ≥50 = 强放量上涨, ≥30 = 放量上涨, else = 放量上涨(弱)
+- Added 缩量上涨 (shrink_rise) detection block before `return markers;`:
+  - 7-dimension scoring: price gain, up+low-volume ratio, volume trend decline, consecutive shrink-rise, low peak volume ratio, VWAP deviation, recent volume decay
+  - Score ≥15 with upLowVolRatio ≥0.1 required to show
+  - Labels: ≥50 = 强缩量上涨, ≥30 = 缩量上涨警惕, else = 缩量上涨(弱)
+- Lint passed with no errors
+
+Stage Summary:
+- PulseVolumeMarker type now supports 9 marker types (added vol_rise, shrink_rise)
+- 放量上涨 detection: bullish confirmation when price rises WITH volume expanding (量价齐升)
+- 缩量上涨 detection: bearish divergence warning when price rises BUT volume shrinking (量价背离)
+- Both algorithms use comprehensive multi-factor scoring (up to 100 points)
+
+---
+Task ID: 3
+Agent: main
+Task: Add 放量上涨 and 缩量上涨 trading rules sections to trading-rules-card.tsx
+
+Work Log:
+- Read entire trading-rules-card.tsx (1621 lines) to understand structure
+- Found existing section 十四 (放量上涨及缩量上涨专题) was a combined section with older content
+- Added TrendingUp to lucide-react imports (was missing)
+- Replaced the existing combined section 十四 with two new dedicated sections:
+  - Section 十四: 放量上涨专题（量价齐升·强势确认）— orange-500/40 border, TrendingUp icon, ✅ 强势信号 badge
+    - 📌 What is 放量上涨 definition
+    - 🔍 7 scoring dimensions: 价格涨幅(25), 量价配合度(25), 放量+上涨连续段(20), 峰值量比(12), 递增放量+上涨(10), 跳空高开(8), 均线位置(5)
+    - 🎯 Operating strategies: ≥50 强放量上涨, ≥30 放量上涨, ≥15 放量上涨(弱)
+    - ⚠️ Common traps: 早盘诱多, 逆势上涨, 尾盘突击
+    - 💡 Iron rule: 结合大盘方向判断
+  - Section 十五: 缩量上涨专题（量价背离·警惕回调）— yellow-500/40 border, AlertTriangle icon, ⚠️ 警惕信号 badge
+    - 📌 What is 缩量上涨 definition
+    - 🔍 7 scoring dimensions: 上涨幅度(25), 缩量上涨分钟占比(25), 量能下降趋势(15), 连续缩量上涨段(15), 峰值量比低(8), 均线偏离(8), 近期量能衰减(6)
+    - 🎯 Operating strategies: ≥50 强缩量上涨, ≥30 缩量上涨警惕, ≥15 缩量上涨(弱)
+    - ⚠️ Common traps: 缩量≠一定跌, 大盘强势+缩量上涨, 大盘弱势+缩量上涨, 早盘缩量上涨
+    - 💡 Iron rule: 警示信号而非卖出信号，结合大盘判断
+- Lint passed with no errors
+
+Stage Summary:
+- Replaced old combined section 十四 with two focused sections 十四 and 十五
+- Each new section contains system-specific scoring dimensions matching the actual backend detection logic
+- Added TrendingUp icon import
+- File reduced from 1621 to 1541 lines (old combined section was more verbose with scenarios/口诀/对比 that are now streamlined)
+
+---
+Task ID: 1-3
+Agent: Main Agent (coordinating subagents)
+Task: Implement 放量上涨 (vol_rise) and 缩量上涨 (shrink_rise) detection, chart rendering, signal display, and trading rules
+
+Work Log:
+- Added "vol_rise" and "shrink_rise" to PulseVolumeMarker type in chart-shared.ts
+- Implemented 放量上涨 detection algorithm (7 scoring dimensions: price gain, up+high-vol ratio, rising+expanding segment, peak vol ratio, progressive vol+rise, gap up, VWAP position)
+- Implemented 缩量上涨 detection algorithm (7 scoring dimensions: price gain, up+low-vol ratio, volume trend decline, consecutive shrink-rise, low peak vol ratio, VWAP deviation, recent vol decay)
+- Added chart rendering support for vol_rise (orange, above price) and shrink_rise (yellow, below price) in time-sharing-panel.tsx
+- Added signal display for vol_rise (orange badge) and shrink_rise (yellow badge) in signal-summary-panel.tsx
+- Added trading rules sections 十四 (放量上涨专题) and 十五 (缩量上涨专题) in trading-rules-card.tsx
+- Lint check passed with no errors
+
+Stage Summary:
+- 放量上涨 (vol_rise): Orange marker, placed above price line, bullish confirmation signal
+- 缩量上涨 (shrink_rise): Yellow marker, placed below price line, bearish divergence warning
+- Both algorithms use multi-dimensional scoring (7 dimensions each) with thresholds ≥15/30/50
+- Trading rules include detailed scoring dimensions, operating strategies, common traps, and iron rules
