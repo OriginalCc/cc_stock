@@ -37,6 +37,7 @@ const PasswordManageDialog = dynamic(() => import("@/components/password-manage-
 import { PasswordGate } from "@/components/password-gate";
 import { LazyMount } from "@/components/lazy-mount";
 import { calculateMACD } from "@/lib/indicators";
+import { macdFingerprintCache, signalFingerprintCache, pvFingerprintCache } from "@/lib/fingerprint-cache";
 import { getTimeWindow, detectMarketRegimeDetail, buildFactorOverridesFromDB, computeKeyPriceLevels, type FactorOverride, type RegimeDetail } from "@/lib/t-strategy";
 import { generateTimelineSignals, detectPulseVolumeMarkers, type TSignal, type PulseVolumeMarker, type CustomFactorDefinition, formatVolume, formatNum, formatMarketCap, REGIME_CONFIG, T_MODE_CONFIG, DEFAULT_ASHARES, INTERVALS, INDEX_CONFIG, INDEX_KEYS, SIGNAL_PULSE_CSS, playAlertSound, getTIndexColor, getTIndexLabel, getTIndexLabelColor, BUILT_IN_CUSTOM_FACTORS, CUSTOM_FACTORS_STORAGE_KEY, type IndexKey } from "@/lib/chart-shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -486,6 +487,10 @@ export default function StockTAssistant() {
   const tlVisibleMinutes = TL_ZOOM_LEVELS[tlZoomIdx];
 
   const handleSelectStock = useCallback((sym: string) => {
+    // Invalidate fingerprint caches when switching stocks
+    macdFingerprintCache.invalidate();
+    signalFingerprintCache.invalidate();
+    pvFingerprintCache.invalidate();
     selectStock(sym); setShowSearch(false); setSearchQuery(""); setSearchResults([]);
     setSearchHighlightIdx(-1);
     setKlineVisibleBars(80); setTlZoomIdx(0);
@@ -562,21 +567,34 @@ export default function StockTAssistant() {
   const timelineMACDData = useMemo(() => {
     // Skip heavy MACD computation when not in timeline mode
     if (!isTimelineActive || liveTimeline.length === 0) return [];
-    const prices = liveTimeline.map((d) => d.price);
-    const macdResult = calculateMACD(prices);
-    const result: { time: string; dif: number | null; dea: number | null; macd: number | null }[] = [];
-    for (let i = 0; i < liveTimeline.length; i++) { const mr = macdResult[i]; if (isNaN(mr.dif) || isNaN(mr.dea) || isNaN(mr.macd)) result.push({ time: liveTimeline[i].time, dif: null, dea: null, macd: null }); else result.push({ time: liveTimeline[i].time, dif: mr.dif, dea: mr.dea, macd: mr.macd }); }
-    return result.filter((d) => d.dif != null);
+    // Fingerprint: length + last 3 prices
+    const fp = `${liveTimeline.length}:${liveTimeline.slice(-3).map(d => d.price.toFixed(2)).join(',')}`;
+    return macdFingerprintCache.compute(fp, () => {
+      const prices = liveTimeline.map((d) => d.price);
+      const macdResult = calculateMACD(prices);
+      const result: { time: string; dif: number | null; dea: number | null; macd: number | null }[] = [];
+      for (let i = 0; i < liveTimeline.length; i++) { const mr = macdResult[i]; if (isNaN(mr.dif) || isNaN(mr.dea) || isNaN(mr.macd)) result.push({ time: liveTimeline[i].time, dif: null, dea: null, macd: null }); else result.push({ time: liveTimeline[i].time, dif: mr.dif, dea: mr.dea, macd: mr.macd }); }
+      return result.filter((d) => d.dif != null);
+    });
   }, [liveTimeline, isTimelineActive]);
 
   const timelineSignals = useMemo(() => {
     // Skip the heaviest computation (~7000 condition evaluations) when not in timeline mode
     if (!isTimelineActive) return [] as (TSignal | null)[];
-    return generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime);
+    // Fingerprint: MACD length + last 3 timeline prices + prevClose + factor overrides + regime keys
+    const fp = `${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => d.price.toFixed(2)).join(',')}:${timelinePrevClose}:${JSON.stringify(factorOverrides)}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}`;
+    return signalFingerprintCache.compute(fp, () =>
+      generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime)
+    );
   }, [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, isTimelineActive]);
   // Defer signal rendering so the chart paints first, then signals overlay on next frame
   const deferredTimelineSignals = useDeferredValue(timelineSignals);
-  const pvMarkers = useMemo(() => { if (!isTimelineActive || liveTimeline.length < 10 || timelinePrevClose <= 0) return []; return detectPulseVolumeMarkers(liveTimeline, timelinePrevClose); }, [liveTimeline, timelinePrevClose, isTimelineActive]);
+  const pvMarkers = useMemo(() => {
+    if (!isTimelineActive || liveTimeline.length < 10 || timelinePrevClose <= 0) return [];
+    // Fingerprint: length + last 3 prices/volumes + prevClose
+    const fp = `${liveTimeline.length}:${timelinePrevClose}:${liveTimeline.slice(-3).map(d => `${d.price.toFixed(2)}:${d.volume}`).join(',')}`;
+    return pvFingerprintCache.compute(fp, () => detectPulseVolumeMarkers(liveTimeline, timelinePrevClose));
+  }, [liveTimeline, timelinePrevClose, isTimelineActive]);
   const deferredPvMarkers = useDeferredValue(pvMarkers);
   const latestTimelineSignal = useMemo(() => { for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { if (deferredTimelineSignals[i]) return deferredTimelineSignals[i]; } return null; }, [deferredTimelineSignals]);
 

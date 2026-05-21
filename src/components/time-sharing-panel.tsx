@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import React, { useState, useRef, useMemo, useEffect, useCallback, useDeferredValue, startTransition } from "react";
+import React, { useState, useRef, useMemo, useEffect, useCallback, useDeferredValue } from "react";
 import {
   ComposedChart,
   Bar,
@@ -1356,6 +1356,14 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     const dataByTime = new Map<string, TimelineItem>();
     data.forEach((d) => dataByTime.set(d.time, d));
 
+    // Pre-compute prevActual for each time point — O(n) instead of O(n²)
+    const prevActualMap = new Map<string, TimelineItem | null>();
+    let prevItem: TimelineItem | null = null;
+    for (const d of data) {
+      prevActualMap.set(d.time, prevItem);
+      prevItem = d;
+    }
+
     // Merge: fill full day, actual data where available, null placeholders elsewhere
     const lastActualIdx = data.length > 0 ? allTimes.indexOf(data[data.length - 1].time) : -1;
     const fullDay = allTimes.map((time, idx) => {
@@ -1364,13 +1372,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       // Only show data up to the last actual time (no future data)
       const isFuture = idx > lastActualIdx && lastActualIdx >= 0;
       if (hasData && !isFuture) {
-        const prevActual = (() => {
-          // Find the previous data point for volUp calc
-          for (let j = data.length - 1; j >= 0; j--) {
-            if (data[j].time < time) return data[j];
-          }
-          return null;
-        })();
+        const prevActual = prevActualMap.get(time) ?? null;
         const safePrevClose = prevClose > 0 ? prevClose : data[0].price;
         return {
           idx,
@@ -2297,10 +2299,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             margin={{ top: 50, right: 82, left: 2, bottom: 8 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
-                startTransition(() => setCrosshairIdx(state.activeTooltipIndex));
+                setCrosshairIdx(state.activeTooltipIndex);
               }
             }}
-            onMouseLeave={() => startTransition(() => setCrosshairIdx(null))}
+            onMouseLeave={() => setCrosshairIdx(null)}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -2820,10 +2822,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
-                startTransition(() => setCrosshairIdx(state.activeTooltipIndex));
+                setCrosshairIdx(state.activeTooltipIndex);
               }
             }}
-            onMouseLeave={() => startTransition(() => setCrosshairIdx(null))}
+            onMouseLeave={() => setCrosshairIdx(null)}
           >
             <XAxis dataKey="idx" type="number" domain={xDomain} tick={false} tickLine={false} axisLine={false} />
             {/* Hidden left YAxis to align with price chart */}
@@ -2885,10 +2887,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
-                startTransition(() => setCrosshairIdx(state.activeTooltipIndex));
+                setCrosshairIdx(state.activeTooltipIndex);
               }
             }}
-            onMouseLeave={() => startTransition(() => setCrosshairIdx(null))}
+            onMouseLeave={() => setCrosshairIdx(null)}
           >
             <XAxis
               dataKey="idx"
