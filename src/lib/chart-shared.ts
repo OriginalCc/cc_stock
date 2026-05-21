@@ -491,7 +491,7 @@ export function detectPulseVolumeMarkers(
   timeline: TimelineItem[],
   prevClose: number,
   timeStart: string = "09:30",
-  timeEnd: string = "10:30",
+  timeEnd: string = "15:00",
 ): PulseVolumeMarker[] {
   if (!timeline || timeline.length < 10 || prevClose <= 0) return [];
 
