@@ -269,8 +269,18 @@ interface PlacedLabel {
 
 function resolvePvLabelOverlaps(
   markerPoints: { x: number; y: number; marker: PulseVolumeMarker }[],
+  svgWidth?: number,
+  svgHeight?: number,
 ): PlacedLabel[] {
   if (markerPoints.length === 0) return [];
+
+  // Boundary limits for labels — prevent labels from going outside visible area
+  const SVG_W = svgWidth || 900;
+  const SVG_H = svgHeight || 620;
+  const TOP_MIN = 4;          // minimum labelY for above labels (px from SVG top)
+  const BOTTOM_MAX = SVG_H - 4; // maximum labelY for below labels (px from SVG top)
+  const LEFT_MIN = 10;        // minimum left edge of label pill
+  const RIGHT_MAX = SVG_W - 10; // maximum right edge of label pill
 
   // Step 0: Detect markers at the same time point and spread them horizontally
   // so pulse and progressive_vol each get their own connection line
@@ -389,6 +399,33 @@ function resolvePvLabelOverlaps(
     placedRects.push(rect);
   }
 
+  // Step 3: Boundary clamping — ensure all labels stay within visible area
+  for (const p of placed) {
+    // Clamp vertical position
+    if (p.layout.isAbove) {
+      // For above labels, ensure labelY - pillH/2 - 2 >= TOP_MIN
+      const minLabelY = TOP_MIN + p.layout.pillH / 2 + 2;
+      if (p.adjustedLabelY < minLabelY) {
+        p.adjustedLabelY = minLabelY;
+      }
+    } else {
+      // For below labels, ensure labelY + pillH <= BOTTOM_MAX
+      const maxLabelY = BOTTOM_MAX - p.layout.pillH;
+      if (p.adjustedLabelY > maxLabelY) {
+        p.adjustedLabelY = maxLabelY;
+      }
+    }
+
+    // Clamp horizontal position — ensure pill doesn't go off left/right edge
+    const pillLeft = p.adjustedX - p.layout.pillW / 2;
+    const pillRight = p.adjustedX + p.layout.pillW / 2;
+    if (pillLeft < LEFT_MIN) {
+      p.adjustedX = LEFT_MIN + p.layout.pillW / 2;
+    } else if (pillRight > RIGHT_MAX) {
+      p.adjustedX = RIGHT_MAX - p.layout.pillW / 2;
+    }
+  }
+
   return placed;
 }
 
@@ -420,8 +457,23 @@ function renderPulseVolumeMarker(
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
   const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade || isVolRise;
   const defaultLabelY = isAbove ? (isEarlyVolDrop ? y - 90 : isWashTrade ? y - 80 : isVolRise ? y - 80 : y - 52) : y + 36;
-  const labelY = adjustedLabelY ?? defaultLabelY;
-  const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
+  let labelY = adjustedLabelY ?? defaultLabelY;
+  let labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
+
+  // Pre-compute label dimensions for boundary clamping (will be recomputed below for rendering)
+  const _isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise;
+  const _amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
+  const _displayLabel = _amountStr ? `${marker.label} ${_amountStr}` : marker.label;
+  const _estimatedCharWidth = _isBigLabel ? 8 : 7.5;
+  const _pillW = _isBigLabel ? Math.max(100, Math.min(220, Math.round(_displayLabel.length * _estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(_displayLabel.length * _estimatedCharWidth + 8)));
+  const _pillH = 16;
+  // Safety clamp: ensure label stays within visible SVG area
+  // Vertical clamp
+  if (labelY - _pillH / 2 - 2 < 2) labelY = _pillH / 2 + 4;
+  if (labelY + _pillH > 620) labelY = 620 - _pillH;
+  // Horizontal clamp
+  if (labelX - _pillW / 2 < 5) labelX = _pillW / 2 + 5;
+  if (labelX + _pillW / 2 > 895) labelX = 895 - _pillW / 2;
 
   if (isPulse) {
     bgColor = "rgba(245, 158, 11, 0.25)";
@@ -489,11 +541,12 @@ function renderPulseVolumeMarker(
 
   // Dynamic pill width based on label length
   // early_vol_drop & wash_trade: wider pill + larger font for maximum visibility
+  // (moved up before boundary clamping so pillW/pillH are available)
   const isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise;
   const estimatedCharWidth = isBigLabel ? 8 : 7.5;
   const pillW = isBigLabel ? Math.max(100, Math.min(220, Math.round(displayLabel.length * estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = isBigLabel ? 16 : 16;
-  const pillRx = isBigLabel ? 4 : 4;
+  const pillH = 16;
+  const pillRx = 4;
 
   return (
     <g key={`pv-${marker.type}-${idx}`}>
@@ -756,7 +809,15 @@ function computeTimelineSignalElements(
       labelY = m.y - markerOffset - labelGap - labelH;
     }
 
+    // Boundary clamping for signal labels
+    if (labelY < 2) labelY = 2;
+    if (labelY + labelH > 610) labelY = 610 - labelH;
+
     let labelRect = { x: m.x - labelW / 2, y: labelY, width: labelW, height: labelH };
+
+    // Horizontal boundary clamping
+    if (labelRect.x < 5) labelRect = { ...labelRect, x: 5 };
+    if (labelRect.x + labelRect.width > 895) labelRect = { ...labelRect, x: 895 - labelRect.width };
 
     let placed = false;
     if (!overlapsAny(labelRect, labelRects)) {
@@ -1624,7 +1685,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   return (
     <div
       ref={chartContainerRef}
-      className="bg-card rounded-lg border border-border overflow-hidden"
+      className="bg-card rounded-lg border border-border"
     >
       {/* ─── Early Morning Volume Drop DANGER Banner (禁止买入) ─── */}
       {pvMarkers && pvMarkers.some(m => m.type === "early_vol_drop") && (() => {
@@ -2220,11 +2281,11 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       })()}
 
       {/* ─── Panel 1: Price Chart ─── */}
-      <div className="relative">
+      <div className="relative" style={{ overflow: 'visible' }}>
         <ResponsiveContainer width="100%" height={isZoomed ? 720 : 620}>
           <ComposedChart
             data={zoomData}
-            margin={{ top: 36, right: 82, left: 2, bottom: 0 }}
+            margin={{ top: 50, right: 82, left: 2, bottom: 8 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
                 startTransition(() => setCrosshairIdx(state.activeTooltipIndex));
