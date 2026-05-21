@@ -2220,7 +2220,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
 
       {/* ─── Panel 1: Price Chart ─── */}
       <div className="relative">
-        <ResponsiveContainer width="100%" height={isZoomed ? 620 : 530}>
+        <ResponsiveContainer width="100%" height={isZoomed ? 720 : 620}>
           <ComposedChart
             data={zoomData}
             margin={{ top: 36, right: 82, left: 2, bottom: 0 }}
@@ -2601,7 +2601,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] select-none pointer-events-none">
           <span className="text-muted-foreground font-medium">VOL</span>
         </div>
-        <ResponsiveContainer width="100%" height={165}>
+        <ResponsiveContainer width="100%" height={190}>
           <ComposedChart
             data={zoomData}
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
@@ -2666,7 +2666,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <span className="text-orange-600">DEA</span>
           </span>
         </div>
-        <ResponsiveContainer width="100%" height={120}>
+        <ResponsiveContainer width="100%" height={140}>
           <ComposedChart
             data={zoomData}
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
