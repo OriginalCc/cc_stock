@@ -980,3 +980,28 @@ Stage Summary:
 - 缩量上涨 (shrink_rise): Yellow marker, placed below price line, bearish divergence warning
 - Both algorithms use multi-dimensional scoring (7 dimensions each) with thresholds ≥15/30/50
 - Trading rules include detailed scoring dimensions, operating strategies, common traps, and iron rules
+
+---
+Task ID: 1
+Agent: main
+Task: 把交易规矩写成代码，在分时图中能展现
+
+Work Log:
+- 修复术语不一致：将"缩量上涨"统一改为"缩量拉升"，将"放量上涨"统一改为"放量拉升"，与交易规矩文本保持一致
+- 修改 chart-shared.ts：vol_rise 标签从"放量上涨"改为"放量拉升"，shrink_rise 标签从"缩量上涨"改为"缩量拉升"
+- 为 vol_rise 标记增加操作建议：≥50分→"回调可积极买入"，30-49分→"回调按仓位表操作"，<30分→"观察后续放量"
+- 为 shrink_rise 标记增加操作建议：≥50分→"⚠不追！等放量确认"，30-49分→"缩量拉升减仓时机"，<30分→"观察后续量能"
+- 在分时图添加交易时间窗口色带（5个时段）：早盘观察期(9:30-10:00)、上午操作期(10:00-11:30)、午盘确认期(13:00-14:00)、尾盘决策期(14:00-14:30)、收盘冲刺期(14:30-15:00)
+- 在分时图顶部添加时间窗口标签：显示时段名称和操作提示
+- 在分时图添加止损止盈参考线：-2%止损线(红色)、+1.5%首目标止盈线(绿色)、+3%二目标止盈线(深绿色)
+- 导入 ReferenceArea 组件到 time-sharing-panel.tsx
+- 更新 time-sharing-panel.tsx 中的注释术语
+- Lint 通过，dev server 正常运行
+
+Stage Summary:
+- 交易规矩现在在分时图中有4种可视化展示：
+  1. 时间窗口色带+标签（5个交易时段，不同颜色背景和顶部标签）
+  2. 止损止盈参考线（-2%止损/+1.5%止盈/+3%二目标）
+  3. 放量拉升标记（橙红色，含操作建议：回调可积极买入）
+  4. 缩量拉升标记（黄色警告，含操作建议：不追等放量确认）
+- 术语统一：所有"上涨"→"拉升"，与交易规矩文本完全一致

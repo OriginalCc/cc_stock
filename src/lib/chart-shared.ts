@@ -1417,7 +1417,7 @@ export function detectPulseVolumeMarkers(
     }
   }
 
-  // ── Volume Rise Detection (放量上涨 - 量价齐升·强势确认) ──
+  // ── Volume Rise Detection (放量拉升 - 量价齐升·强势确认) ──
   // 检测价格上涨伴随成交量放大的健康上涨模式
   {
     const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
@@ -1558,6 +1558,14 @@ export function detectPulseVolumeMarkers(
         if (maxProgRiseLen >= 3) details.push(`${maxProgRiseLen}分钟递增放量涨`);
         if (gapUpRate >= 0.5) details.push(`高开${gapUpRate.toFixed(1)}%`);
         if (priceAboveVwap) details.push(`均线上方+${vwapDeviation.toFixed(1)}%`);
+        // 操作建议（根据交易规矩）
+        if (volRiseScore >= 50) {
+          details.push('回调可积极买入');
+        } else if (volRiseScore >= 30) {
+          details.push('回调按仓位表操作');
+        } else {
+          details.push('观察后续放量');
+        }
 
         const volRiseAmount = session.slice(Math.max(0, peakIdx - 3), peakIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
 
@@ -1565,15 +1573,15 @@ export function detectPulseVolumeMarkers(
           time: markTime,
           type: "vol_rise",
           score: volRiseScore,
-          label: volRiseScore >= 50 ? `✅ 强放量上涨 ${volRiseScore}分` : volRiseScore >= 30 ? `放量上涨 ${volRiseScore}分` : `放量上涨(弱) ${volRiseScore}分`,
-          detail: details.length > 0 ? details.join("，") : "放量上涨",
+          label: volRiseScore >= 50 ? `✅ 强放量拉升 ${volRiseScore}分` : volRiseScore >= 30 ? `放量拉升 ${volRiseScore}分` : `轻微放量拉升 ${volRiseScore}分`,
+          detail: details.length > 0 ? details.join("，") : "放量拉升",
           amount: volRiseAmount,
         });
       }
     }
   }
 
-  // ── Shrink Rise Detection (缩量上涨 - 量价背离·警惕信号) ──
+  // ── Shrink Rise Detection (缩量拉升 - 量价背离·警惕信号) ──
   // 检测价格上涨但成交量萎缩的背离模式（上涨动能不足，可能随时回调）
   {
     const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
@@ -1710,6 +1718,14 @@ export function detectPulseVolumeMarkers(
         if (volRatioAtPeak < 1.0) details.push(`高位量比${volRatioAtPeak.toFixed(1)}x`);
         if (vwapDeviation >= 1) details.push(`偏离均价+${vwapDeviation.toFixed(1)}%`);
         if (volDeclineRatio <= 0.7) details.push(`量能衰减${((1 - volDeclineRatio) * 100).toFixed(0)}%`);
+        // 操作建议（根据交易规矩）
+        if (shrinkRiseScore >= 50) {
+          details.push('⚠不追！等放量确认');
+        } else if (shrinkRiseScore >= 30) {
+          details.push('缩量拉升减仓时机');
+        } else {
+          details.push('观察后续量能');
+        }
 
         const shrinkRiseAmount = session.slice(Math.max(0, peakIdx - 3), peakIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
 
@@ -1717,8 +1733,8 @@ export function detectPulseVolumeMarkers(
           time: markTime,
           type: "shrink_rise",
           score: shrinkRiseScore,
-          label: shrinkRiseScore >= 50 ? `⚠️ 强缩量上涨 ${shrinkRiseScore}分` : shrinkRiseScore >= 30 ? `缩量上涨警惕 ${shrinkRiseScore}分` : `缩量上涨(弱) ${shrinkRiseScore}分`,
-          detail: details.length > 0 ? details.join("，") : "缩量上涨",
+          label: shrinkRiseScore >= 50 ? `⚠️ 强缩量拉升 ${shrinkRiseScore}分` : shrinkRiseScore >= 30 ? `缩量拉升警惕 ${shrinkRiseScore}分` : `缩量拉升(弱) ${shrinkRiseScore}分`,
+          detail: details.length > 0 ? details.join("，") : "缩量拉升",
           amount: shrinkRiseAmount,
         });
       }

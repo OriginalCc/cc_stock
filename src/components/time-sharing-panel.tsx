@@ -13,6 +13,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
   Customized,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
@@ -461,14 +462,14 @@ function renderPulseVolumeMarker(
     iconColor = "#3b82f6";
     glowColor = "rgba(59, 130, 246, 0.5)";
   } else if (isVolRise) {
-    // 放量上涨 → 橙红色（量价齐升·强势确认）
+    // 放量拉升 → 橙红色（量价齐升·强势确认）
     bgColor = "rgba(234, 88, 12, 0.30)";
     borderColor = "rgba(234, 88, 12, 1)";
     textColor = "#ffffff";
     iconColor = "#ea580c";
     glowColor = "rgba(234, 88, 12, 0.5)";
   } else if (isShrinkRise) {
-    // 缩量上涨 → 黄色警告（量价背离·警惕回调）
+    // 缩量拉升 → 黄色警告（量价背离·警惕回调）
     bgColor = "rgba(202, 138, 4, 0.30)";
     borderColor = "rgba(202, 138, 4, 1)";
     textColor = "#ffffff";
@@ -2332,6 +2333,148 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 fontWeight: 700,
               }}
             />
+            {/* ── 交易时间窗口色带（根据交易规矩五时段划分） ── */}
+            {!isZoomed && (() => {
+              // 找到每个时间段在 zoomData 中的索引范围
+              const findIdxByTime = (targetTime: string) => {
+                for (let i = 0; i < zoomData.length; i++) {
+                  if (zoomData[i].time >= targetTime) return i;
+                }
+                return -1;
+              };
+              const windows = [
+                { start: "09:30", end: "10:00", label: "⚠ 早盘观察期", sublabel: "仓位减半", color: "rgba(245,158,11,0.06)", textColor: "#b45309" },
+                { start: "10:00", end: "11:30", label: "✅ 上午操作期", sublabel: "按仓位表执行", color: "rgba(34,197,94,0.05)", textColor: "#166534" },
+                { start: "13:00", end: "14:00", label: "🔸 午盘确认期", sublabel: "观察方向", color: "rgba(234,179,8,0.05)", textColor: "#a16207" },
+                { start: "14:00", end: "14:30", label: "⚠ 尾盘决策期", sublabel: "准备清仓", color: "rgba(249,115,22,0.06)", textColor: "#c2410c" },
+                { start: "14:30", end: "15:00", label: "🚫 收盘冲刺期", sublabel: "必须闭环", color: "rgba(239,68,68,0.07)", textColor: "#b91c1c" },
+              ];
+              return (
+                <>
+                  {windows.map((w, wi) => {
+                    const si = findIdxByTime(w.start);
+                    const ei = findIdxByTime(w.end);
+                    if (si < 0 || ei < 0 || si >= ei) return null;
+                    return (
+                      <ReferenceArea
+                        key={`tw-${wi}`}
+                        xAxisId={0}
+                        x1={si}
+                        x2={ei}
+                        yAxisId="price"
+                        y1={yMin}
+                        y2={yMax}
+                        fill={w.color}
+                        stroke="none"
+                      />
+                    );
+                  })}
+                </>
+              );
+            })()}
+            {/* ── 时间窗口标签（图表顶部） ── */}
+            <Customized component={(props: any) => {
+              if (isZoomed) return null;
+              const { xAxisMap, offset } = props;
+              if (!xAxisMap || !offset) return null;
+              const xAxis = Object.values(xAxisMap)[0] as any;
+              if (!xAxis?.scale) return null;
+              const xScale = xAxis.scale;
+
+              const findIdxByTime = (targetTime: string) => {
+                for (let i = 0; i < zoomData.length; i++) {
+                  if (zoomData[i].time >= targetTime) return i;
+                }
+                return -1;
+              };
+
+              const windows = [
+                { start: "09:30", end: "10:00", label: "⚠ 早盘观察", sub: "仓位减半", color: "#b45309" },
+                { start: "10:00", end: "11:30", label: "✅ 上午操作", sub: "按仓位表", color: "#166534" },
+                { start: "13:00", end: "14:00", label: "🔸 午盘确认", sub: "观察方向", color: "#a16207" },
+                { start: "14:00", end: "14:30", label: "⚠ 尾盘决策", sub: "准备清仓", color: "#c2410c" },
+                { start: "14:30", end: "15:00", label: "🚫 收盘冲刺", sub: "必须闭环", color: "#b91c1c" },
+              ];
+
+              return (
+                <g>
+                  {windows.map((w, wi) => {
+                    const si = findIdxByTime(w.start);
+                    const ei = findIdxByTime(w.end);
+                    if (si < 0 || ei < 0 || si >= ei) return null;
+                    const x1 = xScale(si);
+                    const x2 = xScale(ei);
+                    const midX = (x1 + x2) / 2;
+                    const topY = offset.top + 2;
+                    const width = x2 - x1;
+                    // Only show label if window is wide enough
+                    if (width < 50) return null;
+                    return (
+                      <g key={`twl-${wi}`}>
+                        <rect x={x1} y={topY} width={width} height={14} rx={2}
+                          fill={w.color} fillOpacity={0.1} stroke={w.color} strokeWidth={0.5} strokeOpacity={0.3}
+                        />
+                        <text x={midX} y={topY + 7} textAnchor="middle" dominantBaseline="middle"
+                          fontSize={8} fontWeight={600} fill={w.color} fillOpacity={0.85}
+                        >
+                          {width > 100 ? `${w.label} ${w.sub}` : w.label}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            }} />
+            {/* ── 止损止盈参考线（根据交易规矩四） ── */}
+            {safePrevClose > 0 && (() => {
+              const stopLoss = safePrevClose * 0.98;  // -2% 止损线
+              const takeProfit1 = safePrevClose * 1.015; // +1.5% 首目标
+              const takeProfit2 = safePrevClose * 1.03;  // +3% 二目标
+              const els: React.ReactNode[] = [];
+              if (stopLoss >= yMin && stopLoss <= yMax) {
+                els.push(
+                  <ReferenceLine
+                    key="stoploss"
+                    yAxisId="price"
+                    y={stopLoss}
+                    stroke="#dc2626"
+                    strokeDasharray="4 3"
+                    strokeWidth={1.5}
+                    strokeOpacity={0.7}
+                    label={{ value: `止损 -2% ${stopLoss.toFixed(2)}`, position: "insideBottomLeft", fill: "#dc2626", fontSize: 8, fillOpacity: 0.8 }}
+                  />
+                );
+              }
+              if (takeProfit1 >= yMin && takeProfit1 <= yMax) {
+                els.push(
+                  <ReferenceLine
+                    key="tp1"
+                    yAxisId="price"
+                    y={takeProfit1}
+                    stroke="#22c55e"
+                    strokeDasharray="4 3"
+                    strokeWidth={1.2}
+                    strokeOpacity={0.6}
+                    label={{ value: `止盈+1.5% ${takeProfit1.toFixed(2)}`, position: "insideTopLeft", fill: "#22c55e", fontSize: 8, fillOpacity: 0.8 }}
+                  />
+                );
+              }
+              if (takeProfit2 >= yMin && takeProfit2 <= yMax) {
+                els.push(
+                  <ReferenceLine
+                    key="tp2"
+                    yAxisId="price"
+                    y={takeProfit2}
+                    stroke="#16a34a"
+                    strokeDasharray="6 3"
+                    strokeWidth={1.2}
+                    strokeOpacity={0.6}
+                    label={{ value: `目标+3% ${takeProfit2.toFixed(2)}`, position: "insideTopLeft", fill: "#16a34a", fontSize: 8, fillOpacity: 0.8 }}
+                  />
+                );
+              }
+              return els;
+            })()}
             {/* Today's MA lines as dashed references */}
             {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
               <ReferenceLine
