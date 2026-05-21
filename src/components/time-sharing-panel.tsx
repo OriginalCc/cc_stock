@@ -220,17 +220,18 @@ function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): 
   const isWashTrade = marker.type === "wash_trade";
   const isVolRise = marker.type === "vol_rise";
   const isShrinkRise = marker.type === "shrink_rise";
-  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade || isVolRise;
+  const isPulseRise = marker.type === "pulse_rise";
+  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade || isVolRise || isPulseRise;
 
   const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
-  const isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise;
+  const isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise || isPulseRise;
   const estimatedCharWidth = isBigLabel ? 8 : 7.5;
   const pillW = isBigLabel ? Math.max(100, Math.min(220, Math.round(displayLabel.length * estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
   const pillH = isBigLabel ? 16 : 16;
 
-  const labelY = isAbove ? (isEarlyVolDrop ? y - 70 : isWashTrade ? y - 65 : isVolRise ? y - 65 : y - 52) : y + 36;
+  const labelY = isAbove ? (isEarlyVolDrop ? y - 70 : isWashTrade ? y - 65 : isVolRise ? y - 65 : isPulseRise ? y - 65 : y - 52) : y + 36;
 
   return { isAbove, labelY, pillW, pillH, displayLabel };
 }
@@ -448,6 +449,7 @@ function renderPulseVolumeMarker(
   const isWashTrade = marker.type === "wash_trade";
   const isVolRise = marker.type === "vol_rise";
   const isShrinkRise = marker.type === "shrink_rise";
+  const isPulseRise = marker.type === "pulse_rise";
   const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop;
 
   // Color schemes — brighter & more saturated for visibility
@@ -455,13 +457,13 @@ function renderPulseVolumeMarker(
   // early_vol_drop uses RED for extreme danger (禁止买入)
   // wash_trade uses BLUE for opportunity (低吸机会)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
-  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade || isVolRise;
-  const defaultLabelY = isAbove ? (isEarlyVolDrop ? y - 90 : isWashTrade ? y - 80 : isVolRise ? y - 80 : y - 52) : y + 36;
+  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade || isVolRise || isPulseRise;
+  const defaultLabelY = isAbove ? (isEarlyVolDrop ? y - 90 : isWashTrade ? y - 80 : isVolRise ? y - 80 : isPulseRise ? y - 80 : y - 52) : y + 36;
   let labelY = adjustedLabelY ?? defaultLabelY;
   let labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
 
   // Pre-compute label dimensions for boundary clamping (will be recomputed below for rendering)
-  const _isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise;
+  const _isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise || isPulseRise;
   const _amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
   const _displayLabel = _amountStr ? `${marker.label} ${_amountStr}` : marker.label;
   const _estimatedCharWidth = _isBigLabel ? 8 : 7.5;
@@ -527,6 +529,13 @@ function renderPulseVolumeMarker(
     textColor = "#ffffff";
     iconColor = "#ca8a04";
     glowColor = "rgba(202, 138, 4, 0.5)";
+  } else if (isPulseRise) {
+    // 脉冲上涨 → 橙色（短线冲高·不追涨）
+    bgColor = "rgba(249, 115, 22, 0.30)";
+    borderColor = "rgba(249, 115, 22, 1)";
+    textColor = "#ffffff";
+    iconColor = "#f97316";
+    glowColor = "rgba(249, 115, 22, 0.5)";
   } else {
     bgColor = "rgba(6, 182, 212, 0.25)";
     borderColor = "rgba(6, 182, 212, 0.85)";
@@ -542,7 +551,7 @@ function renderPulseVolumeMarker(
   // Dynamic pill width based on label length
   // early_vol_drop & wash_trade: wider pill + larger font for maximum visibility
   // (moved up before boundary clamping so pillW/pillH are available)
-  const isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise;
+  const isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise || isPulseRise;
   const estimatedCharWidth = isBigLabel ? 8 : 7.5;
   const pillW = isBigLabel ? Math.max(100, Math.min(220, Math.round(displayLabel.length * estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
   const pillH = 16;
@@ -579,7 +588,7 @@ function renderPulseVolumeMarker(
         textAnchor="middle" dominantBaseline="middle"
         fontSize={isBigLabel ? 8 : 7} fill={isBigLabel ? "#ffffff" : iconColor} fontWeight="bold"
       >
-        {isEarlyVolDrop ? "⚠" : isWashTrade ? "✓" : isVolRise ? "▲" : isShrinkRise ? "!" : isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
+        {isEarlyVolDrop ? "⚠" : isWashTrade ? "✓" : isVolRise ? "▲" : isPulseRise ? "⚡" : isShrinkRise ? "!" : isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
       </text>
       {/* White glow behind label pill for readability */}
       <rect
@@ -593,7 +602,7 @@ function renderPulseVolumeMarker(
         x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
-        fill={isEarlyVolDrop ? "rgba(239, 68, 68, 0.9)" : isWashTrade ? "rgba(59, 130, 246, 0.9)" : isVolRise ? "rgba(234, 88, 12, 0.9)" : isShrinkRise ? "rgba(202, 138, 4, 0.9)" : bgColor} stroke={borderColor} strokeWidth={isBigLabel ? 1.5 : 1}
+        fill={isEarlyVolDrop ? "rgba(239, 68, 68, 0.9)" : isWashTrade ? "rgba(59, 130, 246, 0.9)" : isVolRise ? "rgba(234, 88, 12, 0.9)" : isPulseRise ? "rgba(249, 115, 22, 0.9)" : isShrinkRise ? "rgba(202, 138, 4, 0.9)" : bgColor} stroke={borderColor} strokeWidth={isBigLabel ? 1.5 : 1}
       />
       {/* Label text */}
       <text

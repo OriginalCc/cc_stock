@@ -35,7 +35,7 @@ export interface MergedSignal {
 
 export interface PulseVolumeMarker {
   time: string;
-  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise";
+  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise" | "pulse_rise";
   score: number;
   label: string;
   detail: string;
@@ -920,13 +920,131 @@ export function detectPulseVolumeMarkers(
       // 计算脉冲下跌窗口成交金额 (dropStartIdx ~ dropEndIdx)
       const pulseDeclineAmount = session.slice(dropStartIdx, dropEndIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
 
+      // Add time-context to pulse_decline label
+      const tTime = troughTime;
+      const tMin = parseInt(tTime.split(":")[0]) * 60 + parseInt(tTime.split(":")[1]);
+      let timeCtx = "";
+      if (tMin >= 570 && tMin < 600) timeCtx = "早盘";      // 9:30-10:00
+      else if (tMin >= 870) timeCtx = "尾盘";                 // 14:30+
+      else timeCtx = "盘中";
+
       markers.push({
         time: troughTime,
         type: "pulse_decline",
         score: negativeScore,
-        label: declineScore >= 50 ? `强脉冲下跌 ${negativeScore}分` : declineScore >= 30 ? `脉冲下跌 ${negativeScore}分` : `微脉冲下跌 ${negativeScore}分`,
+        label: declineScore >= 50 ? `${timeCtx}强脉冲下跌 ${negativeScore}分` : declineScore >= 30 ? `${timeCtx}脉冲下跌 ${negativeScore}分` : `${timeCtx}微脉冲下跌 ${negativeScore}分`,
         detail: details.length > 0 ? details.join("，") : "轻微下跌脉冲",
         amount: pulseDeclineAmount,
+      });
+    }
+  }
+
+  // ── Pulse Rise Detection (脉冲上涨) ──
+  // 1-2分钟内价格突然急速拉升，伴随瞬时成交量放大
+  {
+    const avgVol = session.reduce((sum, t) => sum + t.volume, 0) / session.length;
+    const openPrice = session[0].price;
+
+    // Scan with short windows (1-2 min) for sudden surges
+    let bestPulseRise: { idx: number; score: number; riseRate: number; volRatio: number; startIdx: number; endIdx: number } | null = null;
+
+    for (let winSize = 1; winSize <= 3; winSize++) {
+      for (let i = 0; i <= session.length - winSize; i++) {
+        const startPrice = session[i].price;
+        const endPrice = session[i + winSize - 1].price;
+        if (startPrice <= 0) continue;
+
+        // Only consider upward moves
+        const riseRate = ((endPrice - startPrice) / startPrice) * 100;
+        if (riseRate < 0.3) continue; // minimum 0.3% rise to qualify
+
+        // Volume check: is this a volume spike?
+        const windowVols = session.slice(i, i + winSize).map(t => t.volume);
+        const windowAvgVol = windowVols.reduce((a, b) => a + b, 0) / windowVols.length;
+        const volRatio = avgVol > 0 ? windowAvgVol / avgVol : 1;
+
+        // Calculate score
+        let score = 0;
+
+        // Rise rate (max 35)
+        if (riseRate >= 3) score += 35;
+        else if (riseRate >= 2) score += 25;
+        else if (riseRate >= 1.5) score += 18;
+        else if (riseRate >= 1) score += 12;
+        else if (riseRate >= 0.5) score += 6;
+        else if (riseRate >= 0.3) score += 3;
+
+        // Volume ratio (max 25)
+        if (volRatio >= 3) score += 25;
+        else if (volRatio >= 2) score += 18;
+        else if (volRatio >= 1.5) score += 12;
+        else if (volRatio >= 1.2) score += 6;
+
+        // Speed bonus: shorter window = more "pulse-like" (max 15)
+        if (winSize === 1) score += 15;
+        else if (winSize === 2) score += 10;
+        else if (winSize === 3) score += 5;
+
+        // Pullback detection after pulse (max 15)
+        if (i + winSize < session.length) {
+          const afterPulsePrices = session.slice(i + winSize, Math.min(i + winSize + 5, session.length));
+          if (afterPulsePrices.length > 0) {
+            const maxAfter = Math.max(...afterPulsePrices.map(t => t.price));
+            const pullback = endPrice > 0 ? ((maxAfter - endPrice) / endPrice) * 100 : 0;
+            // If price pulled back after the pulse, it's a true pulse (not sustained rise)
+            if (pullback < -0.2) score += 15; // significant pullback confirms pulse
+            else if (pullback < 0) score += 8;
+          }
+        }
+
+        // Gap up bonus (max 10)
+        const gapUpRate = openPrice > 0 && prevClose > 0 && i === 0
+          ? ((openPrice - prevClose) / prevClose) * 100 : 0;
+        if (i === 0 && gapUpRate >= 1) score += 10;
+        else if (i === 0 && gapUpRate >= 0.5) score += 5;
+
+        score = Math.min(score, 100);
+
+        if (score >= 15 && (!bestPulseRise || score > bestPulseRise.score)) {
+          bestPulseRise = { idx: i + winSize - 1, score, riseRate, volRatio, startIdx: i, endIdx: i + winSize - 1 };
+        }
+      }
+    }
+
+    if (bestPulseRise) {
+      const peakItem = session[bestPulseRise.idx];
+      const peakTime = peakItem.time;
+      const tMin = parseInt(peakTime.split(":")[0]) * 60 + parseInt(peakTime.split(":")[1]);
+
+      // Time context
+      let timeCtx = "";
+      let timeCtxDetail = "";
+      if (tMin >= 570 && tMin < 600) {
+        timeCtx = "早盘";
+        timeCtxDetail = "开盘脉冲，多为集合竞价惯性冲高，3-5分钟内大概率回落";
+      } else if (tMin >= 870) {
+        timeCtx = "尾盘";
+        timeCtxDetail = "尾盘脉冲拉升，多为做线或诱多，次日低开概率高";
+      } else {
+        timeCtx = "盘中";
+        timeCtxDetail = "可能是主力快速拉高试盘或对倒拉升";
+      }
+
+      const s = bestPulseRise.score;
+      const details: string[] = [];
+      details.push(`${session[bestPulseRise.startIdx].time}-${session[bestPulseRise.endIdx].time}飙升${bestPulseRise.riseRate.toFixed(1)}%`);
+      if (bestPulseRise.volRatio >= 1.5) details.push(`放量${bestPulseRise.volRatio.toFixed(1)}x`);
+      details.push(timeCtxDetail);
+
+      const pulseAmount = session.slice(bestPulseRise.startIdx, bestPulseRise.endIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+
+      markers.push({
+        time: peakTime,
+        type: "pulse_rise",
+        score: s,
+        label: s >= 50 ? `${timeCtx}强脉冲上涨 ${s}分` : s >= 30 ? `${timeCtx}脉冲上涨 ${s}分` : `${timeCtx}微脉冲上涨 ${s}分`,
+        detail: details.join("，"),
+        amount: pulseAmount,
       });
     }
   }
