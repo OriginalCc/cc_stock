@@ -2964,30 +2964,24 @@ export function generateTimelineSignals(
     }
   }
 
-  // 8. 因子强度覆盖上限（用户在策略面板中设置的因子参数优先级最高）
-  //    如果用户将某个因子设为"弱"，则该因子产生的信号强度最高只能为"弱"
+  // 8. 因子强度覆盖（用户在策略面板中设置的因子参数优先级最高）
+  //    用户设置的强度直接覆盖信号强度，无论是升级还是降级
   //    这确保用户对因子强度的显式设置不会被后续的共振/趋势增强等逻辑覆盖
-  //    同时标记 strengthOverridden，防止渲染层合并时被升级
+  //    同时标记 strengthOverridden，防止渲染层合并时被修改
   if (factorOverrides && factorOverrides.length > 0) {
-    const strengthRank: Record<string, number> = { weak: 1, medium: 2, strong: 3 };
     for (let i = 0; i < signals.length; i++) {
       if (!signals[i]) continue;
       const sig = signals[i]!;
       const override = getFactorOverride(sig.reason, factorOverrides);
-      if (override?.strength) {
-        const currentRank = strengthRank[sig.strength] || 2;
-        const overrideRank = strengthRank[override.strength] || 2;
-        // 只有当覆盖强度 < 当前强度时才降级（覆盖是上限，不是下限）
-        if (overrideRank < currentRank) {
-          signals[i] = {
-            ...sig,
-            strength: override.strength,
-            strengthOverridden: true,
-            description: sig.description
-              ? `${sig.description} 【因子参数覆盖→${override.strength === "strong" ? "强" : override.strength === "medium" ? "中" : "弱"}】`
-              : `因子参数覆盖强度为${override.strength === "strong" ? "强" : override.strength === "medium" ? "中" : "弱"}`,
-          };
-        }
+      if (override?.strength && override.strength !== sig.strength) {
+        signals[i] = {
+          ...sig,
+          strength: override.strength,
+          strengthOverridden: true,
+          description: sig.description
+            ? `${sig.description} 【因子参数覆盖→${override.strength === "strong" ? "强" : override.strength === "medium" ? "中" : "弱"}】`
+            : `因子参数覆盖强度为${override.strength === "strong" ? "强" : override.strength === "medium" ? "中" : "弱"}`,
+        };
       }
     }
   }

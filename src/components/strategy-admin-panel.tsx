@@ -1052,11 +1052,15 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
   // ── Update a single field of a DB factor ──
   const handleUpdateFactor = useCallback(async (id: string, field: string, value: any) => {
     try {
-      await fetch("/api/stock/strategy", {
+      const res = await fetch("/api/stock/strategy", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "factor", id, data: { [field]: value } }),
       });
+      if (!res.ok) {
+        console.error("Failed to update factor:", res.status, await res.text());
+        return;
+      }
       if (strategyData) {
         const updatedFactors = strategyData.dbFactors.map((f: any) =>
           f.id === id ? { ...f, [field]: value } : f
@@ -1138,6 +1142,8 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
           const updatedFactors = [...(strategyData.dbFactors || []), result.data];
           setStrategyData({ ...strategyData, dbFactors: updatedFactors });
           if (onFactorsChanged) onFactorsChanged(updatedFactors);
+        } else {
+          console.error("Failed to create factor for rule:", res.status, await res.text());
         }
       } catch (e) {
         console.error("Failed to create factor for rule:", e);
