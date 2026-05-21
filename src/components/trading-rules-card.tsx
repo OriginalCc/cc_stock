@@ -263,6 +263,32 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                   <p>量价齐升是最健康的走势，可在回调时按仓位表上限操作。</p>
                 </div>
               </div>
+              <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/20 bg-green-500/5">
+                <span className="text-green-500 text-xs shrink-0">🚀</span>
+                <div>
+                  <span className="text-foreground font-medium">放量拉升 → 强势信号，可跟随</span>
+                  <p>放量拉升指成交量持续放大且股价快速上涨，说明主力资金主动进攻。<span className="text-green-600 font-semibold">系统检测到"放量拉升"因子时，代表多头力量强劲。</span></p>
+                  <div className="mt-1 space-y-0.5 text-[10px]">
+                    <p>• <span className="text-foreground font-medium">强放量拉升（≥50分）</span>：量比≥2x+价格涨幅≥1%，主力强势介入，回调可积极买入</p>
+                    <p>• <span className="text-foreground font-medium">放量拉升（30-49分）</span>：量价配合良好，可在回调时按仓位表操作</p>
+                    <p>• <span className="text-foreground font-medium">轻微放量拉升（10-29分）</span>：量能温和放大，观察后续是否持续放量再决定</p>
+                  </div>
+                  <p className="mt-1 text-amber-500 text-[10px]">⚠ 注意：高位放量拉升可能是诱多出货，需结合价格位置判断。低位放量拉升更可靠。</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-1.5 rounded border border-yellow-500/20 bg-yellow-500/5">
+                <span className="text-yellow-500 text-xs shrink-0">🐢</span>
+                <div>
+                  <span className="text-foreground font-medium">缩量拉升 → 谨慎看待，警惕诱多</span>
+                  <p>缩量拉升指成交量缩小但股价上涨，说明上涨缺乏买盘支撑，可持续性存疑。<span className="text-yellow-600 font-semibold">系统检测到"缩量拉升"因子时，需高度警惕。</span></p>
+                  <div className="mt-1 space-y-0.5 text-[10px]">
+                    <p>• <span className="text-foreground font-medium">高位缩量拉升</span>：最危险！主力用少量资金拉高股价吸引跟风，随时可能反转下跌</p>
+                    <p>• <span className="text-foreground font-medium">低位缩量拉升</span>：可能是抛压减轻的自然反弹，但力度有限，不宜追高</p>
+                    <p>• <span className="text-foreground font-medium">盘中突然缩量拉升</span>：多为快速拉高出货，5-10分钟后大概率回落</p>
+                  </div>
+                  <p className="mt-1 text-yellow-600 text-[10px]">💡 操作建议：缩量拉升不追！等放量确认后再介入。若已持仓，缩量拉升是减仓时机。</p>
+                </div>
+              </div>
               <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
                 <span className="text-amber-500 text-xs shrink-0">⚡</span>
                 <div>
@@ -279,7 +305,7 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
               </div>
             </div>
             <div className="p-1.5 rounded border border-amber-500/10 bg-amber-500/5">
-              <p className="text-amber-600 dark:text-amber-400 font-medium text-[10px]">💡 量能是价格方向的确认器：无量上涨不可信，放量下跌要远离。</p>
+              <p className="text-amber-600 dark:text-amber-400 font-medium text-[10px]">💡 量能是价格方向的确认器：放量拉升可信，缩量拉升可疑；无量上涨不可信，放量下跌要远离。</p>
             </div>
           </div>
         </div>
