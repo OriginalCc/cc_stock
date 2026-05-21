@@ -927,8 +927,8 @@ export default function StockTAssistant() {
         </>
         )}
 
-        {/* Trading Rules Reference — hidden in 5d-timeline mode */}
-        {chartMode !== "5d-timeline" && (
+        {/* Trading Rules Reference — only show in timeline (分时) mode */}
+        {chartMode === "timeline" && (
         <div className="mb-4">
           <TradingRulesCard autoExpanded={autoExpanded} />
         </div>

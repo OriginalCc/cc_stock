@@ -959,8 +959,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
         </CardContent>
       </Card>
 
-      {/* Trading Rules Card — always visible */}
-      <TradingRulesCard />
+      {/* Trading Rules Card — hidden (only shown on 分时 page) */}
 
       {/* Error */}
       {error && (
