@@ -173,6 +173,7 @@ const DEFAULT_FILTERS: ScreenerFilters = {
   enableChiNext: false,
   enableSTAR: false,
 };
+const DEFAULT_FILTERS_JSON = JSON.stringify(DEFAULT_FILTERS);
 
 // ── Helper functions ───────────────────────────────────
 
@@ -218,6 +219,111 @@ function getPatternTagChartColor(tag: string): string {
   if (tag.includes("反弹")) return "#eab308";
   if (tag.includes("稳步")) return "#3b82f6";
   return "#6b7280";
+}
+
+// ── Module-level sub-components (avoid re-creation on every render) ──
+
+function RadarChart({ stock }: { stock: IntradayStock }) {
+  const dimensions = [
+    { key: "vwapScore", label: "均价线", value: stock.vwapScore },
+    { key: "volumePatternScore", label: "量价配合", value: stock.volumePatternScore },
+    { key: "trendPatternScore", label: "趋势形态", value: stock.trendPatternScore },
+    { key: "macdScore", label: "MACD", value: stock.macdScore },
+    { key: "capitalFlowScore", label: "资金流向", value: stock.capitalFlowScore },
+    { key: "coRiseScore", label: "量价齐升", value: stock.coRiseScore },
+    { key: "breakoutScore", label: "突破新高", value: stock.breakoutScore },
+  ];
+
+  const maxVal = 100;
+  const center = 60;
+  const radius = 50;
+  const angleStep = (2 * Math.PI) / dimensions.length;
+  const startAngle = -Math.PI / 2;
+
+  const gridLevels = [0.2, 0.4, 0.6, 0.8, 1.0];
+
+  return (
+    <svg width="120" height="120" viewBox="0 0 120 120" className="shrink-0">
+      {gridLevels.map((level) => {
+        const r = radius * level;
+        const points = dimensions.map((_, i) => {
+          const angle = startAngle + i * angleStep;
+          return `${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`;
+        }).join(" ");
+        return <polygon key={level} points={points} fill="none" stroke="currentColor" className="text-muted/20" strokeWidth="0.5" />;
+      })}
+      {dimensions.map((_, i) => {
+        const angle = startAngle + i * angleStep;
+        const x2 = center + radius * Math.cos(angle);
+        const y2 = center + radius * Math.sin(angle);
+        return <line key={i} x1={center} y1={center} x2={x2} y2={y2} stroke="currentColor" className="text-muted/20" strokeWidth="0.5" />;
+      })}
+      <polygon
+        points={dimensions.map((d, i) => {
+          const angle = startAngle + i * angleStep;
+          const r = radius * (d.value / maxVal);
+          return `${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`;
+        }).join(" ")}
+        fill="rgba(16, 185, 129, 0.15)"
+        stroke="rgb(16, 185, 129)"
+        strokeWidth="1.5"
+      />
+      {dimensions.map((d, i) => {
+        const angle = startAngle + i * angleStep;
+        const r = radius * (d.value / maxVal);
+        const x = center + r * Math.cos(angle);
+        const y = center + r * Math.sin(angle);
+        return <circle key={i} cx={x} cy={y} r="2" fill={d.value >= 50 ? "rgb(16, 185, 129)" : "rgb(156, 163, 175)"} />;
+      })}
+    </svg>
+  );
+}
+
+function MiniLineChart({ data }: { data: MiniTimelineResult }) {
+  if (!data.items || data.items.length < 2) {
+    return <div className="text-[10px] text-muted-foreground text-center py-4">暂无分时数据</div>;
+  }
+  const prices = data.items.map((d) => d.price);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const range = maxP - minP || 1;
+  const w = 260;
+  const h = 80;
+  const padY = 4;
+  const points = prices.map((p, i) => {
+    const x = (i / (prices.length - 1)) * w;
+    const y = padY + ((maxP - p) / range) * (h - padY * 2);
+    return `${x},${y}`;
+  }).join(" ");
+
+  // prevClose line
+  const prevCloseY = data.prevClose > 0
+    ? padY + ((maxP - data.prevClose) / range) * (h - padY * 2)
+    : null;
+
+  const lastItem = data.items[data.items.length - 1];
+  const isUp = lastItem.changePercent >= 0;
+  const lineColor = isUp ? "#ef4444" : "#22c55e";
+  const fillColor = isUp ? "rgba(239, 68, 68, 0.08)" : "rgba(34, 197, 94, 0.08)";
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="w-full">
+      {prevCloseY !== null && (
+        <line x1="0" y1={prevCloseY} x2={w} y2={prevCloseY} stroke="currentColor" className="text-muted/30" strokeWidth="0.5" strokeDasharray="3,3" />
+      )}
+      <polygon
+        points={`0,${h} ${points} ${w},${h}`}
+        fill={fillColor}
+      />
+      <polyline
+        points={points}
+        fill="none"
+        stroke={lineColor}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 // ── Component ──────────────────────────────────────────
@@ -404,14 +510,14 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
   };
 
   const filtersChanged = useMemo(() => {
-    return JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
+    return JSON.stringify(filters) !== DEFAULT_FILTERS_JSON;
   }, [filters]);
 
   const cacheRemaining = useMemo(() => {
     if (!lastFetchTimestamp) return 0;
     const elapsed = Date.now() - lastFetchTimestamp;
     return Math.max(0, Math.ceil((180_000 - elapsed) / 1000));
-  }, [lastFetchTime, isFromCache]);
+  }, [lastFetchTimestamp, isFromCache]);
 
   // Watchlist toggle handler
   const handleToggleWatchlist = (stock: IntradayStock, e: React.MouseEvent) => {
@@ -466,111 +572,6 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [previewStock]);
-
-  // ── Dimension Score Radar ──
-  const RadarChart = ({ stock }: { stock: IntradayStock }) => {
-    const dimensions = [
-      { key: "vwapScore", label: "均价线", value: stock.vwapScore },
-      { key: "volumePatternScore", label: "量价配合", value: stock.volumePatternScore },
-      { key: "trendPatternScore", label: "趋势形态", value: stock.trendPatternScore },
-      { key: "macdScore", label: "MACD", value: stock.macdScore },
-      { key: "capitalFlowScore", label: "资金流向", value: stock.capitalFlowScore },
-      { key: "coRiseScore", label: "量价齐升", value: stock.coRiseScore },
-      { key: "breakoutScore", label: "突破新高", value: stock.breakoutScore },
-    ];
-
-    const maxVal = 100;
-    const center = 60;
-    const radius = 50;
-    const angleStep = (2 * Math.PI) / dimensions.length;
-    const startAngle = -Math.PI / 2;
-
-    const gridLevels = [0.2, 0.4, 0.6, 0.8, 1.0];
-
-    return (
-      <svg width="120" height="120" viewBox="0 0 120 120" className="shrink-0">
-        {gridLevels.map((level) => {
-          const r = radius * level;
-          const points = dimensions.map((_, i) => {
-            const angle = startAngle + i * angleStep;
-            return `${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`;
-          }).join(" ");
-          return <polygon key={level} points={points} fill="none" stroke="currentColor" className="text-muted/20" strokeWidth="0.5" />;
-        })}
-        {dimensions.map((_, i) => {
-          const angle = startAngle + i * angleStep;
-          const x2 = center + radius * Math.cos(angle);
-          const y2 = center + radius * Math.sin(angle);
-          return <line key={i} x1={center} y1={center} x2={x2} y2={y2} stroke="currentColor" className="text-muted/20" strokeWidth="0.5" />;
-        })}
-        <polygon
-          points={dimensions.map((d, i) => {
-            const angle = startAngle + i * angleStep;
-            const r = radius * (d.value / maxVal);
-            return `${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`;
-          }).join(" ")}
-          fill="rgba(16, 185, 129, 0.15)"
-          stroke="rgb(16, 185, 129)"
-          strokeWidth="1.5"
-        />
-        {dimensions.map((d, i) => {
-          const angle = startAngle + i * angleStep;
-          const r = radius * (d.value / maxVal);
-          const x = center + r * Math.cos(angle);
-          const y = center + r * Math.sin(angle);
-          return <circle key={i} cx={x} cy={y} r="2" fill={d.value >= 50 ? "rgb(16, 185, 129)" : "rgb(156, 163, 175)"} />;
-        })}
-      </svg>
-    );
-  };
-
-  // ── Mini Timeline Line Chart ──
-  const MiniLineChart = ({ data }: { data: MiniTimelineResult }) => {
-    if (!data.items || data.items.length < 2) {
-      return <div className="text-[10px] text-muted-foreground text-center py-4">暂无分时数据</div>;
-    }
-    const prices = data.items.map((d) => d.price);
-    const minP = Math.min(...prices);
-    const maxP = Math.max(...prices);
-    const range = maxP - minP || 1;
-    const w = 260;
-    const h = 80;
-    const padY = 4;
-    const points = prices.map((p, i) => {
-      const x = (i / (prices.length - 1)) * w;
-      const y = padY + ((maxP - p) / range) * (h - padY * 2);
-      return `${x},${y}`;
-    }).join(" ");
-
-    // prevClose line
-    const prevCloseY = data.prevClose > 0
-      ? padY + ((maxP - data.prevClose) / range) * (h - padY * 2)
-      : null;
-
-    const lastItem = data.items[data.items.length - 1];
-    const isUp = lastItem.changePercent >= 0;
-    const lineColor = isUp ? "#ef4444" : "#22c55e";
-    const fillColor = isUp ? "rgba(239, 68, 68, 0.08)" : "rgba(34, 197, 94, 0.08)";
-
-    return (
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="w-full">
-        {prevCloseY !== null && (
-          <line x1="0" y1={prevCloseY} x2={w} y2={prevCloseY} stroke="currentColor" className="text-muted/30" strokeWidth="0.5" strokeDasharray="3,3" />
-        )}
-        <polygon
-          points={`0,${h} ${points} ${w},${h}`}
-          fill={fillColor}
-        />
-        <polyline
-          points={points}
-          fill="none"
-          stroke={lineColor}
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  };
 
   return (
     <div className="flex flex-col gap-4 h-full">

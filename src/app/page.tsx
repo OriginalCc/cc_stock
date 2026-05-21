@@ -128,6 +128,9 @@ const POPULAR_ASHARES_SEARCH_MAP: Record<string, { name: string; exchange: strin
   "159632": { name: "半导体设备ETF", exchange: "SZ", type: "ETF", pinyin: "bdtsb" },
 };
 
+// ── Module-level constants (avoid re-creation on every render) ──
+const TL_ZOOM_LEVELS = [250, 180, 120, 90, 60] as const;
+
 export default function StockTAssistant() {
   const {
     symbol, quote, history, timeline, timelinePrevClose, interval, chartMode,
@@ -253,20 +256,27 @@ export default function StockTAssistant() {
       setTimeout(idleFetch, startDelay);
     }
 
-    // Refresh every 30s during trading hours
+    // Refresh every 15s during trading hours (regime data changes slowly)
     const isTradingHours = () => {
       const now = new Date(); const h = (now.getUTCHours() + 8) % 24; const m = now.getUTCMinutes();
       const t = h * 100 + m; const day = now.getUTCDay();
       return day >= 1 && day <= 5 && ((t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505));
     };
     if (isTradingHours()) {
-      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 3000);
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 15000);
     }
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
 
   const szIndexRegime = indexRegimes[activeIndexKey];
   const cycleIndexKey = useCallback(() => { setActiveIndexKey(prev => { const idx = INDEX_KEYS.indexOf(prev); return INDEX_KEYS[(idx + 1) % INDEX_KEYS.length]; }); }, []);
+
+  // ── Memoized computed values (avoid inline IIFEs that defeat React.memo) ──
+  const indexChangePercent = useMemo(() => {
+    const td = indexTimelineData[activeIndexKey];
+    if (!td || !td.items.length || !td.prevClose || td.prevClose <= 0) return undefined;
+    return ((td.items[td.items.length - 1].price - td.prevClose) / td.prevClose) * 100;
+  }, [indexTimelineData, activeIndexKey]);
 
   // ── Sector Regime Detection ──
   const [sectorInfoRaw, setSectorInfoRaw] = useState<{ code: string; name: string } | null>(null);
@@ -276,6 +286,11 @@ export default function StockTAssistant() {
   const sectorRegime = isAShareStock ? sectorRegimeRaw : null;
   const sectorFailCountRef = useRef(0);
   const sectorLastFailTimeRef = useRef(0);
+
+  const sectorChangePercent = useMemo(() => {
+    if (!sectorTimelineData.items.length || !sectorTimelineData.prevClose || sectorTimelineData.prevClose <= 0) return undefined;
+    return ((sectorTimelineData.items[sectorTimelineData.items.length - 1].price - sectorTimelineData.prevClose) / sectorTimelineData.prevClose) * 100;
+  }, [sectorTimelineData]);
 
   useEffect(() => {
     if (!symbol || !isAShareStock) return;
@@ -330,10 +345,10 @@ export default function StockTAssistant() {
     };
     // Start immediately - no idle callback delay for sector data
     fetchSectorData();
-    // Refresh sector data every 3s during trading hours
+    // Refresh sector data every 10s during trading hours (sector data changes moderately)
     const refreshInterval = setInterval(() => {
       if (!cancelled) fetchSectorData();
-    }, 3000);
+    }, 10000);
     return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
   }, [symbol, isAShareStock]);
 
@@ -384,65 +399,13 @@ export default function StockTAssistant() {
   const [klinePanOffset, setKlinePanOffset] = useState<number>(0);
 
   // ── allChartData: merge today's quote into K-line history ──
-  const allChartData = useMemo(() => {
-    // In timeline mode, skip heavy quote-merge logic since K-line data is only used for
-    // prevDayMA5 and SignalSummaryPanel — neither needs real-time quote updates
-    if (chartMode === 'timeline' || chartMode === '5d-timeline') {
-      return history.filter((h) => h.close > 0);
-    }
-
-    // Helper: normalize a date string to just the date part (YYYY-MM-DD)
+  // Step 1: Deduplicate history only when history changes (rare, ~every 30s)
+  const dedupedHistory = useMemo(() => {
     const normalizeDate = (d: string | undefined): string => {
       if (!d) return "";
       return d.split(" ")[0].split("T")[0];
     };
-
     const data = history.filter((h) => h.close > 0);
-    if (quote && quote.price > 0 && (interval === "1d" || interval === "1wk")) {
-      const now = new Date(); const chinaOffset = 8 * 60;
-      const chinaTime = new Date(now.getTime() + (chinaOffset + now.getTimezoneOffset()) * 60000);
-      const todayStr = chinaTime.toISOString().split("T")[0];
-      let todayKey = todayStr;
-      if (interval === "1wk") { const dayOfWeek = chinaTime.getDay(); const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; const monday = new Date(chinaTime.getTime() + mondayOffset * 86400000); todayKey = monday.toISOString().split("T")[0]; }
-
-      // Only add/merge today's bar if it's a trading day (Mon-Fri) and
-      // the date key makes sense (don't add bars for weekends/holidays)
-      const dayOfWeek = chinaTime.getDay();
-      const isWeekday = dayOfWeek !== 0 && dayOfWeek !== 6;
-
-      const todayQuote = { open: quote.open || quote.price, high: quote.high || quote.price, low: quote.low || quote.price, close: quote.price, volume: quote.volume || 0 };
-
-      // Search from the end of the array for a bar matching todayKey (normalized)
-      let existingTodayIdx = -1;
-      for (let i = data.length - 1; i >= 0; i--) {
-        if (normalizeDate(data[i].date) === todayKey) {
-          existingTodayIdx = i;
-          break;
-        }
-      }
-
-      if (existingTodayIdx >= 0) {
-        // API already has a bar for today — merge quote data into it, preserving MA/MACD values from API
-        const existing = data[existingTodayIdx];
-        data[existingTodayIdx] = {
-          ...existing,
-          high: Math.max(existing.high, todayQuote.high),
-          low: Math.min(existing.low, todayQuote.low),
-          close: todayQuote.close,
-          volume: todayQuote.volume,
-          // Preserve API-computed MA/MACD values (they may be null if API hasn't computed them yet)
-          ma5: existing.ma5,
-          ma10: existing.ma10,
-          ma20: existing.ma20,
-          dif: existing.dif,
-          dea: existing.dea,
-          macd: existing.macd,
-        };
-      } else if (isWeekday) {
-        // No existing bar for today and it's a weekday — push a new bar
-        data.push({ date: todayKey, ...todayQuote, ma5: null, ma10: null, ma20: null, dif: null, dea: null, macd: null });
-      }
-    }
     // Deduplicate: remove any bars with duplicate dates, preferring bars with MA values (API data)
     const seen = new Map<string, number>();
     for (let i = 0; i < data.length; i++) {
@@ -451,41 +414,63 @@ export default function StockTAssistant() {
       if (prevIdx === undefined) {
         seen.set(dateKey, i);
       } else {
-        // Prefer the bar that has computed MA values (API data over quote-pushed data)
         const prevItem = data[prevIdx];
         const curItem = data[i];
         const prevHasMA = prevItem.ma5 != null;
         const curHasMA = curItem.ma5 != null;
-        if (curHasMA && !prevHasMA) {
-          // Current bar has MA values, previous doesn't — prefer current
-          // But merge the quote-updated OHLCV from the other bar
-          seen.set(dateKey, i);
-        } else if (prevHasMA && !curHasMA) {
-          // Previous bar has MA values, current doesn't — prefer previous
-          // (keep prevIdx)
-        } else {
-          // Both have or lack MA values — keep the last occurrence (quote-merged data)
-          seen.set(dateKey, i);
-        }
+        if (curHasMA && !prevHasMA) { seen.set(dateKey, i); }
+        else if (prevHasMA && !curHasMA) { /* keep prevIdx */ }
+        else { seen.set(dateKey, i); }
       }
     }
     if (seen.size < data.length) {
-      // For any kept index that was a duplicate, also normalize the date field to clean format
-      const deduped = data.filter((item, i) => {
+      return data.filter((item, i) => {
         const dateKey = normalizeDate(item.date);
         return seen.get(dateKey) === i;
       }).map((item) => {
-        // Normalize the date to just the date part (remove time component)
         const normalizedDate = normalizeDate(item.date);
         if (normalizedDate && normalizedDate !== item.date) {
           return { ...item, date: normalizedDate };
         }
         return item;
       });
-      return deduped;
     }
     return data;
-  }, [history, chartMode, quote, interval]);
+  }, [history]);
+
+  // Step 2: Merge quote into last bar only when quote changes (every 3s, but O(1))
+  const allChartData = useMemo(() => {
+    if (chartMode === 'timeline' || chartMode === '5d-timeline') {
+      return dedupedHistory;
+    }
+    if (!quote || quote.price <= 0 || (interval !== "1d" && interval !== "1wk")) {
+      return dedupedHistory;
+    }
+    const data = [...dedupedHistory];
+    const normalizeDate = (d: string | undefined): string => {
+      if (!d) return "";
+      return d.split(" ")[0].split("T")[0];
+    };
+    const now = new Date(); const chinaOffset = 8 * 60;
+    const chinaTime = new Date(now.getTime() + (chinaOffset + now.getTimezoneOffset()) * 60000);
+    const todayStr = chinaTime.toISOString().split("T")[0];
+    let todayKey = todayStr;
+    if (interval === "1wk") { const dayOfWeek = chinaTime.getDay(); const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; const monday = new Date(chinaTime.getTime() + mondayOffset * 86400000); todayKey = monday.toISOString().split("T")[0]; }
+    const dayOfWeek = chinaTime.getDay();
+    const isWeekday = dayOfWeek !== 0 && dayOfWeek !== 6;
+    const todayQuote = { open: quote.open || quote.price, high: quote.high || quote.price, low: quote.low || quote.price, close: quote.price, volume: quote.volume || 0 };
+    let existingTodayIdx = -1;
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (normalizeDate(data[i].date) === todayKey) { existingTodayIdx = i; break; }
+    }
+    if (existingTodayIdx >= 0) {
+      const existing = data[existingTodayIdx];
+      data[existingTodayIdx] = { ...existing, high: Math.max(existing.high, todayQuote.high), low: Math.min(existing.low, todayQuote.low), close: todayQuote.close, volume: todayQuote.volume, ma5: existing.ma5, ma10: existing.ma10, ma20: existing.ma20, dif: existing.dif, dea: existing.dea, macd: existing.macd };
+    } else if (isWeekday) {
+      data.push({ date: todayKey, ...todayQuote, ma5: null, ma10: null, ma20: null, dif: null, dea: null, macd: null });
+    }
+    return data;
+  }, [dedupedHistory, chartMode, quote, interval]);
 
   // ── chartData for signal summary (visible K-line slice) ──
   const chartData = useMemo(() => {
@@ -496,7 +481,6 @@ export default function StockTAssistant() {
   }, [allChartData, klineVisibleBars, klinePanOffset]);
 
   // ── Timeline zoom state ──
-  const TL_ZOOM_LEVELS = [250, 180, 120, 90, 60];
   const [tlZoomIdx, setTlZoomIdx] = useState<number>(0);
   const [tlPanOffset, setTlPanOffset] = useState<number>(0);
   const tlVisibleMinutes = TL_ZOOM_LEVELS[tlZoomIdx];
@@ -596,13 +580,31 @@ export default function StockTAssistant() {
   const deferredPvMarkers = useDeferredValue(pvMarkers);
   const latestTimelineSignal = useMemo(() => { for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { if (deferredTimelineSignals[i]) return deferredTimelineSignals[i]; } return null; }, [deferredTimelineSignals]);
 
-  // ── Signal counts ──
+  // ── Memoized slice for SignalSummaryPanel (avoid new array every render) ──
+  const signalSummarySignals = useMemo(() => deferredTimelineSignals.slice(-60), [deferredTimelineSignals]);
+
+  // ── Signal counts (optimized: single-pass with cached description check) ──
   const signalCounts = useMemo(() => {
     if (!isTimelineActive) return { buyCount: 0, strongBuys: 0, sellCount: 0, strongSells: 0, totalSigs: 0, strongSigs: 0, mediumSigs: 0, weakSigs: 0, confluenceCount: 0, keyLevelCount: 0, vwapSlopeCount: 0, indexRegimeCount: 0 };
     let buyCount = 0, strongBuys = 0, sellCount = 0, strongSells = 0;
     let totalSigs = 0, strongSigs = 0, mediumSigs = 0, weakSigs = 0;
     let confluenceCount = 0, keyLevelCount = 0, vwapSlopeCount = 0, indexRegimeCount = 0;
-    for (const s of deferredTimelineSignals) { if (!s) continue; totalSigs++; if (s.type === "buy") { buyCount++; if (s.strength === "strong") strongBuys++; } else if (s.type === "sell") { sellCount++; if (s.strength === "strong") strongSells++; } if (s.strength === "strong") strongSigs++; else if (s.strength === "medium") mediumSigs++; else if (s.strength === "weak") weakSigs++; if (s.description?.includes("共振")) confluenceCount++; if (s.description?.includes("阻力确认") || s.description?.includes("支撑确认")) keyLevelCount++; if (s.description?.includes("均价线拐头")) vwapSlopeCount++; if (s.description?.includes("大盘")) indexRegimeCount++; }
+    for (const s of deferredTimelineSignals) {
+      if (!s) continue;
+      totalSigs++;
+      if (s.type === "buy") { buyCount++; if (s.strength === "strong") strongBuys++; }
+      else if (s.type === "sell") { sellCount++; if (s.strength === "strong") strongSells++; }
+      if (s.strength === "strong") strongSigs++;
+      else if (s.strength === "medium") mediumSigs++;
+      else if (s.strength === "weak") weakSigs++;
+      const desc = s.description;
+      if (desc) {
+        if (desc.includes("共振")) confluenceCount++;
+        if (desc.includes("阻力确认") || desc.includes("支撑确认")) keyLevelCount++;
+        if (desc.includes("均价线拐头")) vwapSlopeCount++;
+        if (desc.includes("大盘")) indexRegimeCount++;
+      }
+    }
     return { buyCount, strongBuys, sellCount, strongSells, totalSigs, strongSigs, mediumSigs, weakSigs, confluenceCount, keyLevelCount, vwapSlopeCount, indexRegimeCount };
   }, [deferredTimelineSignals, isTimelineActive]);
 
@@ -852,15 +854,8 @@ export default function StockTAssistant() {
           stockName={quote?.name}
           indexLabel={INDEX_CONFIG[activeIndexKey]?.label || "深证"}
           sectorName={sectorInfo?.name}
-          indexChangePercent={(() => {
-            const td = indexTimelineData[activeIndexKey];
-            if (!td || !td.items.length || !td.prevClose || td.prevClose <= 0) return undefined;
-            return ((td.items[td.items.length - 1].price - td.prevClose) / td.prevClose) * 100;
-          })()}
-          sectorChangePercent={(() => {
-            if (!sectorTimelineData.items.length || !sectorTimelineData.prevClose || sectorTimelineData.prevClose <= 0) return undefined;
-            return ((sectorTimelineData.items[sectorTimelineData.items.length - 1].price - sectorTimelineData.prevClose) / sectorTimelineData.prevClose) * 100;
-          })()}
+          indexChangePercent={indexChangePercent}
+          sectorChangePercent={sectorChangePercent}
         />
         )}
 
@@ -908,7 +903,7 @@ export default function StockTAssistant() {
         {/* T-Trading Signals Summary — hidden in 5d-timeline mode */}
         {chartMode !== "5d-timeline" && (chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
           <LazyMount height={120}>
-            <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={deferredTimelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
+            <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={signalSummarySignals} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
           </LazyMount>
         )}
 

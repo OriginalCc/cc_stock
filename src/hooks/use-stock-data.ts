@@ -188,10 +188,12 @@ export function useStockData() {
 
   // ── Fetch timeline + quote using SWR for instant cache display ──
   const lastTimelineFingerprint = useRef("");
+  const timelineLengthRef = useRef(timeline.length);
+  timelineLengthRef.current = timeline.length;
   const fetchTimelineWithQuote = useCallback(async (sym: string, isRefresh = false) => {
     if (!checkAShare(sym)) return;
     // Only show loading skeleton on initial fetch when we have no cached data
-    if (!isRefresh && timeline.length === 0) setTimelineLoading(true);
+    if (!isRefresh && timelineLengthRef.current === 0) setTimelineLoading(true);
     try {
       // Use SWR pattern: return cached data instantly, revalidate in background
       const result = await fetchWithSWR<{
@@ -255,7 +257,7 @@ export function useStockData() {
     } finally {
       if (!isRefresh) setTimelineLoading(false);
     }
-  }, [checkAShare, timeline.length]);
+  }, [checkAShare]);
 
   // ── Fetch history with MACD ──
   const fetchHistory = useCallback(async (sym: string, intv: TimeInterval) => {
