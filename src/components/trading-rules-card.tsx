@@ -296,6 +296,33 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                   <p>突然放量可能是主力试盘或诱多。观察5分钟内是否持续，不追脉冲量。</p>
                 </div>
               </div>
+              <div className="flex items-start gap-2 p-1.5 rounded border border-orange-500/20 bg-orange-500/5">
+                <span className="text-orange-500 text-xs shrink-0">⚡📈</span>
+                <div>
+                  <span className="text-foreground font-medium">脉冲上涨 → 短线冲高，不追涨</span>
+                  <p>脉冲上涨指1-2分钟内价格突然急速拉升，伴随瞬时成交量放大。<span className="text-orange-600 font-semibold">系统检测到"脉冲上涨"因子时，代表短线异动。</span></p>
+                  <div className="mt-1 space-y-0.5 text-[10px]">
+                    <p>• <span className="text-foreground font-medium">开盘脉冲上涨</span>：9:30-10:00出现的脉冲，多为集合竞价集中成交的惯性冲高，3-5分钟内大概率回落，切勿追涨</p>
+                    <p>• <span className="text-foreground font-medium">盘中脉冲上涨</span>：可能是主力快速拉高试盘或对倒拉升，若后续量能不能持续，冲高回落概率极大</p>
+                    <p>• <span className="text-foreground font-medium">尾盘脉冲上涨</span>：14:30后突然拉升，多为尾盘做线或诱多，次日低开概率高，不参与</p>
+                  </div>
+                  <p className="mt-1 text-orange-600 text-[10px]">💡 操作建议：脉冲上涨不追！等3-5分钟观察是否持续放量，若量能萎缩则确认是假突破。若已持仓，脉冲上涨是反T(先卖再买)卖出良机。</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-1.5 rounded border border-green-500/20 bg-green-500/5">
+                <span className="text-green-500 text-xs shrink-0">⚡📉</span>
+                <div>
+                  <span className="text-foreground font-medium">脉冲下跌 → 短线急跌，不恐慌</span>
+                  <p>脉冲下跌指1-2分钟内价格突然急速下挫，伴随瞬时成交量放大。<span className="text-green-600 font-semibold">系统检测到"脉冲下跌"因子时，需区分场景判断。</span></p>
+                  <div className="mt-1 space-y-0.5 text-[10px]">
+                    <p>• <span className="text-foreground font-medium">早盘脉冲下跌</span>：最危险！若发生在9:30-10:00且伴随放量，可能演变为早盘放量下跌，禁止抄底</p>
+                    <p>• <span className="text-foreground font-medium">盘中脉冲下跌</span>：可能是主力震仓洗盘，若快速拉回且不破关键支撑，反而可能是低吸机会</p>
+                    <p>• <span className="text-foreground font-medium">尾盘脉冲下跌</span>：14:30后急跌，可能是恐慌性抛售或主力打压吸筹，次日关注是否低开</p>
+                    <p>• <span className="text-foreground font-medium">脉冲下跌+快速拉回</span>：若1-3分钟内收回跌幅，多为洗盘动作（系统会同步检测"洗盘"因子）</p>
+                  </div>
+                  <p className="mt-1 text-green-600 text-[10px]">💡 操作建议：脉冲下跌不恐慌卖出！观察3-5分钟是否企稳。若快速拉回=洗盘；若持续走低=真跌，需按止损规矩执行。</p>
+                </div>
+              </div>
               <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
                 <span className="text-amber-500 text-xs shrink-0">📉</span>
                 <div>
@@ -305,7 +332,7 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
               </div>
             </div>
             <div className="p-1.5 rounded border border-amber-500/10 bg-amber-500/5">
-              <p className="text-amber-600 dark:text-amber-400 font-medium text-[10px]">💡 量能是价格方向的确认器：放量拉升可信，缩量拉升可疑；无量上涨不可信，放量下跌要远离。</p>
+              <p className="text-amber-600 dark:text-amber-400 font-medium text-[10px]">💡 量能是价格方向的确认器：放量拉升可信，缩量拉升可疑；脉冲上涨不追，脉冲下跌不慌；无量上涨不可信，放量下跌要远离。</p>
             </div>
           </div>
         </div>
