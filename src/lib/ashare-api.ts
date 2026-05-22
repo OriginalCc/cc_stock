@@ -4,8 +4,6 @@
  * Uses Tencent Stock API for real-time quotes with Chinese names
  */
 
-import { db } from "@/lib/db";
-
 // ── Types ──────────────────────────────────────────────
 
 export interface AShareQuote {
@@ -724,31 +722,13 @@ function toEastMoneySecid(symbol: string): string {
  * Get the industry sector info for a stock from EastMoney
  * Uses the push2 API with f127 field (industry sector name)
  * Then searches for the sector code via EastMoney suggest API
- * Fallback: database cache → local stock-sector mapping for popular stocks
+ * Fallback: local stock-sector mapping for popular stocks
  */
 export async function getStockSector(symbol: string): Promise<SectorInfo | null> {
-  const pureCode = getPureCode(symbol);
-
-  // ── Step 1: Check database cache first (fastest, persistent) ──
-  try {
-    const cached: any = await db.$queryRawUnsafe(
-      `SELECT sectorCode, sectorName, quoteId, market FROM SectorInfoCache WHERE symbol = ? LIMIT 1`,
-      pureCode
-    );
-    if (Array.isArray(cached) && cached.length > 0) {
-      const row = cached[0];
-      return { code: row.sectorCode, name: row.sectorName, quoteId: row.quoteId || `90.${row.sectorCode}`, market: row.market || 90 };
-    }
-  } catch (e) {
-    // DB not available, continue with API lookup
-  }
-
   try {
     const fallback = getStockSectorFallback(symbol);
     const secid = toEastMoneySecid(symbol);
-
-    // ── Step 2: Fetch sector name from EastMoney push2 API ──
-    const url = `http://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f127,f128,f100,f12,f14`;
+    const url = `http://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f127`;
 
     // Use single AbortSignal.timeout instead of redundant Promise.race wrappers
     const response = await fetch(url, { next: { revalidate: 0 }, signal: AbortSignal.timeout(8000) });
@@ -765,43 +745,8 @@ export async function getStockSector(symbol: string): Promise<SectorInfo | null>
     const cleanedName = sectorName.replace(/[ⅡⅢⅣ]+$/, "").trim();
     if (!cleanedName) return fallback;
 
-    // ── Step 3: Search sector code via multiple methods ──
-    // Method A: EastMoney suggest API (primary)
-    let result = await searchSectorCode(cleanedName);
-
-    // Method B: If suggest API fails, try EastMoney sector list API with name filter
-    if (!result) {
-      result = await searchSectorByListAPI(cleanedName);
-    }
-
-    // Method C: If still not found, try with a shortened name (remove trailing qualifiers)
-    if (!result && cleanedName.length > 2) {
-      const shortName = cleanedName.replace(/(行业|板块|概念|产业|制造|加工|服务|开发|经营|管理|零售|批发)$/,"").trim();
-      if (shortName.length >= 2 && shortName !== cleanedName) {
-        result = await searchSectorCode(shortName);
-        if (!result) result = await searchSectorByListAPI(shortName);
-      }
-    }
-
-    const finalResult = result || fallback;
-
-    // ── Step 4: Cache successful result to database ──
-    if (finalResult) {
-      try {
-        const quoteId = finalResult.quoteId || `90.${finalResult.code}`;
-        const market = finalResult.market || 90;
-        await db.$executeRawUnsafe(
-          `INSERT INTO SectorInfoCache (id, symbol, sectorCode, sectorName, quoteId, market, createdAt, updatedAt)
-           VALUES (lower(hex(randomblob(9))), ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-           ON CONFLICT(symbol) DO UPDATE SET sectorCode=excluded.sectorCode, sectorName=excluded.sectorName, quoteId=excluded.quoteId, market=excluded.market, updatedAt=datetime('now')`,
-          pureCode, finalResult.code, finalResult.name, quoteId, market
-        );
-      } catch (e) {
-        // DB write failed, non-critical
-      }
-    }
-
-    return finalResult;
+    const result = await searchSectorCode(cleanedName);
+    return result || fallback;
   } catch (error) {
     console.error("getStockSector error:", error);
     return getStockSectorFallback(symbol);
@@ -809,133 +754,37 @@ export async function getStockSector(symbol: string): Promise<SectorInfo | null>
 }
 
 // Local fallback: stock → sector mapping for popular A-shares
-// Expanded to cover ~80 most common A-shares to reduce dependency on unreliable suggest API
 const STOCK_SECTOR_MAP: Record<string, SectorInfo> = {
-  // ── 白酒 ──
   "600519": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
   "000858": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
   "000568": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
   "600809": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
-  "000799": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
-  "603589": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
-  // ── 银行 ──
+  "601318": { code: "BK0475", name: "保险", quoteId: "90.BK0475", market: 90 },
   "600036": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
   "000001": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "601398": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "601288": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "600000": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "601166": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "600016": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "601328": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "600015": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "601818": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
-  "000002": { code: "BK0451", name: "房地产开发", quoteId: "90.BK0451", market: 90 },
-  "001979": { code: "BK0451", name: "房地产开发", quoteId: "90.BK0451", market: 90 },
-  "600048": { code: "BK0451", name: "房地产开发", quoteId: "90.BK0451", market: 90 },
-  // ── 保险 ──
-  "601318": { code: "BK0475", name: "保险", quoteId: "90.BK0475", market: 90 },
-  "601601": { code: "BK0475", name: "保险", quoteId: "90.BK0475", market: 90 },
-  "601628": { code: "BK0475", name: "保险", quoteId: "90.BK0475", market: 90 },
-  // ── 证券 ──
-  "600030": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
-  "300059": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
-  "601211": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
-  "600837": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
-  "601688": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
-  // ── 汽车整车 ──
   "002594": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
-  "600104": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
-  "000625": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
-  "601127": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
-  "000800": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
-  // ── 锂电池 ──
   "300750": { code: "BK0478", name: "锂电池", quoteId: "90.BK0478", market: 90 },
-  "002460": { code: "BK0478", name: "锂电池", quoteId: "90.BK0478", market: 90 },
-  "300014": { code: "BK0478", name: "锂电池", quoteId: "90.BK0478", market: 90 },
-  // ── 有色金属 ──
   "601899": { code: "BK0479", name: "有色金属", quoteId: "90.BK0479", market: 90 },
-  "600547": { code: "BK0479", name: "有色金属", quoteId: "90.BK0479", market: 90 },
-  // ── 白色家电 ──
   "000333": { code: "BK0484", name: "白色家电", quoteId: "90.BK0484", market: 90 },
   "000651": { code: "BK0484", name: "白色家电", quoteId: "90.BK0484", market: 90 },
-  "600690": { code: "BK0484", name: "白色家电", quoteId: "90.BK0484", market: 90 },
-  // ── 化学制药 ──
   "600276": { code: "BK0734", name: "化学制药", quoteId: "90.BK0734", market: 90 },
-  "000538": { code: "BK0734", name: "化学制药", quoteId: "90.BK0734", market: 90 },
-  "600196": { code: "BK0734", name: "化学制药", quoteId: "90.BK0734", market: 90 },
-  // ── 安防 ──
+  "601398": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
+  "600030": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
+  "300059": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
   "002415": { code: "BK0911", name: "安防", quoteId: "90.BK0911", market: 90 },
-  // ── 电力 ──
   "600900": { code: "BK0486", name: "电力", quoteId: "90.BK0486", market: 90 },
-  "601985": { code: "BK0486", name: "电力", quoteId: "90.BK0486", market: 90 },
-  "600886": { code: "BK0486", name: "电力", quoteId: "90.BK0486", market: 90 },
-  // ── 光伏 ──
   "601012": { code: "BK0912", name: "光伏", quoteId: "90.BK0912", market: 90 },
   "300274": { code: "BK0912", name: "光伏", quoteId: "90.BK0912", market: 90 },
-  "002459": { code: "BK0912", name: "光伏", quoteId: "90.BK0912", market: 90 },
-  "601865": { code: "BK0912", name: "光伏", quoteId: "90.BK0912", market: 90 },
-  // ── 人工智能 ──
   "002230": { code: "BK0800", name: "人工智能", quoteId: "90.BK0800", market: 90 },
-  "300418": { code: "BK0800", name: "人工智能", quoteId: "90.BK0800", market: 90 },
-  // ── 旅游 ──
   "601888": { code: "BK0490", name: "旅游", quoteId: "90.BK0490", market: 90 },
-  // ── 面板 ──
   "000725": { code: "BK0733", name: "面板", quoteId: "90.BK0733", market: 90 },
-  // ── 水泥 ──
   "600585": { code: "BK0732", name: "水泥", quoteId: "90.BK0732", market: 90 },
-  // ── 建筑装饰 ──
   "601668": { code: "BK0469", name: "建筑装饰", quoteId: "90.BK0469", market: 90 },
-  "601669": { code: "BK0469", name: "建筑装饰", quoteId: "90.BK0469", market: 90 },
-  // ── 养殖业 ──
   "002714": { code: "BK0470", name: "养殖业", quoteId: "90.BK0470", market: 90 },
-  "300498": { code: "BK0470", name: "养殖业", quoteId: "90.BK0470", market: 90 },
-  // ── 港口航运 ──
   "601919": { code: "BK0480", name: "港口航运", quoteId: "90.BK0480", market: 90 },
-  // ── 食品加工 ──
   "600887": { code: "BK0482", name: "食品加工", quoteId: "90.BK0482", market: 90 },
-  // ── 通信服务 ──
   "600050": { code: "BK0489", name: "通信服务", quoteId: "90.BK0489", market: 90 },
-  // ── 半导体 ──
   "688981": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
-  "002049": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
-  "603501": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
-  "688012": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
-  // ── 中药 ──
-  "600085": { code: "BK0735", name: "中药", quoteId: "90.BK0735", market: 90 },
-  "000538": { code: "BK0735", name: "中药", quoteId: "90.BK0735", market: 90 },
-  // ── 军工 ──
-  "600760": { code: "BK0481", name: "军工", quoteId: "90.BK0481", market: 90 },
-  "600893": { code: "BK0481", name: "军工", quoteId: "90.BK0481", market: 90 },
-  // ── 医疗器械 ──
-  "300760": { code: "BK0727", name: "医疗器械", quoteId: "90.BK0727", market: 90 },
-  // ── 钢铁 ──
-  "600019": { code: "BK0483", name: "钢铁", quoteId: "90.BK0483", market: 90 },
-  // ── 煤炭 ──
-  "601088": { code: "BK0487", name: "煤炭", quoteId: "90.BK0487", market: 90 },
-  "601898": { code: "BK0487", name: "煤炭", quoteId: "90.BK0487", market: 90 },
-  // ── 石油 ──
-  "601857": { code: "BK0485", name: "石油", quoteId: "90.BK0485", market: 90 },
-  "600028": { code: "BK0485", name: "石油", quoteId: "90.BK0485", market: 90 },
-  // ── 房地产开发 ──
-  "001979": { code: "BK0451", name: "房地产开发", quoteId: "90.BK0451", market: 90 },
-  // ── 芯片 ──
-  "688256": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
-  // ── 新能源汽车 ──
-  "300750": { code: "BK0478", name: "锂电池", quoteId: "90.BK0478", market: 90 },
-  // ── 互联网服务 ──
-  "002410": { code: "BK0737", name: "互联网服务", quoteId: "90.BK0737", market: 90 },
-  // ── 软件 ──
-  "600845": { code: "BK0736", name: "软件开发", quoteId: "90.BK0736", market: 90 },
-  "300033": { code: "BK0736", name: "软件开发", quoteId: "90.BK0736", market: 90 },
-  // ── 机器人 ──
-  "300124": { code: "BK0894", name: "机器人", quoteId: "90.BK0894", market: 90 },
-  // ── 消费电子 ──
-  "002475": { code: "BK0801", name: "消费电子", quoteId: "90.BK0801", market: 90 },
-  "000725": { code: "BK0733", name: "面板", quoteId: "90.BK0733", market: 90 },
-  // ── 5G ──
-  "000063": { code: "BK0489", name: "通信服务", quoteId: "90.BK0489", market: 90 },
-  // ── 电商 ──
-  "300592": { code: "BK0449", name: "电子商务", quoteId: "90.BK0449", market: 90 },
 };
 
 function getStockSectorFallback(symbol: string): SectorInfo | null {
@@ -945,11 +794,10 @@ function getStockSectorFallback(symbol: string): SectorInfo | null {
 
 /**
  * Search sector code by name via EastMoney suggest API
- * Improved: return more results (count=10) and do fuzzy matching
  */
 export async function searchSectorCode(sectorName: string): Promise<SectorInfo | null> {
   try {
-    const url = `http://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(sectorName)}&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=10`;
+    const url = `http://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(sectorName)}&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=5`;
 
     const response = await fetch(url, {
       next: { revalidate: 0 },
@@ -974,64 +822,6 @@ export async function searchSectorCode(sectorName: string): Promise<SectorInfo |
     };
   } catch (error) {
     console.error("searchSectorCode error:", error);
-    return null;
-  }
-}
-
-/**
- * Alternative sector lookup: Use EastMoney sector list API to find sector code by name
- * This API searches through the sector classification list and filters by name
- */
-async function searchSectorByListAPI(sectorName: string): Promise<SectorInfo | null> {
-  try {
-    // EastMoney sector list API - search industry sectors (fs=m:90+t:2)
-    const url = `http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=20&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f12,f14`;
-
-    const response = await fetch(url, {
-      next: { revalidate: 0 },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const items = data?.data?.diff;
-    if (!Array.isArray(items) || items.length === 0) return null;
-
-    // Search for a sector whose name matches or contains the target name
-    // First try exact match
-    let match = items.find((item: any) => item.f14 === sectorName);
-    // Then try contains match
-    if (!match) {
-      match = items.find((item: any) => 
-        typeof item.f14 === 'string' && 
-        (item.f14.includes(sectorName) || sectorName.includes(item.f14))
-      );
-    }
-    // Then try starts-with match
-    if (!match) {
-      match = items.find((item: any) => 
-        typeof item.f14 === 'string' && 
-        (item.f14.startsWith(sectorName) || sectorName.startsWith(item.f14))
-      );
-    }
-
-    if (!match) return null;
-
-    const code = String(match.f12);
-    const name = String(match.f14);
-
-    // Verify it's a BK code
-    if (!code.startsWith("BK")) return null;
-
-    return {
-      code,
-      name,
-      quoteId: `90.${code}`,
-      market: 90,
-    };
-  } catch (error) {
-    console.error("searchSectorByListAPI error:", error);
     return null;
   }
 }

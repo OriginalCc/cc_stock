@@ -85,7 +85,7 @@ const TIMELINE_CACHE_TTL = 1000; // 1s for timeline data
 const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
 
 // ── Auto-refresh interval ──
-const TIMELINE_REFRESH_INTERVAL = 5000; // 5s — less CPU overhead, still responsive
+const TIMELINE_REFRESH_INTERVAL = 1500; // 1.5s for timeline/quote auto-refresh during trading hours
 
 // ── Helper: Try to read cached timeline+quote data for a symbol ──
 function tryGetCachedTimelineQuote(sym: string): { items: TimelineItem[]; prevClose: number; quote?: StockQuote } | null {
@@ -188,12 +188,10 @@ export function useStockData() {
 
   // ── Fetch timeline + quote using SWR for instant cache display ──
   const lastTimelineFingerprint = useRef("");
-  const timelineLengthRef = useRef(timeline.length);
-  timelineLengthRef.current = timeline.length;
   const fetchTimelineWithQuote = useCallback(async (sym: string, isRefresh = false) => {
     if (!checkAShare(sym)) return;
     // Only show loading skeleton on initial fetch when we have no cached data
-    if (!isRefresh && timelineLengthRef.current === 0) setTimelineLoading(true);
+    if (!isRefresh && timeline.length === 0) setTimelineLoading(true);
     try {
       // Use SWR pattern: return cached data instantly, revalidate in background
       const result = await fetchWithSWR<{
@@ -257,7 +255,7 @@ export function useStockData() {
     } finally {
       if (!isRefresh) setTimelineLoading(false);
     }
-  }, [checkAShare]);
+  }, [checkAShare, timeline.length]);
 
   // ── Fetch history with MACD ──
   const fetchHistory = useCallback(async (sym: string, intv: TimeInterval) => {
@@ -329,37 +327,16 @@ export function useStockData() {
     }
   }, [checkAShare]);
 
-  // ── Search stocks (with client-side caching + AbortController) ──
-  const searchAbortRef = useRef<AbortController | null>(null);
-  const SEARCH_CACHE_TTL = 30_000; // 30s cache for search results (same query won't re-fetch)
-
+  // ── Search stocks ──
   const searchStocks = useCallback(async (query: string): Promise<StockSearchResult[]> => {
     if (!query.trim()) return [];
     try {
-      // Cancel any in-flight search request
-      if (searchAbortRef.current) {
-        searchAbortRef.current.abort();
+      const res = await fetch(`/api/stock/ashare-search?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.results || [];
       }
-      const controller = new AbortController();
-      searchAbortRef.current = controller;
-
-      const result = await cachedFetch<StockSearchResult[]>(
-        `search:${query.trim()}`,
-        async () => {
-          const res = await fetch(
-            `/api/stock/ashare-search?q=${encodeURIComponent(query)}`,
-            { signal: controller.signal }
-          );
-          if (!res.ok) throw new Error("Search failed");
-          const data = await res.json();
-          return data.results || [];
-        },
-        SEARCH_CACHE_TTL
-      );
-      return result;
-    } catch (err: any) {
-      // Silently ignore abort errors (user typed more characters)
-      if (err?.name === "AbortError") return [];
+    } catch (err) {
       console.error("Search error:", err);
     }
     return [];
@@ -406,10 +383,7 @@ export function useStockData() {
       try { localStorage.setItem(LAST_CHART_MODE_KEY, mode); } catch {}
       if ((mode === "timeline" || mode === "5d-timeline") && checkAShare(symbol)) {
         fetchTimelineWithQuote(symbol);
-        // Skip fetchHistory for 5d-timeline — the FiveDayTimelinePanel fetches its own 5min kline data
-        if (mode !== "5d-timeline") {
-          fetchHistory(symbol, "1d");
-        }
+        fetchHistory(symbol, "1d");
         setInterval_("1d");
       } else if (mode === "kline") {
         const klineInterval: TimeInterval = "1d";
@@ -430,10 +404,7 @@ export function useStockData() {
       // Combined timeline+quote fetch saves one network roundtrip on initial load
       // If we already have cached data from preload, the SWR pattern will return it instantly
       fetchTimelineWithQuote(symbol);
-      // Skip fetchHistory for 5d-timeline — the panel fetches its own 5min kline data
-      if (currentMode !== "5d-timeline") {
-        fetchHistory(symbol, interval);
-      }
+      fetchHistory(symbol, interval);
     } else {
       fetchQuote(symbol);
       fetchHistory(symbol, interval);

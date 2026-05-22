@@ -290,7 +290,7 @@ function CustomFactorsTab() {
         const userFactors = parsed.filter(f => !builtInIds.includes(f.id));
         const mergedBuiltIn = BUILT_IN_CUSTOM_FACTORS.map(bf => {
           const savedBf = parsed.find(f => f.id === bf.id);
-          if (savedBf) return { ...bf, enabled: savedBf.enabled, strength: savedBf.strength || bf.strength };
+          if (savedBf) return { ...bf, enabled: savedBf.enabled };
           return bf;
         });
         // Use microtask to avoid lint warning about setState in effect
@@ -309,7 +309,6 @@ function CustomFactorsTab() {
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [expandedFactorId, setExpandedFactorId] = useState<string | null>(null);
   const [conditionFilter, setConditionFilter] = useState<string>("all");
-  const [editingStrengthId, setEditingStrengthId] = useState<string | null>(null);
 
   // 保存到 localStorage
   useEffect(() => {
@@ -321,11 +320,6 @@ function CustomFactorsTab() {
 
   const toggleFactor = (id: string) => {
     setCustomFactors(prev => prev.map(f => f.id === id ? { ...f, enabled: !f.enabled } : f));
-  };
-
-  const updateFactorStrength = (id: string, strength: "strong" | "medium" | "weak") => {
-    setCustomFactors(prev => prev.map(f => f.id === id ? { ...f, strength } : f));
-    setEditingStrengthId(null);
   };
 
   const deleteFactor = (id: string) => {
@@ -421,56 +415,6 @@ function CustomFactorsTab() {
     ? CONDITION_LIBRARY
     : CONDITION_LIBRARY.filter(c => c.category === conditionFilter);
 
-  // ── Inline strength editor component ──
-  const renderStrengthEditor = (factor: CustomFactorDefinition) => {
-    const isEditing = editingStrengthId === factor.id;
-    const strengthConfig: Record<string, { label: string; badgeClass: string; activeClass: string }> = {
-      strong: { label: "强", badgeClass: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300", activeClass: "bg-red-500 text-white dark:bg-red-600" },
-      medium: { label: "中", badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300", activeClass: "bg-amber-500 text-white dark:bg-amber-600" },
-      weak: { label: "弱", badgeClass: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300", activeClass: "bg-gray-500 text-white dark:bg-gray-600" },
-    };
-
-    if (isEditing) {
-      return (
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          {(["strong", "medium", "weak"] as const).map(s => (
-            <button
-              key={s}
-              className={`h-5 px-1.5 rounded text-[9px] font-bold transition-all ${
-                factor.strength === s ? strengthConfig[s].activeClass + " ring-1 ring-offset-1 ring-current" : strengthConfig[s].badgeClass + " opacity-60 hover:opacity-100"
-              }`}
-              onClick={(e) => { e.stopPropagation(); updateFactorStrength(factor.id, s); }}
-            >
-              {strengthConfig[s].label}
-            </button>
-          ))}
-          <button
-            className="shrink-0 h-5 w-5 rounded flex items-center justify-center hover:bg-muted/80 transition-colors ml-0.5"
-            onClick={(e) => { e.stopPropagation(); setEditingStrengthId(null); }}
-          >
-            <X className="h-3 w-3 text-muted-foreground" />
-          </button>
-        </div>
-      );
-    }
-
-    const cfg = strengthConfig[factor.strength];
-    return (
-      <div className="flex items-center gap-0.5">
-        <Badge className={`text-[9px] h-4 px-1 ${cfg.badgeClass}`}>
-          {cfg.label}
-        </Badge>
-        <button
-          className="shrink-0 h-4 w-4 rounded flex items-center justify-center hover:bg-violet-100 dark:hover:bg-violet-950/50 transition-colors"
-          onClick={(e) => { e.stopPropagation(); setEditingStrengthId(factor.id); }}
-          title="编辑强度"
-        >
-          <Pencil className="h-2.5 w-2.5 text-muted-foreground hover:text-violet-600 dark:hover:text-violet-400" />
-        </button>
-      </div>
-    );
-  };
-
   const enabledCount = customFactors.filter(f => f.enabled).length;
   const builtInFactors = customFactors.filter(f => f.isBuiltIn);
   const userFactors = customFactors.filter(f => !f.isBuiltIn);
@@ -543,7 +487,9 @@ function CustomFactorsTab() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-bold">{factor.name}</span>
-                    {renderStrengthEditor(factor)}
+                    <Badge className={`text-[9px] h-4 px-1 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
+                      {factor.strength === "strong" ? "强" : factor.strength === "medium" ? "中" : "弱"}
+                    </Badge>
                     <Badge variant="outline" className="text-[9px] h-4 px-1">{factor.tMode}</Badge>
                     <Badge variant="outline" className="text-[9px] h-4 px-1 bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
                       {factor.dataSource}
@@ -594,7 +540,9 @@ function CustomFactorsTab() {
                     <Badge variant={factor.signalType === "buy" ? "default" : "destructive"} className="text-[9px] h-4">
                       {factor.signalType === "buy" ? "买入" : "卖出"}
                     </Badge>
-                    {renderStrengthEditor(factor)}
+                    <Badge className={`text-[9px] h-4 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
+                      {factor.strength === "strong" ? "强信号" : factor.strength === "medium" ? "中信号" : "弱信号"}
+                    </Badge>
                     <Badge variant="outline" className="text-[9px] h-4">{factor.tMode}</Badge>
                   </div>
                 </div>
@@ -636,7 +584,9 @@ function CustomFactorsTab() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-bold">{factor.name}</span>
-                      {renderStrengthEditor(factor)}
+                      <Badge className={`text-[9px] h-4 px-1 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
+                        {factor.strength === "strong" ? "强" : factor.strength === "medium" ? "中" : "弱"}
+                      </Badge>
                       <Badge variant="outline" className="text-[9px] h-4 px-1">{factor.tMode}</Badge>
                       {factor.enabled && (
                         <Badge className="text-[8px] h-4 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 animate-pulse">
@@ -691,7 +641,9 @@ function CustomFactorsTab() {
                       <Badge variant={factor.signalType === "buy" ? "default" : "destructive"} className="text-[9px] h-4">
                         {factor.signalType === "buy" ? "买入" : "卖出"}
                       </Badge>
-                      {renderStrengthEditor(factor)}
+                      <Badge className={`text-[9px] h-4 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
+                        {factor.strength === "strong" ? "强信号" : factor.strength === "medium" ? "中信号" : "弱信号"}
+                      </Badge>
                       <Badge variant="outline" className="text-[9px] h-4">{factor.tMode}</Badge>
                     </div>
                   </div>
@@ -964,7 +916,6 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
   const [editingFactorId, setEditingFactorId] = useState<string | null>(null);
   const [editingParamKey, setEditingParamKey] = useState<string | null>(null);
   const [editParamValue, setEditParamValue] = useState<string>("");
-  const [editingRuleStrengthId, setEditingRuleStrengthId] = useState<string | null>(null);
 
   const fetchStrategy = useCallback(async () => {
     setLoading(true);
@@ -1052,15 +1003,11 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
   // ── Update a single field of a DB factor ──
   const handleUpdateFactor = useCallback(async (id: string, field: string, value: any) => {
     try {
-      const res = await fetch("/api/stock/strategy", {
+      await fetch("/api/stock/strategy", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "factor", id, data: { [field]: value } }),
       });
-      if (!res.ok) {
-        console.error("Failed to update factor:", res.status, await res.text());
-        return;
-      }
       if (strategyData) {
         const updatedFactors = strategyData.dbFactors.map((f: any) =>
           f.id === id ? { ...f, [field]: value } : f
@@ -1098,59 +1045,6 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
       console.error("Failed to update indicator param:", e);
     }
   }, [strategyData]);
-
-  // ── Update signal rule strength (create or update dbFactor) ──
-  const handleRuleStrengthChange = useCallback(async (rule: any, newStrength: string) => {
-    if (!strategyData) return;
-    const dbFactor = strategyData.dbFactors?.find((f: any) => f.name === rule.name);
-
-    if (dbFactor) {
-      // Update existing dbFactor
-      await handleUpdateFactor(dbFactor.id, "strength", newStrength);
-    } else {
-      // Create new dbFactor for this rule
-      try {
-        const category = rule.name.includes("MACD") || rule.name.includes("DIF") ? "MACD" :
-          rule.name.includes("均价") || rule.name.includes("突破") ? "VWAP" :
-          rule.name.includes("放量") ? "VOLUME" :
-          rule.name.includes("RSI") ? "RSI" :
-          rule.name.includes("布林") ? "BOLL" :
-          rule.name.includes("连续缩量") || rule.name.includes("脉冲") ? "VOLUME_PATTERN" :
-          rule.name.includes("止损") ? "STOPLOSS" :
-          rule.name.includes("量价") || rule.name.includes("量缩") ? "DIVERGENCE" :
-          rule.name.includes("昨收") ? "SUPPORT" : "MOMENTUM";
-        const res = await fetch("/api/stock/strategy", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "factor",
-            data: {
-              name: rule.name,
-              category,
-              signalType: rule.type === "stoploss" ? "stoploss" : rule.type,
-              description: rule.condition || rule.name,
-              strength: newStrength,
-              tMode: rule.type === "buy" ? "反T" : "正T",
-              timeWindow: rule.type === "buy" ? "buy_window" : "sell_window",
-              priority: rule.priority || 0,
-              enabled: true,
-            },
-          }),
-        });
-        if (res.ok) {
-          const result = await res.json();
-          const updatedFactors = [...(strategyData.dbFactors || []), result.data];
-          setStrategyData({ ...strategyData, dbFactors: updatedFactors });
-          if (onFactorsChanged) onFactorsChanged(updatedFactors);
-        } else {
-          console.error("Failed to create factor for rule:", res.status, await res.text());
-        }
-      } catch (e) {
-        console.error("Failed to create factor for rule:", e);
-      }
-    }
-    setEditingRuleStrengthId(null);
-  }, [strategyData, handleUpdateFactor, onFactorsChanged]);
 
   const getCategoryColor = (category: string) => {
     switch (category.toUpperCase()) {
@@ -1604,42 +1498,28 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
 
                 {/* Signal Rules Table */}
                 <div>
-                  <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
-                    <span>{strategyData.timelineSignals.name} — {strategyData.timelineSignals.description}</span>
-                    <span className="text-[9px] text-muted-foreground/60 ml-auto">点击 ✏️ 可编辑强度覆盖</span>
+                  <div className="text-xs font-medium text-muted-foreground mb-2">
+                    {strategyData.timelineSignals.name} — {strategyData.timelineSignals.description}
                   </div>
                   <div className="rounded-lg border border-border overflow-hidden">
-                    <div className="grid grid-cols-[40px_80px_50px_40px_1fr_130px_70px_32px] gap-0 text-[10px] bg-muted/50 px-2 py-1.5 font-medium text-muted-foreground">
+                    <div className="grid grid-cols-[40px_80px_60px_50px_1fr_100px_80px_40px] gap-0 text-[10px] bg-muted/50 px-2 py-1.5 font-medium text-muted-foreground">
                       <span>优先</span>
                       <span>名称</span>
                       <span>类别</span>
                       <span>方向</span>
                       <span>条件</span>
-                      <span>强度</span>
+                      <span>强度规则</span>
                       <span>阈值</span>
-                      <span>编辑</span>
+                      <span>启用</span>
                     </div>
                     <div className="max-h-80 overflow-y-auto">
                       {strategyData.timelineSignals.rules.map((rule: any) => {
                         // Find matching DB factor for override display
                         const dbFactor = strategyData.dbFactors?.find((f: any) => f.name === rule.name);
-                        const isEditingThis = editingRuleStrengthId === rule.id;
-                        // Determine effective strength: DB override takes priority
-                        const effectiveStrength = dbFactor?.strength || rule.strengthRules?.[0]?.strength || "medium";
-                        const strengthColors: Record<string, string> = {
-                          strong: "text-red-500",
-                          medium: "text-orange-500",
-                          weak: "text-yellow-600",
-                        };
-                        const strengthBgColors: Record<string, string> = {
-                          strong: "bg-red-500 text-white",
-                          medium: "bg-orange-500 text-white",
-                          weak: "bg-yellow-500 text-white",
-                        };
                         return (
-                          <div key={rule.id} className="grid grid-cols-[40px_80px_50px_40px_1fr_130px_70px_32px] gap-0 text-[10px] px-2 py-1.5 border-t border-border/50 hover:bg-muted/20 items-center">
+                          <div key={rule.id} className="grid grid-cols-[40px_80px_60px_50px_1fr_100px_80px_40px] gap-0 text-[10px] px-2 py-1.5 border-t border-border/50 hover:bg-muted/20 items-center">
                             <span className="font-mono text-muted-foreground">{rule.priority}</span>
-                            <span className="font-medium truncate" title={rule.name}>{rule.name}</span>
+                            <span className="font-medium">{rule.name}</span>
                           <span>
                             <Badge variant="outline" className={`text-[9px] h-4 px-1 ${getCategoryColor(
                               rule.name.includes("MACD") || rule.name.includes("DIF") ? "MACD" :
@@ -1671,41 +1551,19 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                           <span className="font-mono text-muted-foreground truncate" title={rule.condition}>
                             {rule.condition}
                           </span>
-                          {/* Strength column — inline editable */}
-                          <span>
-                            {isEditingThis ? (
-                              <div className="flex items-center gap-1">
-                                {(["strong", "medium", "weak"] as const).map(s => (
-                                  <button
-                                    key={s}
-                                    className={`h-5 px-1.5 rounded text-[9px] font-bold transition-all ${
-                                      effectiveStrength === s ? strengthBgColors[s] + " ring-1 ring-offset-1 ring-current" : "opacity-50 hover:opacity-100 " + strengthColors[s] + " bg-muted/50"
-                                    }`}
-                                    onClick={() => handleRuleStrengthChange(rule, s)}
-                                  >
-                                    {s === "strong" ? "强" : s === "medium" ? "中" : "弱"}
-                                  </button>
-                                ))}
-                                <button
-                                  className="shrink-0 h-5 w-5 rounded flex items-center justify-center hover:bg-muted/80 transition-colors"
-                                  onClick={() => setEditingRuleStrengthId(null)}
-                                >
-                                  <X className="h-3 w-3 text-muted-foreground" />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                {rule.strengthRules?.map((sr: any, si: number) => (
-                                  <span key={si} className={strengthColors[sr.strength] || "text-muted-foreground"}>
-                                    {si > 0 && "/"}{sr.strength === "strong" ? "强" : sr.strength === "medium" ? "中" : "弱"}
-                                  </span>
-                                ))}
-                                {dbFactor && dbFactor.strength && (
-                                  <span className="text-primary font-bold" title={`DB覆盖: ${dbFactor.strength}`}>
-                                    →{dbFactor.strength === "strong" ? "强" : dbFactor.strength === "medium" ? "中" : "弱"}
-                                  </span>
-                                )}
-                              </div>
+                          <span className="text-muted-foreground">
+                            {rule.strengthRules?.map((sr: any, si: number) => (
+                              <span key={si}>
+                                {si > 0 && " | "}
+                                <span className={sr.strength === "strong" ? "text-red-500" : sr.strength === "weak" ? "text-yellow-600" : "text-orange-500"}>
+                                  {sr.strength === "strong" ? "强" : sr.strength === "medium" ? "中" : "弱"}
+                                </span>
+                              </span>
+                            ))}
+                            {dbFactor && dbFactor.strength && (
+                              <span className="ml-1 text-primary font-medium" title={`DB覆盖: ${dbFactor.strength}`}>
+                                →{dbFactor.strength === "strong" ? "强" : dbFactor.strength === "medium" ? "中" : "弱"}
+                              </span>
                             )}
                           </span>
                           <span className="font-mono text-muted-foreground">
@@ -1715,16 +1573,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
                                 : rule.threshold.value
                               : "--"}
                           </span>
-                          {/* Edit strength button */}
-                          <span className="text-center">
-                            <button
-                              className={`h-5 w-5 rounded flex items-center justify-center transition-colors ${isEditingThis ? "bg-primary/10" : "hover:bg-primary/10"}`}
-                              onClick={() => setEditingRuleStrengthId(isEditingThis ? null : rule.id)}
-                              title="编辑强度"
-                            >
-                              <Pencil className={`h-3 w-3 ${isEditingThis ? "text-primary" : "text-muted-foreground"}`} />
-                            </button>
-                          </span>
+                          <span className="text-center text-green-500">✓</span>
                         </div>
                       );
                       })}

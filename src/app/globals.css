@@ -139,8 +139,3 @@
 .recharts-cursor {
   fill: transparent !important;
 }
-
-/* Allow chart labels to overflow SVG viewport — prevents clipping of pulse/volume markers */
-.recharts-surface {
-  overflow: visible !important;
-}
