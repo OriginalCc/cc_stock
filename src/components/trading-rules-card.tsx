@@ -1,34 +1,105 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle, Zap, Clock, Volume2, Activity, Scale, BookOpen, Info, ChevronDown, ChevronRight,
 } from "lucide-react";
+import type { PulseVolumeMarker } from "@/lib/chart-shared";
 
 interface TradingRulesCardProps {
   autoExpanded?: boolean;
+  pvMarkers?: PulseVolumeMarker[];
 }
 
-export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
+// Map pvMarker types to rule section keys that should be highlighted
+type RuleKey = "vol_decline_danger" | "vol_decline_position" | "vol_surge_strong" | "pulse_caution" | "pulse_decline_danger" | "shrink_rise" | "early_vol_drop" | "wash_trade";
+
+function getActiveRules(markers: PulseVolumeMarker[]): Set<RuleKey> {
+  const active = new Set<RuleKey>();
+  for (const m of markers) {
+    switch (m.type) {
+      case "volume_decline":
+        active.add("vol_decline_danger");
+        active.add("vol_decline_position");
+        break;
+      case "volume_surge":
+        active.add("vol_surge_strong");
+        break;
+      case "pulse":
+        active.add("pulse_caution");
+        break;
+      case "pulse_decline":
+        active.add("pulse_decline_danger");
+        active.add("vol_decline_danger");
+        break;
+      case "early_vol_drop":
+        active.add("early_vol_drop");
+        active.add("vol_decline_danger");
+        break;
+      case "wash_trade":
+        active.add("wash_trade");
+        break;
+      case "shrink_rise":
+        active.add("shrink_rise");
+        break;
+      case "vol_rise":
+        active.add("vol_surge_strong");
+        break;
+    }
+  }
+  return active;
+}
+
+export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesCardProps) {
   // null = no manual override; true/false = user explicitly toggled
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
 
-  // Show expanded if: user explicitly expanded, or autoExpanded is active (and user hasn't manually collapsed)
-  const expanded = manualOverride !== null ? manualOverride : !!autoExpanded;
+  const activeRules = useMemo(() => getActiveRules(pvMarkers), [pvMarkers]);
+
+  // Check if there are dangerous signals that should auto-expand
+  const hasDangerSignal = activeRules.has("vol_decline_danger") || activeRules.has("pulse_decline_danger");
+
+  // Auto-expand when dangerous signals appear (unless user manually collapsed)
+  useEffect(() => {
+    if (hasDangerSignal && manualOverride === null) {
+      // Don't override user's manual toggle, but auto-expand if no manual override
+    }
+  }, [hasDangerSignal, manualOverride]);
+
+  // Show expanded if: user explicitly expanded, or autoExpanded is active (and user hasn't manually collapsed), or danger signal present
+  const expanded = manualOverride !== null ? manualOverride : !!(autoExpanded || hasDangerSignal);
+
+  // Helper: check if a rule is active and return highlight class
+  const ruleClass = (key: RuleKey, baseClass = "") => {
+    if (!activeRules.has(key)) return baseClass;
+    // Return highlighted version
+    return `${baseClass} ring-2 ring-red-500/50 bg-red-500/10`.trim();
+  };
+
+  // Helper: render active indicator badge
+  const activeBadge = (key: RuleKey) => {
+    if (!activeRules.has(key)) return null;
+    return (
+      <Badge variant="outline" className="text-[9px] h-4 px-1 bg-red-500/15 text-red-600 border-red-500/30 animate-pulse ml-1">
+        ⚠ 触发
+      </Badge>
+    );
+  };
 
   return (
-    <Card className="border-2 border-amber-500/40 border-l-4 border-l-amber-500 shadow-lg shadow-amber-500/10 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent mb-4">
+    <Card className={`border-2 shadow-lg mb-4 ${hasDangerSignal ? "border-red-500/60 border-l-4 border-l-red-500 shadow-red-500/15 bg-gradient-to-br from-red-500/5 via-transparent to-transparent" : "border-amber-500/40 border-l-4 border-l-amber-500 shadow-amber-500/10 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent"}`}>
       <CardHeader
-        className="pb-2 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-b border-amber-500/20 cursor-pointer select-none"
+        className={`pb-2 cursor-pointer select-none ${hasDangerSignal ? "bg-gradient-to-r from-red-500/15 to-orange-500/10 border-b border-red-500/30" : "bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-b border-amber-500/20"}`}
         onClick={() => setManualOverride(prev => !prev)}
       >
-        <CardTitle className="text-base font-bold flex items-center gap-2 text-amber-700 dark:text-amber-400">
-          {expanded ? <ChevronDown className="w-4 h-4 text-amber-500" /> : <ChevronRight className="w-4 h-4 text-amber-500" />}
-          <Scale className="w-5 h-5 text-amber-500 drop-shadow-[0_0_3px_rgba(245,158,11,0.5)]" />
+        <CardTitle className={`text-base font-bold flex items-center gap-2 ${hasDangerSignal ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"}`}>
+          {expanded ? <ChevronDown className={`w-4 h-4 ${hasDangerSignal ? "text-red-500" : "text-amber-500"}`} /> : <ChevronRight className={`w-4 h-4 ${hasDangerSignal ? "text-red-500" : "text-amber-500"}`} />}
+          <Scale className={`w-5 h-5 drop-shadow-[0_0_3px_rgba(245,158,11,0.5)] ${hasDangerSignal ? "text-red-500" : "text-amber-500"}`} />
           交易规矩
           {autoExpanded && <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-amber-500/10 text-amber-600 border-amber-500/25 animate-pulse">🔔 开盘提醒</Badge>}
+          {hasDangerSignal && <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-red-500/15 text-red-600 border-red-500/30 animate-pulse">🚨 风险提醒</Badge>}
           <span className="text-[10px] font-normal text-muted-foreground ml-auto">{expanded ? "点击收起" : "点击展开"}</span>
         </CardTitle>
       </CardHeader>
@@ -242,39 +313,54 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
         </div>
 
         {/* ── 五、量能确认规矩 ── */}
-        <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+        <div className={`p-3 rounded-lg border ${activeRules.has("vol_decline_danger") || activeRules.has("vol_surge_strong") || activeRules.has("pulse_caution") ? "border-red-500/40 bg-red-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
           <div className="flex items-center gap-1.5 mb-2">
-            <Volume2 className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">五、量能确认规矩</span>
+            <Volume2 className={`w-3.5 h-3.5 ${activeRules.has("vol_decline_danger") ? "text-red-500 animate-pulse" : "text-amber-500"}`} />
+            <span className={`text-xs font-semibold ${activeRules.has("vol_decline_danger") ? "text-red-700 dark:text-red-300" : "text-amber-700 dark:text-amber-300"}`}>五、量能确认规矩</span>
+            {(activeRules.has("vol_decline_danger") || activeRules.has("vol_surge_strong") || activeRules.has("pulse_caution")) && (
+              <Badge variant="outline" className="text-[9px] h-4 px-1 bg-red-500/15 text-red-600 border-red-500/30 animate-pulse ml-1">⚠ 量能异动</Badge>
+            )}
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1.5">
             <div className="grid grid-cols-1 gap-1.5">
-              <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("shrink_rise", "border-amber-500/10")}`}>
                 <span className="text-amber-500 text-xs shrink-0">📊</span>
                 <div>
                   <span className="text-foreground font-medium">缩量下跌 → 不急于买入</span>
                   <p>缩量说明卖盘不活跃，但也说明买盘不积极。等放量企稳再参与。</p>
                 </div>
               </div>
-              <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("vol_surge_strong", "border-amber-500/10")}`}>
                 <span className="text-amber-500 text-xs shrink-0">📈</span>
-                <div>
-                  <span className="text-foreground font-medium">放量上涨 → 确认强势，可加仓</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className="text-foreground font-medium">放量上涨 → 确认强势，可加仓</span>
+                    {activeBadge("vol_surge_strong")}
+                  </div>
                   <p>量价齐升是最健康的走势，可在回调时按仓位表上限操作。</p>
                 </div>
               </div>
-              <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("pulse_caution", "border-amber-500/10")}`}>
                 <span className="text-amber-500 text-xs shrink-0">⚡</span>
-                <div>
-                  <span className="text-foreground font-medium">脉冲放量 → 关注异动，谨慎追入</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className="text-foreground font-medium">脉冲放量 → 关注异动，谨慎追入</span>
+                    {activeBadge("pulse_caution")}
+                  </div>
                   <p>突然放量可能是主力试盘或诱多。观察5分钟内是否持续，不追脉冲量。</p>
                 </div>
               </div>
-              <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
-                <span className="text-amber-500 text-xs shrink-0">📉</span>
-                <div>
-                  <span className="text-foreground font-medium">放量下跌 → 最危险，规避</span>
-                  <p>放量下跌说明抛压沉重，即使有买入信号也要降一个仓位等级。</p>
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${activeRules.has("vol_decline_danger") ? "border-red-500/40 bg-red-500/10" : "border-amber-500/10"}`}>
+                <span className={`text-xs shrink-0 ${activeRules.has("vol_decline_danger") ? "text-red-500 animate-pulse" : "text-amber-500"}`}>📉</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className={`font-medium ${activeRules.has("vol_decline_danger") ? "text-red-600 dark:text-red-400" : "text-foreground"}`}>放量下跌 → 最危险，规避</span>
+                    {activeBadge("vol_decline_danger")}
+                  </div>
+                  <p className={activeRules.has("vol_decline_danger") ? "text-red-600/80" : ""}>放量下跌说明抛压沉重，即使有买入信号也要降一个仓位等级。</p>
+                  {activeRules.has("vol_decline_danger") && (
+                    <p className="text-red-600 dark:text-red-400 font-bold text-[10px] mt-1">⚠ 当前检测到放量下跌信号！建议立即降低仓位，规避风险。</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -467,10 +553,13 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
         </div>
 
         {/* ── 九、动态调节规矩 ── */}
-        <div className="p-3 rounded-lg border border-orange-500/20 bg-orange-500/5">
+        <div className={`p-3 rounded-lg border ${activeRules.has("vol_decline_position") ? "border-red-500/40 bg-red-500/5" : "border-orange-500/20 bg-orange-500/5"}`}>
           <div className="flex items-center gap-1.5 mb-2">
-            <Activity className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">九、动态调节规矩（根据盘面实时调整）</span>
+            <Activity className={`w-3.5 h-3.5 ${activeRules.has("vol_decline_position") ? "text-red-500" : "text-orange-500"}`} />
+            <span className={`text-xs font-semibold ${activeRules.has("vol_decline_position") ? "text-red-700 dark:text-red-300" : "text-orange-700 dark:text-orange-300"}`}>九、动态调节规矩（根据盘面实时调整）</span>
+            {activeRules.has("vol_decline_position") && (
+              <Badge variant="outline" className="text-[9px] h-4 px-1 bg-red-500/15 text-red-600 border-red-500/30 animate-pulse ml-1">⚠ 触发</Badge>
+            )}
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1.5">
             <div className="grid grid-cols-1 gap-1.5">
@@ -495,11 +584,17 @@ export function TradingRulesCard({ autoExpanded }: TradingRulesCardProps) {
                   <p>行业级利空+系统性风险，个股上涨只是暂时抗跌。</p>
                 </div>
               </div>
-              <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
-                <span className="text-amber-500 text-xs shrink-0">📉</span>
-                <div>
-                  <span className="text-foreground font-medium">放量下跌 → 仓位降一级</span>
-                  <p>抛压沉重时，所有仓位建议下调一个等级。如原30%→20%。</p>
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${activeRules.has("vol_decline_position") ? "border-red-500/40 bg-red-500/10 ring-1 ring-red-500/30" : "border-amber-500/10"}`}>
+                <span className={`text-xs shrink-0 ${activeRules.has("vol_decline_position") ? "text-red-500 animate-pulse" : "text-amber-500"}`}>📉</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className={`font-medium ${activeRules.has("vol_decline_position") ? "text-red-600 dark:text-red-400" : "text-foreground"}`}>放量下跌 → 仓位降一级</span>
+                    {activeBadge("vol_decline_position")}
+                  </div>
+                  <p className={activeRules.has("vol_decline_position") ? "text-red-600/80" : ""}>抛压沉重时，所有仓位建议下调一个等级。如原30%→20%。</p>
+                  {activeRules.has("vol_decline_position") && (
+                    <p className="text-red-600 dark:text-red-400 font-bold text-[10px] mt-1">⚠ 当前检测到放量下跌！建议立即将仓位下调一个等级。</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10">
