@@ -805,3 +805,23 @@ Stage Summary:
 - 门控条件更合理：必须同时满足"有放量"和"有下跌"，但门槛降低
 - 分数阈值从10降到8，更容易触发
 - 滑动窗口从[15,20,30]扩展到[5,8,10,15,20,30]，适配不同长度的下跌模式
+
+---
+Task ID: volume-decline-fix
+Agent: main
+Task: 修复放量下跌(volume_decline)危险警示不显示的回归问题
+
+Work Log:
+- 读取 chart-shared.ts 中 detectPulseVolumeMarkers 的 volume_decline 检测代码（lines 963-1143）
+- 定位根因：hasVolumeAmplification 门控条件过严
+  - 原因1：baselineVol 仅使用前15分钟平均量，当放量下跌从开盘开始时，前15分钟已高量→baselineVol膨胀→windowVolRatio<1.2→门控阻断
+  - 原因2：hasVolumeAmplification 只认'量比基线高'和'量价齐跌占比'，没考虑'下跌方成交量占比大'本身就是放量下跌的证据
+- 修复1：baseline 改为 min(前15分钟均量, 全日均量)，防止开盘放量时基线膨胀
+- 修复2：hasVolumeAmplification 增加 downVolRatio>=0.55 和 downMinuteRatio>=0.6 两个替代条件
+- 同步修复 volume_surge (放量拉升) 的 baseline 计算问题
+- Lint通过，代码推送到GitHub
+
+Stage Summary:
+- 修复了放量下跌警示不显示的回归问题
+- 关键改动：baseline 使用 min(earlyBaseline, sessionAvg)，门控条件增加 downVolRatio>=0.55 和 downMinuteRatio>=0.6
+- 同时修复放量拉升的 baseline 计算方式
