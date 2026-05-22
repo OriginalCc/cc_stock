@@ -37,7 +37,7 @@ const PasswordManageDialog = dynamic(() => import("@/components/password-manage-
 import { PasswordGate } from "@/components/password-gate";
 import { LazyMount } from "@/components/lazy-mount";
 import { calculateMACD } from "@/lib/indicators";
-import { macdFingerprintCache, signalFingerprintCache, pvFingerprintCache } from "@/lib/fingerprint-cache";
+import { macdFingerprintCache, signalFingerprintCache } from "@/lib/fingerprint-cache";
 import { getTimeWindow, detectMarketRegimeDetail, buildFactorOverridesFromDB, computeKeyPriceLevels, type FactorOverride, type RegimeDetail } from "@/lib/t-strategy";
 import { generateTimelineSignals, detectPulseVolumeMarkers, type TSignal, type PulseVolumeMarker, type CustomFactorDefinition, formatVolume, formatNum, formatMarketCap, REGIME_CONFIG, T_MODE_CONFIG, DEFAULT_ASHARES, INTERVALS, INDEX_CONFIG, INDEX_KEYS, SIGNAL_PULSE_CSS, playAlertSound, getTIndexColor, getTIndexLabel, getTIndexLabelColor, BUILT_IN_CUSTOM_FACTORS, CUSTOM_FACTORS_STORAGE_KEY, type IndexKey } from "@/lib/chart-shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -451,7 +451,6 @@ export default function StockTAssistant() {
     // Invalidate fingerprint caches when switching stocks
     macdFingerprintCache.invalidate();
     signalFingerprintCache.invalidate();
-    pvFingerprintCache.invalidate();
     selectStock(sym); setShowSearch(false); setSearchQuery(""); setSearchResults([]);
     setKlineVisibleBars(80); setTlZoomIdx(0);
   }, [selectStock]);
@@ -552,8 +551,9 @@ export default function StockTAssistant() {
   // so deferred rendering is no longer needed and directly using values is faster.
   const pvMarkers = useMemo(() => {
     if (!isTimelineActive || liveTimeline.length < 10 || timelinePrevClose <= 0) return [];
-    const fp = `${liveTimeline.length}:${timelinePrevClose}:${liveTimeline.slice(-3).map(d => `${d.price.toFixed(2)}:${d.volume}`).join(',')}`;
-    return pvFingerprintCache.compute(fp, () => detectPulseVolumeMarkers(liveTimeline, timelinePrevClose));
+    // Direct computation — useMemo already prevents unnecessary recomputation
+    // Fingerprint cache was causing stale results when algorithm changed
+    return detectPulseVolumeMarkers(liveTimeline, timelinePrevClose);
   }, [liveTimeline, timelinePrevClose, isTimelineActive]);
   // NOTE: Removed useDeferredValue for pvMarkers — same reason as signals above.
   const latestTimelineSignal = useMemo(() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { if (timelineSignals[i]) return timelineSignals[i]; } return null; }, [timelineSignals]);
