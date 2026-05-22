@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useMemo, useEffect, startTransition, useDeferredValue } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect, startTransition } from "react";
 import dynamic from "next/dynamic";
 import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem, type TimelineItem, type ChartMode } from "@/hooks/use-stock-data";
 
@@ -53,85 +53,6 @@ import {
   History, ShieldCheck, Server, Scale, AlertTriangle, BookOpen, Info,
 } from "lucide-react";
 
-// ── Local search map for instant results (no API call needed) ──
-// Includes pinyin abbreviations for common stocks/ETFs
-const POPULAR_ASHARES_SEARCH_MAP: Record<string, { name: string; exchange: string; type: string; pinyin: string }> = {
-  "600519": { name: "贵州茅台", exchange: "SH", type: "A股", pinyin: "gzmt" },
-  "000858": { name: "五粮液", exchange: "SZ", type: "A股", pinyin: "wly" },
-  "601318": { name: "中国平安", exchange: "SH", type: "A股", pinyin: "zgpa" },
-  "000001": { name: "平安银行", exchange: "SZ", type: "A股", pinyin: "payh" },
-  "600036": { name: "招商银行", exchange: "SH", type: "A股", pinyin: "zsyh" },
-  "002594": { name: "比亚迪", exchange: "SZ", type: "A股", pinyin: "byd" },
-  "300750": { name: "宁德时代", exchange: "SZ", type: "A股", pinyin: "ndsd" },
-  "601899": { name: "紫金矿业", exchange: "SH", type: "A股", pinyin: "zjky" },
-  "000333": { name: "美的集团", exchange: "SZ", type: "A股", pinyin: "mdjt" },
-  "600900": { name: "长江电力", exchange: "SH", type: "A股", pinyin: "cjdl" },
-  "601012": { name: "隆基绿能", exchange: "SH", type: "A股", pinyin: "ljln" },
-  "002475": { name: "立讯精密", exchange: "SZ", type: "A股", pinyin: "lxjm" },
-  "000568": { name: "泸州老窖", exchange: "SZ", type: "A股", pinyin: "lzljj" },
-  "600276": { name: "恒瑞医药", exchange: "SH", type: "A股", pinyin: "hryy" },
-  "601398": { name: "工商银行", exchange: "SH", type: "A股", pinyin: "gsyh" },
-  "000651": { name: "格力电器", exchange: "SZ", type: "A股", pinyin: "gldq" },
-  "600809": { name: "山西汾酒", exchange: "SH", type: "A股", pinyin: "sxfj" },
-  "002714": { name: "牧原股份", exchange: "SZ", type: "A股", pinyin: "mygf" },
-  "601919": { name: "中远海控", exchange: "SH", type: "A股", pinyin: "zyhk" },
-  "600887": { name: "伊利股份", exchange: "SH", type: "A股", pinyin: "ylgf" },
-  "000002": { name: "万科A", exchange: "SZ", type: "A股", pinyin: "wka" },
-  "601166": { name: "兴业银行", exchange: "SH", type: "A股", pinyin: "xyyh" },
-  "600030": { name: "中信证券", exchange: "SH", type: "A股", pinyin: "zxzq" },
-  "300059": { name: "东方财富", exchange: "SZ", type: "A股", pinyin: "dfcf" },
-  "601888": { name: "中国中免", exchange: "SH", type: "A股", pinyin: "zgzdm" },
-  "002415": { name: "海康威视", exchange: "SZ", type: "A股", pinyin: "hkws" },
-  "600585": { name: "海螺水泥", exchange: "SH", type: "A股", pinyin: "hlsn" },
-  "000725": { name: "京东方A", exchange: "SZ", type: "A股", pinyin: "jdfa" },
-  "601668": { name: "中国建筑", exchange: "SH", type: "A股", pinyin: "zgjz" },
-  "600050": { name: "中国联通", exchange: "SH", type: "A股", pinyin: "zglt" },
-  "300274": { name: "阳光电源", exchange: "SZ", type: "A股", pinyin: "ygdy" },
-  "002230": { name: "科大讯飞", exchange: "SZ", type: "A股", pinyin: "kdxf" },
-  "688981": { name: "中芯国际", exchange: "SH", type: "A股", pinyin: "zxgj" },
-  "600104": { name: "上汽集团", exchange: "SH", type: "A股", pinyin: "sqjt" },
-  "601127": { name: "赛力斯", exchange: "SH", type: "A股", pinyin: "sls" },
-  "000625": { name: "长安汽车", exchange: "SZ", type: "A股", pinyin: "caqc" },
-  "601985": { name: "中国核电", exchange: "SH", type: "A股", pinyin: "zghd" },
-  "002049": { name: "紫光国微", exchange: "SZ", type: "A股", pinyin: "zggw" },
-  "603501": { name: "韦尔股份", exchange: "SH", type: "A股", pinyin: "wlgf" },
-  "000538": { name: "云南白药", exchange: "SZ", type: "A股", pinyin: "ynby" },
-  "600085": { name: "同仁堂", exchange: "SH", type: "A股", pinyin: "trt" },
-  "601088": { name: "中国神华", exchange: "SH", type: "A股", pinyin: "zgsh" },
-  "601857": { name: "中国石油", exchange: "SH", type: "A股", pinyin: "zgsy" },
-  "600028": { name: "中国石化", exchange: "SH", type: "A股", pinyin: "zgsh" },
-  "600019": { name: "宝钢股份", exchange: "SH", type: "A股", pinyin: "bggf" },
-  "300760": { name: "迈瑞医疗", exchange: "SZ", type: "A股", pinyin: "mryl" },
-  "002460": { name: "赣锋锂业", exchange: "SZ", type: "A股", pinyin: "gfly" },
-  "300014": { name: "亿纬锂能", exchange: "SZ", type: "A股", pinyin: "ywln" },
-  "600547": { name: "山东黄金", exchange: "SH", type: "A股", pinyin: "sdhj" },
-  "600760": { name: "中航沈飞", exchange: "SH", type: "A股", pinyin: "zhsf" },
-  // ── Popular ETFs ──
-  "510300": { name: "沪深300ETF", exchange: "SH", type: "ETF", pinyin: "hs300" },
-  "510050": { name: "上证50ETF", exchange: "SH", type: "ETF", pinyin: "sz50" },
-  "510500": { name: "中证500ETF", exchange: "SH", type: "ETF", pinyin: "zz500" },
-  "512000": { name: "券商ETF", exchange: "SH", type: "ETF", pinyin: "qsetf" },
-  "512010": { name: "医药ETF", exchange: "SH", type: "ETF", pinyin: "yyetf" },
-  "512660": { name: "军工ETF", exchange: "SH", type: "ETF", pinyin: "jjetf" },
-  "512880": { name: "证券ETF", exchange: "SH", type: "ETF", pinyin: "zxetf" },
-  "515030": { name: "新能源车ETF", exchange: "SH", type: "ETF", pinyin: "xnycc" },
-  "515790": { name: "光伏ETF", exchange: "SH", type: "ETF", pinyin: "gfetf" },
-  "588000": { name: "科创50ETF", exchange: "SH", type: "ETF", pinyin: "kc50" },
-  "159919": { name: "沪深300ETF", exchange: "SZ", type: "ETF", pinyin: "hs300" },
-  "159915": { name: "创业板ETF", exchange: "SZ", type: "ETF", pinyin: "cybetf" },
-  "159949": { name: "创业板50ETF", exchange: "SZ", type: "ETF", pinyin: "cyb50" },
-  "159901": { name: "深证100ETF", exchange: "SZ", type: "ETF", pinyin: "sz100" },
-  "159922": { name: "中证500ETF", exchange: "SZ", type: "ETF", pinyin: "zz500" },
-  "159766": { name: "半导体ETF", exchange: "SZ", type: "ETF", pinyin: "bdtetf" },
-  "159869": { name: "游戏ETF", exchange: "SZ", type: "ETF", pinyin: "yxetf" },
-  "159992": { name: "创新药ETF", exchange: "SZ", type: "ETF", pinyin: "cxyetf" },
-  "159601": { name: "A50ETF", exchange: "SZ", type: "ETF", pinyin: "a50etf" },
-  "159632": { name: "半导体设备ETF", exchange: "SZ", type: "ETF", pinyin: "bdtsb" },
-};
-
-// ── Module-level constants (avoid re-creation on every render) ──
-const TL_ZOOM_LEVELS = [250, 180, 120, 90, 60] as const;
-
 export default function StockTAssistant() {
   const {
     symbol, quote, history, timeline, timelinePrevClose, interval, chartMode,
@@ -148,21 +69,6 @@ export default function StockTAssistant() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [autoExpanded, setAutoExpanded] = useState<boolean>(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [searchHighlightIdx, setSearchHighlightIdx] = useState(-1);
-
-  // ── Instant local search for popular stocks (0ms, no API call) ──
-  const localSearchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.trim().toLowerCase();
-    const results: StockSearchResult[] = [];
-    for (const [code, info] of Object.entries(POPULAR_ASHARES_SEARCH_MAP)) {
-      if (code.includes(q) || info.name.toLowerCase().includes(q) || info.pinyin.toLowerCase().startsWith(q)) {
-        results.push({ symbol: code, name: info.name, exchange: info.exchange, type: info.type });
-        if (results.length >= 8) break;
-      }
-    }
-    return results;
-  }, [searchQuery]);
 
   // ── Auto-show opening reminder badge in first 3 minutes of market open ──
   useEffect(() => {
@@ -257,27 +163,20 @@ export default function StockTAssistant() {
       setTimeout(idleFetch, startDelay);
     }
 
-    // Refresh every 15s during trading hours (regime data changes slowly)
+    // Refresh every 30s during trading hours
     const isTradingHours = () => {
       const now = new Date(); const h = (now.getUTCHours() + 8) % 24; const m = now.getUTCMinutes();
       const t = h * 100 + m; const day = now.getUTCDay();
       return day >= 1 && day <= 5 && ((t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505));
     };
     if (isTradingHours()) {
-      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 15000);
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 30000);
     }
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
 
   const szIndexRegime = indexRegimes[activeIndexKey];
   const cycleIndexKey = useCallback(() => { setActiveIndexKey(prev => { const idx = INDEX_KEYS.indexOf(prev); return INDEX_KEYS[(idx + 1) % INDEX_KEYS.length]; }); }, []);
-
-  // ── Memoized computed values (avoid inline IIFEs that defeat React.memo) ──
-  const indexChangePercent = useMemo(() => {
-    const td = indexTimelineData[activeIndexKey];
-    if (!td || !td.items.length || !td.prevClose || td.prevClose <= 0) return undefined;
-    return ((td.items[td.items.length - 1].price - td.prevClose) / td.prevClose) * 100;
-  }, [indexTimelineData, activeIndexKey]);
 
   // ── Sector Regime Detection ──
   const [sectorInfoRaw, setSectorInfoRaw] = useState<{ code: string; name: string } | null>(null);
@@ -286,48 +185,30 @@ export default function StockTAssistant() {
   const sectorInfo = isAShareStock ? sectorInfoRaw : null;
   const sectorRegime = isAShareStock ? sectorRegimeRaw : null;
   const sectorFailCountRef = useRef(0);
-  const sectorLastFailTimeRef = useRef(0);
-
-  const sectorChangePercent = useMemo(() => {
-    if (!sectorTimelineData.items.length || !sectorTimelineData.prevClose || sectorTimelineData.prevClose <= 0) return undefined;
-    return ((sectorTimelineData.items[sectorTimelineData.items.length - 1].price - sectorTimelineData.prevClose) / sectorTimelineData.prevClose) * 100;
-  }, [sectorTimelineData]);
 
   useEffect(() => {
     if (!symbol || !isAShareStock) return;
     // Reset fail count when switching stocks — previous failures shouldn't block new stock
     sectorFailCountRef.current = 0;
-    sectorLastFailTimeRef.current = 0;
     let cancelled = false;
     let abortCtrl: AbortController | null = null;
     const fetchSectorData = async () => {
-      // Relaxed fail threshold: increased from 5 to 10, and auto-reset after 2 minutes
-      // This prevents transient network issues from permanently disabling sector chart
-      if (sectorFailCountRef.current >= 10) {
-        const timeSinceLastFail = Date.now() - sectorLastFailTimeRef.current;
-        // Auto-reset fail count after 2 minutes of silence — allows retry
-        if (timeSinceLastFail > 120000) {
-          sectorFailCountRef.current = 0;
-          sectorLastFailTimeRef.current = 0;
-        } else {
-          return;
-        }
-      }
+      // If sector failed too many times for THIS stock, stop trying (but allow reset on symbol change)
+      if (sectorFailCountRef.current >= 5) return;
       try {
         // Abort previous request if still pending
         if (abortCtrl) abortCtrl.abort();
         abortCtrl = new AbortController();
-        const timeoutId = setTimeout(() => abortCtrl?.abort(), 20000); // 20s timeout (increased from 15s for chained API calls + DB cache)
+        const timeoutId = setTimeout(() => abortCtrl?.abort(), 15000); // 15s timeout for chained API calls
 
         const infoRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(symbol)}&type=full`, { signal: abortCtrl.signal });
         clearTimeout(timeoutId);
-        if (!infoRes.ok) { sectorFailCountRef.current++; sectorLastFailTimeRef.current = Date.now(); return; }
+        if (!infoRes.ok) { sectorFailCountRef.current++; if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } return; }
         const infoData = await infoRes.json();
-        if (!infoData.success || !infoData.sectorInfo) { sectorFailCountRef.current++; sectorLastFailTimeRef.current = Date.now(); return; }
+        if (!infoData.success || !infoData.sectorInfo) { sectorFailCountRef.current++; if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } return; }
         const sInfo = infoData.sectorInfo;
         if (cancelled) return;
         sectorFailCountRef.current = 0; // Reset on success
-        sectorLastFailTimeRef.current = 0;
         setSectorInfoRaw({ code: sInfo.code, name: sInfo.name });
         // Relax threshold: show sector chart even with few data points (early morning, inactive sectors)
         if (infoData.data && infoData.data.items && infoData.data.items.length > 0) {
@@ -336,20 +217,18 @@ export default function StockTAssistant() {
           if (!cancelled) { setSectorRegimeRaw(regime); setSectorTimelineData({ items: infoData.data.items, prevClose: sectorPrevClose }); }
         } else { if (!cancelled) { setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } }
       } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") { sectorFailCountRef.current++; sectorLastFailTimeRef.current = Date.now(); return; }
+        if (e instanceof DOMException && e.name === "AbortError") { sectorFailCountRef.current++; return; }
         console.error("Sector regime fetch error:", e);
         sectorFailCountRef.current++;
-        sectorLastFailTimeRef.current = Date.now();
-        // Don't clear sector info on fetch error — keep the last known state
-        // Only clear timeline data since it may be stale
+        if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
       }
     };
     // Start immediately - no idle callback delay for sector data
     fetchSectorData();
-    // Refresh sector data every 10s during trading hours (sector data changes moderately)
+    // Refresh sector data every 30s during trading hours
     const refreshInterval = setInterval(() => {
       if (!cancelled) fetchSectorData();
-    }, 10000);
+    }, 30000);
     return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
   }, [symbol, isAShareStock]);
 
@@ -372,41 +251,79 @@ export default function StockTAssistant() {
     load(); const handler = () => load(); window.addEventListener('custom-factors-changed', handler); return () => window.removeEventListener('custom-factors-changed', handler);
   }, []);
 
-  // ── Debounced search (300ms, shows local results instantly, API results when ready) ──
+  // ── Debounced search ──
   const handleSearch = useCallback((value: string) => {
     setSearchQuery(value);
-    setSearchHighlightIdx(-1);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    if (!value.trim()) { setSearchResults([]); setSearchLoading(false); return; }
-    // Show local results immediately (no loading flash for common stocks)
-    if (localSearchResults.length > 0) {
-      setSearchResults(localSearchResults);
-      setSearchLoading(false);
-    } else {
-      setSearchLoading(true);
-    }
-    searchTimeoutRef.current = setTimeout(async () => {
-      const results = await searchStocks(value);
-      // Only update if API returns results (avoid clearing local results with empty)
-      if (results.length > 0) {
-        setSearchResults(results);
-      }
-      setSearchLoading(false);
-    }, 300);
-  }, [searchStocks, localSearchResults]);
+    if (!value.trim()) { setSearchResults([]); return; }
+    setSearchLoading(true);
+    searchTimeoutRef.current = setTimeout(async () => { const results = await searchStocks(value); setSearchResults(results); setSearchLoading(false); }, 400);
+  }, [searchStocks]);
 
   // ── K-line zoom state ──
   const [klineVisibleBars, setKlineVisibleBars] = useState<number>(80);
   const [klinePanOffset, setKlinePanOffset] = useState<number>(0);
 
   // ── allChartData: merge today's quote into K-line history ──
-  // Step 1: Deduplicate history only when history changes (rare, ~every 30s)
-  const dedupedHistory = useMemo(() => {
+  const allChartData = useMemo(() => {
+    // In timeline mode, skip heavy quote-merge logic since K-line data is only used for
+    // prevDayMA5 and SignalSummaryPanel — neither needs real-time quote updates
+    if (chartMode === 'timeline' || chartMode === '5d-timeline') {
+      return history.filter((h) => h.close > 0);
+    }
+
+    // Helper: normalize a date string to just the date part (YYYY-MM-DD)
     const normalizeDate = (d: string | undefined): string => {
       if (!d) return "";
       return d.split(" ")[0].split("T")[0];
     };
+
     const data = history.filter((h) => h.close > 0);
+    if (quote && quote.price > 0 && (interval === "1d" || interval === "1wk")) {
+      const now = new Date(); const chinaOffset = 8 * 60;
+      const chinaTime = new Date(now.getTime() + (chinaOffset + now.getTimezoneOffset()) * 60000);
+      const todayStr = chinaTime.toISOString().split("T")[0];
+      let todayKey = todayStr;
+      if (interval === "1wk") { const dayOfWeek = chinaTime.getDay(); const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; const monday = new Date(chinaTime.getTime() + mondayOffset * 86400000); todayKey = monday.toISOString().split("T")[0]; }
+
+      // Only add/merge today's bar if it's a trading day (Mon-Fri) and
+      // the date key makes sense (don't add bars for weekends/holidays)
+      const dayOfWeek = chinaTime.getDay();
+      const isWeekday = dayOfWeek !== 0 && dayOfWeek !== 6;
+
+      const todayQuote = { open: quote.open || quote.price, high: quote.high || quote.price, low: quote.low || quote.price, close: quote.price, volume: quote.volume || 0 };
+
+      // Search from the end of the array for a bar matching todayKey (normalized)
+      let existingTodayIdx = -1;
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (normalizeDate(data[i].date) === todayKey) {
+          existingTodayIdx = i;
+          break;
+        }
+      }
+
+      if (existingTodayIdx >= 0) {
+        // API already has a bar for today — merge quote data into it, preserving MA/MACD values from API
+        const existing = data[existingTodayIdx];
+        data[existingTodayIdx] = {
+          ...existing,
+          high: Math.max(existing.high, todayQuote.high),
+          low: Math.min(existing.low, todayQuote.low),
+          close: todayQuote.close,
+          volume: todayQuote.volume,
+          // Preserve API-computed MA/MACD values (they may be null if API hasn't computed them yet)
+          ma5: existing.ma5,
+          ma10: existing.ma10,
+          ma20: existing.ma20,
+          dif: existing.dif,
+          dea: existing.dea,
+          macd: existing.macd,
+        };
+      } else if (isWeekday) {
+        // No existing bar for today and it's a weekday — push a new bar
+        data.push({ date: todayKey, ...todayQuote, ma5: null, ma10: null, ma20: null, dif: null, dea: null, macd: null });
+      }
+    }
     // Deduplicate: remove any bars with duplicate dates, preferring bars with MA values (API data)
     const seen = new Map<string, number>();
     for (let i = 0; i < data.length; i++) {
@@ -415,63 +332,41 @@ export default function StockTAssistant() {
       if (prevIdx === undefined) {
         seen.set(dateKey, i);
       } else {
+        // Prefer the bar that has computed MA values (API data over quote-pushed data)
         const prevItem = data[prevIdx];
         const curItem = data[i];
         const prevHasMA = prevItem.ma5 != null;
         const curHasMA = curItem.ma5 != null;
-        if (curHasMA && !prevHasMA) { seen.set(dateKey, i); }
-        else if (prevHasMA && !curHasMA) { /* keep prevIdx */ }
-        else { seen.set(dateKey, i); }
+        if (curHasMA && !prevHasMA) {
+          // Current bar has MA values, previous doesn't — prefer current
+          // But merge the quote-updated OHLCV from the other bar
+          seen.set(dateKey, i);
+        } else if (prevHasMA && !curHasMA) {
+          // Previous bar has MA values, current doesn't — prefer previous
+          // (keep prevIdx)
+        } else {
+          // Both have or lack MA values — keep the last occurrence (quote-merged data)
+          seen.set(dateKey, i);
+        }
       }
     }
     if (seen.size < data.length) {
-      return data.filter((item, i) => {
+      // For any kept index that was a duplicate, also normalize the date field to clean format
+      const deduped = data.filter((item, i) => {
         const dateKey = normalizeDate(item.date);
         return seen.get(dateKey) === i;
       }).map((item) => {
+        // Normalize the date to just the date part (remove time component)
         const normalizedDate = normalizeDate(item.date);
         if (normalizedDate && normalizedDate !== item.date) {
           return { ...item, date: normalizedDate };
         }
         return item;
       });
+      return deduped;
     }
     return data;
-  }, [history]);
-
-  // Step 2: Merge quote into last bar only when quote changes (every 3s, but O(1))
-  const allChartData = useMemo(() => {
-    if (chartMode === 'timeline' || chartMode === '5d-timeline') {
-      return dedupedHistory;
-    }
-    if (!quote || quote.price <= 0 || (interval !== "1d" && interval !== "1wk")) {
-      return dedupedHistory;
-    }
-    const data = [...dedupedHistory];
-    const normalizeDate = (d: string | undefined): string => {
-      if (!d) return "";
-      return d.split(" ")[0].split("T")[0];
-    };
-    const now = new Date(); const chinaOffset = 8 * 60;
-    const chinaTime = new Date(now.getTime() + (chinaOffset + now.getTimezoneOffset()) * 60000);
-    const todayStr = chinaTime.toISOString().split("T")[0];
-    let todayKey = todayStr;
-    if (interval === "1wk") { const dayOfWeek = chinaTime.getDay(); const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; const monday = new Date(chinaTime.getTime() + mondayOffset * 86400000); todayKey = monday.toISOString().split("T")[0]; }
-    const dayOfWeek = chinaTime.getDay();
-    const isWeekday = dayOfWeek !== 0 && dayOfWeek !== 6;
-    const todayQuote = { open: quote.open || quote.price, high: quote.high || quote.price, low: quote.low || quote.price, close: quote.price, volume: quote.volume || 0 };
-    let existingTodayIdx = -1;
-    for (let i = data.length - 1; i >= 0; i--) {
-      if (normalizeDate(data[i].date) === todayKey) { existingTodayIdx = i; break; }
-    }
-    if (existingTodayIdx >= 0) {
-      const existing = data[existingTodayIdx];
-      data[existingTodayIdx] = { ...existing, high: Math.max(existing.high, todayQuote.high), low: Math.min(existing.low, todayQuote.low), close: todayQuote.close, volume: todayQuote.volume, ma5: existing.ma5, ma10: existing.ma10, ma20: existing.ma20, dif: existing.dif, dea: existing.dea, macd: existing.macd };
-    } else if (isWeekday) {
-      data.push({ date: todayKey, ...todayQuote, ma5: null, ma10: null, ma20: null, dif: null, dea: null, macd: null });
-    }
-    return data;
-  }, [dedupedHistory, chartMode, quote, interval]);
+  }, [history, chartMode, quote, interval]);
 
   // ── chartData for signal summary (visible K-line slice) ──
   const chartData = useMemo(() => {
@@ -482,6 +377,7 @@ export default function StockTAssistant() {
   }, [allChartData, klineVisibleBars, klinePanOffset]);
 
   // ── Timeline zoom state ──
+  const TL_ZOOM_LEVELS = [250, 180, 120, 90, 60];
   const [tlZoomIdx, setTlZoomIdx] = useState<number>(0);
   const [tlPanOffset, setTlPanOffset] = useState<number>(0);
   const tlVisibleMinutes = TL_ZOOM_LEVELS[tlZoomIdx];
@@ -492,7 +388,6 @@ export default function StockTAssistant() {
     signalFingerprintCache.invalidate();
     pvFingerprintCache.invalidate();
     selectStock(sym); setShowSearch(false); setSearchQuery(""); setSearchResults([]);
-    setSearchHighlightIdx(-1);
     setKlineVisibleBars(80); setTlZoomIdx(0);
   }, [selectStock]);
 
@@ -567,7 +462,7 @@ export default function StockTAssistant() {
   const timelineMACDData = useMemo(() => {
     // Skip heavy MACD computation when not in timeline mode
     if (!isTimelineActive || liveTimeline.length === 0) return [];
-    // Fingerprint: length + last 3 prices
+    // Fingerprint: skip recomputation if data hasn't meaningfully changed
     const fp = `${liveTimeline.length}:${liveTimeline.slice(-3).map(d => d.price.toFixed(2)).join(',')}`;
     return macdFingerprintCache.compute(fp, () => {
       const prices = liveTimeline.map((d) => d.price);
@@ -581,50 +476,32 @@ export default function StockTAssistant() {
   const timelineSignals = useMemo(() => {
     // Skip the heaviest computation (~7000 condition evaluations) when not in timeline mode
     if (!isTimelineActive) return [] as (TSignal | null)[];
-    // Fingerprint: MACD length + last 3 timeline prices + prevClose + factor overrides + regime keys
-    const fp = `${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => d.price.toFixed(2)).join(',')}:${timelinePrevClose}:${JSON.stringify(factorOverrides)}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}`;
+    // Fingerprint: skip if inputs haven't changed
+    const fp = `${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => d.price.toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}`;
     return signalFingerprintCache.compute(fp, () =>
       generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime)
     );
   }, [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, isTimelineActive]);
-  // Defer signal rendering so the chart paints first, then signals overlay on next frame
-  const deferredTimelineSignals = useDeferredValue(timelineSignals);
+  // NOTE: Removed useDeferredValue — it was causing labels to appear with visible delay.
+  // The fingerprint caching above makes recomputation cheap when data hasn't changed,
+  // so deferred rendering is no longer needed and directly using values is faster.
   const pvMarkers = useMemo(() => {
     if (!isTimelineActive || liveTimeline.length < 10 || timelinePrevClose <= 0) return [];
-    // Fingerprint: length + last 3 prices/volumes + prevClose
     const fp = `${liveTimeline.length}:${timelinePrevClose}:${liveTimeline.slice(-3).map(d => `${d.price.toFixed(2)}:${d.volume}`).join(',')}`;
     return pvFingerprintCache.compute(fp, () => detectPulseVolumeMarkers(liveTimeline, timelinePrevClose));
   }, [liveTimeline, timelinePrevClose, isTimelineActive]);
-  const deferredPvMarkers = useDeferredValue(pvMarkers);
-  const latestTimelineSignal = useMemo(() => { for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { if (deferredTimelineSignals[i]) return deferredTimelineSignals[i]; } return null; }, [deferredTimelineSignals]);
+  // NOTE: Removed useDeferredValue for pvMarkers — same reason as signals above.
+  const latestTimelineSignal = useMemo(() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { if (timelineSignals[i]) return timelineSignals[i]; } return null; }, [timelineSignals]);
 
-  // ── Memoized slice for SignalSummaryPanel (avoid new array every render) ──
-  const signalSummarySignals = useMemo(() => deferredTimelineSignals.slice(-60), [deferredTimelineSignals]);
-
-  // ── Signal counts (optimized: single-pass with cached description check) ──
+  // ── Signal counts ──
   const signalCounts = useMemo(() => {
     if (!isTimelineActive) return { buyCount: 0, strongBuys: 0, sellCount: 0, strongSells: 0, totalSigs: 0, strongSigs: 0, mediumSigs: 0, weakSigs: 0, confluenceCount: 0, keyLevelCount: 0, vwapSlopeCount: 0, indexRegimeCount: 0 };
     let buyCount = 0, strongBuys = 0, sellCount = 0, strongSells = 0;
     let totalSigs = 0, strongSigs = 0, mediumSigs = 0, weakSigs = 0;
     let confluenceCount = 0, keyLevelCount = 0, vwapSlopeCount = 0, indexRegimeCount = 0;
-    for (const s of deferredTimelineSignals) {
-      if (!s) continue;
-      totalSigs++;
-      if (s.type === "buy") { buyCount++; if (s.strength === "strong") strongBuys++; }
-      else if (s.type === "sell") { sellCount++; if (s.strength === "strong") strongSells++; }
-      if (s.strength === "strong") strongSigs++;
-      else if (s.strength === "medium") mediumSigs++;
-      else if (s.strength === "weak") weakSigs++;
-      const desc = s.description;
-      if (desc) {
-        if (desc.includes("共振")) confluenceCount++;
-        if (desc.includes("阻力确认") || desc.includes("支撑确认")) keyLevelCount++;
-        if (desc.includes("均价线拐头")) vwapSlopeCount++;
-        if (desc.includes("大盘")) indexRegimeCount++;
-      }
-    }
+    for (const s of timelineSignals) { if (!s) continue; totalSigs++; if (s.type === "buy") { buyCount++; if (s.strength === "strong") strongBuys++; } else if (s.type === "sell") { sellCount++; if (s.strength === "strong") strongSells++; } if (s.strength === "strong") strongSigs++; else if (s.strength === "medium") mediumSigs++; else if (s.strength === "weak") weakSigs++; if (s.description?.includes("共振")) confluenceCount++; if (s.description?.includes("阻力确认") || s.description?.includes("支撑确认")) keyLevelCount++; if (s.description?.includes("均价线拐头")) vwapSlopeCount++; if (s.description?.includes("大盘")) indexRegimeCount++; }
     return { buyCount, strongBuys, sellCount, strongSells, totalSigs, strongSigs, mediumSigs, weakSigs, confluenceCount, keyLevelCount, vwapSlopeCount, indexRegimeCount };
-  }, [deferredTimelineSignals, isTimelineActive]);
+  }, [timelineSignals, isTimelineActive]);
 
   // ── Sound / Alert ──
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -635,19 +512,19 @@ export default function StockTAssistant() {
   useEffect(() => {
     if (!soundEnabled && flashSignal === null) return;
     const newStrongSignals: { type: 'buy' | 'sell' | 'stoploss'; id: string }[] = [];
-    for (let i = 0; i < deferredTimelineSignals.length; i++) { const sig = deferredTimelineSignals[i]; if (!sig || sig.strength !== 'strong') continue; const id = `${i}-${sig.type}-${sig.reason}`; if (!alertedSignalIdsRef.current.has(id)) { alertedSignalIdsRef.current.add(id); newStrongSignals.push({ type: sig.type, id }); } }
+    for (let i = 0; i < timelineSignals.length; i++) { const sig = timelineSignals[i]; if (!sig || sig.strength !== 'strong') continue; const id = `${i}-${sig.type}-${sig.reason}`; if (!alertedSignalIdsRef.current.has(id)) { alertedSignalIdsRef.current.add(id); newStrongSignals.push({ type: sig.type, id }); } }
     if (newStrongSignals.length > 0) { const latest = newStrongSignals[newStrongSignals.length - 1]; if (soundEnabled) playAlertSound(latest.type); setTimeout(() => { setFlashSignal(latest.type); setTimeout(() => setFlashSignal(null), 1200); }, 0); }
-  }, [deferredTimelineSignals, soundEnabled]);
+  }, [timelineSignals, soundEnabled]);
 
   // ── T-Index ──
   const tIndex = useMemo(() => {
     if (!isTimelineActive) return 50;
     let score = 50;
-    for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { const sig = deferredTimelineSignals[i]; if (!sig) continue; if (i < deferredTimelineSignals.length - 5) break; if (sig.type === 'buy') { if (sig.strength === 'strong') score += 15; else if (sig.strength === 'medium') score += 8; else score += 3; } else if (sig.type === 'sell') { if (sig.strength === 'strong') score -= 15; else if (sig.strength === 'medium') score -= 8; else score -= 3; } else if (sig.type === 'stoploss') score -= 20; }
+    for (let i = timelineSignals.length - 1; i >= 0; i--) { const sig = timelineSignals[i]; if (!sig) continue; if (i < timelineSignals.length - 5) break; if (sig.type === 'buy') { if (sig.strength === 'strong') score += 15; else if (sig.strength === 'medium') score += 8; else score += 3; } else if (sig.type === 'sell') { if (sig.strength === 'strong') score -= 15; else if (sig.strength === 'medium') score -= 8; else score -= 3; } else if (sig.type === 'stoploss') score -= 20; }
     const regime = szIndexRegime?.regime;
     if (regime === '震荡市') score += 5; else if (regime === '上升通道') score -= 5; else if (regime === '下跌趋势') score -= 10; else if (regime === '横盘末期') score -= 15;
     return Math.max(0, Math.min(100, score));
-  }, [deferredTimelineSignals, szIndexRegime, isTimelineActive]);
+  }, [timelineSignals, szIndexRegime, isTimelineActive]);
 
   // ── Smart Action ──
   const smartAction = useMemo(() => {
@@ -655,14 +532,14 @@ export default function StockTAssistant() {
     const lastTime = liveTimeline[liveTimeline.length - 1]?.time;
     const timeWindow = lastTime ? getTimeWindow(lastTime) : undefined;
     let latestStrong: TSignal | null = null; let strongCount = 0; let mediumCount = 0;
-    for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { const sig = deferredTimelineSignals[i]; if (!sig) continue; if (i < deferredTimelineSignals.length - 10) break; if (sig.strength === 'strong') { strongCount++; if (!latestStrong) latestStrong = sig; } if (sig.strength === 'medium') mediumCount++; }
-    const hasStoploss = deferredTimelineSignals.slice(-10).some(s => s?.type === 'stoploss');
+    for (let i = timelineSignals.length - 1; i >= 0; i--) { const sig = timelineSignals[i]; if (!sig) continue; if (i < timelineSignals.length - 10) break; if (sig.strength === 'strong') { strongCount++; if (!latestStrong) latestStrong = sig; } if (sig.strength === 'medium') mediumCount++; }
+    const hasStoploss = timelineSignals.slice(-10).some(s => s?.type === 'stoploss');
     if (hasStoploss) return { icon: '⚡', text: '紧急止损', reason: '触发止损信号，建议立即平仓', color: 'text-amber-500', bgColor: 'bg-amber-500/10 border-amber-500/25', confidence: 95, type: 'stoploss' as const };
     if (latestStrong?.type === 'buy' && latestStrong.strength === 'strong') { const isBuyWindow = timeWindow?.includes('买入') || timeWindow?.includes('低吸'); return { icon: '🟢', text: isBuyWindow ? '建议正T买回' : '建议买入', reason: `强买入信号(${latestStrong.reason})${isBuyWindow ? '，处于买入时段' : ''}`, color: 'text-green-500', bgColor: 'bg-green-500/10 border-green-500/25', confidence: 80 + strongCount * 5, type: 'buy' as const }; }
     if (latestStrong?.type === 'sell' && latestStrong.strength === 'strong') { const isSellWindow = timeWindow?.includes('卖出') || timeWindow?.includes('冲高'); return { icon: '🔴', text: isSellWindow ? '建议正T卖出' : '建议卖出', reason: `强卖出信号(${latestStrong.reason})${isSellWindow ? '，处于卖出时段' : ''}`, color: 'text-red-500', bgColor: 'bg-red-500/10 border-red-500/25', confidence: 80 + strongCount * 5, type: 'sell' as const }; }
-    if (mediumCount > 0 && strongCount === 0) { const mediumSig = (() => { for (let i = deferredTimelineSignals.length - 1; i >= 0; i--) { if (deferredTimelineSignals[i]?.strength === 'medium') return deferredTimelineSignals[i]; } return null; })(); return { icon: '📊', text: '等待确认', reason: `${mediumSig?.type === 'buy' ? '买入' : '卖出'}信号强度中等(${mediumSig?.reason})，等待加强确认`, color: 'text-orange-500', bgColor: 'bg-orange-500/10 border-orange-500/25', confidence: 50 + mediumCount * 10, type: (mediumSig?.type || 'buy') as 'buy' | 'sell' }; }
+    if (mediumCount > 0 && strongCount === 0) { const mediumSig = (() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { if (timelineSignals[i]?.strength === 'medium') return timelineSignals[i]; } return null; })(); return { icon: '📊', text: '等待确认', reason: `${mediumSig?.type === 'buy' ? '买入' : '卖出'}信号强度中等(${mediumSig?.reason})，等待加强确认`, color: 'text-orange-500', bgColor: 'bg-orange-500/10 border-orange-500/25', confidence: 50 + mediumCount * 10, type: (mediumSig?.type || 'buy') as 'buy' | 'sell' }; }
     return { icon: '⏳', text: '观望等待', reason: tIndex <= 50 ? '做T指数偏低，暂无明显操作机会' : '暂无有效信号，继续观察', color: 'text-muted-foreground', bgColor: 'bg-muted/50 border-border', confidence: 30, type: 'buy' as const };
-  }, [deferredTimelineSignals, liveTimeline, tIndex, isTimelineActive]);
+  }, [timelineSignals, liveTimeline, tIndex, isTimelineActive]);
 
   const prevDayMA5 = useMemo(() => {
     if (allChartData.length < 1) return null;
@@ -709,25 +586,19 @@ export default function StockTAssistant() {
             <div className="flex-1 max-w-md relative">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input value={searchQuery} onChange={(e) => { handleSearch(e.target.value); setShowSearch(true); }} onFocus={() => setShowSearch(true)} onKeyDown={(e) => {
-                  if (e.key === "ArrowDown") { e.preventDefault(); setSearchHighlightIdx(prev => Math.min(prev + 1, searchResults.length - 1)); }
-                  else if (e.key === "ArrowUp") { e.preventDefault(); setSearchHighlightIdx(prev => Math.max(prev - 1, -1)); }
-                  else if (e.key === "Enter" && searchHighlightIdx >= 0 && searchHighlightIdx < searchResults.length) { e.preventDefault(); handleSelectStock(searchResults[searchHighlightIdx].symbol); }
-                  else if (e.key === "Escape") { setShowSearch(false); }
-                }} placeholder="搜索A股代码或名称..." className="pl-9 pr-8 h-9" />
+                <Input value={searchQuery} onChange={(e) => { handleSearch(e.target.value); setShowSearch(true); }} onFocus={() => setShowSearch(true)} placeholder="搜索A股代码或名称..." className="pl-9 pr-8 h-9" />
                 {searchQuery && (<button onClick={() => { setSearchQuery(""); setSearchResults([]); }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-3 w-3 text-muted-foreground" /></button>)}
               </div>
               {showSearch && (searchResults.length > 0 || searchLoading) && (
                 <div className="absolute top-full mt-1 left-0 right-0 bg-card border border-border rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-                  {searchLoading && searchResults.length === 0 ? (<div className="p-4 text-center text-sm text-muted-foreground animate-pulse">搜索中...</div>) : (
-                    searchResults.map((stock, idx) => (
-                      <button key={stock.symbol} onClick={() => handleSelectStock(stock.symbol)} className={`w-full px-4 py-2.5 text-left hover:bg-accent flex items-center justify-between transition-colors ${idx === searchHighlightIdx ? 'bg-accent' : ''}`}>
+                  {searchLoading ? (<div className="p-4 text-center text-sm text-muted-foreground">搜索中...</div>) : (
+                    searchResults.map((stock) => (
+                      <button key={stock.symbol} onClick={() => handleSelectStock(stock.symbol)} className="w-full px-4 py-2.5 text-left hover:bg-accent flex items-center justify-between transition-colors">
                         <div><span className="font-medium text-sm">{stock.symbol}</span><span className="ml-2 text-sm text-muted-foreground">{stock.name}</span></div>
                         <div className="flex items-center gap-1">{stock.type === "ETF" && <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-purple-500/10 text-purple-600 border-purple-500/20">ETF</Badge>}<Badge variant="outline" className="text-xs">{stock.exchange}</Badge></div>
                       </button>
                     ))
                   )}
-                  {searchLoading && searchResults.length > 0 && (<div className="px-4 py-1.5 text-xs text-muted-foreground border-t border-border animate-pulse">搜索更多...</div>)}
                 </div>
               )}
             </div>
@@ -872,8 +743,6 @@ export default function StockTAssistant() {
           stockName={quote?.name}
           indexLabel={INDEX_CONFIG[activeIndexKey]?.label || "深证"}
           sectorName={sectorInfo?.name}
-          indexChangePercent={indexChangePercent}
-          sectorChangePercent={sectorChangePercent}
         />
         )}
 
@@ -885,7 +754,7 @@ export default function StockTAssistant() {
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             {(() => { const lastTl = liveTimeline[liveTimeline.length - 1]; if (lastTl && lastTl.avgPrice && lastTl.avgPrice > 0) { const deviation = ((lastTl.price - lastTl.avgPrice) / lastTl.avgPrice) * 100; const isAbove = deviation >= 0; return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[10px] font-semibold ${isAbove ? "bg-red-500/10 border-red-500/25 text-red-600 dark:text-red-400" : "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400"}`} title={`价格 ${lastTl.price.toFixed(2)} 相对均价 ${lastTl.avgPrice.toFixed(2)} 偏离 ${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}%`}><span className="opacity-70">{isAbove ? "↑均线上方" : "↓均线下方"}</span><span className="font-mono">{deviation >= 0 ? "+" : ""}{deviation.toFixed(2)}%</span></span>; } return null; })()}
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSoundEnabled(prev => !prev)} title={soundEnabled ? '关闭声音提醒' : '开启声音提醒'}>{soundEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />}</Button>
-            <Clock className="h-3 w-3" />实时刷新 3s
+            <Clock className="h-3 w-3" />实时刷新 1.5s
           </div>
         </div>
 
@@ -895,10 +764,10 @@ export default function StockTAssistant() {
         {(chartMode === "timeline" || chartMode === "5d-timeline") && liveTimeline.length === 0 && timelineLoading ? (
           <div className="space-y-4"><Skeleton className="h-[400px] w-full" /><Skeleton className="h-[150px] w-full" /><Skeleton className="h-[100px] w-full" /></div>
         ) : chartMode === "5d-timeline" ? (
-          <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} szIndexRegime={szIndexRegime} sectorRegime={sectorRegime} sectorInfo={sectorInfo} />
+          <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
-            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={deferredTimelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={deferredPvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />
+            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />
           </div>
         ) : chartMode === "kline" && chartData.length > 0 ? (
           <KLineChartPanel allChartData={allChartData} klineVisibleBars={klineVisibleBars} setKlineVisibleBars={setKlineVisibleBars} klinePanOffset={klinePanOffset} setKlinePanOffset={setKlinePanOffset} interval={interval} />
@@ -921,7 +790,7 @@ export default function StockTAssistant() {
         {/* T-Trading Signals Summary — hidden in 5d-timeline mode */}
         {chartMode !== "5d-timeline" && (chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
           <LazyMount height={120}>
-            <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={signalSummarySignals} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={deferredPvMarkers} />
+            <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={timelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={pvMarkers} />
           </LazyMount>
         )}
 
@@ -940,8 +809,8 @@ export default function StockTAssistant() {
         </>
         )}
 
-        {/* Trading Rules Reference — only show in timeline (分时) mode */}
-        {chartMode === "timeline" && (
+        {/* Trading Rules Reference — hidden in 5d-timeline mode */}
+        {chartMode !== "5d-timeline" && (
         <div className="mb-4">
           <TradingRulesCard autoExpanded={autoExpanded} />
         </div>

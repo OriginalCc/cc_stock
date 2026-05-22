@@ -13,7 +13,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  ReferenceArea,
   Customized,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
@@ -216,22 +215,16 @@ interface PvLabelLayout {
 function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): PvLabelLayout {
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
-  const isEarlyVolDrop = marker.type === "early_vol_drop";
-  const isWashTrade = marker.type === "wash_trade";
-  const isVolRise = marker.type === "vol_rise";
-  const isShrinkRise = marker.type === "shrink_rise";
-  const isPulseRise = marker.type === "pulse_rise";
-  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade || isVolRise || isPulseRise;
+  const isAbove = isPulse || isProgressiveVol;
 
   const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
-  const isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise || isPulseRise;
-  const estimatedCharWidth = isBigLabel ? 8 : 7.5;
-  const pillW = isBigLabel ? Math.max(100, Math.min(220, Math.round(displayLabel.length * estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
-  const pillH = isBigLabel ? 16 : 16;
+  const estimatedCharWidth = 7.5;
+  const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const pillH = 16;
 
-  const labelY = isAbove ? (isEarlyVolDrop ? y - 70 : isWashTrade ? y - 65 : isVolRise ? y - 65 : isPulseRise ? y - 65 : y - 52) : y + 36;
+  const labelY = isAbove ? y - 52 : y + 36;
 
   return { isAbove, labelY, pillW, pillH, displayLabel };
 }
@@ -270,18 +263,8 @@ interface PlacedLabel {
 
 function resolvePvLabelOverlaps(
   markerPoints: { x: number; y: number; marker: PulseVolumeMarker }[],
-  svgWidth?: number,
-  svgHeight?: number,
 ): PlacedLabel[] {
   if (markerPoints.length === 0) return [];
-
-  // Boundary limits for labels — prevent labels from going outside visible area
-  const SVG_W = svgWidth || 900;
-  const SVG_H = svgHeight || 620;
-  const TOP_MIN = 4;          // minimum labelY for above labels (px from SVG top)
-  const BOTTOM_MAX = SVG_H - 4; // maximum labelY for below labels (px from SVG top)
-  const LEFT_MIN = 10;        // minimum left edge of label pill
-  const RIGHT_MAX = SVG_W - 10; // maximum right edge of label pill
 
   // Step 0: Detect markers at the same time point and spread them horizontally
   // so pulse and progressive_vol each get their own connection line
@@ -400,33 +383,6 @@ function resolvePvLabelOverlaps(
     placedRects.push(rect);
   }
 
-  // Step 3: Boundary clamping — ensure all labels stay within visible area
-  for (const p of placed) {
-    // Clamp vertical position
-    if (p.layout.isAbove) {
-      // For above labels, ensure labelY - pillH/2 - 2 >= TOP_MIN
-      const minLabelY = TOP_MIN + p.layout.pillH / 2 + 2;
-      if (p.adjustedLabelY < minLabelY) {
-        p.adjustedLabelY = minLabelY;
-      }
-    } else {
-      // For below labels, ensure labelY + pillH <= BOTTOM_MAX
-      const maxLabelY = BOTTOM_MAX - p.layout.pillH;
-      if (p.adjustedLabelY > maxLabelY) {
-        p.adjustedLabelY = maxLabelY;
-      }
-    }
-
-    // Clamp horizontal position — ensure pill doesn't go off left/right edge
-    const pillLeft = p.adjustedX - p.layout.pillW / 2;
-    const pillRight = p.adjustedX + p.layout.pillW / 2;
-    if (pillLeft < LEFT_MIN) {
-      p.adjustedX = LEFT_MIN + p.layout.pillW / 2;
-    } else if (pillRight > RIGHT_MAX) {
-      p.adjustedX = RIGHT_MAX - p.layout.pillW / 2;
-    }
-  }
-
   return placed;
 }
 
@@ -445,37 +401,15 @@ function renderPulseVolumeMarker(
   const isProgressiveVol = marker.type === "progressive_vol";
   const isPulseDecline = marker.type === "pulse_decline";
   const isVolumeDecline = marker.type === "volume_decline";
-  const isEarlyVolDrop = marker.type === "early_vol_drop";
-  const isWashTrade = marker.type === "wash_trade";
-  const isVolRise = marker.type === "vol_rise";
-  const isShrinkRise = marker.type === "shrink_rise";
-  const isPulseRise = marker.type === "pulse_rise";
-  const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop;
+  const isDecline = isPulseDecline || isVolumeDecline;
 
   // Color schemes — brighter & more saturated for visibility
   // Decline markers use green tones (bearish in Chinese markets)
-  // early_vol_drop uses RED for extreme danger (禁止买入)
-  // wash_trade uses BLUE for opportunity (低吸机会)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
-  const isAbove = isPulse || isProgressiveVol || isEarlyVolDrop || isWashTrade || isVolRise || isPulseRise;
-  const defaultLabelY = isAbove ? (isEarlyVolDrop ? y - 90 : isWashTrade ? y - 80 : isVolRise ? y - 80 : isPulseRise ? y - 80 : y - 52) : y + 36;
-  let labelY = adjustedLabelY ?? defaultLabelY;
-  let labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
-
-  // Pre-compute label dimensions for boundary clamping (will be recomputed below for rendering)
-  const _isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise || isPulseRise;
-  const _amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
-  const _displayLabel = _amountStr ? `${marker.label} ${_amountStr}` : marker.label;
-  const _estimatedCharWidth = _isBigLabel ? 8 : 7.5;
-  const _pillW = _isBigLabel ? Math.max(100, Math.min(220, Math.round(_displayLabel.length * _estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(_displayLabel.length * _estimatedCharWidth + 8)));
-  const _pillH = 16;
-  // Safety clamp: ensure label stays within visible SVG area
-  // Vertical clamp
-  if (labelY - _pillH / 2 - 2 < 2) labelY = _pillH / 2 + 4;
-  if (labelY + _pillH > 620) labelY = 620 - _pillH;
-  // Horizontal clamp
-  if (labelX - _pillW / 2 < 5) labelX = _pillW / 2 + 5;
-  if (labelX + _pillW / 2 > 895) labelX = 895 - _pillW / 2;
+  const isAbove = isPulse || isProgressiveVol;
+  const defaultLabelY = isAbove ? y - 52 : y + 36;
+  const labelY = adjustedLabelY ?? defaultLabelY;
+  const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
 
   if (isPulse) {
     bgColor = "rgba(245, 158, 11, 0.25)";
@@ -501,41 +435,6 @@ function renderPulseVolumeMarker(
     textColor = "#15803d";
     iconColor = "#22c55e";
     glowColor = "rgba(34, 197, 94, 0.35)";
-  } else if (isEarlyVolDrop) {
-    // 早盘放量下跌 → 醒目红色（危险！禁止买入）
-    bgColor = "rgba(239, 68, 68, 0.35)";
-    borderColor = "rgba(239, 68, 68, 1)";
-    textColor = "#ffffff";
-    iconColor = "#ef4444";
-    glowColor = "rgba(239, 68, 68, 0.6)";
-  } else if (isWashTrade) {
-    // 洗盘 → 蓝色（低吸机会）
-    bgColor = "rgba(59, 130, 246, 0.30)";
-    borderColor = "rgba(59, 130, 246, 1)";
-    textColor = "#ffffff";
-    iconColor = "#3b82f6";
-    glowColor = "rgba(59, 130, 246, 0.5)";
-  } else if (isVolRise) {
-    // 放量拉升 → 橙红色（量价齐升·强势确认）
-    bgColor = "rgba(234, 88, 12, 0.30)";
-    borderColor = "rgba(234, 88, 12, 1)";
-    textColor = "#ffffff";
-    iconColor = "#ea580c";
-    glowColor = "rgba(234, 88, 12, 0.5)";
-  } else if (isShrinkRise) {
-    // 缩量拉升 → 黄色警告（量价背离·警惕回调）
-    bgColor = "rgba(202, 138, 4, 0.30)";
-    borderColor = "rgba(202, 138, 4, 1)";
-    textColor = "#ffffff";
-    iconColor = "#ca8a04";
-    glowColor = "rgba(202, 138, 4, 0.5)";
-  } else if (isPulseRise) {
-    // 脉冲上涨 → 橙色（短线冲高·不追涨）
-    bgColor = "rgba(249, 115, 22, 0.30)";
-    borderColor = "rgba(249, 115, 22, 1)";
-    textColor = "#ffffff";
-    iconColor = "#f97316";
-    glowColor = "rgba(249, 115, 22, 0.5)";
   } else {
     bgColor = "rgba(6, 182, 212, 0.25)";
     borderColor = "rgba(6, 182, 212, 0.85)";
@@ -549,11 +448,8 @@ function renderPulseVolumeMarker(
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
 
   // Dynamic pill width based on label length
-  // early_vol_drop & wash_trade: wider pill + larger font for maximum visibility
-  // (moved up before boundary clamping so pillW/pillH are available)
-  const isBigLabel = isEarlyVolDrop || isWashTrade || isVolRise || isShrinkRise || isPulseRise;
-  const estimatedCharWidth = isBigLabel ? 8 : 7.5;
-  const pillW = isBigLabel ? Math.max(100, Math.min(220, Math.round(displayLabel.length * estimatedCharWidth + 10))) : Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+  const estimatedCharWidth = 7.5;
+  const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
   const pillH = 16;
   const pillRx = 4;
 
@@ -562,53 +458,46 @@ function renderPulseVolumeMarker(
       {/* Connecting line from price point to label (may be offset horizontally) */}
       <line
         x1={x} y1={y} x2={labelX} y2={labelY}
-        stroke={borderColor} strokeWidth={isBigLabel ? 1.5 : 1} strokeDasharray={isBigLabel ? "3 2" : "3 2"}
+        stroke={borderColor} strokeWidth={1} strokeDasharray="3 2"
       />
-      {/* Marker dot on price line */}
+      {/* Marker dot on price line — larger & bolder */}
       <circle
-        cx={x} cy={y} r={isBigLabel ? 7 : 6}
-        fill={bgColor} stroke={iconColor} strokeWidth={isBigLabel ? 2.5 : 2}
+        cx={x} cy={y} r={6}
+        fill={bgColor} stroke={iconColor} strokeWidth={2}
       />
       {/* Pulsing glow ring around dot */}
       <circle
-        cx={x} cy={y} r={isBigLabel ? 11 : 9}
-        fill="none" stroke={glowColor} strokeWidth={isBigLabel ? 2 : 1.5}
-        strokeDasharray="2 2" opacity={isBigLabel ? 0.9 : 0.7}
+        cx={x} cy={y} r={9}
+        fill="none" stroke={glowColor} strokeWidth={1.5}
+        strokeDasharray="2 2" opacity={0.7}
       />
-      {isBigLabel && (
-        <circle
-          cx={x} cy={y} r={15}
-          fill="none" stroke={glowColor} strokeWidth={1}
-          strokeDasharray="3 3" opacity={0.4}
-        />
-      )}
       {/* Icon inside dot */}
       <text
         x={x} y={y + 1}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={isBigLabel ? 8 : 7} fill={isBigLabel ? "#ffffff" : iconColor} fontWeight="bold"
+        fontSize={7} fill={iconColor} fontWeight="bold"
       >
-        {isEarlyVolDrop ? "⚠" : isWashTrade ? "✓" : isVolRise ? "▲" : isPulseRise ? "⚡" : isShrinkRise ? "!" : isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
+        {isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
       </text>
       {/* White glow behind label pill for readability */}
       <rect
         x={labelX - pillW / 2 - 1.5} y={(isAbove ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
         width={pillW + 3} height={pillH + 3}
         rx={pillRx + 1} ry={pillRx + 1}
-        fill={isBigLabel ? "rgba(0,0,0,0.5)" : "white"} fillOpacity={isBigLabel ? 0.5 : 0.85}
+        fill="white" fillOpacity={0.85}
       />
       {/* Label background pill */}
       <rect
         x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
-        fill={isEarlyVolDrop ? "rgba(239, 68, 68, 0.9)" : isWashTrade ? "rgba(59, 130, 246, 0.9)" : isVolRise ? "rgba(234, 88, 12, 0.9)" : isPulseRise ? "rgba(249, 115, 22, 0.9)" : isShrinkRise ? "rgba(202, 138, 4, 0.9)" : bgColor} stroke={borderColor} strokeWidth={isBigLabel ? 1.5 : 1}
+        fill={bgColor} stroke={borderColor} strokeWidth={1}
       />
-      {/* Label text */}
+      {/* Label text — larger & bolder */}
       <text
-        x={labelX} y={isAbove ? labelY + (isBigLabel ? 0 : 1) : labelY + 7}
+        x={labelX} y={isAbove ? labelY + 1 : labelY + 7}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={isBigLabel ? 9 : 9} fontWeight={isBigLabel ? 800 : 700} fill={isBigLabel ? "#ffffff" : textColor}
+        fontSize={9} fontWeight={700} fill={textColor}
       >
         {displayLabel}
       </text>
@@ -818,15 +707,7 @@ function computeTimelineSignalElements(
       labelY = m.y - markerOffset - labelGap - labelH;
     }
 
-    // Boundary clamping for signal labels
-    if (labelY < 2) labelY = 2;
-    if (labelY + labelH > 610) labelY = 610 - labelH;
-
     let labelRect = { x: m.x - labelW / 2, y: labelY, width: labelW, height: labelH };
-
-    // Horizontal boundary clamping
-    if (labelRect.x < 5) labelRect = { ...labelRect, x: 5 };
-    if (labelRect.x + labelRect.width > 895) labelRect = { ...labelRect, x: 895 - labelRect.width };
 
     let placed = false;
     if (!overlapsAny(labelRect, labelRects)) {
@@ -1357,6 +1238,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     data.forEach((d) => dataByTime.set(d.time, d));
 
     // Pre-compute prevActual for each time point — O(n) instead of O(n²)
+    // Avoids nested loop searching backwards for each data point
     const prevActualMap = new Map<string, TimelineItem | null>();
     let prevItem: TimelineItem | null = null;
     for (const d of data) {
@@ -1696,59 +1578,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   return (
     <div
       ref={chartContainerRef}
-      className="bg-card rounded-lg border border-border"
+      className="bg-card rounded-lg border border-border overflow-hidden"
     >
-      {/* ─── Early Morning Volume Drop DANGER Banner (禁止买入) ─── */}
-      {pvMarkers && pvMarkers.some(m => m.type === "early_vol_drop") && (() => {
-        const earlyDrop = pvMarkers.find(m => m.type === "early_vol_drop")!;
-        const isExtreme = Math.abs(earlyDrop.score) >= 60;
-        const isHigh = Math.abs(earlyDrop.score) >= 40;
-        return (
-          <div className={`relative overflow-hidden ${isExtreme ? 'bg-red-600' : isHigh ? 'bg-red-500' : 'bg-red-500/90'}`}>
-            {/* Animated diagonal stripes for extreme danger */}
-            {isExtreme && (
-              <div className="stripe-move absolute inset-0 opacity-20" style={{
-                backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(0,0,0,0.3) 8px, rgba(0,0,0,0.3) 16px)',
-              }} />
-            )}
-            <div className="relative px-4 py-2 flex items-center justify-center gap-3">
-              <span className="text-white text-base animate-pulse">🚫</span>
-              <span className="text-white text-sm font-black tracking-wide">
-                {isExtreme ? '极危(一级警告)！' : '危险(二级警告)！'}早盘放量下跌，禁止买入！
-              </span>
-              <span className="text-white/80 text-xs font-semibold border-l border-white/40 pl-3">
-                {earlyDrop.detail}
-              </span>
-              <span className="text-white/60 text-[10px] font-mono">
-                {Math.abs(earlyDrop.score)}分
-              </span>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ─── Wash Trade / Shakeout Banner (洗盘-低吸机会) ─── */}
-      {pvMarkers && pvMarkers.some(m => m.type === "wash_trade") && (() => {
-        const washMarker = pvMarkers.find(m => m.type === "wash_trade")!;
-        const isConfirmed = washMarker.score >= 50;
-        return (
-          <div className={`relative overflow-hidden ${isConfirmed ? 'bg-blue-600' : 'bg-blue-500/90'}`}>
-            <div className="relative px-4 py-2 flex items-center justify-center gap-3">
-              <span className="text-white text-base">{isConfirmed ? '✅' : '🔍'}</span>
-              <span className="text-white text-sm font-bold tracking-wide">
-                {isConfirmed ? '洗盘确认！' : '疑似洗盘'}急跌后快速拉回，可关注低吸机会
-              </span>
-              <span className="text-white/80 text-xs font-semibold border-l border-white/40 pl-3">
-                {washMarker.detail}
-              </span>
-              <span className="text-white/60 text-[10px] font-mono">
-                {washMarker.score}分
-              </span>
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Header - 同花顺 style info bar */}
       <div className="px-3 py-2 border-b border-border/50 flex items-center gap-3 text-xs flex-wrap">
         <span className="font-medium text-sm text-foreground">{symbol}</span>
@@ -2142,7 +1973,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       </div>
 
       {/* ─── Position Rule Banner on Chart (5-tier + T-direction) ─── */}
-      {/* 中国股市颜色惯例：红=涨，绿=跌 */}
       {(() => {
         const lastPoint = data[data.length - 1];
         const stockPct = lastPoint?.changePercent ?? 0;
@@ -2161,47 +1991,46 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         const isTripleDown = hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown;
         const isTripleUp = hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp;
 
-        // 三跌：绿色系（跌=绿）
         if (isTripleDown) {
           return (
-            <div className="px-3 py-1.5 bg-green-500/15 border-b border-green-500/25 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">🚫</span>
-              <span className="text-xs font-bold text-green-700 dark:text-green-300">
+            <div className="px-3 py-1.5 bg-red-500/15 border-b border-red-500/25 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">🚫</span>
+              <span className="text-xs font-bold text-red-700 dark:text-red-300">
                 三跌！深证↓+板块↓+个股↓ ≤ 1/4仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)/空仓</span>
-              <span className="text-[10px] text-green-500/70">极度危险，保留3/4后备</span>
+              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)/空仓</span>
+              <span className="text-[10px] text-red-500/70">极度危险，保留3/4后备</span>
             </div>
           );
         }
-        // 三涨：红色系（涨=红）
+        // 三涨：大盘↑+板块↑+个股↑
         if (isTripleUp) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">✅</span>
-              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">✅</span>
+              <span className="text-xs font-bold text-green-600 dark:text-green-400">
                 三涨！深证↑+板块↑+个股↑ 90-100%仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 正T/反T(先卖再买)均可</span>
-              <span className="text-[10px] text-red-500/70">最安全，积极做T</span>
+              <span className="text-[10px] text-green-400 font-bold">| 正T/反T(先卖再买)均可</span>
+              <span className="text-[10px] text-green-500/70">最安全，积极做T</span>
             </div>
           );
         }
-        // 双跌：绿色系（跌=绿）
+        // 大盘↓+板块↓+个股↓ (无大盘数据时降级为双跌)
         const isDualDown = (hasMktInfo ? mktDown : true) && hasSectorInfo && sectorDown && stockDown;
         if (isDualDown && !isTripleDown) {
           return (
-            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">⛔</span>
-              <span className="text-xs font-bold text-green-600 dark:text-green-400">
+            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">⛔</span>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
                 {hasMktInfo ? '深证↓+' : ''}板块↓+个股↓ = 双跌！≤ 1/3仓
               </span>
-              <span className="text-[10px] text-amber-400 font-bold">| 反T(先卖再买)冲高卖</span>
-              <span className="text-[10px] text-green-500/70">保留2/3后备资金</span>
+              <span className="text-[10px] text-orange-400 font-bold">| 反T(先卖再买)冲高卖</span>
+              <span className="text-[10px] text-red-500/70">保留2/3后备资金</span>
             </div>
           );
         }
-        // 大盘↓+板块↑+个股↑ (逆势走强)：黄色系（谨慎）
+        // 大盘↓+板块↑+个股↑ (逆势板块+个股)
         if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
           return (
             <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
@@ -2209,38 +2038,38 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
                 深证↓ 但板块↑+个股↑ 20-30%仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)冲高卖</span>
+              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)冲高卖</span>
               <span className="text-[10px] text-yellow-500/70">大盘压制，适度参与</span>
             </div>
           );
         }
-        // 大盘↑+板块↓+个股↓ (大盘好但个股弱)：绿色系（个股跌=绿）
+        // 大盘↑+板块↓+个股↓ (大盘好但板块和个股差)
         if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-green-500/8 border-b border-green-500/15 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">⚠️</span>
-              <span className="text-xs font-bold text-green-600 dark:text-green-400">
+            <div className="px-3 py-1.5 bg-orange-500/8 border-b border-orange-500/15 flex items-center justify-center gap-2">
+              <span className="text-orange-500 text-xs">⚠️</span>
+              <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
                 深证↑ 但板块↓+个股↓ ≤ 1/3仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 正T低吸</span>
-              <span className="text-[10px] text-green-500/70">大盘支撑但板块弱势</span>
+              <span className="text-[10px] text-green-400 font-bold">| 正T低吸</span>
+              <span className="text-[10px] text-orange-500/70">大盘支撑但板块弱势</span>
             </div>
           );
         }
-        // 大盘↑+板块↑+个股↓ (回调低吸)：红色系（大盘+板块涨=红）
+        // 大盘↑+板块↑+个股↓ (回调低吸)
         if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/8 border-b border-red-500/15 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">🔹</span>
-              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+            <div className="px-3 py-1.5 bg-blue-500/8 border-b border-blue-500/15 flex items-center justify-center gap-2">
+              <span className="text-blue-500 text-xs">🔹</span>
+              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
                 深证↑+板块↑+个股↓ 25-30%仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 正T低吸良机</span>
-              <span className="text-[10px] text-red-500/70">大盘+板块支撑</span>
+              <span className="text-[10px] text-green-400 font-bold">| 正T低吸良机</span>
+              <span className="text-[10px] text-blue-500/70">大盘+板块支撑</span>
             </div>
           );
         }
-        // 板块↓+个股↑ (无大盘数据或大盘震荡)：琥珀色（逆板块走强需谨慎）
+        // 板块↓+个股↑ (无大盘数据或大盘震荡)
         if (hasSectorInfo && sectorDown && stockUp) {
           return (
             <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-center gap-2">
@@ -2253,36 +2082,36 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             </div>
           );
         }
-        // 板块↑+个股↓ (回调低吸)：红色系（板块涨=红）
+        // 板块↑+个股↓ (回调低吸)
         if (hasSectorInfo && sectorUp && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/8 border-b border-red-500/15 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">🔻</span>
-              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+            <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
+              <span className="text-yellow-500 text-xs">🔻</span>
+              <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
                 板块↑+个股↓ {hasMktInfo && mktUp ? '25-30%' : '20-30%'}仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 正T低吸</span>
-              <span className="text-[10px] text-red-500/70">回调可低吸</span>
+              <span className="text-[10px] text-green-400 font-bold">| 正T低吸</span>
+              <span className="text-[10px] text-yellow-500/70">回调可低吸</span>
             </div>
           );
         }
-        // 无板块信息 - 仅大盘+个股
+        // No sector info - show simpler banner based on stock direction + market
         if (!hasSectorInfo && hasMktInfo && mktDown && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-green-500/5 border-b border-green-500/10 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">🔻</span>
-              <span className="text-xs font-medium text-green-600/80 dark:text-green-400/80">
+            <div className="px-3 py-1.5 bg-red-500/5 border-b border-red-500/10 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">🔻</span>
+              <span className="text-xs font-medium text-red-600/80 dark:text-red-400/80">
                 深证↓+个股↓，大盘弱势注意控仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)</span>
+              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)</span>
             </div>
           );
         }
         if (!hasSectorInfo && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-green-500/5 border-b border-green-500/10 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">🔻</span>
-              <span className="text-xs font-medium text-green-600/80 dark:text-green-400/80">
+            <div className="px-3 py-1.5 bg-amber-500/5 border-b border-amber-500/10 flex items-center justify-center gap-2">
+              <span className="text-amber-500 text-xs">🔻</span>
+              <span className="text-xs font-medium text-amber-600/80 dark:text-amber-400/80">
                 个股下跌，注意控制仓位
               </span>
             </div>
@@ -2292,11 +2121,11 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       })()}
 
       {/* ─── Panel 1: Price Chart ─── */}
-      <div className="relative" style={{ overflow: 'visible' }}>
-        <ResponsiveContainer width="100%" height={isZoomed ? 720 : 620}>
+      <div className="relative">
+        <ResponsiveContainer width="100%" height={isZoomed ? 620 : 530}>
           <ComposedChart
             data={zoomData}
-            margin={{ top: 50, right: 82, left: 2, bottom: 8 }}
+            margin={{ top: 36, right: 82, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
                 setCrosshairIdx(state.activeTooltipIndex);
@@ -2405,148 +2234,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 fontWeight: 700,
               }}
             />
-            {/* ── 交易时间窗口色带（根据交易规矩五时段划分） ── */}
-            {!isZoomed && (() => {
-              // 找到每个时间段在 zoomData 中的索引范围
-              const findIdxByTime = (targetTime: string) => {
-                for (let i = 0; i < zoomData.length; i++) {
-                  if (zoomData[i].time >= targetTime) return i;
-                }
-                return -1;
-              };
-              const windows = [
-                { start: "09:30", end: "10:00", label: "⚠ 早盘观察期", sublabel: "仓位减半", color: "rgba(245,158,11,0.06)", textColor: "#b45309" },
-                { start: "10:00", end: "11:30", label: "✅ 上午操作期", sublabel: "按仓位表执行", color: "rgba(34,197,94,0.05)", textColor: "#166534" },
-                { start: "13:00", end: "14:00", label: "🔸 午盘确认期", sublabel: "观察方向", color: "rgba(234,179,8,0.05)", textColor: "#a16207" },
-                { start: "14:00", end: "14:30", label: "⚠ 尾盘决策期", sublabel: "准备清仓", color: "rgba(249,115,22,0.06)", textColor: "#c2410c" },
-                { start: "14:30", end: "15:00", label: "🚫 收盘冲刺期", sublabel: "必须闭环", color: "rgba(239,68,68,0.07)", textColor: "#b91c1c" },
-              ];
-              return (
-                <>
-                  {windows.map((w, wi) => {
-                    const si = findIdxByTime(w.start);
-                    const ei = findIdxByTime(w.end);
-                    if (si < 0 || ei < 0 || si >= ei) return null;
-                    return (
-                      <ReferenceArea
-                        key={`tw-${wi}`}
-                        xAxisId={0}
-                        x1={si}
-                        x2={ei}
-                        yAxisId="price"
-                        y1={yMin}
-                        y2={yMax}
-                        fill={w.color}
-                        stroke="none"
-                      />
-                    );
-                  })}
-                </>
-              );
-            })()}
-            {/* ── 时间窗口标签（图表顶部） ── */}
-            <Customized component={(props: any) => {
-              if (isZoomed) return null;
-              const { xAxisMap, offset } = props;
-              if (!xAxisMap || !offset) return null;
-              const xAxis = Object.values(xAxisMap)[0] as any;
-              if (!xAxis?.scale) return null;
-              const xScale = xAxis.scale;
-
-              const findIdxByTime = (targetTime: string) => {
-                for (let i = 0; i < zoomData.length; i++) {
-                  if (zoomData[i].time >= targetTime) return i;
-                }
-                return -1;
-              };
-
-              const windows = [
-                { start: "09:30", end: "10:00", label: "⚠ 早盘观察", sub: "仓位减半", color: "#b45309" },
-                { start: "10:00", end: "11:30", label: "✅ 上午操作", sub: "按仓位表", color: "#166534" },
-                { start: "13:00", end: "14:00", label: "🔸 午盘确认", sub: "观察方向", color: "#a16207" },
-                { start: "14:00", end: "14:30", label: "⚠ 尾盘决策", sub: "准备清仓", color: "#c2410c" },
-                { start: "14:30", end: "15:00", label: "🚫 收盘冲刺", sub: "必须闭环", color: "#b91c1c" },
-              ];
-
-              return (
-                <g>
-                  {windows.map((w, wi) => {
-                    const si = findIdxByTime(w.start);
-                    const ei = findIdxByTime(w.end);
-                    if (si < 0 || ei < 0 || si >= ei) return null;
-                    const x1 = xScale(si);
-                    const x2 = xScale(ei);
-                    const midX = (x1 + x2) / 2;
-                    const topY = offset.top + 2;
-                    const width = x2 - x1;
-                    // Only show label if window is wide enough
-                    if (width < 50) return null;
-                    return (
-                      <g key={`twl-${wi}`}>
-                        <rect x={x1} y={topY} width={width} height={14} rx={2}
-                          fill={w.color} fillOpacity={0.1} stroke={w.color} strokeWidth={0.5} strokeOpacity={0.3}
-                        />
-                        <text x={midX} y={topY + 7} textAnchor="middle" dominantBaseline="middle"
-                          fontSize={8} fontWeight={600} fill={w.color} fillOpacity={0.85}
-                        >
-                          {width > 100 ? `${w.label} ${w.sub}` : w.label}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </g>
-              );
-            }} />
-            {/* ── 止损止盈参考线（根据交易规矩四） ── */}
-            {safePrevClose > 0 && (() => {
-              const stopLoss = safePrevClose * 0.98;  // -2% 止损线
-              const takeProfit1 = safePrevClose * 1.015; // +1.5% 首目标
-              const takeProfit2 = safePrevClose * 1.03;  // +3% 二目标
-              const els: React.ReactNode[] = [];
-              if (stopLoss >= yMin && stopLoss <= yMax) {
-                els.push(
-                  <ReferenceLine
-                    key="stoploss"
-                    yAxisId="price"
-                    y={stopLoss}
-                    stroke="#dc2626"
-                    strokeDasharray="4 3"
-                    strokeWidth={1.5}
-                    strokeOpacity={0.7}
-                    label={{ value: `止损 -2% ${stopLoss.toFixed(2)}`, position: "insideBottomLeft", fill: "#dc2626", fontSize: 8, fillOpacity: 0.8 }}
-                  />
-                );
-              }
-              if (takeProfit1 >= yMin && takeProfit1 <= yMax) {
-                els.push(
-                  <ReferenceLine
-                    key="tp1"
-                    yAxisId="price"
-                    y={takeProfit1}
-                    stroke="#22c55e"
-                    strokeDasharray="4 3"
-                    strokeWidth={1.2}
-                    strokeOpacity={0.6}
-                    label={{ value: `止盈+1.5% ${takeProfit1.toFixed(2)}`, position: "insideTopLeft", fill: "#22c55e", fontSize: 8, fillOpacity: 0.8 }}
-                  />
-                );
-              }
-              if (takeProfit2 >= yMin && takeProfit2 <= yMax) {
-                els.push(
-                  <ReferenceLine
-                    key="tp2"
-                    yAxisId="price"
-                    y={takeProfit2}
-                    stroke="#16a34a"
-                    strokeDasharray="6 3"
-                    strokeWidth={1.2}
-                    strokeOpacity={0.6}
-                    label={{ value: `目标+3% ${takeProfit2.toFixed(2)}`, position: "insideTopLeft", fill: "#16a34a", fontSize: 8, fillOpacity: 0.8 }}
-                  />
-                );
-              }
-              return els;
-            })()}
             {/* Today's MA lines as dashed references */}
             {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
               <ReferenceLine
@@ -2816,7 +2503,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] select-none pointer-events-none">
           <span className="text-muted-foreground font-medium">VOL</span>
         </div>
-        <ResponsiveContainer width="100%" height={190}>
+        <ResponsiveContainer width="100%" height={165}>
           <ComposedChart
             data={zoomData}
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
@@ -2881,7 +2568,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <span className="text-orange-600">DEA</span>
           </span>
         </div>
-        <ResponsiveContainer width="100%" height={140}>
+        <ResponsiveContainer width="100%" height={120}>
           <ComposedChart
             data={zoomData}
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}

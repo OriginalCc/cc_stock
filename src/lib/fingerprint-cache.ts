@@ -35,5 +35,5 @@ export class FingerprintCache<T> {
 export const macdFingerprintCache = new FingerprintCache<
   { time: string; dif: number | null; dea: number | null; macd: number | null }[]
 >();
-export const signalFingerprintCache = new FingerprintCache<(import("@/lib/chart-shared").TSignal | null)[]>();
-export const pvFingerprintCache = new FingerprintCache<import("@/lib/chart-shared").PulseVolumeMarker[]>();
+export const signalFingerprintCache = new FingerprintCache<(import("./chart-shared").TSignal | null)[]>();
+export const pvFingerprintCache = new FingerprintCache<import("./chart-shared").PulseVolumeMarker[]>();
