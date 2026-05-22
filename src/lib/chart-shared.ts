@@ -599,10 +599,13 @@ export function detectPulseVolumeMarkers(
       increments.push({ time: session[i].time, price: session[i].price, vol: session[i].volume, priceChange });
     }
 
-    // Session-wide baseline (first 15 min average, more stable)
+    // Baseline: use BOTH first-15-min average AND full-session average,
+    // pick the LOWER one to prevent inflated baseline when surge starts from the open.
     const baselineLen = Math.min(15, increments.length);
-    const baselineVol = increments.slice(0, baselineLen)
+    const earlyBaselineVol = increments.slice(0, baselineLen)
       .reduce((s, t) => s + t.vol, 0) / baselineLen;
+    const sessionAvgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
+    const baselineVol = Math.min(earlyBaselineVol, sessionAvgVol);
 
     // Sliding sub-window scan for volume surge
     const subWindowSizes = [5, 8, 10, 15, 20, 30];
@@ -971,10 +974,15 @@ export function detectPulseVolumeMarkers(
       increments.push({ time: session[i].time, price: session[i].price, vol: session[i].volume, priceChange });
     }
 
-    // Session-wide baseline (first 15 min average, more stable than 5 min)
+    // Baseline: use BOTH first-15-min average AND full-session average,
+    // pick the LOWER one as the effective baseline.
+    // This prevents inflated baseline when decline starts from the open
+    // (first 15 min already high volume → windowVolRatio < 1.2 → gate blocks).
     const baselineLen = Math.min(15, increments.length);
-    const baselineVol = increments.slice(0, baselineLen)
+    const earlyBaselineVol = increments.slice(0, baselineLen)
       .reduce((s, t) => s + t.vol, 0) / baselineLen;
+    const sessionAvgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
+    const baselineVol = Math.min(earlyBaselineVol, sessionAvgVol);
 
     // Sliding sub-window scan for volume decline
     // Include smaller windows (5, 8, 10) to catch early/short declines
@@ -1105,7 +1113,12 @@ export function detectPulseVolumeMarkers(
         else if (dropRate >= 1) volDeclineScore += 3;
 
         // ── 门控条件：必须同时满足"有放量"和"有下跌" ──
-        const hasVolumeAmplification = windowVolRatio >= 1.2 || downHighVolRatio >= 0.15;
+        // 放量的定义不仅限于"量比基线高"，也包括"下跌方成交量占比大"
+        // 交易者眼中的"放量下跌"：成交量集中在下跌方向 → downVolRatio 就是最好的证据
+        const hasVolumeAmplification = windowVolRatio >= 1.2
+          || downHighVolRatio >= 0.15
+          || downVolRatio >= 0.55  // 超过55%的成交量在下跌方=放量下跌
+          || downMinuteRatio >= 0.6;  // 超过60%分钟在下跌=趋势性下跌
         const hasPriceDecline = windowPriceDrop > 0.1 || downVolRatio > 0.4;
         if (!hasVolumeAmplification || !hasPriceDecline) {
           volDeclineScore = Math.min(volDeclineScore, 5);
