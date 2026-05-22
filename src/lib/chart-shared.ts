@@ -590,7 +590,7 @@ export function detectPulseVolumeMarkers(
     }
   }
 
-  // ── Volume Surge Detection ──
+  // ── Volume Surge Detection (放量拉升) — Sliding Sub-Window ──
   {
     const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
     for (let i = 0; i < session.length; i++) {
@@ -602,94 +602,111 @@ export function detectPulseVolumeMarkers(
       increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
     }
 
-    const avgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
-    const maxVol = Math.max(...increments.map(t => t.vol));
-    const maxVolIdx = increments.findIndex(t => t.vol === maxVol);
-    const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
-    const maxVolPriceChange = increments[maxVolIdx]?.priceChange || 0;
+    // Session-wide baseline (first 5 min average)
+    const baselineVol = increments.slice(0, Math.min(5, increments.length))
+      .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
 
-    let maxProgressiveLen = 1;
-    let curProgressiveLen = 1;
-    let progressiveStart = 0;
-    let bestProgressiveStart = 0;
-    for (let i = 1; i < increments.length; i++) {
-      if (increments[i].vol > increments[i - 1].vol && increments[i].vol > 0) {
-        curProgressiveLen++;
-        if (curProgressiveLen > maxProgressiveLen) {
-          maxProgressiveLen = curProgressiveLen;
-          bestProgressiveStart = progressiveStart;
+    // Sliding sub-window scan for volume surge
+    const subWindowSizes = [15, 20, 30];
+    let bestScore = 0;
+    let bestMarker: PulseVolumeMarker | null = null;
+
+    for (const winSize of subWindowSizes) {
+      for (let start = 0; start <= increments.length - winSize; start++) {
+        const subInc = increments.slice(start, start + winSize);
+        const subSession = session.slice(start, start + winSize);
+
+        const avgVol = subInc.reduce((s, t) => s + t.vol, 0) / subInc.length;
+        const maxVol = Math.max(...subInc.map(t => t.vol));
+        const maxVolIdx = subInc.findIndex(t => t.vol === maxVol);
+        const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
+        const maxVolPriceChange = subInc[maxVolIdx]?.priceChange || 0;
+
+        // Progressive volume within sub-window
+        let maxProgressiveLen = 1, curProgressiveLen = 1;
+        let progressiveStart = 0, bestProgressiveStart = 0;
+        for (let i = 1; i < subInc.length; i++) {
+          if (subInc[i].vol > subInc[i - 1].vol && subInc[i].vol > 0) {
+            curProgressiveLen++;
+            if (curProgressiveLen > maxProgressiveLen) {
+              maxProgressiveLen = curProgressiveLen;
+              bestProgressiveStart = progressiveStart;
+            }
+          } else {
+            curProgressiveLen = 1;
+            progressiveStart = i;
+          }
         }
-      } else {
-        curProgressiveLen = 1;
-        progressiveStart = i;
+        const progressivePriceRise = maxProgressiveLen >= 3
+          ? (() => {
+              const startP = subInc[bestProgressiveStart]?.price || 0;
+              const endP = subInc[bestProgressiveStart + maxProgressiveLen - 1]?.price || 0;
+              return startP > 0 ? ((endP - startP) / startP) * 100 : 0;
+            })()
+          : 0;
+
+        // Sub-window volume ratio vs session baseline
+        const windowVolRatio = baselineVol > 0 ? avgVol / baselineVol : 1;
+
+        // Sub-window price gain
+        const windowStartPrice = subSession[0].price;
+        const windowEndPrice = subSession[subSession.length - 1].price;
+        const windowPriceGain = windowStartPrice > 0 ? ((windowEndPrice - windowStartPrice) / windowStartPrice) * 100 : 0;
+
+        // Up-minutes with high volume within sub-window
+        const upWithHighVol = subInc.filter(t => t.priceChange > 0 && t.vol > avgVol).length;
+        const upHighVolRatio = subInc.length > 0 ? upWithHighVol / subInc.length : 0;
+
+        let volSurgeScore = 0;
+        if (volumeRatio >= 3 && maxVolPriceChange > 0.3) volSurgeScore += 30;
+        else if (volumeRatio >= 2.5 && maxVolPriceChange > 0.2) volSurgeScore += 25;
+        else if (volumeRatio >= 2 && maxVolPriceChange > 0.1) volSurgeScore += 20;
+        else if (volumeRatio >= 1.5 && maxVolPriceChange > 0) volSurgeScore += 12;
+        else if (volumeRatio >= 1.5) volSurgeScore += 5;
+
+        if (maxProgressiveLen >= 5 && progressivePriceRise > 0.5) volSurgeScore += 25;
+        else if (maxProgressiveLen >= 4 && progressivePriceRise > 0.3) volSurgeScore += 20;
+        else if (maxProgressiveLen >= 3 && progressivePriceRise > 0.1) volSurgeScore += 15;
+        else if (maxProgressiveLen >= 3) volSurgeScore += 5;
+
+        if (windowVolRatio >= 2) volSurgeScore += 15;
+        else if (windowVolRatio >= 1.5) volSurgeScore += 10;
+        else if (windowVolRatio >= 1.2) volSurgeScore += 5;
+
+        if (windowPriceGain >= 2 && upHighVolRatio >= 0.3) volSurgeScore += 15;
+        else if (windowPriceGain >= 1 && upHighVolRatio >= 0.2) volSurgeScore += 10;
+        else if (windowPriceGain >= 0.5 && upHighVolRatio >= 0.15) volSurgeScore += 5;
+
+        if (upHighVolRatio >= 0.4) volSurgeScore += 10;
+        else if (upHighVolRatio >= 0.3) volSurgeScore += 6;
+        else if (upHighVolRatio >= 0.2) volSurgeScore += 3;
+
+        if (volumeRatio >= 2 && maxVolPriceChange > 0) volSurgeScore += 5;
+
+        volSurgeScore = Math.min(volSurgeScore, 100);
+
+        if (volSurgeScore > bestScore && volSurgeScore >= 10) {
+          bestScore = volSurgeScore;
+          const markTime = subInc[maxVolIdx]?.time || subSession[0].time;
+          const details: string[] = [];
+          if (volumeRatio >= 1.5) details.push(`${subInc[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
+          if (maxProgressiveLen >= 3) details.push(`${maxProgressiveLen}分钟递增放量${progressivePriceRise > 0 ? `涨${progressivePriceRise.toFixed(1)}%` : ""}`);
+          if (windowPriceGain >= 0.5) details.push(`时段涨${windowPriceGain.toFixed(1)}%`);
+          if (upHighVolRatio >= 0.2) details.push(`${(upHighVolRatio * 100).toFixed(0)}%放量上涨`);
+
+          bestMarker = {
+            time: markTime,
+            type: "volume_surge",
+            score: volSurgeScore,
+            label: volSurgeScore >= 50 ? `强放量拉升 ${volSurgeScore}分` : volSurgeScore >= 30 ? `放量拉升 ${volSurgeScore}分` : `轻微放量拉升 ${volSurgeScore}分`,
+            detail: details.length > 0 ? details.join("，") : "轻微放量拉升",
+            amount: subInc[maxVolIdx] ? subInc[maxVolIdx].price * subInc[maxVolIdx].vol * 100 : 0,
+          };
+        }
       }
     }
 
-    const progressivePriceRise = maxProgressiveLen >= 3
-      ? (() => {
-          const startP = increments[bestProgressiveStart]?.price || 0;
-          const endP = increments[bestProgressiveStart + maxProgressiveLen - 1]?.price || 0;
-          return startP > 0 ? ((endP - startP) / startP) * 100 : 0;
-        })()
-      : 0;
-
-    const baselineVol = increments.slice(0, Math.min(5, increments.length))
-      .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
-    const windowAvgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
-    const windowVolRatio = baselineVol > 0 ? windowAvgVol / baselineVol : 1;
-
-    const windowStartPrice = session[0].price;
-    const windowEndPrice = session[session.length - 1].price;
-    const windowPriceGain = windowStartPrice > 0 ? ((windowEndPrice - windowStartPrice) / windowStartPrice) * 100 : 0;
-
-    const upWithHighVol = increments.filter(t => t.priceChange > 0 && t.vol > avgVol).length;
-    const upHighVolRatio = increments.length > 0 ? upWithHighVol / increments.length : 0;
-
-    let volSurgeScore = 0;
-    if (volumeRatio >= 3 && maxVolPriceChange > 0.3) volSurgeScore += 30;
-    else if (volumeRatio >= 2.5 && maxVolPriceChange > 0.2) volSurgeScore += 25;
-    else if (volumeRatio >= 2 && maxVolPriceChange > 0.1) volSurgeScore += 20;
-    else if (volumeRatio >= 1.5 && maxVolPriceChange > 0) volSurgeScore += 12;
-    else if (volumeRatio >= 1.5) volSurgeScore += 5;
-
-    if (maxProgressiveLen >= 5 && progressivePriceRise > 0.5) volSurgeScore += 25;
-    else if (maxProgressiveLen >= 4 && progressivePriceRise > 0.3) volSurgeScore += 20;
-    else if (maxProgressiveLen >= 3 && progressivePriceRise > 0.1) volSurgeScore += 15;
-    else if (maxProgressiveLen >= 3) volSurgeScore += 5;
-
-    if (windowVolRatio >= 2) volSurgeScore += 15;
-    else if (windowVolRatio >= 1.5) volSurgeScore += 10;
-    else if (windowVolRatio >= 1.2) volSurgeScore += 5;
-
-    if (windowPriceGain >= 2 && upHighVolRatio >= 0.3) volSurgeScore += 15;
-    else if (windowPriceGain >= 1 && upHighVolRatio >= 0.2) volSurgeScore += 10;
-    else if (windowPriceGain >= 0.5 && upHighVolRatio >= 0.15) volSurgeScore += 5;
-
-    if (upHighVolRatio >= 0.4) volSurgeScore += 10;
-    else if (upHighVolRatio >= 0.3) volSurgeScore += 6;
-    else if (upHighVolRatio >= 0.2) volSurgeScore += 3;
-
-    if (volumeRatio >= 2 && maxVolPriceChange > 0) volSurgeScore += 5;
-
-    volSurgeScore = Math.min(volSurgeScore, 100);
-
-    if (volSurgeScore >= 10) {
-      const markTime = increments[maxVolIdx]?.time || session[0].time;
-      const details: string[] = [];
-      if (volumeRatio >= 1.5) details.push(`${increments[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
-      if (maxProgressiveLen >= 3) details.push(`${maxProgressiveLen}分钟递增放量${progressivePriceRise > 0 ? `涨${progressivePriceRise.toFixed(1)}%` : ""}`);
-      if (windowPriceGain >= 0.5) details.push(`时段涨${windowPriceGain.toFixed(1)}%`);
-      if (upHighVolRatio >= 0.2) details.push(`${(upHighVolRatio * 100).toFixed(0)}%放量上涨`);
-
-      markers.push({
-        time: markTime,
-        type: "volume_surge",
-        score: volSurgeScore,
-        label: volSurgeScore >= 50 ? `强放量拉升 ${volSurgeScore}分` : volSurgeScore >= 30 ? `放量拉升 ${volSurgeScore}分` : `轻微放量拉升 ${volSurgeScore}分`,
-        detail: details.length > 0 ? details.join("，") : "轻微放量拉升",
-        amount: increments[maxVolIdx] ? increments[maxVolIdx].price * increments[maxVolIdx].vol * 100 : 0,
-      });
-    }
+    if (bestMarker) markers.push(bestMarker);
   }
 
   // ── Progressive Volume Detection (递增放量) ──
@@ -926,7 +943,7 @@ export function detectPulseVolumeMarkers(
     }
   }
 
-  // ── Volume Decline Detection (放量下跌) ──
+  // ── Volume Decline Detection (放量下跌) — Sliding Sub-Window ──
   {
     const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
     for (let i = 0; i < session.length; i++) {
@@ -938,118 +955,131 @@ export function detectPulseVolumeMarkers(
       increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
     }
 
-    const avgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
-    const maxVol = Math.max(...increments.map(t => t.vol));
-    const maxVolIdx = increments.findIndex(t => t.vol === maxVol);
-    const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
-    const maxVolPriceChange = increments[maxVolIdx]?.priceChange || 0;
+    // Session-wide baseline (first 5 min average)
+    const baselineVol = increments.slice(0, Math.min(5, increments.length))
+      .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
 
-    // Progressive volume with price drop
-    let maxProgressiveLen = 1;
-    let curProgressiveLen = 1;
-    let progressiveStart = 0;
-    let bestProgressiveStart = 0;
-    for (let i = 1; i < increments.length; i++) {
-      if (increments[i].vol > increments[i - 1].vol && increments[i].vol > 0) {
-        curProgressiveLen++;
-        if (curProgressiveLen > maxProgressiveLen) {
-          maxProgressiveLen = curProgressiveLen;
-          bestProgressiveStart = progressiveStart;
+    // Sliding sub-window scan for volume decline
+    const subWindowSizes = [15, 20, 30];
+    let bestScore = 0;
+    let bestMarker: PulseVolumeMarker | null = null;
+
+    for (const winSize of subWindowSizes) {
+      for (let start = 0; start <= increments.length - winSize; start++) {
+        const subInc = increments.slice(start, start + winSize);
+        const subSession = session.slice(start, start + winSize);
+
+        const avgVol = subInc.reduce((s, t) => s + t.vol, 0) / subInc.length;
+        const maxVol = Math.max(...subInc.map(t => t.vol));
+        const maxVolIdx = subInc.findIndex(t => t.vol === maxVol);
+        const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
+        const maxVolPriceChange = subInc[maxVolIdx]?.priceChange || 0;
+
+        // Progressive volume with price drop within sub-window
+        let maxProgressiveLen = 1, curProgressiveLen = 1;
+        let progressiveStart = 0, bestProgressiveStart = 0;
+        for (let i = 1; i < subInc.length; i++) {
+          if (subInc[i].vol > subInc[i - 1].vol && subInc[i].vol > 0) {
+            curProgressiveLen++;
+            if (curProgressiveLen > maxProgressiveLen) {
+              maxProgressiveLen = curProgressiveLen;
+              bestProgressiveStart = progressiveStart;
+            }
+          } else {
+            curProgressiveLen = 1;
+            progressiveStart = i;
+          }
         }
-      } else {
-        curProgressiveLen = 1;
-        progressiveStart = i;
+        const progressivePriceDrop = maxProgressiveLen >= 3
+          ? (() => {
+              const startP = subInc[bestProgressiveStart]?.price || 0;
+              const endP = subInc[bestProgressiveStart + maxProgressiveLen - 1]?.price || 0;
+              return startP > 0 ? ((startP - endP) / startP) * 100 : 0;
+            })()
+          : 0;
+
+        // Sub-window volume ratio vs session baseline
+        const windowVolRatio = baselineVol > 0 ? avgVol / baselineVol : 1;
+
+        // Sub-window price drop (from start to end of sub-window)
+        const windowStartPrice = subSession[0].price;
+        const windowEndPrice = subSession[subSession.length - 1].price;
+        const windowPriceDrop = windowStartPrice > 0
+          ? ((windowStartPrice - windowEndPrice) / windowStartPrice) * 100
+          : 0;
+
+        // Down-minutes with high volume within sub-window
+        const downWithHighVol = subInc.filter(t => t.priceChange < 0 && t.vol > avgVol).length;
+        const downHighVolRatio = subInc.length > 0 ? downWithHighVol / subInc.length : 0;
+
+        // Price drop during volume peak within sub-window
+        let dropRate = 0;
+        if (maxVolIdx >= 2) {
+          const preDropPrice = subInc[Math.max(0, maxVolIdx - 3)].price;
+          const lowPrice = Math.min(
+            ...subInc.slice(Math.max(0, maxVolIdx - 1), Math.min(subInc.length, maxVolIdx + 3)).map(t => t.price)
+          );
+          dropRate = preDropPrice > 0 ? ((preDropPrice - lowPrice) / preDropPrice) * 100 : 0;
+        }
+
+        let volDeclineScore = 0;
+        const hasPriceDrop = windowPriceDrop > 0.1 || maxVolPriceChange < -0.1;
+
+        if (volumeRatio >= 3 && maxVolPriceChange < -0.3) volDeclineScore += 30;
+        else if (volumeRatio >= 2.5 && maxVolPriceChange < -0.2) volDeclineScore += 25;
+        else if (volumeRatio >= 2 && maxVolPriceChange < -0.1) volDeclineScore += 20;
+        else if (volumeRatio >= 2 && maxVolPriceChange < 0) volDeclineScore += 12;
+        else if (volumeRatio >= 1.5 && maxVolPriceChange < -0.1) volDeclineScore += 10;
+        else if (volumeRatio >= 1.5 && maxVolPriceChange < 0) volDeclineScore += 5;
+
+        if (maxProgressiveLen >= 5 && progressivePriceDrop > 0.5) volDeclineScore += 25;
+        else if (maxProgressiveLen >= 4 && progressivePriceDrop > 0.3) volDeclineScore += 20;
+        else if (maxProgressiveLen >= 3 && progressivePriceDrop > 0.1) volDeclineScore += 15;
+        else if (maxProgressiveLen >= 3 && progressivePriceDrop > 0) volDeclineScore += 8;
+
+        if (windowVolRatio >= 2 && windowPriceDrop > 1) volDeclineScore += 15;
+        else if (windowVolRatio >= 1.5 && windowPriceDrop > 0.5) volDeclineScore += 12;
+        else if (windowVolRatio >= 1.5 && windowPriceDrop > 0.2) volDeclineScore += 8;
+        else if (windowVolRatio >= 1.2 && windowPriceDrop > 0.1) volDeclineScore += 5;
+
+        if (downHighVolRatio >= 0.4) volDeclineScore += 15;
+        else if (downHighVolRatio >= 0.3) volDeclineScore += 12;
+        else if (downHighVolRatio >= 0.2) volDeclineScore += 8;
+        else if (downHighVolRatio >= 0.1) volDeclineScore += 4;
+
+        if (dropRate >= 3) volDeclineScore += 10;
+        else if (dropRate >= 2) volDeclineScore += 8;
+        else if (dropRate >= 1) volDeclineScore += 5;
+        else if (dropRate >= 0.5) volDeclineScore += 3;
+
+        if (!hasPriceDrop) volDeclineScore = Math.min(volDeclineScore, 5);
+
+        volDeclineScore = Math.min(volDeclineScore, 100);
+
+        if (volDeclineScore > bestScore && volDeclineScore >= 10) {
+          bestScore = volDeclineScore;
+          const negativeScore = -volDeclineScore;
+          const markTime = subInc[maxVolIdx]?.time || subSession[0].time;
+          const details: string[] = [];
+          if (volumeRatio >= 1.5) details.push(`${subInc[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
+          if (maxProgressiveLen >= 3 && progressivePriceDrop > 0) details.push(`${maxProgressiveLen}分钟递增放量跌${progressivePriceDrop.toFixed(1)}%`);
+          if (windowPriceDrop > 0.5) details.push(`时段跌${windowPriceDrop.toFixed(1)}%`);
+          if (downHighVolRatio >= 0.2) details.push(`${(downHighVolRatio * 100).toFixed(0)}%放量下跌`);
+          if (dropRate >= 1) details.push(`放量砸盘${dropRate.toFixed(1)}%`);
+
+          bestMarker = {
+            time: markTime,
+            type: "volume_decline",
+            score: negativeScore,
+            label: volDeclineScore >= 50 ? `强放量下跌 ${negativeScore}分` : volDeclineScore >= 30 ? `放量下跌 ${negativeScore}分` : `轻微放量下跌 ${negativeScore}分`,
+            detail: details.length > 0 ? details.join("，") : "轻微放量下跌",
+            amount: subInc[maxVolIdx] ? subInc[maxVolIdx].price * subInc[maxVolIdx].vol * 100 : 0,
+          };
+        }
       }
     }
 
-    const progressivePriceDrop = maxProgressiveLen >= 3
-      ? (() => {
-          const startP = increments[bestProgressiveStart]?.price || 0;
-          const endP = increments[bestProgressiveStart + maxProgressiveLen - 1]?.price || 0;
-          return startP > 0 ? ((startP - endP) / startP) * 100 : 0;
-        })()
-      : 0;
-
-    // Volume expansion above baseline
-    const baselineVol = increments.slice(0, Math.min(5, increments.length))
-      .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
-    const windowAvgVol = increments.reduce((s, t) => s + t.vol, 0) / increments.length;
-    const windowVolRatio = baselineVol > 0 ? windowAvgVol / baselineVol : 1;
-
-    // Window price drop
-    const windowStartPrice = session[0].price;
-    const windowEndPrice = session[session.length - 1].price;
-    const windowPriceDrop = windowStartPrice > 0
-      ? ((windowStartPrice - windowEndPrice) / windowStartPrice) * 100
-      : 0;
-
-    // Down-minutes with high volume
-    const downWithHighVol = increments.filter(t => t.priceChange < 0 && t.vol > avgVol).length;
-    const downHighVolRatio = increments.length > 0 ? downWithHighVol / increments.length : 0;
-
-    // Price drop during volume peak
-    let dropRate = 0;
-    if (maxVolIdx >= 2) {
-      const preDropPrice = increments[Math.max(0, maxVolIdx - 3)].price;
-      const lowPrice = Math.min(
-        ...increments.slice(Math.max(0, maxVolIdx - 1), Math.min(increments.length, maxVolIdx + 3)).map(t => t.price)
-      );
-      dropRate = preDropPrice > 0 ? ((preDropPrice - lowPrice) / preDropPrice) * 100 : 0;
-    }
-
-    let volDeclineScore = 0;
-    const hasPriceDrop = windowPriceDrop > 0.1 || maxVolPriceChange < -0.1;
-
-    if (volumeRatio >= 3 && maxVolPriceChange < -0.3) volDeclineScore += 30;
-    else if (volumeRatio >= 2.5 && maxVolPriceChange < -0.2) volDeclineScore += 25;
-    else if (volumeRatio >= 2 && maxVolPriceChange < -0.1) volDeclineScore += 20;
-    else if (volumeRatio >= 2 && maxVolPriceChange < 0) volDeclineScore += 12;
-    else if (volumeRatio >= 1.5 && maxVolPriceChange < -0.1) volDeclineScore += 10;
-    else if (volumeRatio >= 1.5 && maxVolPriceChange < 0) volDeclineScore += 5;
-
-    if (maxProgressiveLen >= 5 && progressivePriceDrop > 0.5) volDeclineScore += 25;
-    else if (maxProgressiveLen >= 4 && progressivePriceDrop > 0.3) volDeclineScore += 20;
-    else if (maxProgressiveLen >= 3 && progressivePriceDrop > 0.1) volDeclineScore += 15;
-    else if (maxProgressiveLen >= 3 && progressivePriceDrop > 0) volDeclineScore += 8;
-
-    if (windowVolRatio >= 2 && windowPriceDrop > 1) volDeclineScore += 15;
-    else if (windowVolRatio >= 1.5 && windowPriceDrop > 0.5) volDeclineScore += 12;
-    else if (windowVolRatio >= 1.5 && windowPriceDrop > 0.2) volDeclineScore += 8;
-    else if (windowVolRatio >= 1.2 && windowPriceDrop > 0.1) volDeclineScore += 5;
-
-    if (downHighVolRatio >= 0.4) volDeclineScore += 15;
-    else if (downHighVolRatio >= 0.3) volDeclineScore += 12;
-    else if (downHighVolRatio >= 0.2) volDeclineScore += 8;
-    else if (downHighVolRatio >= 0.1) volDeclineScore += 4;
-
-    if (dropRate >= 3) volDeclineScore += 10;
-    else if (dropRate >= 2) volDeclineScore += 8;
-    else if (dropRate >= 1) volDeclineScore += 5;
-    else if (dropRate >= 0.5) volDeclineScore += 3;
-
-    if (!hasPriceDrop) volDeclineScore = Math.min(volDeclineScore, 5);
-
-    volDeclineScore = Math.min(volDeclineScore, 100);
-
-    if (volDeclineScore >= 10) {
-      const negativeScore = -volDeclineScore; // 下跌得分为负
-      const markTime = increments[maxVolIdx]?.time || session[0].time;
-      const details: string[] = [];
-      if (volumeRatio >= 1.5) details.push(`${increments[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
-      if (maxProgressiveLen >= 3 && progressivePriceDrop > 0) details.push(`${maxProgressiveLen}分钟递增放量跌${progressivePriceDrop.toFixed(1)}%`);
-      if (windowPriceDrop > 0.5) details.push(`时段跌${windowPriceDrop.toFixed(1)}%`);
-      if (downHighVolRatio >= 0.2) details.push(`${(downHighVolRatio * 100).toFixed(0)}%放量下跌`);
-      if (dropRate >= 1) details.push(`放量砸盘${dropRate.toFixed(1)}%`);
-
-      markers.push({
-        time: markTime,
-        type: "volume_decline",
-        score: negativeScore,
-        label: volDeclineScore >= 50 ? `强放量下跌 ${negativeScore}分` : volDeclineScore >= 30 ? `放量下跌 ${negativeScore}分` : `轻微放量下跌 ${negativeScore}分`,
-        detail: details.length > 0 ? details.join("，") : "轻微放量下跌",
-        amount: increments[maxVolIdx] ? increments[maxVolIdx].price * increments[maxVolIdx].vol * 100 : 0,
-      });
-    }
+    if (bestMarker) markers.push(bestMarker);
   }
 
   return markers;
