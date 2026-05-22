@@ -825,3 +825,78 @@ Stage Summary:
 - 修复了放量下跌警示不显示的回归问题
 - 关键改动：baseline 使用 min(earlyBaseline, sessionAvg)，门控条件增加 downVolRatio>=0.55 和 downMinuteRatio>=0.6
 - 同时修复放量拉升的 baseline 计算方式
+
+---
+Task ID: 1
+Agent: main
+Task: 增强"放量下跌专题"section内容（trading-rules-card.tsx）
+
+Work Log:
+- 读取 trading-rules-card.tsx 当前实现（约1000行）
+- 替换"六、放量下跌专题"section（原415-592行），扩展为包含11个子板块的全面版本
+- 1. 定义与识别：增加量化识别标准（量能标准≥1.2倍基线、价格标准≥0.3%、下跌分钟占比≥50%、量价齐跌≥10%、分时图特征）
+- 2. 四种细分类型（新增）：砸盘式🔨、阴跌式🌧️、跳水式📉、脉冲式⚡，2x2响应式网格布局
+- 3. 三种时段形态（增强）：每个时段增加操作指引（开盘5分钟内下杀不做正T、洗盘vs出货辨别、尾盘次日低开警告）
+- 4. 分时图量化识别标准（新增）：6项✅检查清单，2列响应式网格
+- 5. 应对策略矩阵（增强）：新增2行（放量下跌+跌破均价线→极危≤1/4、放量下跌+大盘暴跌→空仓）
+- 6. 信号强度等级（增强）：每级增加量化评分标准（强≥50分、中30-49分、弱10-29分）
+- 7. 放量下跌后的企稳判断（新增）：缩量企稳4信号+确认时间15分钟+假企稳识别+可参与条件
+- 8. 放量下跌与做T策略的结合（新增）：正T严禁+反T最佳时机+仓位控制三级
+- 9. 常见误区（增强）：新增2条（均线滞后性、强势股放量下跌更危险）
+- 10. 操作口诀（增强）：新增2行（量能持续放大=出货、企稳15分钟+站上均价线=最低条件）
+- 11. 当前状态提示（保持不变）
+- 保持相同的 React 组件结构、Tailwind CSS 样式模式、activeRules/activeBadge 辅助函数
+- Lint通过，dev server正常运行
+
+Stage Summary:
+- "放量下跌专题"从6个子板块扩展为11个子板块，内容量约翻倍
+- 新增4个板块：四种细分类型、分时图量化识别标准、企稳判断、做T策略结合
+- 增强4个板块：定义与识别、三种时段、应对策略矩阵、信号强度等级
+- 应对策略矩阵新增2个高危场景
+- 常见误区从4条增加到6条
+- 操作口诀从5行增加到7行
+
+---
+Task ID: 2
+Agent: volume-decline-fixer
+Task: 修复 volume_decline 检测算法，使其能正确触发五粮液等真实股票的放量下跌警告
+
+Work Log:
+- 读取 worklog.md 了解项目背景
+- 读取 chart-shared.ts 第966-1216行的 volume_decline 检测代码
+- 分析5个问题的根因并逐一修复：
+
+1. **严格门控改为惩罚系统**（第1163-1179行）
+   - 原代码：`!hasGenuineAmplification || !hasGenuineDecline` → score 硬性截断为5
+   - 修复：只有两个条件都不满足时才截断为5；仅一个不满足时按比例减少（amplification减40%，decline减50%）
+
+2. **基线计算改为加权方式**（第1020-1042行）
+   - 原代码：`baseline = Math.min(rollingBaseline, globalBaseline)` 固定取较小值
+   - 修复：如果 rolling baseline < 0.5 * global 且价格未下跌（可能是午休等低量期），用 global baseline
+   - 如果 rolling 期间价格下跌 > 0.3%，rolling baseline 更相关，用 rolling baseline
+   - 其他情况保持原行为取 min
+   - 同时更新 getRollingBaseline() 返回原始滚动均值而非 Math.min(rollAvg, globalBaseline)
+
+3. **分数阈值从10降到8**（第1183-1184行）
+   - 原代码：`if (score >= 10)` → 8分即可触发
+   - 使更多边界情况能被检测到
+
+4. **新增"简单放量下跌"回退检测**（第1225-1299行）
+   - 在滑动窗口扫描之后新增全日级别的放量下跌检测
+   - 条件：全日跌幅 > 0.5%、下跌分钟占比 ≥ 60%、下跌期均量 > 上涨期均量
+   - 只在滑动窗口未检测到 volume_decline 标记时触发
+   - 分数上限50（中等强度）
+   - 阈值8分
+
+5. **downHighVolRatio 使用 baseline 替代 avgVol**（第1063-1068行）
+   - 原代码：`t.vol > avgVol`（如果整个窗口都是高量，avgVol会偏高，很少有分钟超过它）
+   - 修复：`t.vol > baseline`（baseline代表正常量水平，更准确地识别放量分钟）
+   - 同时将 onsetIdx 的判断也改为 `t.vol > baseline`
+
+- 运行 `bun run lint` 通过，无错误
+
+Stage Summary:
+- 5处修复全部完成，修改文件：src/lib/chart-shared.ts
+- 核心改进：严格AND门控→惩罚系统、基线计算智能化、阈值降低、回退检测、量价比较基准修正
+- 保持原有结构：多标记、时段分组、最多3个标记、负分标记、起始点标记
+- 未修改其他检测块（pulse, volume_surge, progressive_vol, pulse_decline, early_vol_drop, wash_trade, vol_rise, shrink_rise）

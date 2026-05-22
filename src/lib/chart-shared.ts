@@ -987,13 +987,14 @@ export function detectPulseVolumeMarkers(
       const globalBaseline = Math.min(earlyBaselineVol, sessionAvgVol);
 
       // Helper: rolling baseline (30min window before current position)
+      // [FIX] Return raw rolling average; the weighted baseline logic below handles
+      // the choice between rolling vs global baseline intelligently.
       const getRollingBaseline = (pos: number): number => {
         const rollLen = 30;
-        const start = Math.max(0, pos - rollLen);
-        const slice = increments.slice(start, pos);
+        const rollStart = Math.max(0, pos - rollLen);
+        const slice = increments.slice(rollStart, pos);
         if (slice.length < 5) return globalBaseline;
-        const rollAvg = slice.reduce((s, t) => s + t.vol, 0) / slice.length;
-        return Math.min(rollAvg, globalBaseline); // use lower of rolling vs global
+        return slice.reduce((s, t) => s + t.vol, 0) / slice.length;
       };
 
       // ── 时段判定 ──
@@ -1017,7 +1018,29 @@ export function detectPulseVolumeMarkers(
 
           const avgVol = subInc.reduce((s, t) => s + t.vol, 0) / subInc.length;
           const rollingBaseline = getRollingBaseline(start);
-          const baseline = Math.min(rollingBaseline, globalBaseline);
+          // [FIX] Use weighted baseline instead of always taking Math.min(rolling, global)
+          // If rolling baseline is much lower than global (<0.5x), the rolling period might be
+          // artificially low (e.g., lunch break), so use global baseline instead.
+          // If rolling baseline period has declining prices, rolling baseline is more relevant.
+          const rollSlice = increments.slice(Math.max(0, start - 30), start);
+          const rollingPriceTrend = rollSlice.length >= 5
+            ? (() => {
+                const firstP = rollSlice[0]?.price || 0;
+                const lastP = rollSlice[rollSlice.length - 1]?.price || 0;
+                return firstP > 0 ? ((lastP - firstP) / firstP) * 100 : 0;
+              })()
+            : 0;
+          let baseline: number;
+          if (rollingBaseline < globalBaseline * 0.5 && rollingPriceTrend >= 0) {
+            // Rolling period is suspiciously low (e.g., lunch break) and not declining → use global
+            baseline = globalBaseline;
+          } else if (rollingPriceTrend < -0.3) {
+            // Rolling period has declining prices → rolling baseline is more relevant
+            baseline = rollingBaseline;
+          } else {
+            // Default: use the lower of the two (original behavior)
+            baseline = Math.min(rollingBaseline, globalBaseline);
+          }
 
           // ── 1. 下跌成交量占比 ──
           const downVol = subInc.filter(t => t.priceChange < 0).reduce((s, t) => s + t.vol, 0);
@@ -1038,7 +1061,10 @@ export function detectPulseVolumeMarkers(
           const downMinuteRatio = subInc.length > 0 ? downMinutes / subInc.length : 0;
 
           // ── 5. 量价齐跌分钟占比 ──
-          const downWithHighVol = subInc.filter(t => t.priceChange < 0 && t.vol > avgVol).length;
+          // [FIX] Use baseline instead of avgVol for high-volume comparison.
+          // If the whole window is high-volume, avgVol will be high and few minutes
+          // will exceed it. Using baseline (which represents normal volume) is more accurate.
+          const downWithHighVol = subInc.filter(t => t.priceChange < 0 && t.vol > baseline).length;
           const downHighVolRatio = subInc.length > 0 ? downWithHighVol / subInc.length : 0;
 
           // ── 6. 递增放量+下跌连续段 ──
@@ -1135,19 +1161,31 @@ export function detectPulseVolumeMarkers(
           else if (winSize >= 15 && windowPriceDrop >= 0.3) score += 5;
           else if (winSize >= 10 && windowPriceDrop >= 0.2) score += 3;
 
-          // ── 严格门控：必须有真正的放量+下跌 ──
+          // [FIX] Relaxed gating: penalty system instead of hard cap.
+          // Original: AND gate — if EITHER condition fails, score capped at 5 (below threshold of 10).
+          // This was too strict for stocks like 五粮液 with moderate volume decline.
+          // New approach: penalty system with progressive reduction.
           const hasGenuineAmplification = windowVolRatio >= 1.2 || downHighVolRatio >= 0.2;
           const hasGenuineDecline = windowPriceDrop >= 0.2 && downMinuteRatio >= 0.5;
-          if (!hasGenuineAmplification || !hasGenuineDecline) {
+          if (!hasGenuineAmplification && !hasGenuineDecline) {
+            // Both conditions fail → likely not real volume decline, hard cap
             score = Math.min(score, 5);
+          } else if (!hasGenuineAmplification) {
+            // Volume not clearly amplified → reduce by 40%
+            score = Math.round(score * 0.6);
+          } else if (!hasGenuineDecline) {
+            // Price decline not clear enough → reduce by 50%
+            score = Math.round(score * 0.5);
           }
+          // If both conditions pass, no penalty applied
 
           score = Math.min(score, 100);
 
-          if (score >= 10) {
+          // [FIX] Lowered threshold from 10 to 8 to catch more borderline cases
+          if (score >= 8) {
             const negativeScore = -score;
-            // 标记在下跌起始点：窗口内第一个下跌且放量的分钟
-            const onsetIdx = subInc.findIndex(t => t.priceChange < 0 && t.vol > avgVol);
+            // 标记在下跌起始点：窗口内第一个下跌且放量的分钟（用baseline而非avgVol，更准确）
+            const onsetIdx = subInc.findIndex(t => t.priceChange < 0 && t.vol > baseline);
             // 如果没找到量价齐跌的起始点，用第一个下跌分钟
             const fallbackIdx = subInc.findIndex(t => t.priceChange < 0);
             const markIdx = onsetIdx >= 0 ? onsetIdx : (fallbackIdx >= 0 ? fallbackIdx : 0);
@@ -1181,6 +1219,82 @@ export function detectPulseVolumeMarkers(
                 amount: subInc[markIdx] ? subInc[markIdx].price * subInc[markIdx].vol * 100 : 0,
               },
             });
+          }
+        }
+      }
+
+      // ── Simple Volume Decline Fallback Detection ──
+      // [FIX] Added fallback for stocks that show clear session-level volume decline
+      // but might not be caught by the sliding window approach.
+      // If the overall session shows: price declining from open, declining-period volume
+      // higher than rising-period volume, and majority of minutes are declining.
+      {
+        const openPrice = session[0]?.price || 0;
+        const lastPrice = session[session.length - 1]?.price || 0;
+        const overallPriceDrop = openPrice > 0 ? ((openPrice - lastPrice) / openPrice) * 100 : 0;
+
+        // Split minutes into rising vs declining
+        const risingMins = increments.filter(t => t.priceChange >= 0);
+        const decliningMins = increments.filter(t => t.priceChange < 0);
+        const downMinRatio = increments.length > 0 ? decliningMins.length / increments.length : 0;
+
+        const avgRisingVol = risingMins.length > 0 ? risingMins.reduce((s, t) => s + t.vol, 0) / risingMins.length : 0;
+        const avgDecliningVol = decliningMins.length > 0 ? decliningMins.reduce((s, t) => s + t.vol, 0) / decliningMins.length : 0;
+        const decliningVolRatio = avgRisingVol > 0 ? avgDecliningVol / avgRisingVol : 0;
+
+        // Only trigger if all three conditions are met
+        if (overallPriceDrop > 0.5 && downMinRatio >= 0.6 && decliningVolRatio > 1.0) {
+          // Check if there's already a volume_decline marker overlapping with this
+          const existingVDMarkers = candidateMarkers.filter(c => c.period === "mid" || c.period === "early");
+          const alreadyHasVD = existingVDMarkers.length > 0;
+
+          if (!alreadyHasVD) {
+            // Calculate a simple score based on the strength of the signal
+            let simpleScore = 0;
+            if (overallPriceDrop >= 3) simpleScore += 25;
+            else if (overallPriceDrop >= 2) simpleScore += 18;
+            else if (overallPriceDrop >= 1) simpleScore += 12;
+            else if (overallPriceDrop >= 0.5) simpleScore += 8;
+
+            if (downMinRatio >= 0.8) simpleScore += 20;
+            else if (downMinRatio >= 0.7) simpleScore += 14;
+            else if (downMinRatio >= 0.6) simpleScore += 8;
+
+            if (decliningVolRatio >= 2) simpleScore += 20;
+            else if (decliningVolRatio >= 1.5) simpleScore += 14;
+            else if (decliningVolRatio >= 1.2) simpleScore += 8;
+            else if (decliningVolRatio >= 1.0) simpleScore += 4;
+
+            simpleScore = Math.min(simpleScore, 50); // Cap at moderate strength
+
+            if (simpleScore >= 8) {
+              const negativeSimpleScore = -simpleScore;
+              // Mark at the onset of decline: first declining minute with above-baseline volume
+              const onsetIdx = increments.findIndex(t => t.priceChange < 0 && t.vol > globalBaseline);
+              const fallbackOnsetIdx = increments.findIndex(t => t.priceChange < 0);
+              const markIdx = onsetIdx >= 0 ? onsetIdx : (fallbackOnsetIdx >= 0 ? fallbackOnsetIdx : 0);
+              const markTime = increments[markIdx]?.time || session[0].time;
+
+              const details: string[] = [];
+              details.push(`全日跌${overallPriceDrop.toFixed(1)}%`);
+              details.push(`${(downMinRatio * 100).toFixed(0)}%分钟下跌`);
+              if (decliningVolRatio > 1) details.push(`跌时量${decliningVolRatio.toFixed(1)}x涨时`);
+
+              candidateMarkers.push({
+                start: markIdx,
+                end: increments.length - 1,
+                score: simpleScore,
+                period: "mid", // Assign to mid period for dedup
+                marker: {
+                  time: markTime,
+                  type: "volume_decline",
+                  score: negativeSimpleScore,
+                  label: `放量下跌 ${negativeSimpleScore}分`,
+                  detail: details.join("，"),
+                  amount: increments[markIdx] ? increments[markIdx].price * increments[markIdx].vol * 100 : 0,
+                },
+              });
+            }
           }
         }
       }

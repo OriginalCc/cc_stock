@@ -422,14 +422,76 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
             )}
           </div>
 
-          {/* 定义与识别 */}
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+
+            {/* 1. 定义与识别 */}
             <div className={`p-2 rounded-md border ${activeRules.has("vol_decline_danger") ? "border-red-500/40 bg-red-500/10" : "border-red-500/15 bg-red-500/5"}`}>
               <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1.5">📖 什么是放量下跌？</p>
-              <p>成交量显著放大（1.5-2倍以上均量）的同时股价持续下跌，说明<strong className="text-red-600 dark:text-red-400">大量资金在抛售</strong>，是日内做T最危险的信号。分时图上表现为：白线持续下行，下方成交量柱明显放大变长。</p>
+              <p className="mb-2">成交量显著放大（1.5-2倍以上均量）的同时股价持续下跌，说明<strong className="text-red-600 dark:text-red-400">大量资金在抛售</strong>，是日内做T最危险的信号。分时图上表现为：白线持续下行，下方成交量柱明显放大变长。</p>
+              <p className="text-foreground font-semibold text-[11px] mb-1">📐 量化识别标准</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-red-500/10 bg-red-500/5">
+                  <span className="text-red-500 shrink-0">📊</span>
+                  <div><span className="text-foreground font-medium">量能标准</span>：窗口均量 ≥ 1.2倍基线均量（5min/15min/30min窗口）</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-red-500/10 bg-red-500/5">
+                  <span className="text-red-500 shrink-0">📉</span>
+                  <div><span className="text-foreground font-medium">价格标准</span>：窗口内价格下跌 ≥ 0.3%</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-red-500/10 bg-red-500/5">
+                  <span className="text-red-500 shrink-0">⏱️</span>
+                  <div><span className="text-foreground font-medium">下跌分钟占比</span>：≥ 50%分钟收跌</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-red-500/10 bg-red-500/5">
+                  <span className="text-red-500 shrink-0">⚡</span>
+                  <div><span className="text-foreground font-medium">量价齐跌</span>：下跌+放量分钟占比 ≥ 10%</div>
+                </div>
+              </div>
+              <div className="mt-1.5 p-1.5 rounded border border-red-500/10 bg-red-500/5 text-[10px]">
+                <span className="text-red-500">🔍</span> <span className="text-foreground font-medium">分时图特征</span>：白线持续下行 + 下方成交量柱明显放大变长 + 均线斜率向下
+              </div>
             </div>
 
-            {/* 三种时段形态 */}
+            {/* 2. 四种细分类型 */}
+            <div>
+              <p className="text-foreground font-semibold text-[11px] mb-1.5">🔬 放量下跌的四种细分类型</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                <div className="p-2 rounded-md border border-red-500/25 bg-red-500/5">
+                  <p className="text-red-600 dark:text-red-400 font-bold text-[11px] mb-1">🔨 砸盘式放量下跌</p>
+                  <div className="text-[10px] space-y-0.5">
+                    <p><span className="text-foreground font-medium">特征</span>：单分钟或连续2-3分钟突放巨量（3-5倍均量），价格瞬间跳水1-2%</p>
+                    <p><span className="text-foreground font-medium">分时图</span>：突然出现的超长成交量柱 + 白线急挫</p>
+                    <p><span className="text-red-500/80">常见于：早盘主力出货、利空消息冲击、大单砸盘</span></p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-orange-500/25 bg-orange-500/5">
+                  <p className="text-orange-600 dark:text-orange-400 font-bold text-[11px] mb-1">🌧️ 阴跌式放量下跌</p>
+                  <div className="text-[10px] space-y-0.5">
+                    <p><span className="text-foreground font-medium">特征</span>：量能温和放大（1.2-1.5倍），价格持续缓慢下跌，5分钟K线连续收阴</p>
+                    <p><span className="text-foreground font-medium">分时图</span>：白线缓慢下行 + 成交量柱略高于均量</p>
+                    <p><span className="text-orange-500 font-medium">⚠ 比砸盘式更危险——看似不急，实则在持续出货</span></p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-yellow-500/25 bg-yellow-500/5">
+                  <p className="text-yellow-600 dark:text-yellow-400 font-bold text-[11px] mb-1">📉 跳水式放量下跌</p>
+                  <div className="text-[10px] space-y-0.5">
+                    <p><span className="text-foreground font-medium">特征</span>：短暂横盘后突然放量跳水，量能阶梯式放大（1.5→2→3倍）</p>
+                    <p><span className="text-foreground font-medium">分时图</span>：横盘 → 破位 → 加速下跌</p>
+                    <p><span className="text-yellow-500/80">常见于：跌破关键支撑位触发止损盘、午后方向确认后集中卖出</span></p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-purple-500/25 bg-purple-500/5">
+                  <p className="text-purple-600 dark:text-purple-400 font-bold text-[11px] mb-1">⚡ 脉冲式放量下跌</p>
+                  <div className="text-[10px] space-y-0.5">
+                    <p><span className="text-foreground font-medium">特征</span>：短时间内放量下跌后又快速缩量企稳，形成V型或脉冲低点</p>
+                    <p><span className="text-foreground font-medium">分时图</span>：突然的长量柱 + 白线V型回升</p>
+                    <p><span className="text-purple-500/80">可能是主力试压或洗盘，但不排除后续再次放量下跌</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. 三种时段形态 */}
             <div>
               <p className="text-foreground font-semibold text-[11px] mb-1.5">⏰ 三种时段的放量下跌形态</p>
               <div className="grid grid-cols-1 gap-1.5">
@@ -438,6 +500,7 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                   <div>
                     <span className="text-red-600 dark:text-red-400 font-bold text-[11px]">早盘放量下杀 → 极度危险 🔴</span>
                     <p>开盘即放量下跌，说明主力资金出逃坚决。全天大概率继续走弱，<strong className="text-red-600 dark:text-red-400">严禁抄底</strong>，反T(先卖再买)冲高卖出后不急于买回。</p>
+                    <p className="text-red-500 font-medium text-[10px] mt-1">🚨 若开盘5分钟内即放量下杀，当日不做正T</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2 p-2 rounded border border-orange-500/20 bg-orange-500/5">
@@ -445,6 +508,7 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                   <div>
                     <span className="text-orange-600 dark:text-orange-400 font-bold text-[11px]">盘中放量下跌 → 高危需辨别 🟠</span>
                     <p>可能是主力洗盘也可能是真正出货。关键看：是否跌破关键支撑位、量能是否持续放大。若连续3根5分钟K线放量下跌，按真正出货处理。</p>
+                    <p className="text-orange-500 font-medium text-[10px] mt-1">🔑 辨别洗盘vs出货关键：看5分钟后量能是否持续放大，缩量=洗盘可能，持续放量=出货</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2 p-2 rounded border border-yellow-500/20 bg-yellow-500/5">
@@ -452,12 +516,44 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                   <div>
                     <span className="text-yellow-600 dark:text-yellow-400 font-bold text-[11px]">尾盘放量下跌 → 恐慌信号 🟡</span>
                     <p>尾盘恐慌性抛售，次日可能低开。做T仓位必须在此之前已清仓，持股者不追加，等次日观察。尾盘放量下跌不抄底。</p>
+                    <p className="text-yellow-600 font-medium text-[10px] mt-1">⚠ 尾盘放量下跌次日大概率低开，做T者当日必须已清仓</p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 应对策略矩阵 */}
+            {/* 4. 分时图量化识别标准 */}
+            <div className={`p-2 rounded-md border ${activeRules.has("vol_decline_danger") ? "border-red-500/30 bg-red-500/8" : "border-red-500/15 bg-red-500/5"}`}>
+              <p className="text-foreground font-semibold text-[11px] mb-1.5">📋 分时图量化识别标准</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[10px]">
+                <div className="flex items-start gap-1.5 p-1 rounded bg-green-500/5">
+                  <span className="text-green-500 shrink-0">✅</span>
+                  <span>白线持续下行，低点不断降低</span>
+                </div>
+                <div className="flex items-start gap-1.5 p-1 rounded bg-green-500/5">
+                  <span className="text-green-500 shrink-0">✅</span>
+                  <span>成交量柱明显高于前30分钟平均水平</span>
+                </div>
+                <div className="flex items-start gap-1.5 p-1 rounded bg-green-500/5">
+                  <span className="text-green-500 shrink-0">✅</span>
+                  <span>均线（黄线）斜率向下</span>
+                </div>
+                <div className="flex items-start gap-1.5 p-1 rounded bg-green-500/5">
+                  <span className="text-green-500 shrink-0">✅</span>
+                  <span>下跌时量柱放大，反弹时量柱缩小（量价背离）</span>
+                </div>
+                <div className="flex items-start gap-1.5 p-1 rounded bg-green-500/5">
+                  <span className="text-green-500 shrink-0">✅</span>
+                  <span>连续3根以上1分钟K线收阴且放量</span>
+                </div>
+                <div className="flex items-start gap-1.5 p-1 rounded bg-green-500/5">
+                  <span className="text-green-500 shrink-0">✅</span>
+                  <span>价格跌破均价线且量能放大</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 5. 应对策略矩阵 */}
             <div>
               <p className="text-foreground font-semibold text-[11px] mb-1.5">📋 放量下跌应对策略矩阵</p>
               <div className="overflow-x-auto">
@@ -495,6 +591,18 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                       <td className="py-1.5 px-1.5"><span className="text-yellow-500 font-bold">≤1/3</span></td>
                       <td className="py-1.5 px-1.5"><span className="text-yellow-500 font-medium">个股独立风险，反T卖出</span></td>
                     </tr>
+                    <tr className="border-b border-border/30 bg-red-500/8">
+                      <td className="py-1.5 px-1.5 font-medium">放量下跌+跌破均价线</td>
+                      <td className="py-1.5 px-1.5"><span className="text-red-600 font-bold">🔴 极危</span></td>
+                      <td className="py-1.5 px-1.5"><span className="text-red-500 font-bold">≤1/4</span></td>
+                      <td className="py-1.5 px-1.5"><span className="text-red-500 font-medium">反T卖出，均价线下不做正T</span></td>
+                    </tr>
+                    <tr className="border-b border-border/30 bg-red-500/10">
+                      <td className="py-1.5 px-1.5 font-medium">放量下跌+大盘暴跌(&gt;2%)</td>
+                      <td className="py-1.5 px-1.5"><span className="text-red-600 font-bold">🔴 极危</span></td>
+                      <td className="py-1.5 px-1.5"><span className="text-red-500 font-bold">空仓</span></td>
+                      <td className="py-1.5 px-1.5"><span className="text-red-500 font-medium">全面撤退，不做任何T</span></td>
+                    </tr>
                     <tr>
                       <td className="py-1.5 px-1.5 font-medium">放量下跌后缩量企稳</td>
                       <td className="py-1.5 px-1.5"><span className="text-green-500 font-bold">🟢 可观察</span></td>
@@ -506,35 +614,101 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
               </div>
             </div>
 
-            {/* 信号等级 */}
+            {/* 6. 信号强度等级 */}
             <div>
               <p className="text-foreground font-semibold text-[11px] mb-1.5">⚡ 信号强度等级（分时图识别）</p>
               <div className="grid grid-cols-1 gap-1.5">
                 <div className={`flex items-start gap-2 p-1.5 rounded border ${activeRules.has("vol_decline_danger") ? "border-red-500/40 bg-red-500/10 ring-1 ring-red-500/30" : "border-red-500/15"}`}>
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-red-500/20 text-red-600 border border-red-500/30 shrink-0">强</span>
                   <div>
-                    <span className="text-red-600 dark:text-red-400 font-bold text-[11px]">强信号：连续3根以上5分钟K线放量下跌</span>
-                    <p>抛压持续且坚决，主力大概率在出货。立即降仓至1/4以下，反T(先卖再买)为主。{activeRules.has("vol_decline_danger") && <span className="text-red-600 font-bold">← 当前状态</span>}</p>
+                    <span className="text-red-600 dark:text-red-400 font-bold text-[11px]">强信号(≥50分)：连续5根以上1分钟K线放量下跌</span>
+                    <p>窗口均量≥1.5倍基线，价格跌≥1%，下跌量占比≥70%。抛压持续且坚决，主力大概率在出货。立即降仓至1/4以下，反T(先卖再买)为主。{activeRules.has("vol_decline_danger") && <span className="text-red-600 font-bold">← 当前状态</span>}</p>
                   </div>
                 </div>
                 <div className={`flex items-start gap-2 p-1.5 rounded border ${activeRules.has("pulse_decline_danger") ? "border-orange-500/30 bg-orange-500/8" : "border-orange-500/15"}`}>
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/25 shrink-0">中</span>
                   <div>
-                    <span className="text-orange-600 dark:text-orange-400 font-bold text-[11px]">中信号：脉冲放量+下跌（放量下杀后缩量）</span>
-                    <p>可能是主力试压或部分出货。仓位降至1/3以下，观察后续5分钟是否继续放量。{activeRules.has("pulse_decline_danger") && <span className="text-orange-600 font-bold">← 当前状态</span>}</p>
+                    <span className="text-orange-600 dark:text-orange-400 font-bold text-[11px]">中信号(30-49分)：脉冲放量+下跌</span>
+                    <p>窗口均量≥1.2倍基线，价格跌≥0.5%，下跌量占比≥50%。可能是主力试压或部分出货。仓位降至1/3以下，观察后续5分钟是否继续放量。{activeRules.has("pulse_decline_danger") && <span className="text-orange-600 font-bold">← 当前状态</span>}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2 p-1.5 rounded border border-yellow-500/15">
                   <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold bg-yellow-500/10 text-yellow-600 border border-yellow-500/20 shrink-0">弱</span>
                   <div>
-                    <span className="text-yellow-600 dark:text-yellow-400 font-bold text-[11px]">弱信号：单次放量下杀后快速企稳</span>
-                    <p>可能是短线资金出局或散户恐慌，不一定持续下跌。维持现有仓位，但不加仓，等确认方向。</p>
+                    <span className="text-yellow-600 dark:text-yellow-400 font-bold text-[11px]">弱信号(10-29分)：单次放量下杀后快速企稳</span>
+                    <p>窗口均量≥1.1倍基线。可能是短线资金出局或散户恐慌，不一定持续下跌。维持现有仓位，但不加仓，等确认方向。</p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 常见误区 */}
+            {/* 7. 放量下跌后的企稳判断 */}
+            <div className="p-2 rounded-md border border-green-500/20 bg-green-500/5">
+              <p className="text-green-600 dark:text-green-400 font-bold text-[11px] mb-1.5">🟢 放量下跌后的企稳判断（重新入场决策）</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div>
+                  <p className="text-foreground font-semibold text-[10px] mb-0.5">📉 缩量企稳信号</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[10px]">
+                    <div className="flex items-start gap-1 p-1 rounded border border-green-500/10 bg-green-500/5">
+                      <span className="text-green-500 shrink-0">✅</span>
+                      <span>成交量柱降至均量的50%以下</span>
+                    </div>
+                    <div className="flex items-start gap-1 p-1 rounded border border-green-500/10 bg-green-500/5">
+                      <span className="text-green-500 shrink-0">✅</span>
+                      <span>白线走平（5分钟内波动&lt;0.2%）</span>
+                    </div>
+                    <div className="flex items-start gap-1 p-1 rounded border border-green-500/10 bg-green-500/5">
+                      <span className="text-green-500 shrink-0">✅</span>
+                      <span>均线斜率趋于平缓</span>
+                    </div>
+                    <div className="flex items-start gap-1 p-1 rounded border border-green-500/10 bg-green-500/5">
+                      <span className="text-green-500 shrink-0">✅</span>
+                      <span>价格不再创新低</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1 rounded border border-green-500/15 bg-green-500/8">
+                  <span className="text-green-500 shrink-0">⏱️</span>
+                  <div><span className="text-foreground font-medium">企稳确认时间</span>：至少<strong className="text-green-600 dark:text-green-400">15分钟</strong>缩量企稳后才可考虑参与</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1 rounded border border-red-500/15 bg-red-500/5">
+                  <span className="text-red-500 shrink-0">❌</span>
+                  <div><span className="text-foreground font-medium">假企稳识别</span>：缩量2-3分钟后再次放量下跌=假企稳，必须等更长时间</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1 rounded border border-amber-500/15 bg-amber-500/5">
+                  <span className="text-amber-500 shrink-0">🔑</span>
+                  <div><span className="text-foreground font-medium">可参与条件</span>：缩量企稳15分钟 + 价格站上均价线 + 大盘不弱 → 可轻仓正T</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 8. 放量下跌与做T策略的结合 */}
+            <div className="p-2 rounded-md border border-violet-500/20 bg-violet-500/5">
+              <p className="text-violet-600 dark:text-violet-400 font-bold text-[11px] mb-1.5">🎯 放量下跌与做T策略的结合</p>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="p-1.5 rounded border border-green-500/15 bg-green-500/5">
+                  <p className="text-green-600 dark:text-green-400 font-bold text-[10px] mb-0.5">🟢 正T（先买后卖）</p>
+                  <p>放量下跌期间<strong className="text-red-600">严禁正T</strong>！必须等缩量企稳15分钟后才可考虑。</p>
+                  <p className="text-foreground font-medium text-[10px]">正T介入点：放量下跌→缩量企稳→价格站上均价线→轻仓买入→反弹卖出</p>
+                </div>
+                <div className="p-1.5 rounded border border-red-500/15 bg-red-500/5">
+                  <p className="text-red-600 dark:text-red-400 font-bold text-[10px] mb-0.5">🔴 反T（先卖后买）</p>
+                  <p>放量下跌是反T的<strong className="text-red-600">最佳卖出时机</strong>！看到放量下跌信号立即卖出，等缩量企稳后再买回。</p>
+                  <p className="text-foreground font-medium text-[10px]">买回条件：缩量15分钟 + 不再创新低 + 价格回到均价线附近</p>
+                </div>
+                <div className="p-1.5 rounded border border-orange-500/15 bg-orange-500/5">
+                  <p className="text-orange-600 dark:text-orange-400 font-bold text-[10px] mb-0.5">⚠️ 仓位控制</p>
+                  <p>放量下跌信号下，所有做T仓位上限降低一级：</p>
+                  <div className="text-[10px] space-y-0.5 mt-0.5">
+                    <p>• 三跌+放量 = <span className="text-red-600 font-bold">空仓</span></p>
+                    <p>• 双跌+放量 = <span className="text-red-500 font-bold">≤1/4</span></p>
+                    <p>• 单跌+放量 = <span className="text-orange-500 font-bold">≤1/3</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 9. 常见误区 */}
             <div className="p-2 rounded-md border border-red-500/15 bg-red-500/3">
               <p className="text-red-600 dark:text-red-400 font-bold text-[11px] mb-1.5">❌ 放量下跌的常见误区</p>
               <div className="space-y-1.5 text-[11px]">
@@ -566,10 +740,24 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                     <p className="text-red-500/70">→ 放量下跌不接飞刀！必须等缩量企稳至少15分钟才可考虑参与。</p>
                   </div>
                 </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">✗</span>
+                  <div>
+                    <span className="text-foreground font-medium">"放量下跌时均线还在向上就不危险"</span>
+                    <p className="text-red-500/70">→ 错！均线有滞后性，放量下跌已经发生，均线拐头只是时间问题。</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-red-500 shrink-0">✗</span>
+                  <div>
+                    <span className="text-foreground font-medium">"放量下跌只发生在弱势股"</span>
+                    <p className="text-red-500/70">→ 错！强势股放量下跌更危险，可能是利好出尽或主力获利了结，跌幅往往更大。</p>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* 操作口诀 */}
+            {/* 10. 操作口诀 */}
             <div className={`p-2 rounded-md border ${activeRules.has("vol_decline_danger") ? "border-red-500/40 bg-red-500/10" : "border-red-500/15 bg-red-500/5"}`}>
               <p className="text-red-600 dark:text-red-400 font-bold text-xs mb-1">🔑 放量下跌操作口诀</p>
               <div className="text-[11px] space-y-0.5 text-foreground">
@@ -578,10 +766,12 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                 <p>• <span className="font-bold">三跌+放量 = 必空仓</span>，任何理由都不参与</p>
                 <p>• <span className="font-bold">放量下跌只做反T</span>（先卖再买），不做正T</p>
                 <p>• <span className="font-bold">企稳15分钟是前提</span>，未企稳不入场</p>
+                <p>• <span className="font-bold">量能持续放大=出货</span>，量能萎缩=洗盘可能，但做T不赌方向</p>
+                <p>• <span className="font-bold">企稳15分钟+站上均价线</span>= 可轻仓正T的最低条件</p>
               </div>
             </div>
 
-            {/* 当前状态提示 */}
+            {/* 11. 当前状态提示 */}
             {activeRules.has("vol_decline_danger") && (
               <div className="p-2 rounded-md border-2 border-red-500/50 bg-red-500/10 animate-pulse">
                 <p className="text-red-600 dark:text-red-400 font-bold text-xs">🚨 当前检测到放量下跌信号！</p>
