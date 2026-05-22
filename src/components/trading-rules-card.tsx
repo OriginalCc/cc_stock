@@ -14,7 +14,7 @@ interface TradingRulesCardProps {
 }
 
 // Map pvMarker types to rule section keys that should be highlighted
-type RuleKey = "vol_decline_danger" | "vol_decline_position" | "vol_surge_strong" | "pulse_caution" | "pulse_decline_danger" | "shrink_rise" | "early_vol_drop" | "wash_trade";
+type RuleKey = "vol_decline_danger" | "vol_decline_position" | "vol_surge_strong" | "pulse_caution" | "pulse_decline_danger" | "shrink_rise" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise_warn";
 
 function getActiveRules(markers: PulseVolumeMarker[]): Set<RuleKey> {
   const active = new Set<RuleKey>();
@@ -41,11 +41,13 @@ function getActiveRules(markers: PulseVolumeMarker[]): Set<RuleKey> {
       case "wash_trade":
         active.add("wash_trade");
         break;
+      case "vol_rise":
+        active.add("vol_rise");
+        active.add("vol_surge_strong");
+        break;
       case "shrink_rise":
         active.add("shrink_rise");
-        break;
-      case "vol_rise":
-        active.add("vol_surge_strong");
+        active.add("shrink_rise_warn");
         break;
     }
   }
@@ -313,11 +315,11 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
         </div>
 
         {/* ── 五、量能确认规矩 ── */}
-        <div className={`p-3 rounded-lg border ${activeRules.has("vol_decline_danger") || activeRules.has("vol_surge_strong") || activeRules.has("pulse_caution") ? "border-red-500/40 bg-red-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
+        <div className={`p-3 rounded-lg border ${activeRules.has("vol_decline_danger") || activeRules.has("vol_surge_strong") || activeRules.has("pulse_caution") || activeRules.has("early_vol_drop") || activeRules.has("wash_trade") || activeRules.has("shrink_rise_warn") ? "border-red-500/40 bg-red-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
           <div className="flex items-center gap-1.5 mb-2">
             <Volume2 className={`w-3.5 h-3.5 ${activeRules.has("vol_decline_danger") ? "text-red-500 animate-pulse" : "text-amber-500"}`} />
             <span className={`text-xs font-semibold ${activeRules.has("vol_decline_danger") ? "text-red-700 dark:text-red-300" : "text-amber-700 dark:text-amber-300"}`}>五、量能确认规矩</span>
-            {(activeRules.has("vol_decline_danger") || activeRules.has("vol_surge_strong") || activeRules.has("pulse_caution")) && (
+            {(activeRules.has("vol_decline_danger") || activeRules.has("vol_surge_strong") || activeRules.has("pulse_caution") || activeRules.has("early_vol_drop") || activeRules.has("wash_trade") || activeRules.has("shrink_rise_warn")) && (
               <Badge variant="outline" className="text-[9px] h-4 px-1 bg-red-500/15 text-red-600 border-red-500/30 animate-pulse ml-1">⚠ 量能异动</Badge>
             )}
           </div>
@@ -330,6 +332,16 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                   <p>缩量说明卖盘不活跃，但也说明买盘不积极。等放量企稳再参与。</p>
                 </div>
               </div>
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("shrink_rise_warn", "border-amber-500/10")}`}>
+                <span className="text-amber-500 text-xs shrink-0">⚠️</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className="text-foreground font-medium">缩量上涨 → 虚涨，谨防回落</span>
+                    {activeBadge("shrink_rise_warn")}
+                  </div>
+                  <p>量能跟不上价格上涨，说明买盘不足。不可追涨，等放量确认再参与。</p>
+                </div>
+              </div>
               <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("vol_surge_strong", "border-amber-500/10")}`}>
                 <span className="text-amber-500 text-xs shrink-0">📈</span>
                 <div className="flex-1">
@@ -340,6 +352,16 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                   <p>量价齐升是最健康的走势，可在回调时按仓位表上限操作。</p>
                 </div>
               </div>
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("vol_rise", "border-amber-500/10")}`}>
+                <span className="text-amber-500 text-xs shrink-0">💪</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className="text-foreground font-medium">量增价涨 → 健康上涨信号</span>
+                    {activeBadge("vol_rise")}
+                  </div>
+                  <p>温和放量+持续上涨是最安全的做多信号。可按仓位表正常操作。</p>
+                </div>
+              </div>
               <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("pulse_caution", "border-amber-500/10")}`}>
                 <span className="text-amber-500 text-xs shrink-0">⚡</span>
                 <div className="flex-1">
@@ -348,6 +370,26 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                     {activeBadge("pulse_caution")}
                   </div>
                   <p>突然放量可能是主力试盘或诱多。观察5分钟内是否持续，不追脉冲量。</p>
+                </div>
+              </div>
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("early_vol_drop", "border-amber-500/10")}`}>
+                <span className="text-orange-500 text-xs shrink-0">🌅</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className="text-foreground font-medium">早盘缩量下跌 → 弱势信号</span>
+                    {activeBadge("early_vol_drop")}
+                  </div>
+                  <p>开盘30分钟内缩量下跌，说明市场不看好。不急于抄底，等放量企稳再参与。</p>
+                </div>
+              </div>
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("wash_trade", "border-amber-500/10")}`}>
+                <span className="text-purple-500 text-xs shrink-0">🔄</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className="text-foreground font-medium">对倒洗盘 → 观望，不参与</span>
+                    {activeBadge("wash_trade")}
+                  </div>
+                  <p>放量但价格不动，可能是主力对倒。不追涨不杀跌，等待方向明确。</p>
                 </div>
               </div>
               <div className={`flex items-start gap-2 p-1.5 rounded border ${activeRules.has("vol_decline_danger") ? "border-red-500/40 bg-red-500/10" : "border-amber-500/10"}`}>

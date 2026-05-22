@@ -35,7 +35,7 @@ export interface MergedSignal {
 
 export interface PulseVolumeMarker {
   time: string;
-  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline";
+  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise";
   score: number;
   label: string;
   detail: string;
@@ -1126,7 +1126,7 @@ export function detectPulseVolumeMarkers(
 
         volDeclineScore = Math.min(volDeclineScore, 100);
 
-        if (volDeclineScore > bestScore && volDeclineScore >= 8) {
+        if (volDeclineScore > bestScore && volDeclineScore >= 6) {
           bestScore = volDeclineScore;
           const negativeScore = -volDeclineScore;
           // 标记在窗口内成交量最大的下跌分钟
@@ -1154,6 +1154,289 @@ export function detectPulseVolumeMarkers(
     }
 
     if (bestMarker) markers.push(bestMarker);
+  }
+
+  // ── Early Volume Drop Detection (早盘缩量下跌) ──
+  // 检测开盘30分钟内出现缩量下跌的模式：价格持续走低但量能萎缩
+  // 这通常是弱势信号，后续可能继续下跌
+  {
+    const first30End = Math.min(30, session.length);
+    const earlySession = session.slice(0, first30End);
+    if (earlySession.length >= 10) {
+      const earlyAvgVol = earlySession.reduce((s, t) => s + t.volume, 0) / earlySession.length;
+      const openPrice = earlySession[0].price;
+      const earlyLow = Math.min(...earlySession.map(t => t.price));
+      const earlyDropRate = openPrice > 0 ? ((openPrice - earlyLow) / openPrice) * 100 : 0;
+
+      // 后半段量能 vs 前半段量能
+      const halfLen = Math.floor(earlySession.length / 2);
+      const firstHalfVol = earlySession.slice(0, halfLen).reduce((s, t) => s + t.volume, 0) / halfLen;
+      const secondHalfVol = earlySession.slice(halfLen).reduce((s, t) => s + t.volume, 0) / (earlySession.length - halfLen);
+      const volShrinkRatio = firstHalfVol > 0 ? secondHalfVol / firstHalfVol : 1;
+
+      // 下跌分钟数占比
+      let downCount = 0;
+      for (let i = 1; i < earlySession.length; i++) {
+        if (earlySession[i].price < earlySession[i - 1].price) downCount++;
+      }
+      const downRatio = (earlySession.length - 1) > 0 ? downCount / (earlySession.length - 1) : 0;
+
+      let earlyVolDropScore = 0;
+      if (earlyDropRate >= 2) earlyVolDropScore += 30;
+      else if (earlyDropRate >= 1) earlyVolDropScore += 20;
+      else if (earlyDropRate >= 0.5) earlyVolDropScore += 10;
+
+      if (volShrinkRatio <= 0.5) earlyVolDropScore += 25;
+      else if (volShrinkRatio <= 0.7) earlyVolDropScore += 18;
+      else if (volShrinkRatio <= 0.85) earlyVolDropScore += 10;
+      else if (volShrinkRatio < 1) earlyVolDropScore += 5;
+
+      if (downRatio >= 0.7) earlyVolDropScore += 20;
+      else if (downRatio >= 0.6) earlyVolDropScore += 12;
+      else if (downRatio >= 0.5) earlyVolDropScore += 6;
+
+      earlyVolDropScore = Math.min(earlyVolDropScore, 100);
+
+      if (earlyVolDropScore >= 10) {
+        const troughIdx = earlySession.reduce((best, t, i) => t.price < earlySession[best].price ? i : best, 0);
+        const markTime = earlySession[troughIdx].time;
+        const details: string[] = [];
+        if (earlyDropRate >= 0.5) details.push(`开盘跌${earlyDropRate.toFixed(1)}%`);
+        if (volShrinkRatio < 1) details.push(`量能缩减至${(volShrinkRatio * 100).toFixed(0)}%`);
+        if (downRatio >= 0.5) details.push(`${(downRatio * 100).toFixed(0)}%分钟下跌`);
+        const amount = earlySession.slice(halfLen).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+        markers.push({
+          time: markTime,
+          type: "early_vol_drop",
+          score: -earlyVolDropScore,
+          label: earlyVolDropScore >= 30 ? `早盘缩量下跌 ${-earlyVolDropScore}分` : `轻微早盘缩量 ${-earlyVolDropScore}分`,
+          detail: details.length > 0 ? details.join("，") : "早盘缩量",
+          amount,
+        });
+      }
+    }
+  }
+
+  // ── Wash Trade Detection (对倒洗盘) ──
+  // 检测放量但价格基本不变的洗盘模式：成交量放大但价格在窄幅震荡
+  // 通常是主力在吸筹或洗盘
+  {
+    const subWindowSizes = [10, 15, 20, 30];
+    let bestWashScore = 0;
+    let bestWashMarker: PulseVolumeMarker | null = null;
+
+    for (const winSize of subWindowSizes) {
+      if (session.length < winSize) continue;
+      for (let start = 0; start <= session.length - winSize; start++) {
+        const subSession = session.slice(start, start + winSize);
+        const subAvgVol = subSession.reduce((s, t) => s + t.volume, 0) / subSession.length;
+        const subMaxVol = Math.max(...subSession.map(t => t.volume));
+
+        // 窗口内价格振幅
+        const subHigh = Math.max(...subSession.map(t => t.price));
+        const subLow = Math.min(...subSession.map(t => t.price));
+        const subRange = subHigh > 0 ? ((subHigh - subLow) / subHigh) * 100 : 0;
+
+        // 量比（vs全日基线）
+        const sessionAvgVol = session.reduce((s, t) => s + t.volume, 0) / session.length;
+        const volRatio = sessionAvgVol > 0 ? subAvgVol / sessionAvgVol : 1;
+
+        // 单分钟巨量但价格不变
+        const maxVolIdx = subSession.findIndex(t => t.volume === subMaxVol);
+        const prevPrice = maxVolIdx > 0 ? subSession[maxVolIdx - 1].price : subSession[0].price;
+        const maxVolPriceChange = prevPrice > 0 ? Math.abs(((subSession[maxVolIdx].price - prevPrice) / prevPrice) * 100) : 0;
+
+        let washScore = 0;
+        // A. 放量但价格振幅小（核心条件）
+        if (volRatio >= 2 && subRange <= 0.5) washScore += 30;
+        else if (volRatio >= 1.5 && subRange <= 0.8) washScore += 22;
+        else if (volRatio >= 1.2 && subRange <= 1) washScore += 15;
+        else if (volRatio >= 1 && subRange <= 0.5) washScore += 10;
+
+        // B. 单分钟巨量但价格不变
+        if (subMaxVol >= subAvgVol * 3 && maxVolPriceChange < 0.1) washScore += 20;
+        else if (subMaxVol >= subAvgVol * 2 && maxVolPriceChange < 0.15) washScore += 12;
+        else if (subMaxVol >= subAvgVol * 1.5 && maxVolPriceChange < 0.2) washScore += 6;
+
+        // C. 放量程度
+        if (volRatio >= 3) washScore += 15;
+        else if (volRatio >= 2) washScore += 10;
+        else if (volRatio >= 1.5) washScore += 5;
+
+        washScore = Math.min(washScore, 100);
+
+        if (washScore > bestWashScore && washScore >= 10) {
+          bestWashScore = washScore;
+          const markTime = subSession[maxVolIdx]?.time || subSession[0].time;
+          const details: string[] = [];
+          if (volRatio >= 1.5) details.push(`量能${volRatio.toFixed(1)}x均量`);
+          if (subRange <= 1) details.push(`振幅仅${subRange.toFixed(2)}%`);
+          if (subMaxVol >= subAvgVol * 2 && maxVolPriceChange < 0.15) details.push(`巨量无价变`);
+          const amount = subSession[maxVolIdx] ? subSession[maxVolIdx].price * subSession[maxVolIdx].volume * 100 : 0;
+          bestWashMarker = {
+            time: markTime,
+            type: "wash_trade",
+            score: washScore,
+            label: washScore >= 30 ? `对倒洗盘 ${washScore}分` : `疑似洗盘 ${washScore}分`,
+            detail: details.length > 0 ? details.join("，") : "放量横盘",
+            amount,
+          };
+        }
+      }
+    }
+    if (bestWashMarker) markers.push(bestWashMarker);
+  }
+
+  // ── Volume Rise Detection (量增价涨) ──
+  // 检测温和放量+价格上涨的模式，是健康的上涨信号
+  {
+    const subWindowSizes = [5, 8, 10, 15];
+    let bestVolRiseScore = 0;
+    let bestVolRiseMarker: PulseVolumeMarker | null = null;
+
+    for (const winSize of subWindowSizes) {
+      if (session.length < winSize) continue;
+      for (let start = 0; start <= session.length - winSize; start++) {
+        const subSession = session.slice(start, start + winSize);
+        const subAvgVol = subSession.reduce((s, t) => s + t.volume, 0) / subSession.length;
+
+        // 量比（vs全日基线）
+        const sessionAvgVol = session.reduce((s, t) => s + t.volume, 0) / session.length;
+        const volRatio = sessionAvgVol > 0 ? subAvgVol / sessionAvgVol : 1;
+
+        // 窗口内净涨幅
+        const startPrice = subSession[0].price;
+        const endPrice = subSession[subSession.length - 1].price;
+        const priceGain = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
+
+        // 上涨分钟占比
+        let upCount = 0;
+        for (let i = 1; i < subSession.length; i++) {
+          if (subSession[i].price > subSession[i - 1].price) upCount++;
+        }
+        const upRatio = (subSession.length - 1) > 0 ? upCount / (subSession.length - 1) : 0;
+
+        // 量价齐升分钟占比
+        const upWithHighVol = subSession.filter((t, i) => {
+          if (i === 0) return false;
+          return t.price > subSession[i - 1].price && t.volume > subAvgVol;
+        }).length;
+        const upHighVolRatio = subSession.length > 0 ? upWithHighVol / subSession.length : 0;
+
+        let volRiseScore = 0;
+        // A. 温和放量+上涨
+        if (volRatio >= 1.5 && priceGain >= 1) volRiseScore += 25;
+        else if (volRatio >= 1.2 && priceGain >= 0.5) volRiseScore += 18;
+        else if (volRatio >= 1 && priceGain >= 0.3) volRiseScore += 10;
+
+        // B. 上涨分钟占比
+        if (upRatio >= 0.7) volRiseScore += 20;
+        else if (upRatio >= 0.6) volRiseScore += 12;
+        else if (upRatio >= 0.5) volRiseScore += 6;
+
+        // C. 量价齐升占比
+        if (upHighVolRatio >= 0.3) volRiseScore += 15;
+        else if (upHighVolRatio >= 0.2) volRiseScore += 10;
+        else if (upHighVolRatio >= 0.1) volRiseScore += 5;
+
+        // D. 价格涨幅
+        if (priceGain >= 2) volRiseScore += 15;
+        else if (priceGain >= 1) volRiseScore += 10;
+        else if (priceGain >= 0.5) volRiseScore += 5;
+
+        volRiseScore = Math.min(volRiseScore, 100);
+
+        if (volRiseScore > bestVolRiseScore && volRiseScore >= 10) {
+          bestVolRiseScore = volRiseScore;
+          const peakIdx = subSession.reduce((best, t, i) => t.price > subSession[best].price ? i : best, 0);
+          const markTime = subSession[peakIdx].time;
+          const details: string[] = [];
+          if (volRatio >= 1.2) details.push(`量能${volRatio.toFixed(1)}x`);
+          if (priceGain >= 0.5) details.push(`涨${priceGain.toFixed(1)}%`);
+          if (upRatio >= 0.6) details.push(`${(upRatio * 100).toFixed(0)}%分钟上涨`);
+          const amount = subSession[peakIdx] ? subSession[peakIdx].price * subSession[peakIdx].volume * 100 : 0;
+          bestVolRiseMarker = {
+            time: markTime,
+            type: "vol_rise",
+            score: volRiseScore,
+            label: volRiseScore >= 30 ? `量增价涨 ${volRiseScore}分` : `轻微量增 ${volRiseScore}分`,
+            detail: details.length > 0 ? details.join("，") : "量增价涨",
+            amount,
+          };
+        }
+      }
+    }
+    if (bestVolRiseMarker) markers.push(bestVolRiseMarker);
+  }
+
+  // ── Shrink Rise Detection (缩量上涨) ──
+  // 检测缩量+价格上涨的模式，是虚涨信号，后续可能回落
+  {
+    const subWindowSizes = [5, 8, 10, 15];
+    let bestShrinkRiseScore = 0;
+    let bestShrinkRiseMarker: PulseVolumeMarker | null = null;
+
+    for (const winSize of subWindowSizes) {
+      if (session.length < winSize) continue;
+      for (let start = 0; start <= session.length - winSize; start++) {
+        const subSession = session.slice(start, start + winSize);
+
+        // 前后半段量能对比
+        const halfLen = Math.floor(subSession.length / 2);
+        const firstHalfVol = subSession.slice(0, halfLen).reduce((s, t) => s + t.volume, 0) / halfLen;
+        const secondHalfVol = subSession.slice(halfLen).reduce((s, t) => s + t.volume, 0) / (subSession.length - halfLen);
+        const volShrinkRatio = firstHalfVol > 0 ? secondHalfVol / firstHalfVol : 1;
+
+        // 窗口内净涨幅
+        const startPrice = subSession[0].price;
+        const endPrice = subSession[subSession.length - 1].price;
+        const priceGain = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
+
+        // 量比（vs全日基线）
+        const sessionAvgVol = session.reduce((s, t) => s + t.volume, 0) / session.length;
+        const subAvgVol = subSession.reduce((s, t) => s + t.volume, 0) / subSession.length;
+        const volRatio = sessionAvgVol > 0 ? subAvgVol / sessionAvgVol : 1;
+
+        let shrinkRiseScore = 0;
+        // A. 缩量+上涨（核心条件）
+        if (volShrinkRatio <= 0.5 && priceGain >= 0.5) shrinkRiseScore += 30;
+        else if (volShrinkRatio <= 0.7 && priceGain >= 0.3) shrinkRiseScore += 22;
+        else if (volShrinkRatio <= 0.85 && priceGain >= 0.2) shrinkRiseScore += 15;
+        else if (volShrinkRatio < 1 && priceGain > 0) shrinkRiseScore += 8;
+
+        // B. 量能低于均量
+        if (volRatio <= 0.5 && priceGain > 0) shrinkRiseScore += 20;
+        else if (volRatio <= 0.7 && priceGain > 0) shrinkRiseScore += 12;
+        else if (volRatio <= 0.85 && priceGain > 0) shrinkRiseScore += 6;
+
+        // C. 价格涨幅
+        if (priceGain >= 2) shrinkRiseScore += 15;
+        else if (priceGain >= 1) shrinkRiseScore += 10;
+        else if (priceGain >= 0.5) shrinkRiseScore += 5;
+
+        shrinkRiseScore = Math.min(shrinkRiseScore, 100);
+
+        if (shrinkRiseScore > bestShrinkRiseScore && shrinkRiseScore >= 10) {
+          bestShrinkRiseScore = shrinkRiseScore;
+          const peakIdx = subSession.reduce((best, t, i) => t.price > subSession[best].price ? i : best, 0);
+          const markTime = subSession[peakIdx].time;
+          const details: string[] = [];
+          if (volShrinkRatio < 1) details.push(`量能缩减至${(volShrinkRatio * 100).toFixed(0)}%`);
+          if (priceGain >= 0.3) details.push(`涨${priceGain.toFixed(1)}%`);
+          if (volRatio < 1) details.push(`低于均量${((1 - volRatio) * 100).toFixed(0)}%`);
+          const amount = subSession[peakIdx] ? subSession[peakIdx].price * subSession[peakIdx].volume * 100 : 0;
+          bestShrinkRiseMarker = {
+            time: markTime,
+            type: "shrink_rise",
+            score: shrinkRiseScore,
+            label: shrinkRiseScore >= 30 ? `缩量上涨 ${shrinkRiseScore}分` : `轻微缩量涨 ${shrinkRiseScore}分`,
+            detail: details.length > 0 ? details.join("，") : "缩量上涨",
+            amount,
+          };
+        }
+      }
+    }
+    if (bestShrinkRiseMarker) markers.push(bestShrinkRiseMarker);
   }
 
   return markers;

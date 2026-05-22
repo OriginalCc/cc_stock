@@ -401,12 +401,16 @@ function renderPulseVolumeMarker(
   const isProgressiveVol = marker.type === "progressive_vol";
   const isPulseDecline = marker.type === "pulse_decline";
   const isVolumeDecline = marker.type === "volume_decline";
-  const isDecline = isPulseDecline || isVolumeDecline;
+  const isEarlyVolDrop = marker.type === "early_vol_drop";
+  const isWashTrade = marker.type === "wash_trade";
+  const isVolRise = marker.type === "vol_rise";
+  const isShrinkRise = marker.type === "shrink_rise";
+  const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop;
 
   // Color schemes — brighter & more saturated for visibility
   // Decline markers use green tones (bearish in Chinese markets)
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
-  const isAbove = isPulse || isProgressiveVol;
+  const isAbove = isPulse || isProgressiveVol || isVolRise;
   const defaultLabelY = isAbove ? y - 52 : y + 36;
   const labelY = adjustedLabelY ?? defaultLabelY;
   const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
@@ -430,11 +434,35 @@ function renderPulseVolumeMarker(
     iconColor = "#16a34a";
     glowColor = "rgba(22, 163, 74, 0.35)";
   } else if (isVolumeDecline) {
+    bgColor = "rgba(239, 68, 68, 0.25)";
+    borderColor = "rgba(239, 68, 68, 0.85)";
+    textColor = "#991b1b";
+    iconColor = "#ef4444";
+    glowColor = "rgba(239, 68, 68, 0.35)";
+  } else if (isEarlyVolDrop) {
+    bgColor = "rgba(249, 115, 22, 0.25)";
+    borderColor = "rgba(249, 115, 22, 0.85)";
+    textColor = "#9a3412";
+    iconColor = "#f97316";
+    glowColor = "rgba(249, 115, 22, 0.35)";
+  } else if (isWashTrade) {
+    bgColor = "rgba(139, 92, 246, 0.25)";
+    borderColor = "rgba(139, 92, 246, 0.85)";
+    textColor = "#5b21b6";
+    iconColor = "#8b5cf6";
+    glowColor = "rgba(139, 92, 246, 0.35)";
+  } else if (isVolRise) {
     bgColor = "rgba(34, 197, 94, 0.25)";
     borderColor = "rgba(34, 197, 94, 0.85)";
     textColor = "#15803d";
     iconColor = "#22c55e";
     glowColor = "rgba(34, 197, 94, 0.35)";
+  } else if (isShrinkRise) {
+    bgColor = "rgba(234, 179, 8, 0.25)";
+    borderColor = "rgba(234, 179, 8, 0.85)";
+    textColor = "#854d0e";
+    iconColor = "#eab308";
+    glowColor = "rgba(234, 179, 8, 0.35)";
   } else {
     bgColor = "rgba(6, 182, 212, 0.25)";
     borderColor = "rgba(6, 182, 212, 0.85)";
