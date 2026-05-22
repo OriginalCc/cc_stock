@@ -596,7 +596,7 @@ export function detectPulseVolumeMarkers(
     for (let i = 0; i < session.length; i++) {
       const prevVol = i > 0 ? session[i - 1].volume : 0;
       const curVol = session[i].volume;
-      const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+      const vol = curVol; // volume is already per-minute from API, use directly
       const prevPrice = i > 0 ? session[i - 1].price : prevClose;
       const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
       increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
@@ -715,7 +715,7 @@ export function detectPulseVolumeMarkers(
     for (let i = 0; i < session.length; i++) {
       const prevVol = i > 0 ? session[i - 1].volume : 0;
       const curVol = session[i].volume;
-      const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+      const vol = curVol; // volume is already per-minute from API, use directly
       const prevPrice = i > 0 ? session[i - 1].price : prevClose;
       const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
       increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
@@ -949,7 +949,7 @@ export function detectPulseVolumeMarkers(
     for (let i = 0; i < session.length; i++) {
       const prevVol = i > 0 ? session[i - 1].volume : 0;
       const curVol = session[i].volume;
-      const vol = i === 0 ? curVol : Math.max(0, curVol - prevVol);
+      const vol = curVol; // volume is already per-minute from API, use directly
       const prevPrice = i > 0 ? session[i - 1].price : prevClose;
       const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
       increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
