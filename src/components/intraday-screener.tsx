@@ -76,7 +76,6 @@ import {
   type MiniTimelineResult,
   isTradingHours,
 } from "@/lib/screener-shared";
-import { TradingRulesCard } from "@/components/trading-rules-card";
 import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
@@ -958,9 +957,6 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
           </div>
         </CardContent>
       </Card>
-
-      {/* Trading Rules Card — always visible */}
-      <TradingRulesCard />
 
       {/* Error */}
       {error && (
