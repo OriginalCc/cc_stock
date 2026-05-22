@@ -141,13 +141,37 @@ export default function StockTAssistant() {
       } catch { return null; }
     };
 
-    const fetchAllIndices = async () => {
-      const results = await Promise.allSettled(
-        INDEX_KEYS.map(key => fetchIndex(key))
-      );
+    const applyIndexResults = (results: PromiseSettledResult<{ regime: RegimeDetail; items: TimelineItem[]; prevClose: number } | null>[]) => {
       if (cancelled) return;
       setIndexRegimes(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newRegime = results[i].value!.regime; if (prev[key]?.regime !== newRegime.regime || prev[key]?.confidence !== newRegime.confidence) { next[key] = newRegime; changed = true; } } }); return changed ? next : prev; });
       setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
+    };
+
+    const fetchAllIndices = async (isRetry = false) => {
+      const results = await Promise.allSettled(
+        INDEX_KEYS.map(key => fetchIndex(key))
+      );
+      applyIndexResults(results);
+
+      // Retry: if any index returned null on first attempt, retry those once after 3s
+      if (!isRetry) {
+        const failedKeys = INDEX_KEYS.filter((_, i) => results[i].status !== "fulfilled" || !results[i].value);
+        if (failedKeys.length > 0) {
+          setTimeout(async () => {
+            if (cancelled) return;
+            const retryResults = await Promise.allSettled(
+              failedKeys.map(key => fetchIndex(key))
+            );
+            // Map retry results back to full INDEX_KEYS order for applyIndexResults
+            const mergedResults = INDEX_KEYS.map((key) => {
+              const retryIdx = failedKeys.indexOf(key);
+              if (retryIdx >= 0) return retryResults[retryIdx];
+              return results[INDEX_KEYS.indexOf(key)];
+            });
+            applyIndexResults(mergedResults as PromiseSettledResult<{ regime: RegimeDetail; items: TimelineItem[]; prevClose: number } | null>[]);
+          }, 3000);
+        }
+      }
     };
 
     // Defer index fetch to avoid competing with stock timeline for connection pool
@@ -192,7 +216,21 @@ export default function StockTAssistant() {
     sectorFailCountRef.current = 0;
     let cancelled = false;
     let abortCtrl: AbortController | null = null;
-    const fetchSectorData = async () => {
+    const applySectorResult = (infoData: { success: boolean; sectorInfo?: any; data?: any }) => {
+      if (cancelled) return;
+      if (!infoData.success || !infoData.sectorInfo) { sectorFailCountRef.current++; setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); return; }
+      const sInfo = infoData.sectorInfo;
+      sectorFailCountRef.current = 0; // Reset on success
+      setSectorInfoRaw({ code: sInfo.code, name: sInfo.name });
+      // Relax threshold: show sector chart even with few data points (early morning, inactive sectors)
+      if (infoData.data && infoData.data.items && infoData.data.items.length > 0) {
+        const sectorPrevClose = infoData.data.prevClose || infoData.data.items[0].price;
+        const regime = detectMarketRegimeDetail(infoData.data.items, sectorPrevClose);
+        setSectorRegimeRaw(regime); setSectorTimelineData({ items: infoData.data.items, prevClose: sectorPrevClose });
+      } else { setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
+    };
+
+    const fetchSectorData = async (isRetry = false) => {
       // If sector failed too many times for THIS stock, stop trying (but allow reset on symbol change)
       if (sectorFailCountRef.current >= 5) return;
       try {
@@ -205,22 +243,49 @@ export default function StockTAssistant() {
         clearTimeout(timeoutId);
         if (!infoRes.ok) { sectorFailCountRef.current++; if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } return; }
         const infoData = await infoRes.json();
-        if (!infoData.success || !infoData.sectorInfo) { sectorFailCountRef.current++; if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } return; }
-        const sInfo = infoData.sectorInfo;
         if (cancelled) return;
-        sectorFailCountRef.current = 0; // Reset on success
-        setSectorInfoRaw({ code: sInfo.code, name: sInfo.name });
-        // Relax threshold: show sector chart even with few data points (early morning, inactive sectors)
-        if (infoData.data && infoData.data.items && infoData.data.items.length > 0) {
-          const sectorPrevClose = infoData.data.prevClose || infoData.data.items[0].price;
-          const regime = detectMarketRegimeDetail(infoData.data.items, sectorPrevClose);
-          if (!cancelled) { setSectorRegimeRaw(regime); setSectorTimelineData({ items: infoData.data.items, prevClose: sectorPrevClose }); }
-        } else { if (!cancelled) { setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } }
+        applySectorResult(infoData);
+
+        // Retry: if sector timeline data is empty on first attempt, retry once after 3s
+        if (!isRetry && (!infoData.success || !infoData.sectorInfo || !infoData.data?.items?.length)) {
+          setTimeout(async () => {
+            if (cancelled) return;
+            try {
+              if (abortCtrl) abortCtrl.abort();
+              abortCtrl = new AbortController();
+              const retryTimeoutId = setTimeout(() => abortCtrl?.abort(), 15000);
+              const retryRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(symbol)}&type=full`, { signal: abortCtrl.signal });
+              clearTimeout(retryTimeoutId);
+              if (!retryRes.ok) return;
+              const retryData = await retryRes.json();
+              if (cancelled) return;
+              applySectorResult(retryData);
+            } catch { /* retry failure is silent */ }
+          }, 3000);
+        }
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") { sectorFailCountRef.current++; return; }
         console.error("Sector regime fetch error:", e);
         sectorFailCountRef.current++;
         if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
+
+        // Retry: if first attempt failed with non-abort error, retry once after 3s
+        if (!isRetry) {
+          setTimeout(async () => {
+            if (cancelled || sectorFailCountRef.current >= 5) return;
+            try {
+              if (abortCtrl) abortCtrl.abort();
+              abortCtrl = new AbortController();
+              const retryTimeoutId = setTimeout(() => abortCtrl?.abort(), 15000);
+              const retryRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(symbol)}&type=full`, { signal: abortCtrl.signal });
+              clearTimeout(retryTimeoutId);
+              if (!retryRes.ok) { sectorFailCountRef.current++; return; }
+              const retryData = await retryRes.json();
+              if (cancelled) return;
+              applySectorResult(retryData);
+            } catch { sectorFailCountRef.current++; }
+          }, 3000);
+        }
       }
     };
     // Start immediately - no idle callback delay for sector data
