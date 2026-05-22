@@ -415,6 +415,10 @@ function renderPulseVolumeMarker(
   const labelY = adjustedLabelY ?? defaultLabelY;
   const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
 
+  // Volume decline strength for visual emphasis
+  const volDeclineStrength = isVolumeDecline ? Math.abs(marker.score) : 0;
+  const isStrongDecline = isVolumeDecline && volDeclineStrength >= 30;
+
   if (isPulse) {
     bgColor = "rgba(245, 158, 11, 0.25)";
     borderColor = "rgba(245, 158, 11, 0.85)";
@@ -434,11 +438,26 @@ function renderPulseVolumeMarker(
     iconColor = "#16a34a";
     glowColor = "rgba(22, 163, 74, 0.35)";
   } else if (isVolumeDecline) {
-    bgColor = "rgba(239, 68, 68, 0.25)";
-    borderColor = "rgba(239, 68, 68, 0.85)";
-    textColor = "#991b1b";
-    iconColor = "#ef4444";
-    glowColor = "rgba(239, 68, 68, 0.35)";
+    // 放量下跌 — 根据强度递进红色
+    if (volDeclineStrength >= 50) {
+      bgColor = "rgba(220, 38, 38, 0.35)";
+      borderColor = "rgba(220, 38, 38, 1)";
+      textColor = "#7f1d1d";
+      iconColor = "#dc2626";
+      glowColor = "rgba(220, 38, 38, 0.5)";
+    } else if (volDeclineStrength >= 30) {
+      bgColor = "rgba(239, 68, 68, 0.3)";
+      borderColor = "rgba(239, 68, 68, 0.95)";
+      textColor = "#991b1b";
+      iconColor = "#ef4444";
+      glowColor = "rgba(239, 68, 68, 0.4)";
+    } else {
+      bgColor = "rgba(239, 68, 68, 0.2)";
+      borderColor = "rgba(239, 68, 68, 0.8)";
+      textColor = "#991b1b";
+      iconColor = "#ef4444";
+      glowColor = "rgba(239, 68, 68, 0.3)";
+    }
   } else if (isEarlyVolDrop) {
     bgColor = "rgba(249, 115, 22, 0.25)";
     borderColor = "rgba(249, 115, 22, 0.85)";
@@ -483,29 +502,50 @@ function renderPulseVolumeMarker(
 
   return (
     <g key={`pv-${marker.type}-${idx}`}>
+      {/* 放量下跌危险区域：红色半透明光晕 */}
+      {isVolumeDecline && (
+        <>
+          <circle cx={x} cy={y} r={isStrongDecline ? 22 : 16}
+            fill={volDeclineStrength >= 50 ? "rgba(220, 38, 38, 0.08)" : "rgba(239, 68, 68, 0.06)"}
+            stroke="none"
+          />
+          <circle cx={x} cy={y} r={isStrongDecline ? 15 : 11}
+            fill={volDeclineStrength >= 50 ? "rgba(220, 38, 38, 0.12)" : "rgba(239, 68, 68, 0.08)"}
+            stroke="none"
+          />
+        </>
+      )}
       {/* Connecting line from price point to label (may be offset horizontally) */}
       <line
         x1={x} y1={y} x2={labelX} y2={labelY}
-        stroke={borderColor} strokeWidth={1} strokeDasharray="3 2"
+        stroke={borderColor} strokeWidth={isStrongDecline ? 1.5 : 1} strokeDasharray="3 2"
       />
-      {/* Marker dot on price line — larger & bolder */}
+      {/* Marker dot on price line — larger & bolder for volume_decline */}
       <circle
-        cx={x} cy={y} r={6}
-        fill={bgColor} stroke={iconColor} strokeWidth={2}
+        cx={x} cy={y} r={isStrongDecline ? 8 : isVolumeDecline ? 7 : 6}
+        fill={bgColor} stroke={iconColor} strokeWidth={isStrongDecline ? 2.5 : 2}
       />
       {/* Pulsing glow ring around dot */}
       <circle
-        cx={x} cy={y} r={9}
-        fill="none" stroke={glowColor} strokeWidth={1.5}
-        strokeDasharray="2 2" opacity={0.7}
+        cx={x} cy={y} r={isStrongDecline ? 12 : 9}
+        fill="none" stroke={glowColor} strokeWidth={isStrongDecline ? 2 : 1.5}
+        strokeDasharray="2 2" opacity={isStrongDecline ? 0.9 : 0.7}
       />
+      {/* 强放量下跌额外脉冲环 */}
+      {volDeclineStrength >= 50 && (
+        <circle
+          cx={x} cy={y} r={16}
+          fill="none" stroke="rgba(220, 38, 38, 0.3)" strokeWidth={1}
+          strokeDasharray="3 3" opacity={0.5}
+        />
+      )}
       {/* Icon inside dot */}
       <text
         x={x} y={y + 1}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={7} fill={iconColor} fontWeight="bold"
+        fontSize={isVolumeDecline ? 8 : 7} fill={iconColor} fontWeight="bold"
       >
-        {isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "▼" : "▲"}
+        {isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "⚠" : "▲"}
       </text>
       {/* White glow behind label pill for readability */}
       <rect
@@ -519,13 +559,13 @@ function renderPulseVolumeMarker(
         x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
         width={pillW} height={pillH}
         rx={pillRx} ry={pillRx}
-        fill={bgColor} stroke={borderColor} strokeWidth={1}
+        fill={bgColor} stroke={borderColor} strokeWidth={isStrongDecline ? 1.5 : 1}
       />
       {/* Label text — larger & bolder */}
       <text
         x={labelX} y={isAbove ? labelY + 1 : labelY + 7}
         textAnchor="middle" dominantBaseline="middle"
-        fontSize={9} fontWeight={700} fill={textColor}
+        fontSize={isVolumeDecline ? 9.5 : 9} fontWeight={isVolumeDecline ? 800 : 700} fill={textColor}
       >
         {displayLabel}
       </text>
