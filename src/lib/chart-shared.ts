@@ -594,24 +594,23 @@ export function detectPulseVolumeMarkers(
   {
     const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
     for (let i = 0; i < session.length; i++) {
-      const prevVol = i > 0 ? session[i - 1].volume : 0;
-      const curVol = session[i].volume;
-      const vol = curVol; // volume is already per-minute from API, use directly
       const prevPrice = i > 0 ? session[i - 1].price : prevClose;
       const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
-      increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
+      increments.push({ time: session[i].time, price: session[i].price, vol: session[i].volume, priceChange });
     }
 
-    // Session-wide baseline (first 5 min average)
-    const baselineVol = increments.slice(0, Math.min(5, increments.length))
-      .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
+    // Session-wide baseline (first 15 min average, more stable)
+    const baselineLen = Math.min(15, increments.length);
+    const baselineVol = increments.slice(0, baselineLen)
+      .reduce((s, t) => s + t.vol, 0) / baselineLen;
 
     // Sliding sub-window scan for volume surge
-    const subWindowSizes = [15, 20, 30];
+    const subWindowSizes = [5, 8, 10, 15, 20, 30];
     let bestScore = 0;
     let bestMarker: PulseVolumeMarker | null = null;
 
     for (const winSize of subWindowSizes) {
+      if (increments.length < winSize) continue;
       for (let start = 0; start <= increments.length - winSize; start++) {
         const subInc = increments.slice(start, start + winSize);
         const subSession = session.slice(start, start + winSize);
@@ -621,6 +620,11 @@ export function detectPulseVolumeMarkers(
         const maxVolIdx = subInc.findIndex(t => t.vol === maxVol);
         const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
         const maxVolPriceChange = subInc[maxVolIdx]?.priceChange || 0;
+
+        // Up-volume ratio: fraction of total volume from rising minutes
+        const upVol = subInc.filter(t => t.priceChange > 0).reduce((s, t) => s + t.vol, 0);
+        const totalVol = subInc.reduce((s, t) => s + t.vol, 0);
+        const upVolRatio = totalVol > 0 ? upVol / totalVol : 0;
 
         // Progressive volume within sub-window
         let maxProgressiveLen = 1, curProgressiveLen = 1;
@@ -658,30 +662,42 @@ export function detectPulseVolumeMarkers(
         const upHighVolRatio = subInc.length > 0 ? upWithHighVol / subInc.length : 0;
 
         let volSurgeScore = 0;
-        if (volumeRatio >= 3 && maxVolPriceChange > 0.3) volSurgeScore += 30;
-        else if (volumeRatio >= 2.5 && maxVolPriceChange > 0.2) volSurgeScore += 25;
-        else if (volumeRatio >= 2 && maxVolPriceChange > 0.1) volSurgeScore += 20;
-        else if (volumeRatio >= 1.5 && maxVolPriceChange > 0) volSurgeScore += 12;
-        else if (volumeRatio >= 1.5) volSurgeScore += 5;
 
-        if (maxProgressiveLen >= 5 && progressivePriceRise > 0.5) volSurgeScore += 25;
-        else if (maxProgressiveLen >= 4 && progressivePriceRise > 0.3) volSurgeScore += 20;
-        else if (maxProgressiveLen >= 3 && progressivePriceRise > 0.1) volSurgeScore += 15;
-        else if (maxProgressiveLen >= 3) volSurgeScore += 5;
+        // A. 上涨成交量占比（核心指标）
+        if (upVolRatio >= 0.8) volSurgeScore += 30;
+        else if (upVolRatio >= 0.7) volSurgeScore += 25;
+        else if (upVolRatio >= 0.6) volSurgeScore += 18;
+        else if (upVolRatio >= 0.5) volSurgeScore += 10;
+        else if (upVolRatio >= 0.4) volSurgeScore += 5;
 
+        // B. 单分钟量比+上涨
+        if (volumeRatio >= 3 && maxVolPriceChange > 0.3) volSurgeScore += 15;
+        else if (volumeRatio >= 2.5 && maxVolPriceChange > 0.2) volSurgeScore += 12;
+        else if (volumeRatio >= 2 && maxVolPriceChange > 0.1) volSurgeScore += 10;
+        else if (volumeRatio >= 1.5 && maxVolPriceChange > 0) volSurgeScore += 5;
+
+        // C. 递增放量+上涨
+        if (maxProgressiveLen >= 5 && progressivePriceRise > 0.5) volSurgeScore += 15;
+        else if (maxProgressiveLen >= 4 && progressivePriceRise > 0.3) volSurgeScore += 12;
+        else if (maxProgressiveLen >= 3 && progressivePriceRise > 0.1) volSurgeScore += 8;
+        else if (maxProgressiveLen >= 3) volSurgeScore += 4;
+
+        // D. 放量程度
         if (windowVolRatio >= 2) volSurgeScore += 15;
         else if (windowVolRatio >= 1.5) volSurgeScore += 10;
         else if (windowVolRatio >= 1.2) volSurgeScore += 5;
 
-        if (windowPriceGain >= 2 && upHighVolRatio >= 0.3) volSurgeScore += 15;
-        else if (windowPriceGain >= 1 && upHighVolRatio >= 0.2) volSurgeScore += 10;
-        else if (windowPriceGain >= 0.5 && upHighVolRatio >= 0.15) volSurgeScore += 5;
+        // E. 价格涨幅
+        if (windowPriceGain >= 3) volSurgeScore += 15;
+        else if (windowPriceGain >= 2) volSurgeScore += 12;
+        else if (windowPriceGain >= 1) volSurgeScore += 8;
+        else if (windowPriceGain >= 0.5) volSurgeScore += 4;
 
+        // F. 量价齐升分钟占比
         if (upHighVolRatio >= 0.4) volSurgeScore += 10;
-        else if (upHighVolRatio >= 0.3) volSurgeScore += 6;
-        else if (upHighVolRatio >= 0.2) volSurgeScore += 3;
-
-        if (volumeRatio >= 2 && maxVolPriceChange > 0) volSurgeScore += 5;
+        else if (upHighVolRatio >= 0.3) volSurgeScore += 7;
+        else if (upHighVolRatio >= 0.2) volSurgeScore += 4;
+        else if (upHighVolRatio >= 0.1) volSurgeScore += 2;
 
         volSurgeScore = Math.min(volSurgeScore, 100);
 
@@ -689,6 +705,7 @@ export function detectPulseVolumeMarkers(
           bestScore = volSurgeScore;
           const markTime = subInc[maxVolIdx]?.time || subSession[0].time;
           const details: string[] = [];
+          if (upVolRatio >= 0.5) details.push(`${(upVolRatio * 100).toFixed(0)}%成交量上涨方`);
           if (volumeRatio >= 1.5) details.push(`${subInc[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
           if (maxProgressiveLen >= 3) details.push(`${maxProgressiveLen}分钟递增放量${progressivePriceRise > 0 ? `涨${progressivePriceRise.toFixed(1)}%` : ""}`);
           if (windowPriceGain >= 0.5) details.push(`时段涨${windowPriceGain.toFixed(1)}%`);
@@ -944,75 +961,89 @@ export function detectPulseVolumeMarkers(
   }
 
   // ── Volume Decline Detection (放量下跌) — Sliding Sub-Window ──
+  // 核心思路：交易者眼中的"放量下跌"= 一段时间内成交量持续高于均量 + 价格持续下跌
+  // 不仅检测"量价齐跌的瞬间"，也检测"持续放量+持续下跌"的趋势性模式
   {
     const increments: { time: string; price: number; vol: number; priceChange: number }[] = [];
     for (let i = 0; i < session.length; i++) {
-      const prevVol = i > 0 ? session[i - 1].volume : 0;
-      const curVol = session[i].volume;
-      const vol = curVol; // volume is already per-minute from API, use directly
       const prevPrice = i > 0 ? session[i - 1].price : prevClose;
       const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
-      increments.push({ time: session[i].time, price: session[i].price, vol, priceChange });
+      increments.push({ time: session[i].time, price: session[i].price, vol: session[i].volume, priceChange });
     }
 
-    // Session-wide baseline (first 5 min average)
-    const baselineVol = increments.slice(0, Math.min(5, increments.length))
-      .reduce((s, t) => s + t.vol, 0) / Math.min(5, increments.length);
+    // Session-wide baseline (first 15 min average, more stable than 5 min)
+    const baselineLen = Math.min(15, increments.length);
+    const baselineVol = increments.slice(0, baselineLen)
+      .reduce((s, t) => s + t.vol, 0) / baselineLen;
 
     // Sliding sub-window scan for volume decline
-    const subWindowSizes = [15, 20, 30];
+    // Include smaller windows (5, 8, 10) to catch early/short declines
+    const subWindowSizes = [5, 8, 10, 15, 20, 30];
     let bestScore = 0;
     let bestMarker: PulseVolumeMarker | null = null;
 
     for (const winSize of subWindowSizes) {
+      if (increments.length < winSize) continue;
       for (let start = 0; start <= increments.length - winSize; start++) {
         const subInc = increments.slice(start, start + winSize);
         const subSession = session.slice(start, start + winSize);
 
         const avgVol = subInc.reduce((s, t) => s + t.vol, 0) / subInc.length;
-        const maxVol = Math.max(...subInc.map(t => t.vol));
-        const maxVolIdx = subInc.findIndex(t => t.vol === maxVol);
-        const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
-        const maxVolPriceChange = subInc[maxVolIdx]?.priceChange || 0;
 
-        // Progressive volume with price drop within sub-window
-        let maxProgressiveLen = 1, curProgressiveLen = 1;
-        let progressiveStart = 0, bestProgressiveStart = 0;
-        for (let i = 1; i < subInc.length; i++) {
-          if (subInc[i].vol > subInc[i - 1].vol && subInc[i].vol > 0) {
-            curProgressiveLen++;
-            if (curProgressiveLen > maxProgressiveLen) {
-              maxProgressiveLen = curProgressiveLen;
-              bestProgressiveStart = progressiveStart;
-            }
-          } else {
-            curProgressiveLen = 1;
-            progressiveStart = i;
-          }
-        }
-        const progressivePriceDrop = maxProgressiveLen >= 3
-          ? (() => {
-              const startP = subInc[bestProgressiveStart]?.price || 0;
-              const endP = subInc[bestProgressiveStart + maxProgressiveLen - 1]?.price || 0;
-              return startP > 0 ? ((startP - endP) / startP) * 100 : 0;
-            })()
-          : 0;
+        // ── 1. 核心指标：下跌成交量占比 (Down-Volume Ratio) ──
+        // 下跌分钟(价格变化<0)的成交量之和 / 总成交量
+        const downVol = subInc.filter(t => t.priceChange < 0).reduce((s, t) => s + t.vol, 0);
+        const totalVol = subInc.reduce((s, t) => s + t.vol, 0);
+        const downVolRatio = totalVol > 0 ? downVol / totalVol : 0;
 
-        // Sub-window volume ratio vs session baseline
+        // ── 2. 放量程度：窗口均量 vs 会话基线 ──
         const windowVolRatio = baselineVol > 0 ? avgVol / baselineVol : 1;
 
-        // Sub-window price drop (from start to end of sub-window)
+        // ── 3. 价格跌幅：窗口内净跌幅 ──
         const windowStartPrice = subSession[0].price;
         const windowEndPrice = subSession[subSession.length - 1].price;
         const windowPriceDrop = windowStartPrice > 0
           ? ((windowStartPrice - windowEndPrice) / windowStartPrice) * 100
           : 0;
 
-        // Down-minutes with high volume within sub-window
+        // ── 4. 下跌分钟占比 ──
+        const downMinutes = subInc.filter(t => t.priceChange < 0).length;
+        const downMinuteRatio = subInc.length > 0 ? downMinutes / subInc.length : 0;
+
+        // ── 5. 量价齐跌分钟占比 (价格跌+量高于均量) ──
         const downWithHighVol = subInc.filter(t => t.priceChange < 0 && t.vol > avgVol).length;
         const downHighVolRatio = subInc.length > 0 ? downWithHighVol / subInc.length : 0;
 
-        // Price drop during volume peak within sub-window
+        // ── 6. 量增价跌：递增放量+价格下跌的连续段 ──
+        let maxProgDeclineLen = 1, curProgDeclineLen = 1;
+        let progDeclineStart = 0, bestProgDeclineStart = 0;
+        for (let i = 1; i < subInc.length; i++) {
+          if (subInc[i].vol > subInc[i - 1].vol && subInc[i].priceChange < 0 && subInc[i].vol > 0) {
+            curProgDeclineLen++;
+            if (curProgDeclineLen > maxProgDeclineLen) {
+              maxProgDeclineLen = curProgDeclineLen;
+              bestProgDeclineStart = progDeclineStart;
+            }
+          } else {
+            curProgDeclineLen = 1;
+            progDeclineStart = i;
+          }
+        }
+        const progDeclinePriceDrop = maxProgDeclineLen >= 3
+          ? (() => {
+              const startP = subInc[bestProgDeclineStart]?.price || 0;
+              const endP = subInc[bestProgDeclineStart + maxProgDeclineLen - 1]?.price || 0;
+              return startP > 0 ? ((startP - endP) / startP) * 100 : 0;
+            })()
+          : 0;
+
+        // ── 7. 最大单分钟放量下跌 ──
+        const maxVol = Math.max(...subInc.map(t => t.vol));
+        const maxVolIdx = subInc.findIndex(t => t.vol === maxVol);
+        const volumeRatio = avgVol > 0 ? maxVol / avgVol : 1;
+        const maxVolPriceChange = subInc[maxVolIdx]?.priceChange || 0;
+
+        // ── 8. 放量砸盘：成交量高峰前后的急跌幅度 ──
         let dropRate = 0;
         if (maxVolIdx >= 2) {
           const preDropPrice = subInc[Math.max(0, maxVolIdx - 3)].price;
@@ -1022,49 +1053,79 @@ export function detectPulseVolumeMarkers(
           dropRate = preDropPrice > 0 ? ((preDropPrice - lowPrice) / preDropPrice) * 100 : 0;
         }
 
+        // ── 综合评分 ──
         let volDeclineScore = 0;
-        const hasPriceDrop = windowPriceDrop > 0.1 || maxVolPriceChange < -0.1;
 
-        if (volumeRatio >= 3 && maxVolPriceChange < -0.3) volDeclineScore += 30;
-        else if (volumeRatio >= 2.5 && maxVolPriceChange < -0.2) volDeclineScore += 25;
-        else if (volumeRatio >= 2 && maxVolPriceChange < -0.1) volDeclineScore += 20;
-        else if (volumeRatio >= 2 && maxVolPriceChange < 0) volDeclineScore += 12;
-        else if (volumeRatio >= 1.5 && maxVolPriceChange < -0.1) volDeclineScore += 10;
-        else if (volumeRatio >= 1.5 && maxVolPriceChange < 0) volDeclineScore += 5;
+        // A. 下跌成交量占比（最核心指标，交易者看的就是这个）
+        //    downVolRatio >= 0.7 意味着70%以上的成交量发生在下跌分钟
+        if (downVolRatio >= 0.8) volDeclineScore += 30;
+        else if (downVolRatio >= 0.7) volDeclineScore += 25;
+        else if (downVolRatio >= 0.6) volDeclineScore += 18;
+        else if (downVolRatio >= 0.5) volDeclineScore += 10;
+        else if (downVolRatio >= 0.4) volDeclineScore += 5;
 
-        if (maxProgressiveLen >= 5 && progressivePriceDrop > 0.5) volDeclineScore += 25;
-        else if (maxProgressiveLen >= 4 && progressivePriceDrop > 0.3) volDeclineScore += 20;
-        else if (maxProgressiveLen >= 3 && progressivePriceDrop > 0.1) volDeclineScore += 15;
-        else if (maxProgressiveLen >= 3 && progressivePriceDrop > 0) volDeclineScore += 8;
+        // B. 放量程度（窗口均量 vs 基线）
+        if (windowVolRatio >= 3) volDeclineScore += 20;
+        else if (windowVolRatio >= 2) volDeclineScore += 15;
+        else if (windowVolRatio >= 1.5) volDeclineScore += 10;
+        else if (windowVolRatio >= 1.2) volDeclineScore += 5;
 
-        if (windowVolRatio >= 2 && windowPriceDrop > 1) volDeclineScore += 15;
-        else if (windowVolRatio >= 1.5 && windowPriceDrop > 0.5) volDeclineScore += 12;
-        else if (windowVolRatio >= 1.5 && windowPriceDrop > 0.2) volDeclineScore += 8;
-        else if (windowVolRatio >= 1.2 && windowPriceDrop > 0.1) volDeclineScore += 5;
+        // C. 价格跌幅（窗口净跌幅）
+        if (windowPriceDrop >= 3) volDeclineScore += 20;
+        else if (windowPriceDrop >= 2) volDeclineScore += 15;
+        else if (windowPriceDrop >= 1) volDeclineScore += 10;
+        else if (windowPriceDrop >= 0.5) volDeclineScore += 6;
+        else if (windowPriceDrop >= 0.3) volDeclineScore += 3;
 
-        if (downHighVolRatio >= 0.4) volDeclineScore += 15;
-        else if (downHighVolRatio >= 0.3) volDeclineScore += 12;
-        else if (downHighVolRatio >= 0.2) volDeclineScore += 8;
-        else if (downHighVolRatio >= 0.1) volDeclineScore += 4;
+        // D. 下跌分钟占比
+        if (downMinuteRatio >= 0.8) volDeclineScore += 10;
+        else if (downMinuteRatio >= 0.6) volDeclineScore += 6;
+        else if (downMinuteRatio >= 0.5) volDeclineScore += 3;
 
-        if (dropRate >= 3) volDeclineScore += 10;
-        else if (dropRate >= 2) volDeclineScore += 8;
-        else if (dropRate >= 1) volDeclineScore += 5;
-        else if (dropRate >= 0.5) volDeclineScore += 3;
+        // E. 量价齐跌分钟占比
+        if (downHighVolRatio >= 0.4) volDeclineScore += 10;
+        else if (downHighVolRatio >= 0.3) volDeclineScore += 7;
+        else if (downHighVolRatio >= 0.2) volDeclineScore += 4;
+        else if (downHighVolRatio >= 0.1) volDeclineScore += 2;
 
-        if (!hasPriceDrop) volDeclineScore = Math.min(volDeclineScore, 5);
+        // F. 递增放量+下跌连续段
+        if (maxProgDeclineLen >= 5 && progDeclinePriceDrop > 0.5) volDeclineScore += 15;
+        else if (maxProgDeclineLen >= 4 && progDeclinePriceDrop > 0.3) volDeclineScore += 12;
+        else if (maxProgDeclineLen >= 3 && progDeclinePriceDrop > 0.1) volDeclineScore += 8;
+        else if (maxProgDeclineLen >= 3) volDeclineScore += 4;
+
+        // G. 单分钟放量砸盘
+        if (volumeRatio >= 3 && maxVolPriceChange < -0.3) volDeclineScore += 10;
+        else if (volumeRatio >= 2 && maxVolPriceChange < -0.2) volDeclineScore += 7;
+        else if (volumeRatio >= 2 && maxVolPriceChange < 0) volDeclineScore += 4;
+
+        // H. 放量砸盘幅度
+        if (dropRate >= 3) volDeclineScore += 8;
+        else if (dropRate >= 2) volDeclineScore += 5;
+        else if (dropRate >= 1) volDeclineScore += 3;
+
+        // ── 门控条件：必须同时满足"有放量"和"有下跌" ──
+        const hasVolumeAmplification = windowVolRatio >= 1.2 || downHighVolRatio >= 0.15;
+        const hasPriceDecline = windowPriceDrop > 0.1 || downVolRatio > 0.4;
+        if (!hasVolumeAmplification || !hasPriceDecline) {
+          volDeclineScore = Math.min(volDeclineScore, 5);
+        }
 
         volDeclineScore = Math.min(volDeclineScore, 100);
 
-        if (volDeclineScore > bestScore && volDeclineScore >= 10) {
+        if (volDeclineScore > bestScore && volDeclineScore >= 8) {
           bestScore = volDeclineScore;
           const negativeScore = -volDeclineScore;
-          const markTime = subInc[maxVolIdx]?.time || subSession[0].time;
+          // 标记在窗口内成交量最大的下跌分钟
+          const markIdx = subInc.reduce((best, t, i) =>
+            t.priceChange < 0 && t.vol >= subInc[best].vol ? i : best, maxVolIdx >= 0 ? maxVolIdx : 0);
+          const markTime = subInc[markIdx]?.time || subSession[0].time;
           const details: string[] = [];
-          if (volumeRatio >= 1.5) details.push(`${subInc[maxVolIdx]?.time || ""}量比${volumeRatio.toFixed(1)}x`);
-          if (maxProgressiveLen >= 3 && progressivePriceDrop > 0) details.push(`${maxProgressiveLen}分钟递增放量跌${progressivePriceDrop.toFixed(1)}%`);
-          if (windowPriceDrop > 0.5) details.push(`时段跌${windowPriceDrop.toFixed(1)}%`);
-          if (downHighVolRatio >= 0.2) details.push(`${(downHighVolRatio * 100).toFixed(0)}%放量下跌`);
+          if (downVolRatio >= 0.5) details.push(`${(downVolRatio * 100).toFixed(0)}%成交量下跌方`);
+          if (windowVolRatio >= 1.5) details.push(`均量${windowVolRatio.toFixed(1)}x基线`);
+          if (windowPriceDrop >= 0.5) details.push(`时段跌${windowPriceDrop.toFixed(1)}%`);
+          if (maxProgDeclineLen >= 3 && progDeclinePriceDrop > 0) details.push(`${maxProgDeclineLen}分钟递增放量跌${progDeclinePriceDrop.toFixed(1)}%`);
+          if (downHighVolRatio >= 0.2) details.push(`${(downHighVolRatio * 100).toFixed(0)}%量价齐跌`);
           if (dropRate >= 1) details.push(`放量砸盘${dropRate.toFixed(1)}%`);
 
           bestMarker = {
@@ -1073,7 +1134,7 @@ export function detectPulseVolumeMarkers(
             score: negativeScore,
             label: volDeclineScore >= 50 ? `强放量下跌 ${negativeScore}分` : volDeclineScore >= 30 ? `放量下跌 ${negativeScore}分` : `轻微放量下跌 ${negativeScore}分`,
             detail: details.length > 0 ? details.join("，") : "轻微放量下跌",
-            amount: subInc[maxVolIdx] ? subInc[maxVolIdx].price * subInc[maxVolIdx].vol * 100 : 0,
+            amount: subInc[markIdx] ? subInc[markIdx].price * subInc[markIdx].vol * 100 : 0,
           };
         }
       }
