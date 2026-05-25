@@ -1907,19 +1907,30 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           );
         })()}
         {/* Sector Regime Badge - shows industry sector trend */}
-        {sectorRegime && sectorInfo && (() => {
-          const cfg = REGIME_CONFIG[sectorRegime.regime] || REGIME_CONFIG["震荡市"];
-          // Truncate sector name for display (max 4 chars)
+        {sectorInfo && (() => {
           const shortName = sectorInfo.name.length > 4 ? sectorInfo.name.slice(0, 4) : sectorInfo.name;
+          if (sectorRegime) {
+            const cfg = REGIME_CONFIG[sectorRegime.regime] || REGIME_CONFIG["震荡市"];
+            return (
+              <span
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}
+                title={`${sectorInfo.name}板块: ${sectorRegime.description}\n板块走势与个股信号方向一致时增强，反向时降级`}
+              >
+                <span className="opacity-80">{shortName}</span>
+                <span>{cfg.icon}</span>
+                <span>{sectorRegime.regime}</span>
+                <span className="opacity-60">{sectorRegime.confidence}%</span>
+              </span>
+            );
+          }
+          // Show sector name even without regime data (e.g., before timeline loads)
           return (
             <span
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}
-              title={`${sectorInfo.name}板块: ${sectorRegime.description}\n板块走势与个股信号方向一致时增强，反向时降级`}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-emerald-600/10 border-emerald-600/20 text-emerald-700 dark:text-emerald-300"
+              title={`${sectorInfo.name}板块: 数据加载中...`}
             >
               <span className="opacity-80">{shortName}</span>
-              <span>{cfg.icon}</span>
-              <span>{sectorRegime.regime}</span>
-              <span className="opacity-60">{sectorRegime.confidence}%</span>
+              <span className="opacity-60">加载中</span>
             </span>
           );
         })()}

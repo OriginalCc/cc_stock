@@ -208,98 +208,60 @@ export default function StockTAssistant() {
   const [sectorTimelineData, setSectorTimelineData] = useState<{ items: TimelineItem[]; prevClose: number }>({ items: [], prevClose: 0 });
   const sectorInfo = isAShareStock ? sectorInfoRaw : null;
   const sectorRegime = isAShareStock ? sectorRegimeRaw : null;
-  const sectorFailCountRef = useRef(0);
 
   useEffect(() => {
     if (!symbol || !isAShareStock) return;
-    // Reset fail count when switching stocks — previous failures shouldn't block new stock
-    sectorFailCountRef.current = 0;
     let cancelled = false;
     let abortCtrl: AbortController | null = null;
+    // Track current symbol to avoid stale responses
+    const currentSymbol = symbol;
+
     const applySectorResult = (infoData: { success: boolean; sectorInfo?: any; data?: any }) => {
       if (cancelled) return;
-      if (!infoData.success || !infoData.sectorInfo) { sectorFailCountRef.current++; setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); return; }
+      if (!infoData.sectorInfo) {
+        // sectorInfo=null means this stock has no sector mapping — NOT an error.
+        // Don't clear existing state; just leave things as they are.
+        // (Previous code was incrementing a fail counter here, which caused
+        //  the sector to stop loading entirely after a few refreshes.)
+        return;
+      }
       const sInfo = infoData.sectorInfo;
-      sectorFailCountRef.current = 0; // Reset on success
       setSectorInfoRaw({ code: sInfo.code, name: sInfo.name });
-      // Relax threshold: show sector chart even with few data points (early morning, inactive sectors)
+      // Update timeline & regime even if items are few (early morning, inactive sectors)
       if (infoData.data && infoData.data.items && infoData.data.items.length > 0) {
         const sectorPrevClose = infoData.data.prevClose || infoData.data.items[0].price;
         const regime = detectMarketRegimeDetail(infoData.data.items, sectorPrevClose);
         setSectorRegimeRaw(regime); setSectorTimelineData({ items: infoData.data.items, prevClose: sectorPrevClose });
-      } else { setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
+      }
+      // Don't clear sectorRegimeRaw/sectorTimelineData when timeline is empty —
+      // keep showing stale data rather than flickering to nothing
     };
 
-    const fetchSectorData = async (isRetry = false) => {
-      // If sector failed too many times for THIS stock, stop trying (but allow reset on symbol change)
-      // NOTE: Only count genuine API failures, NOT AbortErrors from cancellation
-      if (sectorFailCountRef.current >= 8) return;
+    const fetchSectorData = async () => {
       try {
         // Abort previous request if still pending
         if (abortCtrl) abortCtrl.abort();
         abortCtrl = new AbortController();
-        const timeoutId = setTimeout(() => abortCtrl?.abort(), 15000); // 15s timeout for chained API calls
+        const timeoutId = setTimeout(() => abortCtrl?.abort(), 15000);
 
-        const infoRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(symbol)}&type=full`, { signal: abortCtrl.signal });
+        const infoRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(currentSymbol)}&type=full`, { signal: abortCtrl.signal });
         clearTimeout(timeoutId);
-        if (!infoRes.ok) { sectorFailCountRef.current++; if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); } return; }
+        if (!infoRes.ok || cancelled) return;
         const infoData = await infoRes.json();
         if (cancelled) return;
         applySectorResult(infoData);
-
-        // Retry: if sector timeline data is empty on first attempt, retry once after 3s
-        if (!isRetry && (!infoData.success || !infoData.sectorInfo || !infoData.data?.items?.length)) {
-          setTimeout(async () => {
-            if (cancelled) return;
-            try {
-              if (abortCtrl) abortCtrl.abort();
-              abortCtrl = new AbortController();
-              const retryTimeoutId = setTimeout(() => abortCtrl?.abort(), 15000);
-              const retryRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(symbol)}&type=full`, { signal: abortCtrl.signal });
-              clearTimeout(retryTimeoutId);
-              if (!retryRes.ok) return;
-              const retryData = await retryRes.json();
-              if (cancelled) return;
-              applySectorResult(retryData);
-            } catch { /* retry failure is silent */ }
-          }, 3000);
-        }
       } catch (e) {
-        // FIX: AbortError should NOT increment fail count — it's intentional cancellation (e.g., new request replacing old one, component unmount)
-        // This was the root cause of sector data not loading: each 30s refresh would abort the previous request,
-        // incrementing failCount by 1 each time, reaching the limit after just 5 refresh cycles.
-        if (e instanceof DOMException && e.name === "AbortError") { return; }
-        console.error("Sector regime fetch error:", e);
-        sectorFailCountRef.current++;
-        if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
-
-        // Retry: if first attempt failed with non-abort error, retry once after 3s
-        if (!isRetry) {
-          setTimeout(async () => {
-            if (cancelled || sectorFailCountRef.current >= 8) return;
-            try {
-              if (abortCtrl) abortCtrl.abort();
-              abortCtrl = new AbortController();
-              const retryTimeoutId = setTimeout(() => abortCtrl?.abort(), 15000);
-              const retryRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(symbol)}&type=full`, { signal: abortCtrl.signal });
-              clearTimeout(retryTimeoutId);
-              if (!retryRes.ok) { sectorFailCountRef.current++; return; }
-              const retryData = await retryRes.json();
-              if (cancelled) return;
-              applySectorResult(retryData);
-            } catch (retryErr) {
-              // Only count non-abort errors as failures
-              if (!(retryErr instanceof DOMException && retryErr.name === "AbortError")) {
-                sectorFailCountRef.current++;
-              }
-            }
-          }, 3000);
-        }
+        // AbortError = intentional cancellation (new request, unmount) — not a real failure
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        // Real error — log but DON'T clear existing sector data or count failures.
+        // The 30s refresh will simply try again next cycle.
+        if (!cancelled) console.warn("Sector fetch error (will retry next cycle):", e);
       }
     };
-    // Start immediately - no idle callback delay for sector data
+
+    // Initial fetch
     fetchSectorData();
-    // Refresh sector data every 30s during trading hours
+    // Periodic refresh every 30s — no fail counter, always retry
     const refreshInterval = setInterval(() => {
       if (!cancelled) fetchSectorData();
     }, 30000);
