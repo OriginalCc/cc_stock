@@ -900,3 +900,25 @@ Stage Summary:
 - 核心改进：严格AND门控→惩罚系统、基线计算智能化、阈值降低、回退检测、量价比较基准修正
 - 保持原有结构：多标记、时段分组、最多3个标记、负分标记、起始点标记
 - 未修改其他检测块（pulse, volume_surge, progressive_vol, pulse_decline, early_vol_drop, wash_trade, vol_rise, shrink_rise）
+---
+Task ID: perf-optimize-1
+Agent: main
+Task: Optimize time-sharing page speed
+
+Work Log:
+- Analyzed performance bottlenecks with Explore agent, identified 12 key issues
+- P0: Fixed auto-refresh interval restart by replacing timeline.length dep with ref in use-stock-data.ts
+- P1: Added fingerprint caching to pvMarkers using pvFingerprintCache (includes volume data in fingerprint to avoid stale results)
+- P1: Optimized fullDayData rebuild with fullDayDataCache fingerprint cache — skips rebuilding 242 objects when data fingerprint unchanged
+- P1: Throttled crosshair onMouseMove from 60fps to ~15fps using setCrosshairIdxThrottled (saves massive re-renders during mouse hover)
+- P2: Added fingerprint caching to detectMarketRegimeDetail and analyzeIntradayIntent via regimeDetailCache and intradayIntentCache
+- P2: Optimized zoomData rebuild — mutate idx in-place instead of creating new objects via spread
+- P2: Improved memo comparison function — added content-level checks for MACD (last values), pvMarkers (last marker time), signals (first+last), keyPriceLevels (first price), index/sector timeline data (last price)
+- Added 3 new FingerprintCache singletons to fingerprint-cache.ts
+- Added pvFingerprintCache invalidation on stock switch
+
+Stage Summary:
+- Estimated per-tick cost reduced from ~15-40ms to ~5-15ms
+- Key wins: fullDayData skip (saves ~0.5-1ms + GC), pvMarkers skip (saves ~200-400μs), crosshair throttle (saves ~60fps→15fps during hover), intent/regime skip (saves ~1-3ms)
+- All changes pass lint check
+- Page loads correctly (HTTP 200)

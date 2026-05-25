@@ -28,6 +28,7 @@ import {
   getStrengthLabel,
   getStrengthColor,
 } from "@/lib/chart-shared";
+import { fullDayDataCache, regimeDetailCache, intradayIntentCache } from "@/lib/fingerprint-cache";
 import { ALL_TRADE_TIMES } from "@/lib/trading-times";
 import {
   detectMarketRegimeDetail,
@@ -1182,22 +1183,36 @@ function timeSharingPropsEqual(
     if (pLast.price !== nLast.price || pLast.time !== nLast.time || pLast.volume !== nLast.volume) return false;
   }
 
-  // Signals: compare length + last signal type/reason
+  // Signals: compare length + last signal type/reason + first signal
   const ps = prev.signals, ns = next.signals;
   if (ps.length !== ns.length) return false;
   if (ps.length > 0) {
     const pSig = ps[ps.length - 1], nSig = ns[ns.length - 1];
     if (pSig?.type !== nSig?.type || pSig?.reason !== nSig?.reason) return false;
+    // Also check first signal to catch new signals at the start
+    const pFirst = ps[0], nFirst = ns[0];
+    if (pFirst?.type !== nFirst?.type || pFirst?.reason !== nFirst?.reason) return false;
   }
 
-  // MACD data: compare length
+  // MACD data: compare length + last MACD values (most likely to change)
   if (prev.macdData.length !== next.macdData.length) return false;
+  if (prev.macdData.length > 0) {
+    const pm = prev.macdData[prev.macdData.length - 1];
+    const nm = next.macdData[next.macdData.length - 1];
+    if (pm.dif !== nm.dif || pm.macd !== nm.macd) return false;
+  }
 
-  // Key price levels: compare length
+  // Key price levels: compare length + first level price
   if ((prev.keyPriceLevels?.length || 0) !== (next.keyPriceLevels?.length || 0)) return false;
+  if (prev.keyPriceLevels && prev.keyPriceLevels.length > 0 && next.keyPriceLevels && next.keyPriceLevels.length > 0) {
+    if (prev.keyPriceLevels[0].price !== next.keyPriceLevels[0].price) return false;
+  }
 
-  // PV markers: compare length
+  // PV markers: compare length + last marker time
   if ((prev.pvMarkers?.length || 0) !== (next.pvMarkers?.length || 0)) return false;
+  if (prev.pvMarkers && prev.pvMarkers.length > 0 && next.pvMarkers && next.pvMarkers.length > 0) {
+    if (prev.pvMarkers[prev.pvMarkers.length - 1].time !== next.pvMarkers[next.pvMarkers.length - 1].time) return false;
+  }
 
   // Regime objects: compare regime string
   if (prev.szIndexRegime?.regime !== next.szIndexRegime?.regime) return false;
@@ -1205,13 +1220,23 @@ function timeSharingPropsEqual(
   if (prev.sectorInfo?.code !== next.sectorInfo?.code) return false;
   if (prev.sectorLoading !== next.sectorLoading) return false;
 
-  // Index timeline data: compare items length for active key
+  // Index timeline data: compare items length for active key + last item price
   const prevIdxData = prev.indexTimelineData?.[prev.activeIndexKey || "sz"];
   const nextIdxData = next.indexTimelineData?.[next.activeIndexKey || "sz"];
   if ((prevIdxData?.items.length || 0) !== (nextIdxData?.items.length || 0)) return false;
+  if (prevIdxData && prevIdxData.items.length > 0 && nextIdxData && nextIdxData.items.length > 0) {
+    const piLast = prevIdxData.items[prevIdxData.items.length - 1];
+    const niLast = nextIdxData.items[nextIdxData.items.length - 1];
+    if (piLast.price !== niLast.price) return false;
+  }
 
-  // Sector timeline data: compare items length
+  // Sector timeline data: compare items length + last item price
   if ((prev.sectorTimelineData?.items.length || 0) !== (next.sectorTimelineData?.items.length || 0)) return false;
+  if (prev.sectorTimelineData && prev.sectorTimelineData.items.length > 0 && next.sectorTimelineData && next.sectorTimelineData.items.length > 0) {
+    const psLast = prev.sectorTimelineData.items[prev.sectorTimelineData.items.length - 1];
+    const nsLast = next.sectorTimelineData.items[next.sectorTimelineData.items.length - 1];
+    if (psLast.price !== nsLast.price) return false;
+  }
 
   // Callbacks and config are stable refs (useCallback in parent)
   return true;
@@ -1276,101 +1301,121 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
 }) {
   // ── Build full-day timeline template (240 minutes total) ──
   // A-share trading day: 09:30-11:30 (120min) + 13:00-15:00 (120min)
+  // Performance: fingerprint cache to skip rebuilding 242 objects when data hasn't meaningfully changed.
   const { fullDayData, timeTicks } = useMemo(() => {
     if (data.length === 0) return { fullDayData: [], timeTicks: [] };
 
-    // Use pre-computed allTimes array (constant for A-share)
-    const allTimes = ALL_TRADE_TIMES;
+    // Fingerprint: data length + last 3 prices/volumes + signal/MACD/pv counts + prevClose
+    const last3 = data.slice(-3).map(d => `${d.price.toFixed(2)}:${d.volume}`).join(',');
+    const fp = `${data.length}:${last3}:${prevClose}:${signals.filter(Boolean).length}:${macdData.length}:${pvMarkers?.length || 0}`;
 
-    // Build signal map by time
-    const signalByTime = new Map<string, TSignal>();
-    signals.forEach((s, i) => {
-      if (s && data[i]) signalByTime.set(data[i].time, s);
-    });
+    // Check if we can reuse the cached fullDayData via FingerprintCache
+    const cached = fullDayDataCache.compute(fp, () => {
+      // Use pre-computed allTimes array (constant for A-share)
+      const allTimes = ALL_TRADE_TIMES;
 
-    // Build MACD map by time
-    const macdByTime = new Map<string, { dif: number; dea: number; macd: number }>();
-    for (const m of macdData) {
-      if (m.dif != null && m.dea != null && m.macd != null) {
-        macdByTime.set(m.time, { dif: m.dif, dea: m.dea, macd: m.macd });
+      // Build signal map by time
+      const signalByTime = new Map<string, TSignal>();
+      signals.forEach((s, i) => {
+        if (s && data[i]) signalByTime.set(data[i].time, s);
+      });
+
+      // Build MACD map by time
+      const macdByTime = new Map<string, { dif: number; dea: number; macd: number }>();
+      for (const m of macdData) {
+        if (m.dif != null && m.dea != null && m.macd != null) {
+          macdByTime.set(m.time, { dif: m.dif, dea: m.dea, macd: m.macd });
+        }
       }
-    }
 
-    // Build pulse/volume marker map by time
-    const pvMarkerByTime = new Map<string, PulseVolumeMarker[]>();
-    if (pvMarkers && pvMarkers.length > 0) {
-      for (const m of pvMarkers) {
-        const existing = pvMarkerByTime.get(m.time) || [];
-        existing.push(m);
-        pvMarkerByTime.set(m.time, existing);
+      // Build pulse/volume marker map by time
+      const pvMarkerByTime = new Map<string, PulseVolumeMarker[]>();
+      if (pvMarkers && pvMarkers.length > 0) {
+        for (const m of pvMarkers) {
+          const existing = pvMarkerByTime.get(m.time) || [];
+          existing.push(m);
+          pvMarkerByTime.set(m.time, existing);
+        }
       }
-    }
 
-    // Build actual data map by time
-    const dataByTime = new Map<string, TimelineItem>();
-    data.forEach((d) => dataByTime.set(d.time, d));
+      // Build actual data map by time
+      const dataByTime = new Map<string, TimelineItem>();
+      data.forEach((d) => dataByTime.set(d.time, d));
 
-    // Pre-compute prevActual for each time point — O(n) instead of O(n²)
-    // Avoids nested loop searching backwards for each data point
-    const prevActualMap = new Map<string, TimelineItem | null>();
-    let prevItem: TimelineItem | null = null;
-    for (const d of data) {
-      prevActualMap.set(d.time, prevItem);
-      prevItem = d;
-    }
+      // Pre-compute prevActual for each time point — O(n) instead of O(n²)
+      // Avoids nested loop searching backwards for each data point
+      const prevActualMap = new Map<string, TimelineItem | null>();
+      let prevItem: TimelineItem | null = null;
+      for (const d of data) {
+        prevActualMap.set(d.time, prevItem);
+        prevItem = d;
+      }
 
-    // Merge: fill full day, actual data where available, null placeholders elsewhere
-    const lastActualIdx = data.length > 0 ? allTimes.indexOf(data[data.length - 1].time) : -1;
-    const fullDay = allTimes.map((time, idx) => {
-      const actual = dataByTime.get(time);
-      const hasData = actual != null;
-      // Only show data up to the last actual time (no future data)
-      const isFuture = idx > lastActualIdx && lastActualIdx >= 0;
-      if (hasData && !isFuture) {
-        const prevActual = prevActualMap.get(time) ?? null;
-        const safePrevClose = prevClose > 0 ? prevClose : data[0].price;
+      // Merge: fill full day, actual data where available, null placeholders elsewhere
+      const lastActualIdx = data.length > 0 ? allTimes.indexOf(data[data.length - 1].time) : -1;
+      const fullDay = allTimes.map((time, idx) => {
+        const actual = dataByTime.get(time);
+        const hasData = actual != null;
+        // Only show data up to the last actual time (no future data)
+        const isFuture = idx > lastActualIdx && lastActualIdx >= 0;
+        if (hasData && !isFuture) {
+          const prevActual = prevActualMap.get(time) ?? null;
+          const safePrevClose = prevClose > 0 ? prevClose : data[0].price;
+          return {
+            idx,
+            time,
+            price: actual.price,
+            avgPrice: actual.avgPrice,
+            volume: actual.volume,
+            changePercent: actual.changePercent,
+            volUp: prevActual ? actual.price >= prevActual.price : actual.price >= safePrevClose,
+            tSignal: signalByTime.get(time) || undefined,
+            pvMarker: pvMarkerByTime.get(time) || undefined,
+            dif: macdByTime.get(time)?.dif ?? undefined,
+            dea: macdByTime.get(time)?.dea ?? undefined,
+            macd: macdByTime.get(time)?.macd ?? undefined,
+            hasData: true,
+          };
+        }
+        // Empty slot (no data yet or future)
         return {
-          idx,
-          time,
-          price: actual.price,
-          avgPrice: actual.avgPrice,
-          volume: actual.volume,
-          changePercent: actual.changePercent,
-          volUp: prevActual ? actual.price >= prevActual.price : actual.price >= safePrevClose,
-          tSignal: signalByTime.get(time) || undefined,
-          pvMarker: pvMarkerByTime.get(time) || undefined,
-          dif: macdByTime.get(time)?.dif ?? undefined,
-          dea: macdByTime.get(time)?.dea ?? undefined,
-          macd: macdByTime.get(time)?.macd ?? undefined,
-          hasData: true,
+          idx, time,
+          price: null as unknown as number,
+          avgPrice: null as unknown as number,
+          volume: 0,
+          changePercent: 0,
+          volUp: true,
+          tSignal: undefined,
+          dif: null as unknown as number,
+          dea: null as unknown as number,
+          macd: null as unknown as number,
+          hasData: false,
         };
-      }
-      // Empty slot (no data yet or future)
-      return {
-        idx, time,
-        price: null as unknown as number,
-        avgPrice: null as unknown as number,
-        volume: 0,
-        changePercent: 0,
-        volUp: true,
-        tSignal: undefined,
-        dif: null as unknown as number,
-        dea: null as unknown as number,
-        macd: null as unknown as number,
-        hasData: false,
-      };
+      });
+
+      // Key time ticks for X-axis labels
+      const keyTimes = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
+      const ticks = keyTimes.map((t) => allTimes.indexOf(t)).filter((i) => i >= 0);
+
+      return { fullDayData: fullDay, timeTicks: ticks };
     });
 
-    // Key time ticks for X-axis labels
-    const keyTimes = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
-    const ticks = keyTimes.map((t) => allTimes.indexOf(t)).filter((i) => i >= 0);
-
-    return { fullDayData: fullDay, timeTicks: ticks };
+    return cached;
   }, [data, prevClose, signals, macdData, pvMarkers]);
 
   // ── Crosshair state: shared across all three panels ──
   const [crosshairIdx, setCrosshairIdx] = useState<number | null>(null);
   const deferredCrosshairIdx = useDeferredValue(crosshairIdx);
+  // Throttle crosshair updates to ~15fps to avoid excessive re-renders during mouse hover
+  const lastCrosshairUpdateRef = useRef(0);
+  const setCrosshairIdxThrottled = useCallback((idx: number | null) => {
+    if (idx === null) { setCrosshairIdx(null); return; }
+    const now = performance.now();
+    if (now - lastCrosshairUpdateRef.current >= 66) { // ~15fps
+      lastCrosshairUpdateRef.current = now;
+      setCrosshairIdx(idx);
+    }
+  }, []);
 
   // ── Drag-to-pan & scroll-to-pan state ──
   const dragRef = useRef<{ startX: number; startPanOffset: number; isDragging: boolean }>({ startX: 0, startPanOffset: 0, isDragging: false });
@@ -1538,8 +1583,9 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       const baseEndIdx = lastDataIdx;
       const endIdx = Math.min(baseEndIdx, Math.max(visibleMinutes - 1, baseEndIdx - panOffset));
       const startIdx = Math.max(0, endIdx - visibleMinutes + 1);
+      // Performance: mutate idx in-place instead of creating new objects via spread
       zd = fullDayData.slice(startIdx, endIdx + 1);
-      zd = zd.map((item, i) => ({ ...item, idx: i }));
+      for (let i = 0; i < zd.length; i++) { (zd[i] as any).idx = i; }
       xd = [0, zd.length - 1];
 
       const tickInterval = zd.length <= 60 ? 10 : zd.length <= 120 ? 20 : 30;
@@ -1632,12 +1678,18 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     : null;
 
   // ── Memoize detectMarketRegimeDetail (was called inside IIFE on every render) ──
-  const regimeDetail = useMemo(() => detectMarketRegimeDetail(data, prevClose), [data, prevClose]);
+  // Performance: fingerprint cache to avoid recomputation when only last price ticks slightly
+  const regimeDetail = useMemo(() => {
+    const fp = `${data.length}:${data.slice(-3).map(d => d.price.toFixed(2)).join(',')}:${prevClose}`;
+    return regimeDetailCache.compute(fp, () => detectMarketRegimeDetail(data, prevClose));
+  }, [data, prevClose]);
 
   // ── Intraday institutional intent analysis ──
+  // Performance: fingerprint cache to skip heavy analysis when data barely changed
   const intradayIntent = useMemo(() => {
     if (data.length < 20 || prevClose <= 0) return null;
-    return analyzeIntradayIntent(data, prevClose);
+    const fp = `${data.length}:${data.slice(-5).map(d => `${d.price.toFixed(2)}:${d.volume}`).join(',')}:${prevClose}`;
+    return intradayIntentCache.compute(fp, () => analyzeIntradayIntent(data, prevClose));
   }, [data, prevClose]);
 
   // ── Memoize tooltip components (stable references to avoid re-renders) ──
@@ -2235,10 +2287,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             margin={{ top: 36, right: 82, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
-                setCrosshairIdx(state.activeTooltipIndex);
+                setCrosshairIdxThrottled(state.activeTooltipIndex);
               }
             }}
-            onMouseLeave={() => setCrosshairIdx(null)}
+            onMouseLeave={() => setCrosshairIdxThrottled(null)}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -2616,10 +2668,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
-                setCrosshairIdx(state.activeTooltipIndex);
+                setCrosshairIdxThrottled(state.activeTooltipIndex);
               }
             }}
-            onMouseLeave={() => setCrosshairIdx(null)}
+            onMouseLeave={() => setCrosshairIdxThrottled(null)}
           >
             <XAxis dataKey="idx" type="number" domain={xDomain} tick={false} tickLine={false} axisLine={false} />
             {/* Hidden left YAxis to align with price chart */}
@@ -2681,10 +2733,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
             onMouseMove={(state: any) => {
               if (state?.activeTooltipIndex != null) {
-                setCrosshairIdx(state.activeTooltipIndex);
+                setCrosshairIdxThrottled(state.activeTooltipIndex);
               }
             }}
-            onMouseLeave={() => setCrosshairIdx(null)}
+            onMouseLeave={() => setCrosshairIdxThrottled(null)}
           >
             <XAxis
               dataKey="idx"

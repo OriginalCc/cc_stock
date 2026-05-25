@@ -37,3 +37,17 @@ export const macdFingerprintCache = new FingerprintCache<
 >();
 export const signalFingerprintCache = new FingerprintCache<(import("./chart-shared").TSignal | null)[]>();
 export const pvFingerprintCache = new FingerprintCache<import("./chart-shared").PulseVolumeMarker[]>();
+
+// ── Pre-created singleton caches for time-sharing-panel.tsx ──
+
+// Full-day data cache: stores the fullDayData array and timeTicks
+export const fullDayDataCache = new FingerprintCache<{
+  fullDayData: any[];
+  timeTicks: number[];
+}>();
+
+// Regime detail cache for the panel's own detectMarketRegimeDetail call
+export const regimeDetailCache = new FingerprintCache<import("./t-strategy").RegimeDetail>();
+
+// Intraday intent analysis cache
+export const intradayIntentCache = new FingerprintCache<import("./institutional-intent").IntradayIntentResult | null>();
