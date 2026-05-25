@@ -1203,6 +1203,7 @@ function timeSharingPropsEqual(
   if (prev.szIndexRegime?.regime !== next.szIndexRegime?.regime) return false;
   if (prev.sectorRegime?.regime !== next.sectorRegime?.regime) return false;
   if (prev.sectorInfo?.code !== next.sectorInfo?.code) return false;
+  if (prev.sectorLoading !== next.sectorLoading) return false;
 
   // Index timeline data: compare items length for active key
   const prevIdxData = prev.indexTimelineData?.[prev.activeIndexKey || "sz"];
@@ -1238,6 +1239,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   onPanOffsetChange,
   sectorRegime,
   sectorInfo,
+  sectorLoading,
+  onRetrySector,
   pvMarkers,
   stockName,
   indexTimelineData,
@@ -1264,6 +1267,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   onPanOffsetChange?: (offset: number) => void;
   sectorRegime?: RegimeDetail | null;
   sectorInfo?: { code: string; name: string } | null;
+  sectorLoading?: boolean;
+  onRetrySector?: () => void;
   pvMarkers?: PulseVolumeMarker[];
   stockName?: string;
   indexTimelineData?: Record<string, { items: TimelineItem[]; prevClose: number }>;
@@ -1934,6 +1939,27 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             </span>
           );
         })()}
+        {/* Sector retry button - shown when sectorInfo is missing for A-share stocks */}
+        {!sectorInfo && onRetrySector && (
+          <button
+            onClick={onRetrySector}
+            disabled={sectorLoading}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-muted/50 border-muted-foreground/20 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="板块数据未加载，点击重新请求"
+          >
+            {sectorLoading ? (
+              <>
+                <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                <span>加载中</span>
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-2.5 h-2.5" />
+                <span>板块</span>
+              </>
+            )}
+          </button>
+        )}
         {lastSignal && (
           <Badge variant={lastSignal.type === "buy" ? "default" : lastSignal.type === "stoploss" ? "outline" : "destructive"} className="text-[10px] h-5">
             {lastSignal.type === "buy" ? "买入" : lastSignal.type === "stoploss" ? "止损" : "卖出"} · {lastSignal.reason}
@@ -2183,6 +2209,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 深证↓+个股↓，大盘弱势注意控仓
               </span>
               <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)</span>
+              {onRetrySector && <button onClick={onRetrySector} disabled={sectorLoading} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20 transition-colors disabled:opacity-50" title="板块数据未加载，点击重新请求">{sectorLoading ? <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}<span>加载板块</span></button>}
             </div>
           );
         }
@@ -2193,6 +2220,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <span className="text-xs font-medium text-amber-600/80 dark:text-amber-400/80">
                 个股下跌，注意控制仓位
               </span>
+              {onRetrySector && <button onClick={onRetrySector} disabled={sectorLoading} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-amber-500/10 border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors disabled:opacity-50" title="板块数据未加载，点击重新请求">{sectorLoading ? <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}<span>加载板块</span></button>}
             </div>
           );
         }

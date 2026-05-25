@@ -206,8 +206,12 @@ export default function StockTAssistant() {
   const [sectorInfoRaw, setSectorInfoRaw] = useState<{ code: string; name: string } | null>(null);
   const [sectorRegimeRaw, setSectorRegimeRaw] = useState<RegimeDetail | null>(null);
   const [sectorTimelineData, setSectorTimelineData] = useState<{ items: TimelineItem[]; prevClose: number }>({ items: [], prevClose: 0 });
+  const [sectorLoading, setSectorLoading] = useState(false);
   const sectorInfo = isAShareStock ? sectorInfoRaw : null;
   const sectorRegime = isAShareStock ? sectorRegimeRaw : null;
+
+  // Ref to hold the latest fetchSectorData function so the retry button can call it
+  const fetchSectorDataRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => {
     if (!symbol || !isAShareStock) return;
@@ -239,6 +243,7 @@ export default function StockTAssistant() {
 
     const fetchSectorData = async () => {
       try {
+        setSectorLoading(true);
         // Abort previous request if still pending
         if (abortCtrl) abortCtrl.abort();
         abortCtrl = new AbortController();
@@ -246,18 +251,23 @@ export default function StockTAssistant() {
 
         const infoRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(currentSymbol)}&type=full`, { signal: abortCtrl.signal });
         clearTimeout(timeoutId);
-        if (!infoRes.ok || cancelled) return;
+        if (!infoRes.ok || cancelled) { setSectorLoading(false); return; }
         const infoData = await infoRes.json();
-        if (cancelled) return;
+        if (cancelled) { setSectorLoading(false); return; }
         applySectorResult(infoData);
       } catch (e) {
         // AbortError = intentional cancellation (new request, unmount) — not a real failure
-        if (e instanceof DOMException && e.name === "AbortError") return;
+        if (e instanceof DOMException && e.name === "AbortError") { if (!cancelled) setSectorLoading(false); return; }
         // Real error — log but DON'T clear existing sector data or count failures.
         // The 30s refresh will simply try again next cycle.
         if (!cancelled) console.warn("Sector fetch error (will retry next cycle):", e);
+      } finally {
+        if (!cancelled) setSectorLoading(false);
       }
     };
+
+    // Store ref so retry button can trigger it
+    fetchSectorDataRef.current = fetchSectorData;
 
     // Initial fetch
     fetchSectorData();
@@ -267,6 +277,11 @@ export default function StockTAssistant() {
     }, 30000);
     return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
   }, [symbol, isAShareStock]);
+
+  // Retry function for manual sector fetch
+  const retrySectorFetch = useCallback(() => {
+    fetchSectorDataRef.current();
+  }, []);
 
   // ── DB Factor Overrides (deferred - not needed for initial render) ──
   const [factorOverrides, setFactorOverrides] = useState<FactorOverride[]>([]);
@@ -803,7 +818,7 @@ export default function StockTAssistant() {
           <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
-            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />
+            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />
           </div>
         ) : chartMode === "kline" && chartData.length > 0 ? (
           <KLineChartPanel allChartData={allChartData} klineVisibleBars={klineVisibleBars} setKlineVisibleBars={setKlineVisibleBars} klinePanOffset={klinePanOffset} setKlinePanOffset={setKlinePanOffset} interval={interval} />
