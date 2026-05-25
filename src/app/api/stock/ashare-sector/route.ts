@@ -55,10 +55,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Get sector info for the stock
+    // Use shorter TTL (60s) to avoid caching null results for too long
+    // when EastMoney API is temporarily unavailable
     const sectorInfo = await fetchGuarded(
       `sector-info:${symbol}`,
       async () => getStockSector(symbol),
-      300000 // Sector info rarely changes, cache for 5 min
+      60000 // 1 min TTL (was 5min, reduced to retry faster on API failures)
     );
 
     if (!sectorInfo) {

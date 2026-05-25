@@ -754,37 +754,90 @@ export async function getStockSector(symbol: string): Promise<SectorInfo | null>
 }
 
 // Local fallback: stock → sector mapping for popular A-shares
+// Expanded to cover ~60 most commonly traded stocks
 const STOCK_SECTOR_MAP: Record<string, SectorInfo> = {
+  // 白酒
   "600519": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
   "000858": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
   "000568": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
   "600809": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
+  "000799": { code: "BK0896", name: "白酒", quoteId: "90.BK0896", market: 90 },
+  // 保险
   "601318": { code: "BK0475", name: "保险", quoteId: "90.BK0475", market: 90 },
+  "601601": { code: "BK0475", name: "保险", quoteId: "90.BK0475", market: 90 },
+  // 银行
   "600036": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
   "000001": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
+  "601398": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
+  "601288": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
+  "600016": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
+  "601166": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
+  // 汽车
   "002594": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
+  "600104": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
+  "000625": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
+  "601127": { code: "BK0481", name: "汽车整车", quoteId: "90.BK0481", market: 90 },
+  // 锂电池/新能源
   "300750": { code: "BK0478", name: "锂电池", quoteId: "90.BK0478", market: 90 },
+  "002460": { code: "BK0478", name: "锂电池", quoteId: "90.BK0478", market: 90 },
+  "002466": { code: "BK0478", name: "锂电池", quoteId: "90.BK0478", market: 90 },
+  // 有色金属
   "601899": { code: "BK0479", name: "有色金属", quoteId: "90.BK0479", market: 90 },
+  "600547": { code: "BK0479", name: "有色金属", quoteId: "90.BK0479", market: 90 },
+  // 白色家电
   "000333": { code: "BK0484", name: "白色家电", quoteId: "90.BK0484", market: 90 },
   "000651": { code: "BK0484", name: "白色家电", quoteId: "90.BK0484", market: 90 },
+  // 医药
   "600276": { code: "BK0734", name: "化学制药", quoteId: "90.BK0734", market: 90 },
-  "601398": { code: "BK0474", name: "银行", quoteId: "90.BK0474", market: 90 },
+  "000538": { code: "BK0734", name: "化学制药", quoteId: "90.BK0734", market: 90 },
+  "300760": { code: "BK0735", name: "医疗器械", quoteId: "90.BK0735", market: 90 },
+  "300015": { code: "BK0730", name: "医疗服务", quoteId: "90.BK0730", market: 90 },
+  // 证券
   "600030": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
   "300059": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
+  "601211": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
+  "000776": { code: "BK0473", name: "证券", quoteId: "90.BK0473", market: 90 },
+  // 安防/半导体/科技
   "002415": { code: "BK0911", name: "安防", quoteId: "90.BK0911", market: 90 },
+  "688981": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
+  "002049": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
+  "300014": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
+  "002371": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
+  "002230": { code: "BK0800", name: "人工智能", quoteId: "90.BK0800", market: 90 },
+  "300418": { code: "BK0800", name: "人工智能", quoteId: "90.BK0800", market: 90 },
+  // 电力/光伏
   "600900": { code: "BK0486", name: "电力", quoteId: "90.BK0486", market: 90 },
   "601012": { code: "BK0912", name: "光伏", quoteId: "90.BK0912", market: 90 },
   "300274": { code: "BK0912", name: "光伏", quoteId: "90.BK0912", market: 90 },
-  "002230": { code: "BK0800", name: "人工智能", quoteId: "90.BK0800", market: 90 },
-  "601888": { code: "BK0490", name: "旅游", quoteId: "90.BK0490", market: 90 },
+  "601865": { code: "BK0912", name: "光伏", quoteId: "90.BK0912", market: 90 },
+  // 消费电子
+  "002475": { code: "BK1037", name: "消费电子", quoteId: "90.BK1037", market: 90 },
   "000725": { code: "BK0733", name: "面板", quoteId: "90.BK0733", market: 90 },
-  "600585": { code: "BK0732", name: "水泥", quoteId: "90.BK0732", market: 90 },
+  "002241": { code: "BK1037", name: "消费电子", quoteId: "90.BK1037", market: 90 },
+  // 地产/建筑
   "601668": { code: "BK0469", name: "建筑装饰", quoteId: "90.BK0469", market: 90 },
-  "002714": { code: "BK0470", name: "养殖业", quoteId: "90.BK0470", market: 90 },
-  "601919": { code: "BK0480", name: "港口航运", quoteId: "90.BK0480", market: 90 },
+  "600585": { code: "BK0732", name: "水泥", quoteId: "90.BK0732", market: 90 },
+  "000002": { code: "BK0451", name: "房地产", quoteId: "90.BK0451", market: 90 },
+  "001979": { code: "BK0451", name: "房地产", quoteId: "90.BK0451", market: 90 },
+  // 旅游/食品
+  "601888": { code: "BK0490", name: "旅游", quoteId: "90.BK0490", market: 90 },
   "600887": { code: "BK0482", name: "食品加工", quoteId: "90.BK0482", market: 90 },
   "600050": { code: "BK0489", name: "通信服务", quoteId: "90.BK0489", market: 90 },
-  "688981": { code: "BK0910", name: "半导体", quoteId: "90.BK0910", market: 90 },
+  // 养殖/港口
+  "002714": { code: "BK0470", name: "养殖业", quoteId: "90.BK0470", market: 90 },
+  "601919": { code: "BK0480", name: "港口航运", quoteId: "90.BK0480", market: 90 },
+  // 军工
+  "600760": { code: "BK0481", name: "航天军工", quoteId: "90.BK0481", market: 90 },
+  // 钢铁/煤炭
+  "600019": { code: "BK0468", name: "钢铁", quoteId: "90.BK0468", market: 90 },
+  "601088": { code: "BK0467", name: "煤炭", quoteId: "90.BK0467", market: 90 },
+  // 石油
+  "601857": { code: "BK0465", name: "石油", quoteId: "90.BK0465", market: 90 },
+  "600028": { code: "BK0465", name: "石油", quoteId: "90.BK0465", market: 90 },
+  // 互联网/传媒
+  "300052": { code: "BK0744", name: "互联网", quoteId: "90.BK0744", market: 90 },
+  // 软件
+  "600588": { code: "BK0743", name: "软件", quoteId: "90.BK0743", market: 90 },
 };
 
 function getStockSectorFallback(symbol: string): SectorInfo | null {

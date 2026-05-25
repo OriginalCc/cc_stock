@@ -220,13 +220,21 @@ export default function StockTAssistant() {
     // Track current symbol to avoid stale responses
     const currentSymbol = symbol;
 
+    // Clear stale sector data when switching stocks
+    setSectorInfoRaw(null);
+    setSectorRegimeRaw(null);
+    setSectorTimelineData({ items: [], prevClose: 0 });
+
     const applySectorResult = (infoData: { success: boolean; sectorInfo?: any; data?: any }) => {
       if (cancelled) return;
+      if (!infoData.success) {
+        // API returned an error — don't clear existing state, just log
+        console.warn("Sector API returned error:", infoData.error);
+        return;
+      }
       if (!infoData.sectorInfo) {
         // sectorInfo=null means this stock has no sector mapping — NOT an error.
         // Don't clear existing state; just leave things as they are.
-        // (Previous code was incrementing a fail counter here, which caused
-        //  the sector to stop loading entirely after a few refreshes.)
         return;
       }
       const sInfo = infoData.sectorInfo;
@@ -241,6 +249,9 @@ export default function StockTAssistant() {
       // keep showing stale data rather than flickering to nothing
     };
 
+    let retryCount = 0;
+    const MAX_FAST_RETRIES = 3; // Fast retries for initial load failures
+
     const fetchSectorData = async () => {
       try {
         setSectorLoading(true);
@@ -251,28 +262,63 @@ export default function StockTAssistant() {
 
         const infoRes = await fetch(`/api/stock/ashare-sector?symbol=${encodeURIComponent(currentSymbol)}&type=full`, { signal: abortCtrl.signal });
         clearTimeout(timeoutId);
-        if (!infoRes.ok || cancelled) { setSectorLoading(false); return; }
+        if (cancelled) { setSectorLoading(false); return; }
+        if (!infoRes.ok) {
+          // Server error — schedule a fast retry if under limit
+          if (retryCount < MAX_FAST_RETRIES) {
+            retryCount++;
+            const delay = retryCount * 2000; // 2s, 4s, 6s
+            console.warn(`Sector API returned ${infoRes.status}, retrying in ${delay}ms (attempt ${retryCount}/${MAX_FAST_RETRIES})`);
+            setTimeout(() => { if (!cancelled) fetchSectorData(); }, delay);
+          }
+          setSectorLoading(false);
+          return;
+        }
         const infoData = await infoRes.json();
         if (cancelled) { setSectorLoading(false); return; }
+
+        // If sectorInfo is null and we haven't exhausted fast retries, try again
+        // (the API might have had a transient failure getting sector info from EastMoney)
+        if (!infoData.sectorInfo && infoData.success && retryCount < MAX_FAST_RETRIES) {
+          retryCount++;
+          const delay = retryCount * 2000;
+          console.warn(`Sector info null for ${currentSymbol}, retrying in ${delay}ms (attempt ${retryCount}/${MAX_FAST_RETRIES})`);
+          setTimeout(() => { if (!cancelled) fetchSectorData(); }, delay);
+          setSectorLoading(false);
+          return;
+        }
+
         applySectorResult(infoData);
       } catch (e) {
         // AbortError = intentional cancellation (new request, unmount) — not a real failure
         if (e instanceof DOMException && e.name === "AbortError") { if (!cancelled) setSectorLoading(false); return; }
-        // Real error — log but DON'T clear existing sector data or count failures.
-        // The 30s refresh will simply try again next cycle.
-        if (!cancelled) console.warn("Sector fetch error (will retry next cycle):", e);
+        // Real error — schedule a fast retry if under limit
+        if (!cancelled) {
+          if (retryCount < MAX_FAST_RETRIES) {
+            retryCount++;
+            const delay = retryCount * 2000;
+            console.warn(`Sector fetch error, retrying in ${delay}ms (attempt ${retryCount}/${MAX_FAST_RETRIES}):`, e);
+            setTimeout(() => { if (!cancelled) fetchSectorData(); }, delay);
+          } else {
+            console.warn("Sector fetch error (max retries reached, will retry on 30s cycle):", e);
+          }
+        }
       } finally {
         if (!cancelled) setSectorLoading(false);
       }
     };
 
     // Store ref so retry button can trigger it
-    fetchSectorDataRef.current = fetchSectorData;
+    fetchSectorDataRef.current = () => {
+      retryCount = 0; // Reset retry counter for manual retry
+      fetchSectorData();
+    };
 
     // Initial fetch
     fetchSectorData();
     // Periodic refresh every 30s — no fail counter, always retry
     const refreshInterval = setInterval(() => {
+      retryCount = 0; // Reset retry counter on periodic refresh
       if (!cancelled) fetchSectorData();
     }, 30000);
     return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
