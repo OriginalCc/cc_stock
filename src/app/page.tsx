@@ -232,7 +232,8 @@ export default function StockTAssistant() {
 
     const fetchSectorData = async (isRetry = false) => {
       // If sector failed too many times for THIS stock, stop trying (but allow reset on symbol change)
-      if (sectorFailCountRef.current >= 5) return;
+      // NOTE: Only count genuine API failures, NOT AbortErrors from cancellation
+      if (sectorFailCountRef.current >= 8) return;
       try {
         // Abort previous request if still pending
         if (abortCtrl) abortCtrl.abort();
@@ -264,7 +265,10 @@ export default function StockTAssistant() {
           }, 3000);
         }
       } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") { sectorFailCountRef.current++; return; }
+        // FIX: AbortError should NOT increment fail count — it's intentional cancellation (e.g., new request replacing old one, component unmount)
+        // This was the root cause of sector data not loading: each 30s refresh would abort the previous request,
+        // incrementing failCount by 1 each time, reaching the limit after just 5 refresh cycles.
+        if (e instanceof DOMException && e.name === "AbortError") { return; }
         console.error("Sector regime fetch error:", e);
         sectorFailCountRef.current++;
         if (!cancelled) { setSectorInfoRaw(null); setSectorRegimeRaw(null); setSectorTimelineData({ items: [], prevClose: 0 }); }
@@ -272,7 +276,7 @@ export default function StockTAssistant() {
         // Retry: if first attempt failed with non-abort error, retry once after 3s
         if (!isRetry) {
           setTimeout(async () => {
-            if (cancelled || sectorFailCountRef.current >= 5) return;
+            if (cancelled || sectorFailCountRef.current >= 8) return;
             try {
               if (abortCtrl) abortCtrl.abort();
               abortCtrl = new AbortController();
@@ -283,7 +287,12 @@ export default function StockTAssistant() {
               const retryData = await retryRes.json();
               if (cancelled) return;
               applySectorResult(retryData);
-            } catch { sectorFailCountRef.current++; }
+            } catch (retryErr) {
+              // Only count non-abort errors as failures
+              if (!(retryErr instanceof DOMException && retryErr.name === "AbortError")) {
+                sectorFailCountRef.current++;
+              }
+            }
           }, 3000);
         }
       }
