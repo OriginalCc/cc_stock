@@ -216,7 +216,8 @@ interface PvLabelLayout {
 function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): PvLabelLayout {
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
-  const isAbove = isPulse || isProgressiveVol;
+  const isVolRise = marker.type === "vol_rise";
+  const isAbove = isPulse || isProgressiveVol || isVolRise;
 
   const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
   const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
@@ -408,8 +409,8 @@ function renderPulseVolumeMarker(
   const isShrinkRise = marker.type === "shrink_rise";
   const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop;
 
-  // Color schemes — brighter & more saturated for visibility
-  // Decline markers use green tones (bearish in Chinese markets)
+  // Color schemes — A股惯例：上涨=红色，下跌=绿色
+  // 上涨类(pulse, progressive_vol, vol_rise)用红色，下跌类(pulse_decline, volume_decline, early_vol_drop)用绿色
   let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
   const isAbove = isPulse || isProgressiveVol || isVolRise;
   const defaultLabelY = isAbove ? y - 52 : y + 36;
@@ -427,11 +428,12 @@ function renderPulseVolumeMarker(
     iconColor = "#f59e0b";
     glowColor = "rgba(245, 158, 11, 0.35)";
   } else if (isProgressiveVol) {
-    bgColor = "rgba(16, 185, 129, 0.25)";
-    borderColor = "rgba(16, 185, 129, 0.85)";
-    textColor = "#047857";
-    iconColor = "#10b981";
-    glowColor = "rgba(16, 185, 129, 0.35)";
+    // 温和放量上涨 — 红色（A股：上涨=红）
+    bgColor = "rgba(239, 68, 68, 0.25)";
+    borderColor = "rgba(239, 68, 68, 0.85)";
+    textColor = "#991b1b";
+    iconColor = "#ef4444";
+    glowColor = "rgba(239, 68, 68, 0.35)";
   } else if (isPulseDecline) {
     bgColor = "rgba(22, 163, 74, 0.25)";
     borderColor = "rgba(22, 163, 74, 0.85)";
@@ -439,25 +441,25 @@ function renderPulseVolumeMarker(
     iconColor = "#16a34a";
     glowColor = "rgba(22, 163, 74, 0.35)";
   } else if (isVolumeDecline) {
-    // 放量下跌 — 根据强度递进红色
+    // 放量下跌 — 根据强度递进绿色（A股：下跌=绿）
     if (volDeclineStrength >= 50) {
-      bgColor = "rgba(220, 38, 38, 0.35)";
-      borderColor = "rgba(220, 38, 38, 1)";
-      textColor = "#7f1d1d";
-      iconColor = "#dc2626";
-      glowColor = "rgba(220, 38, 38, 0.5)";
+      bgColor = "rgba(22, 163, 74, 0.35)";
+      borderColor = "rgba(22, 163, 74, 1)";
+      textColor = "#166534";
+      iconColor = "#16a34a";
+      glowColor = "rgba(22, 163, 74, 0.5)";
     } else if (volDeclineStrength >= 30) {
-      bgColor = "rgba(239, 68, 68, 0.3)";
-      borderColor = "rgba(239, 68, 68, 0.95)";
-      textColor = "#991b1b";
-      iconColor = "#ef4444";
-      glowColor = "rgba(239, 68, 68, 0.4)";
+      bgColor = "rgba(34, 197, 94, 0.3)";
+      borderColor = "rgba(34, 197, 94, 0.95)";
+      textColor = "#166534";
+      iconColor = "#22c55e";
+      glowColor = "rgba(34, 197, 94, 0.4)";
     } else {
-      bgColor = "rgba(239, 68, 68, 0.2)";
-      borderColor = "rgba(239, 68, 68, 0.8)";
-      textColor = "#991b1b";
-      iconColor = "#ef4444";
-      glowColor = "rgba(239, 68, 68, 0.3)";
+      bgColor = "rgba(34, 197, 94, 0.2)";
+      borderColor = "rgba(34, 197, 94, 0.8)";
+      textColor = "#166534";
+      iconColor = "#22c55e";
+      glowColor = "rgba(34, 197, 94, 0.3)";
     }
   } else if (isEarlyVolDrop) {
     bgColor = "rgba(249, 115, 22, 0.25)";
@@ -472,11 +474,12 @@ function renderPulseVolumeMarker(
     iconColor = "#8b5cf6";
     glowColor = "rgba(139, 92, 246, 0.35)";
   } else if (isVolRise) {
-    bgColor = "rgba(34, 197, 94, 0.25)";
-    borderColor = "rgba(34, 197, 94, 0.85)";
-    textColor = "#15803d";
-    iconColor = "#22c55e";
-    glowColor = "rgba(34, 197, 94, 0.35)";
+    // 放量上涨 — 红色（A股：上涨=红）
+    bgColor = "rgba(239, 68, 68, 0.25)";
+    borderColor = "rgba(239, 68, 68, 0.85)";
+    textColor = "#991b1b";
+    iconColor = "#ef4444";
+    glowColor = "rgba(239, 68, 68, 0.35)";
   } else if (isShrinkRise) {
     bgColor = "rgba(234, 179, 8, 0.25)";
     borderColor = "rgba(234, 179, 8, 0.85)";
@@ -503,15 +506,15 @@ function renderPulseVolumeMarker(
 
   return (
     <g key={`pv-${marker.type}-${idx}`}>
-      {/* 放量下跌危险区域：红色半透明光晕 */}
+      {/* 放量下跌危险区域：绿色半透明光晕（A股：下跌=绿） */}
       {isVolumeDecline && (
         <>
           <circle cx={x} cy={y} r={isStrongDecline ? 22 : 16}
-            fill={volDeclineStrength >= 50 ? "rgba(220, 38, 38, 0.08)" : "rgba(239, 68, 68, 0.06)"}
+            fill={volDeclineStrength >= 50 ? "rgba(22, 163, 74, 0.08)" : "rgba(34, 197, 94, 0.06)"}
             stroke="none"
           />
           <circle cx={x} cy={y} r={isStrongDecline ? 15 : 11}
-            fill={volDeclineStrength >= 50 ? "rgba(220, 38, 38, 0.12)" : "rgba(239, 68, 68, 0.08)"}
+            fill={volDeclineStrength >= 50 ? "rgba(22, 163, 74, 0.12)" : "rgba(34, 197, 94, 0.08)"}
             stroke="none"
           />
         </>
@@ -536,7 +539,7 @@ function renderPulseVolumeMarker(
       {volDeclineStrength >= 50 && (
         <circle
           cx={x} cy={y} r={16}
-          fill="none" stroke="rgba(220, 38, 38, 0.3)" strokeWidth={1}
+          fill="none" stroke="rgba(22, 163, 74, 0.3)" strokeWidth={1}
           strokeDasharray="3 3" opacity={0.5}
         />
       )}
