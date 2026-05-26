@@ -63,15 +63,8 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
   // Check if there are dangerous signals that should auto-expand
   const hasDangerSignal = activeRules.has("vol_decline_danger") || activeRules.has("pulse_decline_danger");
 
-  // Auto-expand when dangerous signals appear (unless user manually collapsed)
-  useEffect(() => {
-    if (hasDangerSignal && manualOverride === null) {
-      // Don't override user's manual toggle, but auto-expand if no manual override
-    }
-  }, [hasDangerSignal, manualOverride]);
-
-  // Show expanded if: user explicitly expanded, or autoExpanded is active (and user hasn't manually collapsed), or danger signal present
-  const expanded = manualOverride !== null ? manualOverride : !!(autoExpanded || hasDangerSignal);
+  // Default collapsed. Only expand when user manually expands.
+  const expanded = manualOverride === true;
 
   // Helper: check if a rule is active and return highlight class
   const ruleClass = (key: RuleKey, baseClass = "") => {
