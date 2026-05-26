@@ -98,7 +98,7 @@ const TimelineTooltip = ({ active, payload }: any) => {
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
         <span className="text-muted-foreground">成交额</span>
-        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * data.price)}</span>
+        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * (data.price ?? 0))}</span>
       </div>
       {signal && (
         <div className="mt-2 pt-2 border-t border-border">
@@ -2110,13 +2110,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 </>
               )}
               {crosshairItem.dif != null && (
-                <span className="text-blue-600">DIF {crosshairItem.dif.toFixed(3)}</span>
+                <span className="text-blue-600">DIF {(crosshairItem.dif ?? 0).toFixed(3)}</span>
               )}
               {crosshairItem.dea != null && (
-                <span className="text-orange-600">DEA {crosshairItem.dea.toFixed(3)}</span>
+                <span className="text-orange-600">DEA {(crosshairItem.dea ?? 0).toFixed(3)}</span>
               )}
               {crosshairItem.macd != null && (
-                <span className={crosshairItem.macd >= 0 ? "text-red-600" : "text-green-600"}>MACD {crosshairItem.macd.toFixed(3)}</span>
+                <span className={crosshairItem.macd >= 0 ? "text-red-600" : "text-green-600"}>MACD {(crosshairItem.macd ?? 0).toFixed(3)}</span>
               )}
             </span>
           );

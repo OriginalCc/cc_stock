@@ -255,7 +255,7 @@ function SectorCard({ sector, rank, onClick }: { sector: SectorItem; rank: numbe
       <div className="flex items-center gap-3 text-xs text-muted-foreground mb-1.5">
         <span>指数 {(sector.price ?? 0).toFixed(2)}</span>
         <span>成交 {formatVolume(sector.volume)}</span>
-        {sector.turnover > 0 && <span>换手 {sector.turnover.toFixed(1)}%</span>}
+        {sector.turnover > 0 && <span>换手 {(sector.turnover ?? 0).toFixed(1)}%</span>}
       </div>
       <div className="flex items-center gap-2 text-xs">
         <div className="flex-1 h-1.5 bg-green-500/30 rounded-full overflow-hidden">
@@ -318,12 +318,12 @@ function StockRow({ stock, onSelectStock }: { stock: SectorStock; onSelectStock?
       </div>
       <div className="shrink-0 w-[50px] text-right">
         <span className={`text-xs ${stock.volumeRatio >= 2 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
-          {stock.volumeRatio > 0 ? `${stock.volumeRatio.toFixed(1)}` : "--"}
+          {stock.volumeRatio > 0 ? `${(stock.volumeRatio ?? 0).toFixed(1)}` : "--"}
         </span>
       </div>
       <div className="shrink-0 w-[50px] text-right">
         <span className={`text-xs ${stock.turnover >= 5 ? "text-orange-600 font-medium" : "text-muted-foreground"}`}>
-          {stock.turnover > 0 ? `${stock.turnover.toFixed(1)}%` : "--"}
+          {stock.turnover > 0 ? `${(stock.turnover ?? 0).toFixed(1)}%` : "--"}
         </span>
       </div>
       <div className="shrink-0 w-[60px] text-right hidden sm:block">
@@ -780,7 +780,7 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
                         {cat === "capital_gathering" ? "资金蓄势" : cat === "pullback_recovery" ? "回调企稳" : cat === "momentum_shift" ? "动能切换" : "产业链联动"}
                       </span>
                     </div>
-                    <div className="text-lg font-bold">{catAccuracy.toFixed(0)}%</div>
+                    <div className="text-lg font-bold">{(catAccuracy ?? 0).toFixed(0)}%</div>
                     <div className="text-[10px] text-muted-foreground">
                       {s.correct}/{s.total} 正确 · 平均评分{(s.avgScore ?? 0).toFixed(0)}
                     </div>
@@ -898,7 +898,7 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
                               <td className="py-2 px-2 text-right tabular-nums">
                                 {rec.isVerified && rec.actualChange !== null ? (
                                   <span className={getChangeColor(rec.actualChange)}>
-                                    {rec.actualChange >= 0 ? "+" : ""}{rec.actualChange.toFixed(2)}%
+                                    {rec.actualChange >= 0 ? "+" : ""}{(rec.actualChange ?? 0).toFixed(2)}%
                                   </span>
                                 ) : (
                                   <span className="text-muted-foreground">--</span>
@@ -960,10 +960,10 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
                                                 {stock.mainNetInflow !== 0 ? formatAmount(stock.mainNetInflow) : "--"}
                                               </td>
                                               <td className="py-1 px-2 text-right text-muted-foreground">
-                                                {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(1) : "--"}
+                                                {stock.volumeRatio > 0 ? (stock.volumeRatio ?? 0).toFixed(1) : "--"}
                                               </td>
                                               <td className="py-1 px-2 text-right text-muted-foreground">
-                                                {stock.turnover > 0 ? `${stock.turnover.toFixed(1)}%` : "--"}
+                                                {stock.turnover > 0 ? `${(stock.turnover ?? 0).toFixed(1)}%` : "--"}
                                               </td>
                                               <td className={`py-1 px-2 text-right font-bold ${stock.recommendScore >= 60 ? "text-red-500" : stock.recommendScore >= 40 ? "text-amber-500" : "text-muted-foreground"}`}>
                                                 {stock.recommendScore}

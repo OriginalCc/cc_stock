@@ -1024,7 +1024,7 @@ export const EarlyTradingScreener = React.memo(function EarlyTradingScreener({ o
                       >
                         <span className="font-medium">{item.name}</span>
                         <span className={`tabular-nums ${changePct >= 0 ? "text-red-500" : "text-green-500"}`}>
-                          {changePct > 0 ? "+" : ""}{changePct.toFixed(2)}%
+                          {changePct > 0 ? "+" : ""}{(changePct ?? 0).toFixed(2)}%
                         </span>
                       </button>
                     );
@@ -1227,13 +1227,13 @@ export const EarlyTradingScreener = React.memo(function EarlyTradingScreener({ o
                         <TableCell className="py-2">
                           <div className={`flex items-center gap-0.5 text-xs font-medium tabular-nums ${priceColor}`}>
                             {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                            {stock.changePercent > 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                            {stock.changePercent > 0 ? "+" : ""}{(stock.changePercent ?? 0).toFixed(2)}%
                           </div>
-                          <div className="text-[10px] text-muted-foreground font-mono">{stock.price.toFixed(2)}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono">{(stock.price ?? 0).toFixed(2)}</div>
                         </TableCell>
                         <TableCell className="py-2">
                           <Badge variant="outline" className={`text-[9px] h-4 px-1.5 ${gapStyle.bg} ${gapStyle.text}`}>
-                            {stock.openGapRate > 0 ? "+" : ""}{stock.openGapRate.toFixed(1)}%
+                            {stock.openGapRate > 0 ? "+" : ""}{(stock.openGapRate ?? 0).toFixed(1)}%
                           </Badge>
                         </TableCell>
                         <TableCell className="py-2">
@@ -1322,12 +1322,12 @@ export const EarlyTradingScreener = React.memo(function EarlyTradingScreener({ o
                         </TableCell>
                         <TableCell className="py-2">
                           <span className={`text-xs font-medium tabular-nums ${stock.volumeRatio >= 2 ? "text-red-500" : stock.volumeRatio >= 1.5 ? "text-orange-500" : "text-muted-foreground"}`}>
-                            {stock.volumeRatio.toFixed(1)}
+                            {(stock.volumeRatio ?? 0).toFixed(1)}
                           </span>
                         </TableCell>
                         <TableCell className="py-2">
                           <span className={`text-[10px] font-medium tabular-nums ${stock.first30MinChange >= 0 ? "text-red-500" : "text-green-500"}`}>
-                            {stock.first30MinChange > 0 ? "+" : ""}{stock.first30MinChange.toFixed(2)}%
+                            {stock.first30MinChange > 0 ? "+" : ""}{(stock.first30MinChange ?? 0).toFixed(2)}%
                           </span>
                         </TableCell>
                         <TableCell className="py-2">
@@ -1389,19 +1389,19 @@ export const EarlyTradingScreener = React.memo(function EarlyTradingScreener({ o
                       <div className="p-2 rounded-md bg-muted/30 border border-border/50">
                         <div className="text-[9px] text-muted-foreground">开盘缺口率</div>
                         <div className={`text-xs font-bold tabular-nums ${timelinePopup.openGapRate !== undefined && timelinePopup.openGapRate >= 0 ? "text-red-500" : "text-green-500"}`}>
-                          {timelinePopup.openGapRate !== undefined ? `${timelinePopup.openGapRate > 0 ? "+" : ""}${timelinePopup.openGapRate.toFixed(1)}%` : "--"}
+                          {timelinePopup.openGapRate !== undefined ? `${timelinePopup.openGapRate > 0 ? "+" : ""}${(timelinePopup.openGapRate ?? 0).toFixed(1)}%` : "--"}
                         </div>
                       </div>
                       <div className="p-2 rounded-md bg-muted/30 border border-border/50">
                         <div className="text-[9px] text-muted-foreground">前30分钟涨跌</div>
                         <div className={`text-xs font-bold tabular-nums ${timelinePopup.first30MinChange !== undefined && timelinePopup.first30MinChange >= 0 ? "text-red-500" : "text-green-500"}`}>
-                          {timelinePopup.first30MinChange !== undefined ? `${timelinePopup.first30MinChange > 0 ? "+" : ""}${timelinePopup.first30MinChange.toFixed(2)}%` : "--"}
+                          {timelinePopup.first30MinChange !== undefined ? `${timelinePopup.first30MinChange > 0 ? "+" : ""}${(timelinePopup.first30MinChange ?? 0).toFixed(2)}%` : "--"}
                         </div>
                       </div>
                       <div className="p-2 rounded-md bg-muted/30 border border-border/50">
                         <div className="text-[9px] text-muted-foreground">早盘量比</div>
                         <div className={`text-xs font-bold tabular-nums ${timelinePopup.earlyVolumeRatio !== undefined && timelinePopup.earlyVolumeRatio >= 2 ? "text-red-500" : "text-foreground"}`}>
-                          {timelinePopup.earlyVolumeRatio !== undefined ? timelinePopup.earlyVolumeRatio.toFixed(2) : "--"}
+                          {timelinePopup.earlyVolumeRatio !== undefined ? (timelinePopup.earlyVolumeRatio ?? 0).toFixed(2) : "--"}
                         </div>
                       </div>
                     </div>

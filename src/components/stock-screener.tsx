@@ -1080,7 +1080,7 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                   {item.name}
                   {item.changePercent !== undefined && (
                     <span className={item.changePercent >= 0 ? "text-red-500" : "text-green-500"}>
-                      {item.changePercent >= 0 ? "+" : ""}{item.changePercent.toFixed(2)}%
+                      {item.changePercent >= 0 ? "+" : ""}{(item.changePercent ?? 0).toFixed(2)}%
                     </span>
                   )}
                 </button>
@@ -2417,7 +2417,7 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                       </div>
                       <div className="flex items-center gap-2 text-xs">
                         <span className={`font-mono font-medium ${changeColor}`}>
-                          {isUp ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                          {isUp ? "+" : ""}{(stock.changePercent ?? 0).toFixed(2)}%
                         </span>
                         {stock.resonanceTags && (
                           <span className="text-[10px] text-rose-500 font-medium">🎯{stock.resonanceTags}</span>
@@ -2441,7 +2441,7 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
               </div>
               {/* Quick stats */}
               <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
-                <span>平均综合评分 <strong className="text-foreground">{avgComp.toFixed(0)}</strong></span>
+                <span>平均综合评分 <strong className="text-foreground">{(avgComp ?? 0).toFixed(0)}</strong></span>
                 <span>共振标的 <strong className="text-rose-500">{resonanceCount}</strong>只</span>
                 <span>资金流入 <strong className="text-red-500">{inflowCount}</strong>只</span>
                 <span>均线上方 <strong className="text-emerald-500">{aboveVwapCount}</strong>只</span>
@@ -2819,7 +2819,7 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                           )}
                         </TableCell>
                         <TableCell className={`text-xs font-mono py-2 ${changeColor}`}>
-                          {stock.price.toFixed(2)}
+                          {(stock.price ?? 0).toFixed(2)}
                         </TableCell>
                         <TableCell className={`text-xs font-mono py-2 font-medium ${changeColor}`}>
                           <div className="flex items-center gap-0.5">
@@ -2828,11 +2828,11 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                             ) : (
                               <ArrowDownRight className="w-3 h-3" />
                             )}
-                            {stock.changePercent.toFixed(2)}%
+                            {(stock.changePercent ?? 0).toFixed(2)}%
                           </div>
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2">
-                          {stock.turnover.toFixed(2)}
+                          {(stock.turnover ?? 0).toFixed(2)}
                         </TableCell>
                         <TableCell className={`text-xs font-mono py-2 ${stock.volumeRatio >= 1.5 ? "text-amber-500" : stock.volumeRatio >= 1 ? "text-foreground" : "text-muted-foreground"}`}>
                           {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(2) : "--"}
@@ -2877,14 +2877,14 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                         <TableCell className="text-xs font-mono py-2">
                           {stock.buySellRatio > 0 ? (
                             <span className={stock.buySellRatio >= 1.5 ? "text-red-500" : stock.buySellRatio >= 1 ? "text-orange-500" : "text-muted-foreground"}>
-                              {stock.buySellRatio.toFixed(1)}
+                              {(stock.buySellRatio ?? 0).toFixed(1)}
                             </span>
                           ) : "--"}
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2">
                           {stock.pricePosition > 0 ? (
                             <span className={stock.pricePosition >= 80 ? "text-red-500" : stock.pricePosition >= 60 ? "text-orange-500" : "text-muted-foreground"}>
-                              {stock.pricePosition.toFixed(0)}%
+                              {(stock.pricePosition ?? 0).toFixed(0)}%
                             </span>
                           ) : "--"}
                         </TableCell>
@@ -2906,14 +2906,14 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                         <TableCell className="text-xs font-mono py-2">
                           {stock.largeOrderRatio > 0 ? (
                             <span className={stock.largeOrderRatio >= 5 ? "text-red-500 font-medium" : stock.largeOrderRatio >= 3 ? "text-orange-500" : "text-muted-foreground"}>
-                              {stock.largeOrderRatio.toFixed(1)}
+                              {(stock.largeOrderRatio ?? 0).toFixed(1)}
                             </span>
                           ) : "--"}
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2">
                           {stock.vwapDeviation !== 0 ? (
                             <span className={Math.abs(stock.vwapDeviation) >= 3 ? "text-orange-500" : "text-muted-foreground"}>
-                              {stock.vwapDeviation > 0 ? "+" : ""}{stock.vwapDeviation.toFixed(1)}
+                              {stock.vwapDeviation > 0 ? "+" : ""}{(stock.vwapDeviation ?? 0).toFixed(1)}
                             </span>
                           ) : "--"}
                         </TableCell>

@@ -259,7 +259,7 @@ function convertTo5DayTimeline(
       const changePercent = refClose > 0 ? ((price - refClose) / refClose) * 100 : 0;
       items.push({
         time: bar.time, price, avgPrice, volume: bar.volume, displayVolume: bar.volume,
-        changePercent: Number(changePercent.toFixed(2)), date: dateStr, dayIndex: di, dayLabel, isDayStart: ti === 0,
+        changePercent: Number((changePercent ?? 0).toFixed(2)), date: dateStr, dayIndex: di, dayLabel, isDayStart: ti === 0,
       });
     }
     const lastBar = minuteBars[minuteBars.length - 1];
@@ -299,7 +299,7 @@ const FiveDayTooltip = ({ active, payload }: any) => {
 function PercentYTick(props: any) {
   const { x, y, payload, prevClose } = props;
   if (!prevClose || prevClose <= 0) {
-    return <text x={x} y={y} dy={4} textAnchor="end" fontSize={9} fontFamily="monospace" fill="#94a3b8">{payload.value.toFixed(2)}</text>;
+    return <text x={x} y={y} dy={4} textAnchor="end" fontSize={9} fontFamily="monospace" fill="#94a3b8">{(payload.value ?? 0).toFixed(2)}</text>;
   }
   const pct = ((payload.value - prevClose) / prevClose) * 100;
   const isZero = Math.abs(pct) < 0.01;
@@ -308,7 +308,7 @@ function PercentYTick(props: any) {
   if (isZero) {
     return (
       <g>
-        <text x={x} y={y} textAnchor="end" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ef4444">{payload.value.toFixed(2)}</text>
+        <text x={x} y={y} textAnchor="end" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ef4444">{(payload.value ?? 0).toFixed(2)}</text>
         <text x={x} y={y + 12} textAnchor="end" fontSize={8} fontWeight={600} fill="#ef4444" opacity={0.8}>0.0%</text>
       </g>
     );
@@ -316,8 +316,8 @@ function PercentYTick(props: any) {
 
   return (
     <g>
-      <text x={x} y={y} textAnchor="end" fontSize={9} fontFamily="monospace" fill={isUp ? "#ef4444" : "#16a34a"}>{payload.value.toFixed(2)}</text>
-      <text x={x} y={y + 11} textAnchor="end" fontSize={7} fill={isUp ? "#ef4444" : "#16a34a"} opacity={0.7}>{isUp ? "+" : ""}{pct.toFixed(1)}%</text>
+      <text x={x} y={y} textAnchor="end" fontSize={9} fontFamily="monospace" fill={isUp ? "#ef4444" : "#16a34a"}>{(payload.value ?? 0).toFixed(2)}</text>
+      <text x={x} y={y + 11} textAnchor="end" fontSize={7} fill={isUp ? "#ef4444" : "#16a34a"} opacity={0.7}>{isUp ? "+" : ""}{(pct ?? 0).toFixed(1)}%</text>
     </g>
   );
 }
@@ -438,7 +438,7 @@ function InstitutionalIntentPanel({ result }: { result: FiveDayIntentResult }) {
                 </div>
                 <div className="flex items-center gap-1.5 text-xs">
                   <span className={`font-mono ${d.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
-                    {d.changePercent >= 0 ? "+" : ""}{d.changePercent.toFixed(2)}%
+                    {d.changePercent >= 0 ? "+" : ""}{(d.changePercent ?? 0).toFixed(2)}%
                   </span>
                   <span className="text-muted-foreground">量{formatVolume(d.totalVolume)}</span>
                 </div>
@@ -914,8 +914,8 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                 return (
                   <div key={i} className="flex items-center gap-1.5 shrink-0 text-xs">
                     <span className="text-muted-foreground font-medium">{ds.label.split(" ").pop() || ds.date.slice(5)}</span>
-                    <span className={`font-mono font-semibold ${isUp ? "text-red-500" : "text-green-500"}`}>{ds.close.toFixed(2)}</span>
-                    <span className={`font-mono text-[10px] ${isUp ? "text-red-500" : "text-green-500"}`}>{isUp ? "+" : ""}{ds.change.toFixed(2)}%</span>
+                    <span className={`font-mono font-semibold ${isUp ? "text-red-500" : "text-green-500"}`}>{(ds.close ?? 0).toFixed(2)}</span>
+                    <span className={`font-mono text-[10px] ${isUp ? "text-red-500" : "text-green-500"}`}>{isUp ? "+" : ""}{(ds.change ?? 0).toFixed(2)}%</span>
                   </div>
                 );
               })}
@@ -1033,8 +1033,8 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                         <g key="hi-tag">
                           <polygon points={`${chartRight - 8},${y + 5} ${chartRight + 2},${y + 5} ${chartRight - 3},${y - 3}`} fill="#ef4444" />
                           <rect x={chartRight + 1} y={y - 17} width={76} height={34} rx={3} fill="#ef4444" fillOpacity={0.6} />
-                          <text x={chartRight + 39} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{highestPrice.toFixed(2)}</text>
-                          <text x={chartRight + 39} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">+{pct.toFixed(2)}%</text>
+                          <text x={chartRight + 39} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{(highestPrice ?? 0).toFixed(2)}</text>
+                          <text x={chartRight + 39} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">+{(pct ?? 0).toFixed(2)}%</text>
                         </g>
                       );
                     }
@@ -1047,8 +1047,8 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                         <g key="lo-tag">
                           <polygon points={`${chartRight - 8},${y - 5} ${chartRight + 2},${y - 5} ${chartRight - 3},${y + 3}`} fill="#22c55e" />
                           <rect x={chartRight + 1} y={y - 17} width={76} height={34} rx={3} fill="#22c55e" fillOpacity={0.6} />
-                          <text x={chartRight + 39} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{lowestPrice.toFixed(2)}</text>
-                          <text x={chartRight + 39} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">{pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</text>
+                          <text x={chartRight + 39} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{(lowestPrice ?? 0).toFixed(2)}</text>
+                          <text x={chartRight + 39} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">{pct >= 0 ? "+" : ""}{(pct ?? 0).toFixed(2)}%</text>
                         </g>
                       );
                     }

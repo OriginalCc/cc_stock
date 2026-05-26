@@ -946,3 +946,32 @@ Stage Summary:
 - Primary crash source: time-sharing-panel.tsx `fullDayData` empty slots with null price/avgPrice/dif/dea/macd
 - All display values now use `?.toFixed(N) ?? "--"` or `(val ?? 0).toFixed(N)` pattern
 - Fingerprint computations use `(val ?? 0).toFixed(N)` to avoid cache key crashes
+
+---
+Task ID: 1-continued
+Agent: main
+Task: Fix remaining "Cannot read properties of null (reading 'toFixed')" errors
+
+Work Log:
+- Found that previous fix was incomplete - still had unprotected `.toFixed()` calls in multiple components
+- Fixed time-sharing-panel.tsx: crosshairItem.dif/dea/macd.toFixed(3) → (val ?? 0).toFixed(3), data.price in TimelineTooltip
+- Fixed signal-summary-panel.tsx: lastTL.avgPrice division-by-null, volRatio.toFixed(2) 
+- Fixed five-day-timeline-panel.tsx: 12 unprotected toFixed calls
+- Fixed mini-timeline-panel.tsx: 4 unprotected toFixed calls
+- Fixed early-trading-screener.tsx: 9 unprotected toFixed calls
+- Fixed low-open-screener.tsx: 11 unprotected toFixed calls
+- Fixed stock-screener.tsx: 10 unprotected toFixed calls
+- Fixed t-trade-journal.tsx: 2 nullable currentPrice.toFixed(2) calls
+- Fixed screener-history-panel.tsx: 22 unprotected toFixed calls
+- Fixed risk-alert-panel.tsx: 4 unprotected toFixed calls
+- Fixed sector-rotation-panel.tsx: additional fixes for turnover/volumeRatio
+- Fixed limit-up-analysis.tsx: 1 additional fix
+- Fixed intraday-screener.tsx: 2 additional fixes
+- Lint passes, dev server running
+
+Stage Summary:
+- Total ~130+ `.toFixed()` null safety fixes across 14 component files
+- Root cause: `fullDayData` in time-sharing-panel uses `null as unknown as number` for empty time slots
+- All display values now use `?.toFixed(N) ?? "--"` or `(val ?? 0).toFixed(N)` pattern
+- All computed/fingerprint values use `(val ?? 0).toFixed(N)` pattern
+- Remaining unprotected `.toFixed()` calls are all on locally-computed values (Math.max, arithmetic, etc.) that are guaranteed to be numbers

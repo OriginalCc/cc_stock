@@ -204,10 +204,10 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
       <div className="px-3 py-1.5 border-b border-border/50 flex items-center gap-2 text-xs">
         <span className="font-medium text-foreground">{title}</span>
         <span className={`font-bold tabular-nums text-xs ${isUp ? "text-red-500" : "text-green-500"}`}>
-          {lastItem.price.toFixed(2)}
+          {(lastItem.price ?? 0).toFixed(2)}
         </span>
         <span className={`tabular-nums text-[10px] ${isUp ? "text-red-500" : "text-green-500"}`}>
-          {isUp ? "+" : ""}{lastItem.changePercent.toFixed(2)}%
+          {isUp ? "+" : ""}{(lastItem.changePercent ?? 0).toFixed(2)}%
         </span>
         {badge}
       </div>
@@ -227,7 +227,7 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
             yAxisId="price" domain={[yMin, yMax]}
             tick={{ fontSize: 7, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false} axisLine={false} width={42}
-            tickFormatter={(v: number) => v.toFixed(2)}
+            tickFormatter={(v: number) => (v ?? 0).toFixed(2)}
           />
           <YAxis
             yAxisId="percent" orientation="right" domain={[percentMin, percentMax]}
@@ -278,7 +278,7 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
         <ComposedChart data={chartData} margin={{ top: 0, right: 45, left: 2, bottom: 0 }}>
           <XAxis dataKey="idx" type="number" domain={[0, chartData.length - 1]} tick={false} tickLine={false} axisLine={false} />
           <YAxis yAxisId="macd" domain={[macdMin - macdPad, macdMax + macdPad]} tick={false} tickLine={false} axisLine={false} width={42} />
-          <YAxis yAxisId="macd-r" orientation="right" domain={[macdMin - macdPad, macdMax + macdPad]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => v.toFixed(3)} />
+          <YAxis yAxisId="macd-r" orientation="right" domain={[macdMin - macdPad, macdMax + macdPad]} tick={{ fontSize: 6, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={38} tickFormatter={(v: number) => (v ?? 0).toFixed(3)} />
           <ReferenceLine yAxisId="macd-r" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.3} />
           <Bar yAxisId="macd-r" dataKey="macd" isAnimationActive={false} barSize={barSize}
             shape={timelineMacdBarShape}

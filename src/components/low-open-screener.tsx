@@ -757,7 +757,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                   {item.name}
                   {item.changePercent !== undefined && (
                     <span className={item.changePercent >= 0 ? "text-red-500" : "text-green-500"}>
-                      {item.changePercent >= 0 ? "+" : ""}{item.changePercent.toFixed(2)}%
+                      {item.changePercent >= 0 ? "+" : ""}{(item.changePercent ?? 0).toFixed(2)}%
                     </span>
                   )}
                 </button>
@@ -1021,7 +1021,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
               <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
                 <Gauge className="w-4 h-4 text-muted-foreground" />
                 <span className={`text-lg font-bold ${getCompositeScoreColor(statsOverview.avgComposite)}`}>
-                  {statsOverview.avgComposite.toFixed(1)}
+                  {(statsOverview.avgComposite ?? 0).toFixed(1)}
                 </span>
                 <span className="text-[10px] text-muted-foreground">平均胜率</span>
               </div>
@@ -1029,7 +1029,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
               <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
                 <TrendingUp className="w-4 h-4 text-muted-foreground" />
                 <span className={`text-lg font-bold ${statsOverview.avgRecovery >= 2 ? "text-red-500" : statsOverview.avgRecovery >= 0 ? "text-orange-500" : "text-green-500"}`}>
-                  {statsOverview.avgRecovery >= 0 ? "+" : ""}{statsOverview.avgRecovery.toFixed(2)}%
+                  {statsOverview.avgRecovery >= 0 ? "+" : ""}{(statsOverview.avgRecovery ?? 0).toFixed(2)}%
                 </span>
                 <span className="text-[10px] text-muted-foreground">平均恢复</span>
               </div>
@@ -1049,7 +1049,7 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
               <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30">
                 <BarChart2 className="w-4 h-4 text-muted-foreground" />
                 <span className={`text-lg font-bold ${statsOverview.avgVolumeRatio >= 2 ? "text-red-500" : statsOverview.avgVolumeRatio >= 1.5 ? "text-orange-500" : ""}`}>
-                  {statsOverview.avgVolumeRatio.toFixed(1)}
+                  {(statsOverview.avgVolumeRatio ?? 0).toFixed(1)}
                 </span>
                 <span className="text-[10px] text-muted-foreground">平均量比</span>
               </div>
@@ -1276,12 +1276,12 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                           </TableCell>
                           <TableCell className="text-xs py-2">
                             <span className="font-mono font-semibold text-green-600 dark:text-green-400">
-                              {stock.openGapRate.toFixed(2)}%
+                              {(stock.openGapRate ?? 0).toFixed(2)}%
                             </span>
                           </TableCell>
                           <TableCell className="text-xs py-2">
                             <span className={`font-mono font-medium ${stock.recoveryRate >= 2 ? "text-red-500" : stock.recoveryRate >= 0 ? "text-orange-500" : "text-green-500"}`}>
-                              {stock.recoveryRate >= 0 ? "+" : ""}{stock.recoveryRate.toFixed(2)}%
+                              {stock.recoveryRate >= 0 ? "+" : ""}{(stock.recoveryRate ?? 0).toFixed(2)}%
                             </span>
                           </TableCell>
                           <TableCell className="text-xs py-2">
@@ -1305,20 +1305,20 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
                           </TableCell>
                           <TableCell className="text-xs py-2">
                             <span className={`font-mono ${stock.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
-                              {stock.changePercent >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                              {stock.changePercent >= 0 ? "+" : ""}{(stock.changePercent ?? 0).toFixed(2)}%
                             </span>
                           </TableCell>
                           <TableCell className="text-xs py-2">
-                            <div className="font-mono">{stock.price.toFixed(2)}</div>
-                            <div className="text-[11px] text-muted-foreground">开 {stock.open.toFixed(2)}</div>
+                            <div className="font-mono">{(stock.price ?? 0).toFixed(2)}</div>
+                            <div className="text-[11px] text-muted-foreground">开 {(stock.open ?? 0).toFixed(2)}</div>
                           </TableCell>
                           <TableCell className="text-xs py-2">
                             <span className={`font-mono ${stock.volumeRatio >= 2 ? "text-red-500 font-semibold" : stock.volumeRatio >= 1.5 ? "text-orange-500" : ""}`}>
-                              {stock.volumeRatio.toFixed(1)}
+                              {(stock.volumeRatio ?? 0).toFixed(1)}
                             </span>
                           </TableCell>
                           <TableCell className="text-xs py-2 font-mono">
-                            {stock.turnover.toFixed(1)}%
+                            {(stock.turnover ?? 0).toFixed(1)}%
                           </TableCell>
                           <TableCell className="text-xs py-2 font-mono">
                             {formatMarketCap(stock.marketCap)}

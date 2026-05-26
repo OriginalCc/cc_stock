@@ -320,31 +320,31 @@ export const ScreenerHistoryPanel = React.memo(function ScreenerHistoryPanel({ o
               <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
                 <div className="text-xs text-muted-foreground mb-1">次日胜率</div>
                 <div className={`text-lg font-bold ${stats.accuracy >= 50 ? "text-red-500" : "text-green-500"}`}>
-                  {stats.accuracy.toFixed(1)}%
+                  {(stats.accuracy ?? 0).toFixed(1)}%
                 </div>
               </div>
               <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
                 <div className="text-xs text-muted-foreground mb-1">次日均幅</div>
                 <div className={`text-lg font-bold ${stats.avgNextDayChange >= 0 ? "text-red-500" : "text-green-500"}`}>
-                  {stats.avgNextDayChange >= 0 ? "+" : ""}{stats.avgNextDayChange.toFixed(2)}%
+                  {stats.avgNextDayChange >= 0 ? "+" : ""}{(stats.avgNextDayChange ?? 0).toFixed(2)}%
                 </div>
               </div>
               <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
                 <div className="text-xs text-muted-foreground mb-1">3日均幅</div>
                 <div className={`text-lg font-bold ${stats.avgDay3Change >= 0 ? "text-red-500" : "text-green-500"}`}>
-                  {stats.avgDay3Change >= 0 ? "+" : ""}{stats.avgDay3Change.toFixed(2)}%
+                  {stats.avgDay3Change >= 0 ? "+" : ""}{(stats.avgDay3Change ?? 0).toFixed(2)}%
                 </div>
               </div>
               <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
                 <div className="text-xs text-muted-foreground mb-1">5日均幅</div>
                 <div className={`text-lg font-bold ${stats.avgDay5Change >= 0 ? "text-red-500" : "text-green-500"}`}>
-                  {stats.avgDay5Change >= 0 ? "+" : ""}{stats.avgDay5Change.toFixed(2)}%
+                  {stats.avgDay5Change >= 0 ? "+" : ""}{(stats.avgDay5Change ?? 0).toFixed(2)}%
                 </div>
               </div>
               <div className="rounded-lg border border-border/50 p-3 bg-muted/30">
                 <div className="text-xs text-muted-foreground mb-1">5日走强率</div>
                 <div className={`text-lg font-bold ${stats.day5PositiveCount > stats.verifiedCount - stats.day5PositiveCount ? "text-red-500" : "text-green-500"}`}>
-                  {stats.verifiedCount > 0 ? ((stats.day5PositiveCount / stats.verifiedCount) * 100).toFixed(1) : "0"}%
+                  {stats.verifiedCount > 0 ? ((stats.day5PositiveCount ?? 0) / stats.verifiedCount * 100).toFixed(1) : "0"}%
                 </div>
               </div>
             </div>
@@ -525,19 +525,19 @@ export const ScreenerHistoryPanel = React.memo(function ScreenerHistoryPanel({ o
                           <TableCell className="text-xs py-2 font-medium">{name}</TableCell>
                           <TableCell className="text-xs py-2 text-right text-muted-foreground">{s.count}</TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${winRate >= 50 ? "text-red-500" : "text-green-500"}`}>
-                            {winRate.toFixed(1)}%
+                            {(winRate ?? 0).toFixed(1)}%
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${s.avgChange >= 0 ? "text-red-500" : "text-green-500"}`}>
-                            {s.avgChange >= 0 ? "+" : ""}{s.avgChange.toFixed(2)}%
+                            {s.avgChange >= 0 ? "+" : ""}{(s.avgChange ?? 0).toFixed(2)}%
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${s.avgDay3 >= 0 ? "text-red-500" : "text-green-500"}`}>
-                            {s.avgDay3 >= 0 ? "+" : ""}{s.avgDay3.toFixed(2)}%
+                            {s.avgDay3 >= 0 ? "+" : ""}{(s.avgDay3 ?? 0).toFixed(2)}%
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${s.avgDay5 >= 0 ? "text-red-500" : "text-green-500"}`}>
-                            {s.avgDay5 >= 0 ? "+" : ""}{s.avgDay5.toFixed(2)}%
+                            {s.avgDay5 >= 0 ? "+" : ""}{(s.avgDay5 ?? 0).toFixed(2)}%
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${day5WinRate >= 50 ? "text-red-500" : "text-green-500"}`}>
-                            {day5WinRate.toFixed(1)}%
+                            {(day5WinRate ?? 0).toFixed(1)}%
                           </TableCell>
                         </TableRow>
                       );
@@ -612,19 +612,19 @@ export const ScreenerHistoryPanel = React.memo(function ScreenerHistoryPanel({ o
                             </Badge>
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${stock.avgChange >= 0 ? "text-red-500" : "text-green-500"}`}>
-                            {stock.avgChange >= 0 ? "+" : ""}{stock.avgChange.toFixed(2)}%
+                            {stock.avgChange >= 0 ? "+" : ""}{(stock.avgChange ?? 0).toFixed(2)}%
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono ${winRate >= 50 ? "text-red-500" : "text-green-500"}`}>
-                            {verified > 0 ? `${winRate.toFixed(0)}%` : "--"}
+                            {verified > 0 ? `${(winRate ?? 0).toFixed(0)}%` : "--"}
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${avgDay3 >= 0 ? "text-red-500" : "text-green-500"}`}>
-                            {day3Verified > 0 ? `${avgDay3 >= 0 ? "+" : ""}${avgDay3.toFixed(2)}%` : "--"}
+                            {day3Verified > 0 ? `${avgDay3 >= 0 ? "+" : ""}${(avgDay3 ?? 0).toFixed(2)}%` : "--"}
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono font-medium ${avgDay5 >= 0 ? "text-red-500" : "text-green-500"}`}>
-                            {day5Verified > 0 ? `${avgDay5 >= 0 ? "+" : ""}${avgDay5.toFixed(2)}%` : "--"}
+                            {day5Verified > 0 ? `${avgDay5 >= 0 ? "+" : ""}${(avgDay5 ?? 0).toFixed(2)}%` : "--"}
                           </TableCell>
                           <TableCell className={`text-xs py-2 text-right font-mono ${day5WinRate >= 50 ? "text-red-500" : "text-green-500"}`}>
-                            {day5Verified > 0 ? `${day5WinRate.toFixed(0)}%` : "--"}
+                            {day5Verified > 0 ? `${(day5WinRate ?? 0).toFixed(0)}%` : "--"}
                           </TableCell>
                         </TableRow>
                       );
@@ -703,7 +703,7 @@ function RecordCard({
                 }`}
               >
                 {isPositive ? <ArrowUpRight className="w-2.5 h-2.5 mr-0.5" /> : <ArrowDownRight className="w-2.5 h-2.5 mr-0.5" />}
-                次日{isPositive ? "+" : ""}{record.avgNextDayChange.toFixed(2)}%
+                次日{isPositive ? "+" : ""}{(record.avgNextDayChange ?? 0).toFixed(2)}%
               </Badge>
               {record.avgDay5Change !== 0 && (
                 <Badge
@@ -715,7 +715,7 @@ function RecordCard({
                   }`}
                 >
                   <BarChart3 className="w-2.5 h-2.5 mr-0.5" />
-                  5日{record.avgDay5Change > 0 ? "+" : ""}{record.avgDay5Change.toFixed(2)}%
+                  5日{record.avgDay5Change > 0 ? "+" : ""}{(record.avgDay5Change ?? 0).toFixed(2)}%
                 </Badge>
               )}
               {verifiedStocks.length > 0 && (
@@ -728,7 +728,7 @@ function RecordCard({
                   }`}
                 >
                   <Target className="w-2.5 h-2.5 mr-0.5" />
-                  胜率{stockWinRate.toFixed(0)}%
+                  胜率{(stockWinRate ?? 0).toFixed(0)}%
                 </Badge>
               )}
             </>
@@ -759,14 +759,14 @@ function RecordCard({
               <span className="text-red-500 flex items-center gap-0.5"><ArrowUpRight className="w-2.5 h-2.5" />{stockWinCount}涨</span>
               <span className="text-green-500 flex items-center gap-0.5"><ArrowDownRight className="w-2.5 h-2.5" />{verifiedStocks.length - stockWinCount}跌</span>
               <span className="text-muted-foreground">|</span>
-              <span>次日胜率<span className={stockWinRate >= 50 ? "text-amber-600" : "text-muted-foreground"}>{stockWinRate.toFixed(0)}%</span></span>
+              <span>次日胜率<span className={stockWinRate >= 50 ? "text-amber-600" : "text-muted-foreground"}>{(stockWinRate ?? 0).toFixed(0)}%</span></span>
               {day5Values.length > 0 && (
                 <>
                   <span className="text-muted-foreground">|</span>
-                  <span>5日走强率<span className={day5WinRate >= 50 ? "text-amber-600" : "text-muted-foreground"}>{day5WinRate.toFixed(0)}%</span></span>
+                  <span>5日走强率<span className={day5WinRate >= 50 ? "text-amber-600" : "text-muted-foreground"}>{(day5WinRate ?? 0).toFixed(0)}%</span></span>
                   <span className="text-muted-foreground">|</span>
-                  <span>3日均<span className={record.avgDay3Change >= 0 ? "text-red-500" : "text-green-500"}>{record.avgDay3Change >= 0 ? "+" : ""}{record.avgDay3Change.toFixed(2)}%</span></span>
-                  <span>5日均<span className={record.avgDay5Change >= 0 ? "text-red-500" : "text-green-500"}>{record.avgDay5Change >= 0 ? "+" : ""}{record.avgDay5Change.toFixed(2)}%</span></span>
+                  <span>3日均<span className={record.avgDay3Change >= 0 ? "text-red-500" : "text-green-500"}>{record.avgDay3Change >= 0 ? "+" : ""}{(record.avgDay3Change ?? 0).toFixed(2)}%</span></span>
+                  <span>5日均<span className={record.avgDay5Change >= 0 ? "text-red-500" : "text-green-500"}>{record.avgDay5Change >= 0 ? "+" : ""}{(record.avgDay5Change ?? 0).toFixed(2)}%</span></span>
                 </>
               )}
             </div>

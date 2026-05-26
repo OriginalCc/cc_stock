@@ -613,7 +613,7 @@ export const TTradeJournal = React.memo(function TTradeJournal({
                       <span className="text-muted-foreground">→</span>
                       {isOpen ? (
                         <span className="text-muted-foreground italic">
-                          {currentPrice ? currentPrice.toFixed(2) : "..."}
+                          {currentPrice?.toFixed(2) ?? "..."}
                         </span>
                       ) : (
                         <span className="font-mono">{(trade.exitPrice ?? 0).toFixed(2)}</span>
@@ -679,7 +679,7 @@ export const TTradeJournal = React.memo(function TTradeJournal({
                         <>
                           <div>
                             <span className="text-muted-foreground">当前价：</span>
-                            <span className="font-mono">{currentPrice.toFixed(2)}</span>
+                            <span className="font-mono">{currentPrice?.toFixed(2) ?? "--"}</span>
                           </div>
                           <div>
                             <span className="text-muted-foreground">浮动盈亏：</span>

@@ -93,8 +93,8 @@ export const SignalSummaryPanel = React.memo(function SignalSummaryPanel({
               {(() => {
                 const lastTL = liveTimeline[liveTimeline.length - 1];
                 if (!lastTL) return null;
-                const aboveVWAP = lastTL.price > lastTL.avgPrice;
-                const dev = ((lastTL.price - lastTL.avgPrice) / lastTL.avgPrice * 100).toFixed(2);
+                const aboveVWAP = lastTL.price > (lastTL.avgPrice ?? 0);
+                const dev = (lastTL.avgPrice > 0 ? ((lastTL.price - lastTL.avgPrice) / lastTL.avgPrice * 100) : 0).toFixed(2);
                 return (
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                     <div className={aboveVWAP ? "text-red-500" : "text-green-500"}>
@@ -276,7 +276,7 @@ export const SignalSummaryPanel = React.memo(function SignalSummaryPanel({
                     <div className={volColor}><BarChart3 className="h-4 w-4" /></div>
                     <div>
                       <div className="text-xs text-muted-foreground">量能状态</div>
-                      <div className={`text-sm font-medium ${volColor}`}>{volSignal} ({volRatio.toFixed(2)}x)</div>
+                      <div className={`text-sm font-medium ${volColor}`}>{volSignal} ({(volRatio ?? 0).toFixed(2)}x)</div>
                     </div>
                   </div>
                 );

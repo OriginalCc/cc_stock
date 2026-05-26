@@ -814,7 +814,7 @@ function SectorCard({
 
                       {/* 量比 */}
                       <TableCell className="text-[11px] font-mono py-1.5 text-muted-foreground">
-                        {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(1) : "--"}
+                        {stock.volumeRatio > 0 ? (stock.volumeRatio ?? 0).toFixed(1) : "--"}
                       </TableCell>
 
                       {/* 换手率 */}

@@ -1240,11 +1240,11 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                         </TableCell>
                         <TableCell className="py-2">
                           <span className="text-xs font-medium tabular-nums">
-                            {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(2) : "--"}
+                            {stock.volumeRatio > 0 ? (stock.volumeRatio ?? 0).toFixed(2) : "--"}
                           </span>
                         </TableCell>
                         <TableCell className="py-2">
-                          <span className="text-xs tabular-nums">{stock.turnover > 0 ? stock.turnover.toFixed(2) : "--"}</span>
+                          <span className="text-xs tabular-nums">{stock.turnover > 0 ? (stock.turnover ?? 0).toFixed(2) : "--"}</span>
                         </TableCell>
                         <TableCell className="py-2">
                           <span className="text-[10px] text-muted-foreground tabular-nums">
