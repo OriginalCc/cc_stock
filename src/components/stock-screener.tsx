@@ -2835,7 +2835,7 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                           {(stock.turnover ?? 0).toFixed(2)}
                         </TableCell>
                         <TableCell className={`text-xs font-mono py-2 ${stock.volumeRatio >= 1.5 ? "text-amber-500" : stock.volumeRatio >= 1 ? "text-foreground" : "text-muted-foreground"}`}>
-                          {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(2) : "--"}
+                          {stock.volumeRatio > 0 ? (stock.volumeRatio ?? 0).toFixed(2) : "--"}
                         </TableCell>
                         <TableCell className={`text-xs font-mono py-2 ${mainFlowColor}`}>
                           {stock.mainNetInflow >= 0 ? "+" : ""}
@@ -2869,10 +2869,10 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
                           )}
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2 text-muted-foreground">
-                          {stock.pe > 0 ? stock.pe.toFixed(1) : "--"}
+                          {stock.pe > 0 ? (stock.pe ?? 0).toFixed(1) : "--"}
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2 text-muted-foreground">
-                          {stock.pb > 0 ? stock.pb.toFixed(1) : "--"}
+                          {stock.pb > 0 ? (stock.pb ?? 0).toFixed(1) : "--"}
                         </TableCell>
                         <TableCell className="text-xs font-mono py-2">
                           {stock.buySellRatio > 0 ? (

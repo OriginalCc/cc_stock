@@ -233,8 +233,8 @@ function SVGMiniTimeline({ data, prevClose }: { data: MiniTimelineResult; prevCl
   const items = data.items;
   if (items.length < 2) return <div className="text-[10px] text-muted-foreground text-center py-4">暂无分时数据</div>;
 
-  const prices = items.map((d) => d.price);
-  const avgPrices = items.map((d) => d.avgPrice);
+  const prices = items.map((d) => d.price).filter((p): p is number => p != null);
+  const avgPrices = items.map((d) => d.avgPrice).filter((p): p is number => p != null);
   const minP = Math.min(...prices, ...avgPrices, prevClose) * 0.998;
   const maxP = Math.max(...prices, ...avgPrices, prevClose) * 1.002;
   const range = maxP - minP || 1;
@@ -245,10 +245,10 @@ function SVGMiniTimeline({ data, prevClose }: { data: MiniTimelineResult; prevCl
   const py = 8;
 
   const toX = (i: number) => px + (i / (items.length - 1)) * (w - 2 * px);
-  const toY = (p: number) => py + (1 - (p - minP) / range) * (h - 2 * py);
+  const toY = (p: number) => py + (1 - ((p ?? 0) - minP) / range) * (h - 2 * py);
 
-  const pricePath = items.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.price).toFixed(1)}`).join(" ");
-  const avgPath = items.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.avgPrice).toFixed(1)}`).join(" ");
+  const pricePath = items.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.price ?? 0).toFixed(1)}`).join(" ");
+  const avgPath = items.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.avgPrice ?? 0).toFixed(1)}`).join(" ");
   const prevCloseY = toY(prevClose);
 
   return (

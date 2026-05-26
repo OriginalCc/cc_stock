@@ -419,11 +419,11 @@ export async function fetchMiniTimeline(
           const item = rawItems[i];
           items.push({
             time: item.time,
-            price: Number(item.price.toFixed(2)),
-            avgPrice: Number((item.avgPrice ?? item.price).toFixed(2)),
+            price: Number((item.price ?? 0).toFixed(2)),
+            avgPrice: Number((item.avgPrice ?? item.price ?? 0).toFixed(2)),
             volume: item.volume ?? 0,
             changePercent: Number(
-              (item.changePercent ?? (prevClose > 0 ? ((item.price - prevClose) / prevClose) * 100 : 0)).toFixed(2),
+              ((item.changePercent ?? (prevClose > 0 ? (((item.price ?? 0) - prevClose) / prevClose) * 100 : 0)) ?? 0).toFixed(2),
             ),
           });
         }
@@ -433,11 +433,11 @@ export async function fetchMiniTimeline(
         if (items.length > 0 && items[items.length - 1].time !== lastRaw.time) {
           items.push({
             time: lastRaw.time,
-            price: Number(lastRaw.price.toFixed(2)),
-            avgPrice: Number((lastRaw.avgPrice ?? lastRaw.price).toFixed(2)),
+            price: Number((lastRaw.price ?? 0).toFixed(2)),
+            avgPrice: Number((lastRaw.avgPrice ?? lastRaw.price ?? 0).toFixed(2)),
             volume: lastRaw.volume ?? 0,
             changePercent: Number(
-              (lastRaw.changePercent ?? (prevClose > 0 ? ((lastRaw.price - prevClose) / prevClose) * 100 : 0)).toFixed(2),
+              ((lastRaw.changePercent ?? (prevClose > 0 ? (((lastRaw.price ?? 0) - prevClose) / prevClose) * 100 : 0)) ?? 0).toFixed(2),
             ),
           });
         }

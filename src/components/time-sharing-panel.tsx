@@ -1108,7 +1108,7 @@ function buildOverlayFingerprint(
   }
   // Include expanded IDs in fingerprint so toggleExpand triggers re-render
   const expandedKey = expandedIds.size > 0 ? Array.from(expandedIds).sort().join(",") : "";
-  return `${priceLineLen}:${lastX.toFixed(1)}:${lastY.toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}`;
+  return `${priceLineLen}:${(lastX ?? 0).toFixed(1)}:${(lastY ?? 0).toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}`;
 }
 
 // ── Combined Chart Overlay Renderer ──────────────────────
@@ -2464,7 +2464,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 strokeDasharray="8 4"
                 strokeWidth={1.2}
                 strokeOpacity={0.9}
-                label={{ value: `MA5 ${prevDayMA5.toFixed(2)}`, position: "right", fill: "#eab308", fontSize: 10, fillOpacity: 1 }}
+                label={{ value: `MA5 ${(prevDayMA5 ?? 0).toFixed(2)}`, position: "right", fill: "#eab308", fontSize: 10, fillOpacity: 1 }}
               />
             )}
 
@@ -2552,7 +2552,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   els.push(
                     <g key="hi-tag">
                       <rect x={labelX} y={y - 17} width={76} height={34} rx={3} fill="#ef4444" fillOpacity={0.6} />
-                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{highestPrice.toFixed(2)}</text>
+                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{(highestPrice ?? 0).toFixed(2)}</text>
                       <text x={labelX + 38} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">+{pct.toFixed(2)}%</text>
                     </g>
                   );
@@ -2565,7 +2565,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   els.push(
                     <g key="lo-tag">
                       <rect x={labelX} y={y - 17} width={76} height={34} rx={3} fill="#22c55e" fillOpacity={0.6} />
-                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{lowestPrice.toFixed(2)}</text>
+                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{(lowestPrice ?? 0).toFixed(2)}</text>
                       <text x={labelX + 38} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">{pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</text>
                     </g>
                   );

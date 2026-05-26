@@ -280,11 +280,11 @@ const FiveDayTooltip = ({ active, payload }: any) => {
       <div className="font-medium mb-1.5 text-foreground">{data.date} {data.time}</div>
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
         <span className="text-muted-foreground">价格</span>
-        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2)}</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2) ?? "--"}</span>
         <span className="text-muted-foreground">均价</span>
-        <span className="text-right font-mono text-yellow-500">{data.avgPrice?.toFixed(2)}</span>
+        <span className="text-right font-mono text-yellow-500">{data.avgPrice?.toFixed(2) ?? "--"}</span>
         <span className="text-muted-foreground">涨跌幅</span>
-        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.changePercent?.toFixed(2)}%</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.changePercent?.toFixed(2) ?? "--"}%</span>
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
         <span className="text-muted-foreground">成交额</span>
@@ -1086,7 +1086,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                           <span className="text-muted-foreground">成交额</span>
                           <span className="text-right font-mono text-yellow-500">{formatAmount(data.displayVolume * 100 * data.price)}</span>
                           <span className="text-muted-foreground">价格</span>
-                          <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2)}</span>
+                          <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2) ?? "--"}</span>
                         </div>
                       </div>
                     );
