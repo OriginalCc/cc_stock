@@ -445,7 +445,7 @@ function WatchlistSection({
               </span>
               {item.changePercent !== undefined && (
                 <span className={item.changePercent >= 0 ? "text-red-500" : "text-green-500"}>
-                  {item.changePercent >= 0 ? "+" : ""}{item.changePercent.toFixed(2)}%
+                  {item.changePercent >= 0 ? "+" : ""}{(item.changePercent ?? 0).toFixed(2)}%
                 </span>
               )}
             </div>
@@ -638,7 +638,7 @@ function SectorCard({
               className="text-xs py-0 px-1.5 font-mono bg-red-500/5 border-red-500/20 text-red-600 dark:text-red-400"
             >
               <ArrowUpRight className="w-3 h-3" />
-              {sector.sectorChangePercent.toFixed(2)}%
+              {(sector.sectorChangePercent ?? 0).toFixed(2)}%
             </Badge>
             <Badge
               variant="outline"
@@ -819,7 +819,7 @@ function SectorCard({
 
                       {/* 换手率 */}
                       <TableCell className="text-[11px] font-mono py-1.5">
-                        {stock.turnover.toFixed(2)}
+                        {(stock.turnover ?? 0).toFixed(2)}
                       </TableCell>
 
                       {/* 总市值 */}
@@ -837,7 +837,7 @@ function SectorCard({
                       <TableCell className="text-[11px] font-mono py-1.5 font-medium text-red-500">
                         <div className="flex items-center gap-0.5">
                           <ArrowUpRight className="w-3 h-3" />
-                          {stock.changePercent.toFixed(2)}%
+                          {(stock.changePercent ?? 0).toFixed(2)}%
                         </div>
                       </TableCell>
 

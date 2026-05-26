@@ -510,7 +510,7 @@ export default function StockTAssistant() {
       // This reduces downstream useMemo recomputation when just the quote price ticks
       if (last.price === quote.price) return truncated;
       const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : last.changePercent;
-      const newChangePercent = Number(changePercent.toFixed(2));
+      const newChangePercent = Number((changePercent ?? 0).toFixed(2));
       // Only update if price or changePercent actually differs
       if (last.price === quote.price && last.changePercent === newChangePercent) return truncated;
       // Mutate-friendly: create minimal new array with only last element changed
@@ -520,7 +520,7 @@ export default function StockTAssistant() {
     }
     if (isTradingHours) {
       const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : 0;
-      return [...truncated, { time: curMin, price: quote.price, avgPrice: quote.price, volume: 0, changePercent: Number(changePercent.toFixed(2)) }];
+      return [...truncated, { time: curMin, price: quote.price, avgPrice: quote.price, volume: 0, changePercent: Number((changePercent ?? 0).toFixed(2)) }];
     }
     return truncated;
   }, [timeline, quote, isTimelineActive]);
@@ -557,7 +557,7 @@ export default function StockTAssistant() {
     // Skip heavy MACD computation when not in timeline mode
     if (!isTimelineActive || liveTimeline.length === 0) return [];
     // Fingerprint: skip recomputation if data hasn't meaningfully changed
-    const fp = `${liveTimeline.length}:${liveTimeline.slice(-3).map(d => d.price.toFixed(2)).join(',')}`;
+    const fp = `${liveTimeline.length}:${liveTimeline.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}`;
     return macdFingerprintCache.compute(fp, () => {
       const prices = liveTimeline.map((d) => d.price);
       const macdResult = calculateMACD(prices);
@@ -571,7 +571,7 @@ export default function StockTAssistant() {
     // Skip the heaviest computation (~7000 condition evaluations) when not in timeline mode
     if (!isTimelineActive) return [] as (TSignal | null)[];
     // Fingerprint: skip if inputs haven't changed
-    const fp = `${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => d.price.toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}`;
+    const fp = `${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}`;
     return signalFingerprintCache.compute(fp, () =>
       generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime)
     );
@@ -582,7 +582,7 @@ export default function StockTAssistant() {
   const pvMarkers = useMemo(() => {
     if (!isTimelineActive || liveTimeline.length < 10 || timelinePrevClose <= 0) return [];
     // Fingerprint includes volume data to avoid stale results when algorithm changes
-    const fp = `${liveTimeline.length}:${liveTimeline.slice(-5).map(d => `${d.price.toFixed(2)}:${d.volume}`).join(',')}:${timelinePrevClose}`;
+    const fp = `${liveTimeline.length}:${liveTimeline.slice(-5).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',')}:${timelinePrevClose}`;
     return pvFingerprintCache.compute(fp, () => detectPulseVolumeMarkers(liveTimeline, timelinePrevClose));
   }, [liveTimeline, timelinePrevClose, isTimelineActive]);
   // NOTE: Removed useDeferredValue for pvMarkers — same reason as signals above.
@@ -770,7 +770,7 @@ export default function StockTAssistant() {
                   <div><span className="text-muted-foreground">最低</span> <span className="font-mono text-green-500">{formatNum(quote.low)}</span></div>
                   <div><span className="text-muted-foreground">昨收</span> <span className="font-mono">{formatNum(quote.prevClose)}</span></div>
                   <div><span className="text-muted-foreground">成交量</span> <span className="font-mono">{formatVolume(quote.volume)}</span></div>
-                  {quote.turnover != null && quote.turnover > 0 && <div><span className="text-muted-foreground">换手</span> <span className="font-mono">{quote.turnover.toFixed(2)}%</span></div>}
+                  {quote.turnover != null && quote.turnover > 0 && <div><span className="text-muted-foreground">换手</span> <span className="font-mono">{quote.turnover?.toFixed(2)}%</span></div>}
                   {quote.peRatio > 0 && <div><span className="text-muted-foreground">PE</span> <span className="font-mono">{formatNum(quote.peRatio)}</span></div>}
                   {quote.marketCap > 0 && <div><span className="text-muted-foreground">市值</span> <span className="font-mono">{formatMarketCap(quote.marketCap)}</span></div>}
                 </div>
@@ -847,7 +847,7 @@ export default function StockTAssistant() {
           <Button variant={showNewsAnalysis ? "default" : "outline"} size="sm" className="h-8 text-xs px-3" onClick={() => { const next = !showNewsAnalysis; setShowNewsAnalysis(next); if (next && !newsData.market) (window as any).__newsFetchAnalysis?.(); }}><Newspaper className="h-3.5 w-3.5 mr-1" />资讯分析</Button>
           {chartMode === "kline" && (<div className="flex items-center gap-1">{INTERVALS.map((intv) => (<Button key={intv.value} variant={interval === intv.value ? "default" : "ghost"} size="sm" className="h-7 text-xs px-3" onClick={() => changeInterval(intv.value)}>{intv.label}</Button>))}</div>)}
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-            {(() => { const lastTl = liveTimeline[liveTimeline.length - 1]; if (lastTl && lastTl.avgPrice && lastTl.avgPrice > 0) { const deviation = ((lastTl.price - lastTl.avgPrice) / lastTl.avgPrice) * 100; const isAbove = deviation >= 0; return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[10px] font-semibold ${isAbove ? "bg-red-500/10 border-red-500/25 text-red-600 dark:text-red-400" : "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400"}`} title={`价格 ${lastTl.price.toFixed(2)} 相对均价 ${lastTl.avgPrice.toFixed(2)} 偏离 ${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}%`}><span className="opacity-70">{isAbove ? "↑均线上方" : "↓均线下方"}</span><span className="font-mono">{deviation >= 0 ? "+" : ""}{deviation.toFixed(2)}%</span></span>; } return null; })()}
+            {(() => { const lastTl = liveTimeline[liveTimeline.length - 1]; if (lastTl && lastTl.avgPrice && lastTl.avgPrice > 0) { const deviation = ((lastTl.price - lastTl.avgPrice) / lastTl.avgPrice) * 100; const isAbove = deviation >= 0; return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[10px] font-semibold ${isAbove ? "bg-red-500/10 border-red-500/25 text-red-600 dark:text-red-400" : "bg-green-500/10 border-green-500/25 text-green-600 dark:text-green-400"}`} title={`价格 ${(lastTl.price ?? 0).toFixed(2)} 相对均价 ${(lastTl.avgPrice ?? 0).toFixed(2)} 偏离 ${deviation >= 0 ? "+" : ""}${(deviation ?? 0).toFixed(2)}%`}><span className="opacity-70">{isAbove ? "↑均线上方" : "↓均线下方"}</span><span className="font-mono">{deviation >= 0 ? "+" : ""}{(deviation ?? 0).toFixed(2)}%</span></span>; } return null; })()}
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSoundEnabled(prev => !prev)} title={soundEnabled ? '关闭声音提醒' : '开启声音提醒'}>{soundEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />}</Button>
             <Clock className="h-3 w-3" />实时刷新 1.5s
           </div>

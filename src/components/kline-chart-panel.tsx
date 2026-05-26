@@ -142,7 +142,7 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
         <g>
           <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#1e293b" />
           <text x={chartRight + 32} y={y + 4} textAnchor="middle" fontSize={10} fontFamily="monospace" fill="#ffffff">
-            {cd.close.toFixed(2)}
+            {(cd.close ?? 0).toFixed(2)}
           </text>
         </g>
       );
@@ -393,7 +393,7 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
           <rect x={chartRight + 1} y={y - 10} width={62} height={20} rx={3} fill="#16a34a" />
           {/* Price text */}
           <text x={chartRight + 32} y={y + 4} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={600} fill="#ffffff">
-            {lp.toFixed(2)}
+            {(lp ?? 0).toFixed(2)}
           </text>
         </g>
       );
@@ -427,13 +427,13 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
         <g>
           <text x={4} y={12} fontSize={10} fontWeight={500} fill="#94a3b8">KDJ</text>
           {kVal != null && (
-            <text x={30} y={12} fill="#3b82f6" fontSize={10} fontFamily="monospace">K:{kVal.toFixed(2)}</text>
+            <text x={30} y={12} fill="#3b82f6" fontSize={10} fontFamily="monospace">K:{(kVal ?? 0).toFixed(2)}</text>
           )}
           {dVal != null && (
-            <text x={90} y={12} fill="#f97316" fontSize={10} fontFamily="monospace">D:{dVal.toFixed(2)}</text>
+            <text x={90} y={12} fill="#f97316" fontSize={10} fontFamily="monospace">D:{(dVal ?? 0).toFixed(2)}</text>
           )}
           {jVal != null && (
-            <text x={150} y={12} fill="#a855f7" fontSize={10} fontFamily="monospace">J:{jVal.toFixed(2)}</text>
+            <text x={150} y={12} fill="#a855f7" fontSize={10} fontFamily="monospace">J:{(jVal ?? 0).toFixed(2)}</text>
           )}
         </g>
       );
@@ -450,13 +450,13 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
         <g>
           <text x={4} y={12} fontSize={10} fontWeight={500} fill="#94a3b8">MACD</text>
           {difVal != null && (
-            <text x={42} y={12} fill="#3b82f6" fontSize={10} fontFamily="monospace">DIF:{difVal.toFixed(3)}</text>
+            <text x={42} y={12} fill="#3b82f6" fontSize={10} fontFamily="monospace">DIF:{(difVal ?? 0).toFixed(3)}</text>
           )}
           {deaVal != null && (
-            <text x={114} y={12} fill="#f97316" fontSize={10} fontFamily="monospace">DEA:{deaVal.toFixed(3)}</text>
+            <text x={114} y={12} fill="#f97316" fontSize={10} fontFamily="monospace">DEA:{(deaVal ?? 0).toFixed(3)}</text>
           )}
           {macdVal != null && (
-            <text x={190} y={12} fill={macdVal >= 0 ? "#ef4444" : "#22c55e"} fontSize={10} fontFamily="monospace">MACD:{macdVal.toFixed(3)}</text>
+            <text x={190} y={12} fill={macdVal >= 0 ? "#ef4444" : "#22c55e"} fontSize={10} fontFamily="monospace">MACD:{(macdVal ?? 0).toFixed(3)}</text>
           )}
         </g>
       );
@@ -509,16 +509,16 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
               <>
                 <span className="text-muted-foreground tabular-nums">{displayItem.date}</span>
                 <span>
-                  开<span className={`${displayItem.close >= displayItem.open ? "text-red-500" : "text-green-500"} ml-1`}>{displayItem.open.toFixed(2)}</span>
+                  开<span className={`${displayItem.close >= displayItem.open ? "text-red-500" : "text-green-500"} ml-1`}>{(displayItem.open ?? 0).toFixed(2)}</span>
                 </span>
                 <span>
-                  高<span className="text-red-500 ml-1">{displayItem.high.toFixed(2)}</span>
+                  高<span className="text-red-500 ml-1">{(displayItem.high ?? 0).toFixed(2)}</span>
                 </span>
                 <span>
-                  低<span className="text-green-500 ml-1">{displayItem.low.toFixed(2)}</span>
+                  低<span className="text-green-500 ml-1">{(displayItem.low ?? 0).toFixed(2)}</span>
                 </span>
                 <span>
-                  收<span className={`${displayItem.close >= displayItem.open ? "text-red-500" : "text-green-500"} ml-1`}>{displayItem.close.toFixed(2)}</span>
+                  收<span className={`${displayItem.close >= displayItem.open ? "text-red-500" : "text-green-500"} ml-1`}>{(displayItem.close ?? 0).toFixed(2)}</span>
                 </span>
                 <span>
                   量<span className="text-muted-foreground ml-1">{formatVolume(displayItem.volume)}</span>
@@ -527,15 +527,15 @@ export const KLineChartPanel = React.memo(function KLineChartPanel({
             )}
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-yellow-500" />
-              MA5{displayItem?.ma5 != null ? ` ${displayItem.ma5!.toFixed(2)}` : ''}
+              MA5{displayItem?.ma5 != null ? ` ${displayItem.ma5?.toFixed(2) ?? ""}` : ''}
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
-              MA10{displayItem?.ma10 != null ? ` ${displayItem.ma10!.toFixed(2)}` : ''}
+              MA10{displayItem?.ma10 != null ? ` ${displayItem.ma10?.toFixed(2) ?? ""}` : ''}
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-purple-500" />
-              MA20{displayItem?.ma20 != null ? ` ${displayItem.ma20!.toFixed(2)}` : ''}
+              MA20{displayItem?.ma20 != null ? ` ${displayItem.ma20?.toFixed(2) ?? ""}` : ''}
             </span>
             {/* Zoom Controls */}
             <div className="ml-auto flex items-center gap-1">

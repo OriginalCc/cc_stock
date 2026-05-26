@@ -262,7 +262,7 @@ export function PositionSignalCard({
               {directionLabel(stockDir)}
               {stockChangePercent !== undefined && (
                 <span className="font-mono ml-0.5">
-                  ({stockChangePercent >= 0 ? "+" : ""}{stockChangePercent.toFixed(2)}%)
+                  ({(stockChangePercent ?? 0) >= 0 ? "+" : ""}{(stockChangePercent ?? 0).toFixed(2)}%)
                 </span>
               )}
             </span>

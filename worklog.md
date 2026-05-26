@@ -922,3 +922,27 @@ Stage Summary:
 - Key wins: fullDayData skip (saves ~0.5-1ms + GC), pvMarkers skip (saves ~200-400μs), crosshair throttle (saves ~60fps→15fps during hover), intent/regime skip (saves ~1-3ms)
 - All changes pass lint check
 - Page loads correctly (HTTP 200)
+
+---
+Task ID: 1
+Agent: main
+Task: Fix "Cannot read properties of null (reading 'toFixed')" runtime error
+
+Work Log:
+- Identified root cause: `fullDayData` in time-sharing-panel.tsx uses `null as unknown as number` for empty time slots (price, avgPrice, dif, dea, macd), which causes `.toFixed()` calls to crash on null values
+- Fixed time-sharing-panel.tsx: 10 `.toFixed()` calls now use null guards (`?? 0`, `?.`, `?? "--"`)
+- Fixed chart-tooltips.tsx: 18 `.toFixed()` calls now use optional chaining with fallback
+- Fixed kline-chart-panel.tsx: 15 `.toFixed()` calls now use `(val ?? 0)` or `?.toFixed() ?? ""`
+- Fixed page.tsx: 8 `.toFixed()` calls now use null guards
+- Fixed limit-up-analysis.tsx: 4 fixes
+- Fixed sector-rotation-panel.tsx: 18 fixes
+- Fixed intraday-screener.tsx: 5 fixes
+- Fixed position-signal-card.tsx: 1 fix
+- Fixed t-trade-journal.tsx: 6 fixes
+- Lint passes cleanly, dev server running without errors
+
+Stage Summary:
+- Total ~85 `.toFixed()` null safety fixes across 10 files
+- Primary crash source: time-sharing-panel.tsx `fullDayData` empty slots with null price/avgPrice/dif/dea/macd
+- All display values now use `?.toFixed(N) ?? "--"` or `(val ?? 0).toFixed(N)` pattern
+- Fingerprint computations use `(val ?? 0).toFixed(N)` to avoid cache key crashes

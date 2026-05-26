@@ -131,13 +131,15 @@ function saveSummary(summary: Record<string, unknown>): void {
 }
 
 function formatMoney(val: number): string {
-  if (val >= 0) return `+¥${val.toFixed(2)}`;
-  return `-¥${Math.abs(val).toFixed(2)}`;
+  const v = val ?? 0;
+  if (v >= 0) return `+¥${v.toFixed(2)}`;
+  return `-¥${Math.abs(v).toFixed(2)}`;
 }
 
 function formatPct(val: number): string {
-  if (val >= 0) return `+${val.toFixed(2)}%`;
-  return `${val.toFixed(2)}%`;
+  const v = val ?? 0;
+  if (v >= 0) return `+${v.toFixed(2)}%`;
+  return `${v.toFixed(2)}%`;
 }
 
 // ── Component ──
@@ -607,14 +609,14 @@ export const TTradeJournal = React.memo(function TTradeJournal({
                   {/* Price info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1 text-[11px]">
-                      <span className="font-mono">{trade.entryPrice.toFixed(2)}</span>
+                      <span className="font-mono">{(trade.entryPrice ?? 0).toFixed(2)}</span>
                       <span className="text-muted-foreground">→</span>
                       {isOpen ? (
                         <span className="text-muted-foreground italic">
                           {currentPrice ? currentPrice.toFixed(2) : "..."}
                         </span>
                       ) : (
-                        <span className="font-mono">{trade.exitPrice.toFixed(2)}</span>
+                        <span className="font-mono">{(trade.exitPrice ?? 0).toFixed(2)}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -655,7 +657,7 @@ export const TTradeJournal = React.memo(function TTradeJournal({
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
                       <div>
                         <span className="text-muted-foreground">入场价：</span>
-                        <span className="font-mono">{trade.entryPrice.toFixed(2)}</span>
+                        <span className="font-mono">{(trade.entryPrice ?? 0).toFixed(2)}</span>
                       </div>
                       <div>
                         <span className="text-muted-foreground">入场时间：</span>
@@ -665,7 +667,7 @@ export const TTradeJournal = React.memo(function TTradeJournal({
                         <>
                           <div>
                             <span className="text-muted-foreground">出场价：</span>
-                            <span className="font-mono">{trade.exitPrice.toFixed(2)}</span>
+                            <span className="font-mono">{(trade.exitPrice ?? 0).toFixed(2)}</span>
                           </div>
                           <div>
                             <span className="text-muted-foreground">出场时间：</span>

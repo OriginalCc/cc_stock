@@ -80,55 +80,55 @@ export const KLineTooltip = ({ active, payload, label }: any) => {
       <div className="font-medium mb-2 text-foreground">{data.date}</div>
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
         <span className="text-muted-foreground">开盘</span>
-        <span className={`text-right font-mono ${color}`}>{data.open.toFixed(2)}</span>
+        <span className={`text-right font-mono ${color}`}>{data.open?.toFixed(2) ?? "--"}</span>
         <span className="text-muted-foreground">收盘</span>
-        <span className={`text-right font-mono ${color}`}>{data.close.toFixed(2)}</span>
+        <span className={`text-right font-mono ${color}`}>{data.close?.toFixed(2) ?? "--"}</span>
         <span className="text-muted-foreground">最高</span>
-        <span className="text-right font-mono text-red-500">{data.high.toFixed(2)}</span>
+        <span className="text-right font-mono text-red-500">{data.high?.toFixed(2) ?? "--"}</span>
         <span className="text-muted-foreground">最低</span>
-        <span className="text-right font-mono text-green-500">{data.low.toFixed(2)}</span>
+        <span className="text-right font-mono text-green-500">{data.low?.toFixed(2) ?? "--"}</span>
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
         {data.ma5 != null && (
           <>
             <span className="text-muted-foreground">MA5</span>
-            <span className="text-right font-mono text-yellow-500">{data.ma5!.toFixed(2)}</span>
+            <span className="text-right font-mono text-yellow-500">{data.ma5?.toFixed(2) ?? "--"}</span>
           </>
         )}
         {data.ma10 != null && (
           <>
             <span className="text-muted-foreground">MA10</span>
-            <span className="text-right font-mono text-blue-500">{data.ma10!.toFixed(2)}</span>
+            <span className="text-right font-mono text-blue-500">{data.ma10?.toFixed(2) ?? "--"}</span>
           </>
         )}
         {data.ma20 != null && (
           <>
             <span className="text-muted-foreground">MA20</span>
-            <span className="text-right font-mono text-purple-500">{data.ma20!.toFixed(2)}</span>
+            <span className="text-right font-mono text-purple-500">{data.ma20?.toFixed(2) ?? "--"}</span>
           </>
         )}
       </div>
       {data.k != null && (
         <div className="mt-2 pt-2 border-t border-border grid grid-cols-2 gap-y-1 gap-x-3">
           <span className="text-muted-foreground">K</span>
-          <span className="text-right font-mono text-blue-500">{data.k.toFixed(2)}</span>
+          <span className="text-right font-mono text-blue-500">{data.k?.toFixed(2) ?? "--"}</span>
           <span className="text-muted-foreground">D</span>
-          <span className="text-right font-mono text-orange-500">{data.d?.toFixed(2)}</span>
+          <span className="text-right font-mono text-orange-500">{data.d?.toFixed(2) ?? "--"}</span>
           <span className="text-muted-foreground">J</span>
           <span className={`text-right font-mono ${data.j != null && data.j > 100 ? "text-red-500" : data.j != null && data.j < 0 ? "text-green-500" : "text-purple-500"}`}>
-            {data.j?.toFixed(2)}
+            {data.j?.toFixed(2) ?? "--"}
           </span>
         </div>
       )}
       {data.dif != null && (
         <div className="mt-2 pt-2 border-t border-border grid grid-cols-2 gap-y-1 gap-x-3">
           <span className="text-muted-foreground">DIF</span>
-          <span className="text-right font-mono">{data.dif.toFixed(4)}</span>
+          <span className="text-right font-mono">{data.dif?.toFixed(4) ?? "--"}</span>
           <span className="text-muted-foreground">DEA</span>
-          <span className="text-right font-mono">{data.dea?.toFixed(4)}</span>
+          <span className="text-right font-mono">{data.dea?.toFixed(4) ?? "--"}</span>
           <span className="text-muted-foreground">MACD</span>
           <span className={`text-right font-mono ${data.macd != null && data.macd > 0 ? "text-red-500" : "text-green-500"}`}>
-            {data.macd?.toFixed(4)}
+            {data.macd?.toFixed(4) ?? "--"}
           </span>
         </div>
       )}
@@ -153,12 +153,12 @@ export const MACDTooltip = ({ active, payload }: any) => {
       <div className="font-medium mb-2 text-foreground">{data.date}</div>
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
         <span className="text-muted-foreground">DIF</span>
-        <span className="text-right font-mono">{data.dif.toFixed(4)}</span>
+        <span className="text-right font-mono">{data.dif?.toFixed(4) ?? "--"}</span>
         <span className="text-muted-foreground">DEA</span>
-        <span className="text-right font-mono">{data.dea?.toFixed(4)}</span>
+        <span className="text-right font-mono">{data.dea?.toFixed(4) ?? "--"}</span>
         <span className="text-muted-foreground">MACD</span>
         <span className={`text-right font-mono ${data.macd != null && data.macd > 0 ? "text-red-500" : "text-green-500"}`}>
-          {data.macd?.toFixed(4)}
+          {data.macd?.toFixed(4) ?? "--"}
         </span>
       </div>
     </div>
@@ -191,12 +191,12 @@ export const KDJTooltip = ({ active, payload }: any) => {
       <div className="font-medium mb-2 text-foreground">{data.date}</div>
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
         <span className="text-muted-foreground">K</span>
-        <span className="text-right font-mono text-blue-500">{data.k.toFixed(2)}</span>
+        <span className="text-right font-mono text-blue-500">{data.k?.toFixed(2) ?? "--"}</span>
         <span className="text-muted-foreground">D</span>
-        <span className="text-right font-mono text-orange-500">{data.d?.toFixed(2)}</span>
+        <span className="text-right font-mono text-orange-500">{data.d?.toFixed(2) ?? "--"}</span>
         <span className="text-muted-foreground">J</span>
         <span className={`text-right font-mono ${data.j != null && data.j > 100 ? "text-red-500" : data.j != null && data.j < 0 ? "text-green-500" : "text-purple-500"}`}>
-          {data.j?.toFixed(2)}
+          {data.j?.toFixed(2) ?? "--"}
         </span>
       </div>
     </div>

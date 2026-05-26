@@ -133,9 +133,9 @@ const TimelineVolumeTooltip = ({ active, payload }: any) => {
         <span className="text-muted-foreground">成交量</span>
         <span className="text-right font-mono">{formatVolume(data.volume)}</span>
         <span className="text-muted-foreground">成交额</span>
-        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * data.price)}</span>
+        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * (data.price ?? 0))}</span>
         <span className="text-muted-foreground">价格</span>
-        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price.toFixed(2)}</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2) ?? "--"}</span>
       </div>
     </div>
   );
@@ -1368,7 +1368,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     if (data.length === 0) return { fullDayData: [], timeTicks: [] };
 
     // Fingerprint: data length + last 3 prices/volumes + signal/MACD/pv counts + prevClose
-    const last3 = data.slice(-3).map(d => `${d.price.toFixed(2)}:${d.volume}`).join(',');
+    const last3 = data.slice(-3).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',');
     const fp = `${data.length}:${last3}:${prevClose}:${signals.filter(Boolean).length}:${macdData.length}:${pvMarkers?.length || 0}`;
 
     // Check if we can reuse the cached fullDayData via FingerprintCache
@@ -1742,7 +1742,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   // ── Memoize detectMarketRegimeDetail (was called inside IIFE on every render) ──
   // Performance: fingerprint cache to avoid recomputation when only last price ticks slightly
   const regimeDetail = useMemo(() => {
-    const fp = `${data.length}:${data.slice(-3).map(d => d.price.toFixed(2)).join(',')}:${prevClose}`;
+    const fp = `${data.length}:${data.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${prevClose}`;
     return regimeDetailCache.compute(fp, () => detectMarketRegimeDetail(data, prevClose));
   }, [data, prevClose]);
 
@@ -1750,7 +1750,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   // Performance: fingerprint cache to skip heavy analysis when data barely changed
   const intradayIntent = useMemo(() => {
     if (data.length < 20 || prevClose <= 0) return null;
-    const fp = `${data.length}:${data.slice(-5).map(d => `${d.price.toFixed(2)}:${d.volume}`).join(',')}:${prevClose}`;
+    const fp = `${data.length}:${data.slice(-5).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',')}:${prevClose}`;
     return intradayIntentCache.compute(fp, () => analyzeIntradayIntent(data, prevClose));
   }, [data, prevClose]);
 
@@ -1771,10 +1771,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       <div className="px-3 py-2 border-b border-border/50 flex items-center gap-3 text-xs flex-wrap">
         <span className="font-medium text-sm text-foreground">{symbol}</span>
         <span className={`font-bold tabular-nums ${lastItem.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
-          {lastItem.price.toFixed(2)}
+          {(lastItem.price ?? 0).toFixed(2)}
         </span>
         <span className={`tabular-nums ${lastItem.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
-          {lastItem.changePercent >= 0 ? "+" : ""}{lastItem.changePercent.toFixed(2)}%
+          {lastItem.changePercent >= 0 ? "+" : ""}{(lastItem.changePercent ?? 0).toFixed(2)}%
         </span>
         {/* Position Rule Badge - 5-tier ladder + T-direction hint */}
         {(() => {
@@ -2106,7 +2106,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               {crosshairItem.volume > 0 && (
                 <>
                   <span className="text-muted-foreground">Vol {formatVolume(crosshairItem.volume)}</span>
-                  <span className="text-yellow-500">Amt {formatAmount(crosshairItem.volume * 100 * crosshairItem.price)}</span>
+                  <span className="text-yellow-500">Amt {formatAmount(crosshairItem.volume * 100 * (crosshairItem.price ?? 0))}</span>
                 </>
               )}
               {crosshairItem.dif != null && (
@@ -2381,7 +2381,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               tickLine={false}
               axisLine={false}
               width={55}
-              tickFormatter={(v: number) => v.toFixed(2)}
+              tickFormatter={(v: number) => (v ?? 0).toFixed(2)}
             />
             <YAxis
               yAxisId="percent"
@@ -2831,7 +2831,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               tickLine={false}
               axisLine={false}
               width={50}
-              tickFormatter={(v: number) => v.toFixed(3)}
+              tickFormatter={(v: number) => (v ?? 0).toFixed(3)}
             />
             <Tooltip content={macdTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
             <ReferenceLine yAxisId="macd-right" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.5} />

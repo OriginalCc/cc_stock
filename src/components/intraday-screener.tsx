@@ -700,7 +700,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                       {item.name}
                       {item.changePercent != null && (
                         <span className={`tabular-nums ${changeColor}`}>
-                          {item.changePercent > 0 ? "+" : ""}{item.changePercent.toFixed(2)}%
+                          {item.changePercent > 0 ? "+" : ""}{(item.changePercent ?? 0).toFixed(2)}%
                         </span>
                       )}
                     </Badge>
@@ -1164,9 +1164,9 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                         <TableCell className="py-2">
                           <div className={`flex items-center gap-0.5 text-xs font-medium tabular-nums ${priceColor}`}>
                             {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                            {stock.changePercent > 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                            {stock.changePercent > 0 ? "+" : ""}{(stock.changePercent ?? 0).toFixed(2)}%
                           </div>
-                          <div className="text-[10px] text-muted-foreground font-mono">{stock.price.toFixed(2)}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono">{(stock.price ?? 0).toFixed(2)}</div>
                         </TableCell>
                         <TableCell className="py-2">
                           <TooltipProvider>
@@ -1332,9 +1332,9 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                   </Button>
                 </div>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg font-bold tabular-nums">{previewStock.price.toFixed(2)}</span>
+                  <span className="text-lg font-bold tabular-nums">{(previewStock.price ?? 0).toFixed(2)}</span>
                   <span className={`text-xs font-medium tabular-nums ${previewStock.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
-                    {previewStock.changePercent > 0 ? "+" : ""}{previewStock.changePercent.toFixed(2)}%
+                    {(previewStock.changePercent ?? 0) > 0 ? "+" : ""}{(previewStock.changePercent ?? 0).toFixed(2)}%
                   </span>
                 </div>
                 {previewLoading ? (

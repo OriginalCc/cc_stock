@@ -139,21 +139,24 @@ interface PredictionHistoryStats {
 // ── Helper Functions ───────────────────────────────────
 
 function formatAmount(val: number): string {
-  if (Math.abs(val) >= 1e8) return `${(val / 1e8).toFixed(1)}亿`;
-  if (Math.abs(val) >= 1e4) return `${(val / 1e4).toFixed(0)}万`;
-  return val.toFixed(0);
+  const v = val ?? 0;
+  if (Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(1)}亿`;
+  if (Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(0)}万`;
+  return v.toFixed(0);
 }
 
 function formatVolume(val: number): string {
-  if (Math.abs(val) >= 1e8) return `${(val / 1e8).toFixed(1)}亿`;
-  if (Math.abs(val) >= 1e4) return `${(val / 1e4).toFixed(0)}万`;
-  return val.toFixed(0);
+  const v = val ?? 0;
+  if (Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(1)}亿`;
+  if (Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(0)}万`;
+  return v.toFixed(0);
 }
 
 function formatMarketCap(val: number): string {
-  const yi = val / 1e8;
+  const v = val ?? 0;
+  const yi = v / 1e8;
   if (Math.abs(yi) >= 1) return `${yi.toFixed(0)}亿`;
-  return `${(val / 1e4).toFixed(0)}万`;
+  return `${(v / 1e4).toFixed(0)}万`;
 }
 
 function getChangeColor(change: number): string {
@@ -246,11 +249,11 @@ function SectorCard({ sector, rank, onClick }: { sector: SectorItem; rank: numbe
           <span className="font-semibold text-sm">{sector.name}</span>
         </div>
         <span className={`text-lg font-bold tabular-nums ${getChangeColor(sector.changePercent)}`}>
-          {sector.changePercent >= 0 ? "+" : ""}{sector.changePercent.toFixed(2)}%
+          {sector.changePercent >= 0 ? "+" : ""}{(sector.changePercent ?? 0).toFixed(2)}%
         </span>
       </div>
       <div className="flex items-center gap-3 text-xs text-muted-foreground mb-1.5">
-        <span>指数 {sector.price.toFixed(2)}</span>
+        <span>指数 {(sector.price ?? 0).toFixed(2)}</span>
         <span>成交 {formatVolume(sector.volume)}</span>
         {sector.turnover > 0 && <span>换手 {sector.turnover.toFixed(1)}%</span>}
       </div>
@@ -266,7 +269,7 @@ function SectorCard({ sector, rank, onClick }: { sector: SectorItem; rank: numbe
         <div className="mt-1.5 text-xs text-muted-foreground">
           领涨 <span className="text-foreground font-medium">{sector.leadingStock}</span>
           <span className={getChangeColor(sector.leadingStockChange)} ml-1>
-            {sector.leadingStockChange >= 0 ? "+" : ""}{sector.leadingStockChange.toFixed(2)}%
+            {sector.leadingStockChange >= 0 ? "+" : ""}{(sector.leadingStockChange ?? 0).toFixed(2)}%
           </span>
         </div>
       )}
@@ -274,7 +277,7 @@ function SectorCard({ sector, rank, onClick }: { sector: SectorItem; rank: numbe
         <div className={`mt-1 text-xs font-medium ${sector.mainNetInflow > 0 ? "text-red-500" : "text-green-500"}`}>
           {sector.mainNetInflow > 0 ? "主力流入" : "主力流出"} {formatAmount(Math.abs(sector.mainNetInflow))}
           {sector.mainNetInflowRatio !== 0 && (
-            <span className="ml-1">({sector.mainNetInflowRatio >= 0 ? "+" : ""}{sector.mainNetInflowRatio.toFixed(1)}%)</span>
+            <span className="ml-1">({sector.mainNetInflowRatio >= 0 ? "+" : ""}{(sector.mainNetInflowRatio ?? 0).toFixed(1)}%)</span>
           )}
         </div>
       )}
@@ -301,7 +304,7 @@ function StockRow({ stock, onSelectStock }: { stock: SectorStock; onSelectStock?
       </Badge>
       <div className="flex items-center gap-1 shrink-0 w-[90px] justify-end">
         <span className={`text-sm font-semibold tabular-nums ${getChangeColor(stock.changePercent)}`}>
-          {stock.changePercent >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+          {stock.changePercent >= 0 ? "+" : ""}{(stock.changePercent ?? 0).toFixed(2)}%
         </span>
       </div>
       <div className="shrink-0 w-[80px] text-right">
@@ -393,7 +396,7 @@ function PredictionCard({
           </div>
           <div className="flex items-center gap-2">
             <span className={`text-sm font-semibold ${getChangeColor(prediction.changePercent)}`}>
-              {prediction.changePercent >= 0 ? "+" : ""}{prediction.changePercent.toFixed(2)}%
+              {prediction.changePercent >= 0 ? "+" : ""}{(prediction.changePercent ?? 0).toFixed(2)}%
             </span>
             <Badge className={`text-xs ${prediction.score >= 80 ? "bg-red-500" : prediction.score >= 65 ? "bg-amber-500" : "bg-orange-500"} text-white`}>
               {prediction.score}分
@@ -476,13 +479,13 @@ function CoolingSectorCard({ sector }: { sector: SectorItem }) {
       <div className="flex items-center justify-between mb-1">
         <span className="font-semibold text-sm">{sector.name}</span>
         <span className={`text-sm font-medium ${getChangeColor(sector.changePercent)}`}>
-          {sector.changePercent >= 0 ? "+" : ""}{sector.changePercent.toFixed(2)}%
+          {sector.changePercent >= 0 ? "+" : ""}{(sector.changePercent ?? 0).toFixed(2)}%
         </span>
       </div>
       <div className="text-xs text-amber-600">
         <ArrowDownRight className="w-3 h-3 inline" />
         主力净流出 {formatAmount(Math.abs(sector.mainNetInflow))}
-        <span className="ml-1">({sector.mainNetInflowRatio.toFixed(1)}%)</span>
+        <span className="ml-1">({(sector.mainNetInflowRatio ?? 0).toFixed(1)}%)</span>
       </div>
       <div className="text-xs text-muted-foreground mt-0.5">涨幅尚在，但资金已开始撤退</div>
     </div>
@@ -495,13 +498,13 @@ function RisingSectorCard({ sector }: { sector: SectorItem }) {
       <div className="flex items-center justify-between mb-1">
         <span className="font-semibold text-sm">{sector.name}</span>
         <span className={`text-sm font-medium ${getChangeColor(sector.changePercent)}`}>
-          {sector.changePercent >= 0 ? "+" : ""}{sector.changePercent.toFixed(2)}%
+          {sector.changePercent >= 0 ? "+" : ""}{(sector.changePercent ?? 0).toFixed(2)}%
         </span>
       </div>
       <div className="text-xs text-emerald-600">
         <ArrowUpRight className="w-3 h-3 inline" />
         主力净流入 {formatAmount(sector.mainNetInflow)}
-        <span className="ml-1">({sector.mainNetInflowRatio.toFixed(1)}%)</span>
+        <span className="ml-1">({(sector.mainNetInflowRatio ?? 0).toFixed(1)}%)</span>
       </div>
       <div className="text-xs text-muted-foreground mt-0.5">资金介入中，涨幅尚未充分释放</div>
     </div>
@@ -521,17 +524,17 @@ function SectorHeatMap({ sectors }: { sectors: SectorItem[] }) {
         const isUp = sector.changePercent >= 0;
 
         return (
-          <div key={sector.code} className="relative group" title={`${sector.name}: ${sector.changePercent >= 0 ? '+' : ''}${sector.changePercent.toFixed(2)}%`}>
+          <div key={sector.code} className="relative group" title={`${sector.name}: ${sector.changePercent >= 0 ? '+' : ''}${(sector.changePercent ?? 0).toFixed(2)}%`}>
             <div
               className={`px-2 py-1 rounded text-xs font-medium cursor-default transition-all hover:scale-110 hover:shadow ${isUp ? `bg-red-500/10 text-red-600 border border-red-500/20` : `bg-green-500/10 text-green-600 border border-green-500/20`}`}
               style={{ opacity: 0.4 + opacity * 0.6 }}
             >
               {sector.name}
-              <span className="ml-1 tabular-nums">{sector.changePercent >= 0 ? '+' : ''}{sector.changePercent.toFixed(1)}%</span>
+              <span className="ml-1 tabular-nums">{sector.changePercent >= 0 ? '+' : ''}{(sector.changePercent ?? 0).toFixed(1)}%</span>
             </div>
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-50 bg-popover border rounded-md shadow-lg p-2 text-xs whitespace-nowrap">
               <div className="font-semibold">{sector.name}</div>
-              <div className={getChangeColor(sector.changePercent)}>{sector.changePercent >= 0 ? '+' : ''}{sector.changePercent.toFixed(2)}%</div>
+              <div className={getChangeColor(sector.changePercent)}>{sector.changePercent >= 0 ? '+' : ''}{(sector.changePercent ?? 0).toFixed(2)}%</div>
               {sector.mainNetInflow !== 0 && (
                 <div className={sector.mainNetInflow > 0 ? "text-red-500" : "text-green-500"}>
                   主力{sector.mainNetInflow > 0 ? "流入" : "流出"} {formatAmount(Math.abs(sector.mainNetInflow))}
@@ -737,13 +740,13 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
           <div className="border rounded-lg p-3 bg-card">
             <div className="text-xs text-muted-foreground mb-1">准确率</div>
             <div className={`text-2xl font-bold ${stats.accuracy >= 60 ? "text-red-500" : stats.accuracy >= 40 ? "text-amber-500" : "text-green-500"}`}>
-              {stats.accuracy.toFixed(1)}%
+              {(stats.accuracy ?? 0).toFixed(1)}%
             </div>
           </div>
           <div className="border rounded-lg p-3 bg-card">
             <div className="text-xs text-muted-foreground mb-1">次日平均涨幅</div>
             <div className={`text-2xl font-bold ${getChangeColor(stats.avgActualChange)}`}>
-              {stats.avgActualChange >= 0 ? "+" : ""}{stats.avgActualChange.toFixed(2)}%
+              {stats.avgActualChange >= 0 ? "+" : ""}{(stats.avgActualChange ?? 0).toFixed(2)}%
             </div>
           </div>
           <div className="border rounded-lg p-3 bg-card">
@@ -779,7 +782,7 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
                     </div>
                     <div className="text-lg font-bold">{catAccuracy.toFixed(0)}%</div>
                     <div className="text-[10px] text-muted-foreground">
-                      {s.correct}/{s.total} 正确 · 平均评分{s.avgScore.toFixed(0)}
+                      {s.correct}/{s.total} 正确 · 平均评分{(s.avgScore ?? 0).toFixed(0)}
                     </div>
                   </div>
                 );
@@ -890,7 +893,7 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
                                 </span>
                               </td>
                               <td className={`py-2 px-2 text-right tabular-nums ${getChangeColor(rec.predictChange)}`}>
-                                {rec.predictChange >= 0 ? "+" : ""}{rec.predictChange.toFixed(2)}%
+                                {rec.predictChange >= 0 ? "+" : ""}{(rec.predictChange ?? 0).toFixed(2)}%
                               </td>
                               <td className="py-2 px-2 text-right tabular-nums">
                                 {rec.isVerified && rec.actualChange !== null ? (
@@ -951,7 +954,7 @@ function PredictionHistoryTab({ onSelectStock }: { onSelectStock?: (symbol: stri
                                                 </Badge>
                                               </td>
                                               <td className={`py-1 px-2 text-right tabular-nums ${getChangeColor(stock.changePercent)}`}>
-                                                {stock.changePercent >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                                                {stock.changePercent >= 0 ? "+" : ""}{(stock.changePercent ?? 0).toFixed(2)}%
                                               </td>
                                               <td className={`py-1 px-2 text-right ${stock.mainNetInflow > 0 ? "text-red-500" : stock.mainNetInflow < 0 ? "text-green-500" : "text-muted-foreground"}`}>
                                                 {stock.mainNetInflow !== 0 ? formatAmount(stock.mainNetInflow) : "--"}
