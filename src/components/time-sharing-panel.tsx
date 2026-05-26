@@ -28,7 +28,7 @@ import {
   getStrengthLabel,
   getStrengthColor,
 } from "@/lib/chart-shared";
-import { fullDayDataCache, regimeDetailCache, intradayIntentCache } from "@/lib/fingerprint-cache";
+import { fullDayDataCache, regimeDetailCache, intradayIntentCache, FingerprintCache } from "@/lib/fingerprint-cache";
 import { ALL_TRADE_TIMES } from "@/lib/trading-times";
 import {
   detectMarketRegimeDetail,
@@ -46,6 +46,14 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+
+// ── Overlay computation cache ──
+// Avoids recomputing signals/labels when recharts gives us new object refs
+// but the underlying data hasn't actually changed (e.g. during crosshair moves).
+const overlayCache = new FingerprintCache<{
+  signalResult: { signalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null;
+  pvPlacedLabels: PlacedLabel[];
+}>();
 
 // Dynamic import for MiniTimelinePanel (code-split for faster page load)
 const MiniTimelinePanel = dynamic(() => import("@/components/mini-timeline-panel").then(m => ({ default: m.MiniTimelinePanel })), { ssr: false });
@@ -1064,6 +1072,45 @@ function computeTimelineSignalElements(
 
 // ── Intent segment overlay removed — intent segments now rendered as an external bar outside the chart ──
 
+// ── Build a lightweight fingerprint from formattedGraphicalItems ──
+// Only checks the price line's last point position and signal/marker counts.
+// If these haven't changed, the expensive computation can be skipped.
+function buildOverlayFingerprint(
+  formattedGraphicalItems: any[],
+  xAxisMap: any,
+  yAxisMap: any,
+  expandedIds: Set<string>,
+): string {
+  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return "empty";
+  let priceLineLen = 0;
+  let lastX = 0, lastY = 0;
+  let signalCount = 0;
+  let pvCount = 0;
+  for (const item of formattedGraphicalItems) {
+    if (item?.props?.points && Array.isArray(item.props.points)) {
+      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+      if (stroke === "#eab308" || stroke === "#facc15" || stroke === "#ca8a04") continue;
+      if (priceLineLen === 0) {
+        const pts = item.props.points;
+        priceLineLen = pts.length;
+        if (pts.length > 0) {
+          lastX = pts[pts.length - 1].x;
+          lastY = pts[pts.length - 1].y;
+        }
+        // Count signals and pv markers in one pass
+        for (const p of pts) {
+          if (p?.payload?.tSignal) signalCount++;
+          const pv = p?.payload?.pvMarker;
+          if (pv && Array.isArray(pv)) pvCount += pv.length;
+        }
+      }
+    }
+  }
+  // Include expanded IDs in fingerprint so toggleExpand triggers re-render
+  const expandedKey = expandedIds.size > 0 ? Array.from(expandedIds).sort().join(",") : "";
+  return `${priceLineLen}:${lastX.toFixed(1)}:${lastY.toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}`;
+}
+
 // ── Combined Chart Overlay Renderer ──────────────────────
 // Ensures proper layer order:
 //   Layer 1 (bottom): 分时因子 signal markers & labels
@@ -1083,18 +1130,30 @@ function CombinedChartOverlay(props: any) {
     });
   }, []);
 
-  // Compute signal elements (factor signals)
-  const signalResult = computeTimelineSignalElements(
-    formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand
-  );
+  // ── Fingerprint-based cache for overlay computation ──
+  // recharts creates new formattedGraphicalItems on every render, even if the data
+  // hasn't changed. The fingerprint is cheap to compute (one pass over points) and
+  // lets us skip the heavy signal extraction + overlap resolution when data is the same.
+  const fp = buildOverlayFingerprint(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds);
 
-  // Compute PV marker points (screener markers)
-  const pvPoints = extractPulseVolumePoints(formattedGraphicalItems);
+  const { signalResult, pvPlacedLabels } = fp !== "empty"
+    ? overlayCache.compute(fp, () => {
+        // Compute signal elements (factor signals)
+        const sr = computeTimelineSignalElements(
+          formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand
+        );
 
-  // Resolve PV label overlaps
-  const pvPlacedLabels = pvPoints.length > 0 ? resolvePvLabelOverlaps(pvPoints) : [];
+        // Compute PV marker points (screener markers)
+        const pvPoints = extractPulseVolumePoints(formattedGraphicalItems);
 
-  if (!signalResult && pvPoints.length === 0) return null;
+        // Resolve PV label overlaps
+        const pvLabels = pvPoints.length > 0 ? resolvePvLabelOverlaps(pvPoints) : [];
+
+        return { signalResult: sr, pvPlacedLabels: pvLabels };
+      })
+    : { signalResult: null, pvPlacedLabels: [] as PlacedLabel[] };
+
+  if (!signalResult && pvPlacedLabels.length === 0) return null;
 
   return (
     <g>

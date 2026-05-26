@@ -329,16 +329,13 @@ export default function StockTAssistant() {
     fetchSectorDataRef.current();
   }, []);
 
-  // ── DB Factor Overrides (deferred - not needed for initial render) ──
+  // ── DB Factor Overrides (fetch immediately — no delay to avoid delayed label rendering) ──
   const [factorOverrides, setFactorOverrides] = useState<FactorOverride[]>([]);
   useEffect(() => {
-    // Fetch factor overrides - low priority but no artificial delay
     const fetchFactors = async () => {
       try { const res = await fetch("/api/stock/strategy"); if (res.ok) { const data = await res.json(); if (data.dbFactors && Array.isArray(data.dbFactors)) startTransition(() => setFactorOverrides(buildFactorOverridesFromDB(data.dbFactors))); } } catch (e) { console.error("Failed to fetch factor overrides:", e); }
     };
-    // Start after a short delay to let critical data load first
-    const timer = setTimeout(fetchFactors, 300);
-    return () => clearTimeout(timer);
+    fetchFactors();
   }, []);
 
   // ── Custom Factors ──
