@@ -95,7 +95,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     return (
       <Card className="border overflow-hidden">
         <CardContent className="p-2 sm:p-2.5">
-          <div className="text-xs text-muted-foreground text-center py-4">涨跌家数分时图需要至少2个数据点（每5分钟采集一次）</div>
+          <div className="text-xs text-muted-foreground text-center py-4">涨跌家数分时图需要至少2个数据点（每2分钟采集一次）</div>
         </CardContent>
       </Card>
     );

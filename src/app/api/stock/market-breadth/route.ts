@@ -31,17 +31,17 @@ export interface MarketBreadthData {
   history: BreadthHistoryPoint[];
 }
 
-// ── In-memory 5-min history cache ──
+// ── In-memory 2-min history cache ──
 // Key: date string "2025-01-15", Value: sorted array of BreadthHistoryPoint
 const historyStore: Map<string, BreadthHistoryPoint[]> = new Map();
-let lastHistoryTime = "";  // Last 5-min slot recorded, e.g. "09:35"
+let lastHistoryTime = "";  // Last 2-min slot recorded, e.g. "09:32"
 
-function getCurrent5MinSlot(): string {
+function getCurrent2MinSlot(): string {
   const now = new Date();
   // Use China timezone
   const h = (now.getUTCHours() + 8) % 24;
   const m = now.getUTCMinutes();
-  const slotMin = Math.floor(m / 5) * 5;
+  const slotMin = Math.floor(m / 2) * 2;
   return `${String(h).padStart(2, "0")}:${String(slotMin).padStart(2, "0")}`;
 }
 
@@ -82,9 +82,9 @@ export async function GET() {
     rawData = cached!.data;
   }
 
-  // ── Record history point (5-min interval) ──
+  // ── Record history point (2-min interval) ──
   const todayStr = getTodayDateStr();
-  const currentSlot = getCurrent5MinSlot();
+  const currentSlot = getCurrent2MinSlot();
 
   // Only record during trading hours (9:25 ~ 15:05)
   const slotH = parseInt(currentSlot.slice(0, 2));
