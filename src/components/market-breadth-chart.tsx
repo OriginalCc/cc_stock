@@ -327,14 +327,29 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {/* Down line with glow */}
           <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />
 
-          {/* Data point dots & pill labels */}
-          {data.map((d, i) => {
+          {/* Pre-compute label visibility: skip if same values as previous labeled point */}
+          {(() => {
+            const labeledIndices: number[] = [];
+            let lastLabeledUp = -1, lastLabeledDown = -1;
+            for (let i = 0; i < data.length; i++) {
+              const isLast = i === data.length - 1;
+              const isFirst = i === 0;
+              const isInterval = i % labelInterval === 0;
+              if (isFirst || isLast || isInterval) {
+                if (isFirst || isLast || data[i].totalUp !== lastLabeledUp || data[i].totalDown !== lastLabeledDown) {
+                  labeledIndices.push(i);
+                  lastLabeledUp = data[i].totalUp;
+                  lastLabeledDown = data[i].totalDown;
+                }
+              }
+            }
+            return labeledIndices;
+          })().map((i) => {
+            const d = data[i];
             const x = toX(i);
             const yUp = toY(d.totalUp);
             const yDown = toY(d.totalDown);
             const isLast = i === data.length - 1;
-            const isFirst = i === 0;
-            const showLabel = isFirst || isLast || i % labelInterval === 0;
             const linesClose = Math.abs(yUp - yDown) < 20;
 
             return (
@@ -344,22 +359,18 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
                 <circle cx={x} cy={yDown} r={isLast ? 3 : 1.8} fill={DOWN_COLOR} />
                 {isLast && <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />}
 
-                {showLabel && (
-                  <>
-                    {/* Up pill */}
-                    <rect x={x - 18} y={yUp - (linesClose ? 19 : 15) - 11}
-                      width={36} height={13} rx={3} fill={UP_COLOR} opacity={0.92} />
-                    <text x={x} y={yUp - (linesClose ? 19 : 15) - 4.5}
-                      textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
-                      fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                    {/* Down pill */}
-                    <rect x={x - 18} y={yDown + (linesClose ? 7 : 7)}
-                      width={36} height={13} rx={3} fill={DOWN_COLOR} opacity={0.92} />
-                    <text x={x} y={yDown + (linesClose ? 7 : 7) + 6.5}
-                      textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
-                      fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
-                  </>
-                )}
+                {/* Up pill */}
+                <rect x={x - 18} y={yUp - (linesClose ? 19 : 15) - 11}
+                  width={36} height={13} rx={3} fill={UP_COLOR} opacity={0.92} />
+                <text x={x} y={yUp - (linesClose ? 19 : 15) - 4.5}
+                  textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
+                  fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
+                {/* Down pill */}
+                <rect x={x - 18} y={yDown + (linesClose ? 7 : 7)}
+                  width={36} height={13} rx={3} fill={DOWN_COLOR} opacity={0.92} />
+                <text x={x} y={yDown + (linesClose ? 7 : 7) + 6.5}
+                  textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
+                  fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
               </g>
             );
           })}
