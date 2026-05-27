@@ -24,84 +24,25 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
   const data = useMemo(() => {
     if (currentUp === 0 && currentDown === 0 && history.length === 0) return [];
     if (history.length === 0) {
-      return [{ time: "now", totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
+      return [{ time: formatNowTime(), totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
     }
     const last = history[history.length - 1];
+    // If current data differs from last history point, append a "now" point
     if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
-      return [...history, { time: "now", totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
+      return [...history, { time: formatNowTime(), totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
     }
     return history;
   }, [history, currentUp, currentDown, currentFlat]);
 
   // Chart dimensions
   const w = 640;
-  const h = 200;
-  const px = 44;  // left padding for labels
-  const pr = 52;  // right padding for value labels
-  const pt = 10;  // top padding
-  const pb = 22;  // bottom padding for time labels
+  const h = 240;
+  const px = 42;  // left padding for Y labels
+  const pr = 58;  // right padding for value labels
+  const pt = 12;  // top padding
+  const pb = 24;  // bottom padding for time labels
   const chartW = w - px - pr;
   const chartH = h - pt - pb;
-
-  // Core chart computation (hook must be before any early returns)
-  const chartState = useMemo(() => {
-    if (data.length < 2) return null;
-
-    const points = data.map(d => ({ ...d, diff: d.totalUp - d.totalDown }));
-    const maxAbsDiff = Math.max(...points.map(d => Math.abs(d.diff)), 100);
-    // Round up to a nice number
-    const yMax = Math.ceil(maxAbsDiff / 500) * 500 || 500;
-    const yPad = yMax * 0.08;
-    const yTop = yMax + yPad;
-    const yBottom = -yMax - yPad;
-    const yRange = yTop - yBottom;
-
-    const toX = (i: number) => px + (i / (points.length - 1)) * chartW;
-    const toY = (v: number) => pt + (1 - (v - yBottom) / yRange) * chartH;
-    const zeroY = toY(0);
-
-    // Diff line path
-    const diffLinePath = points.map((d, i) =>
-      `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.diff).toFixed(1)}`
-    ).join(" ");
-
-    // Red area (diff > 0): clip to above zero line
-    // Build two area paths: one for positive (red), one for negative (green)
-    const redAreaPath = buildDiffAreaPath(points, toX, toY, zeroY, "positive");
-    const greenAreaPath = buildDiffAreaPath(points, toX, toY, zeroY, "negative");
-
-    // Subtle up/down lines
-    const upLinePath = points.map((d, i) =>
-      `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.totalUp - d.totalDown + (d.totalUp > d.totalDown ? (d.totalUp - d.totalDown) * 0 : 0)).toFixed(1)}`
-    ).join(" ");
-
-    // X-axis ticks
-    const tickInterval = Math.max(1, Math.floor(points.length / 6));
-    const xTicks: { x: number; label: string }[] = [];
-    for (let i = 0; i < points.length; i++) {
-      if (i % tickInterval === 0 || i === points.length - 1) {
-        xTicks.push({ x: toX(i), label: points[i].time === "now" ? "现" : points[i].time });
-      }
-    }
-
-    // Y-axis ticks (only show diff scale)
-    const yStep = Math.ceil(yMax / 2 / 500) * 500 || 500;
-    const yTicks: { y: number; label: string }[] = [];
-    for (let v = -yMax; v <= yMax; v += yStep) {
-      yTicks.push({ y: toY(v), label: v === 0 ? "0" : (v > 0 ? `+${v}` : `${v}`) });
-    }
-
-    const lastPt = points[points.length - 1];
-    const lastX = toX(points.length - 1);
-
-    return {
-      diffLinePath, redAreaPath, greenAreaPath, upLinePath,
-      xTicks, yTicks, zeroY,
-      lastDiff: lastPt.diff, lastUp: lastPt.totalUp, lastDown: lastPt.totalDown,
-      lastX, yMax, yBottom, yTop, yRange, toY,
-      points,
-    };
-  }, [data, chartW, chartH, px, pt, pb, pr]);
 
   // ── No data at all ──
   if (data.length === 0) {
@@ -118,7 +59,6 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
   if (data.length === 1) {
     const pt0 = data[0];
     const diff = pt0.totalUp - pt0.totalDown;
-    const diffColor = diff >= 0 ? "#dc2626" : "#16a34a";
     const total = pt0.totalUp + pt0.totalDown + pt0.totalFlat || 1;
     const ratio = ((pt0.totalUp / total) * 100).toFixed(1);
 
@@ -162,17 +102,60 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     );
   }
 
-  // ── Multi-point chart ──
-  if (!chartState) return null;
+  // ── Multi-point chart with two lines ──
+  // Compute Y range based on all up/down values
+  const allValues = data.flatMap(d => [d.totalUp, d.totalDown]);
+  const yMin = 0;
+  const yMax = Math.max(...allValues, 100);
+  // Round up to nice number
+  const yNiceMax = Math.ceil(yMax / 500) * 500 || 500;
+  const yPad = yNiceMax * 0.06;
+  const yTop = yNiceMax + yPad;
+  const yBottom = 0 - yPad;
+  const yRange = yTop - yBottom;
 
-  const { diffLinePath, redAreaPath, greenAreaPath,
-    xTicks, yTicks, zeroY,
-    lastDiff, lastUp, lastDown, lastX, yMax, yBottom, yTop, yRange, toY: toYFn,
-    points } = chartState;
+  const toX = (i: number) => px + (i / (data.length - 1)) * chartW;
+  const toY = (v: number) => pt + (1 - (v - yBottom) / yRange) * chartH;
 
-  const diffColor = lastDiff >= 0 ? "#dc2626" : "#16a34a";
-  const total = lastUp + lastDown + currentFlat || 1;
-  const ratio = ((lastUp / total) * 100).toFixed(1);
+  // Build line paths
+  const upLinePath = data.map((d, i) =>
+    `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.totalUp).toFixed(1)}`
+  ).join(" ");
+
+  const downLinePath = data.map((d, i) =>
+    `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.totalDown).toFixed(1)}`
+  ).join(" ");
+
+  // Build area fills under each line
+  const upAreaPath = upLinePath +
+    ` L${toX(data.length - 1).toFixed(1)},${toY(0).toFixed(1)}` +
+    ` L${toX(0).toFixed(1)},${toY(0).toFixed(1)} Z`;
+
+  const downAreaPath = downLinePath +
+    ` L${toX(data.length - 1).toFixed(1)},${toY(0).toFixed(1)}` +
+    ` L${toX(0).toFixed(1)},${toY(0).toFixed(1)} Z`;
+
+  // X-axis ticks: show time labels at regular intervals
+  const tickInterval = Math.max(1, Math.floor(data.length / 7));
+  const xTicks: { x: number; label: string }[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i % tickInterval === 0 || i === data.length - 1) {
+      xTicks.push({ x: toX(i), label: data[i].time });
+    }
+  }
+
+  // Y-axis ticks
+  const yStep = Math.ceil(yNiceMax / 4 / 500) * 500 || 500;
+  const yTicks: { y: number; label: string }[] = [];
+  for (let v = 0; v <= yNiceMax; v += yStep) {
+    yTicks.push({ y: toY(v), label: v === 0 ? "0" : `${v}` });
+  }
+
+  const lastPt = data[data.length - 1];
+  const lastX = toX(data.length - 1);
+  const diff = lastPt.totalUp - lastPt.totalDown;
+  const total = lastPt.totalUp + lastPt.totalDown + currentFlat || 1;
+  const ratio = ((lastPt.totalUp / total) * 100).toFixed(1);
 
   return (
     <Card className="border overflow-hidden">
@@ -181,21 +164,29 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs font-medium text-muted-foreground">涨跌家数分时</span>
           <div className="flex items-center gap-3 text-[10px]">
-            <span className="flex items-center gap-1"><span className="inline-block w-3 h-2.5 bg-red-500/30 rounded-sm border border-red-500/50" />涨多</span>
-            <span className="flex items-center gap-1"><span className="inline-block w-3 h-2.5 bg-green-500/30 rounded-sm border border-green-500/50" />跌多</span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3 h-0.5 bg-red-500 rounded-full" />
+              <span className="text-red-400">上涨家数</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3 h-0.5 bg-green-500 rounded-full" />
+              <span className="text-green-400">下跌家数</span>
+            </span>
           </div>
         </div>
 
         {/* SVG Chart */}
-        <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 200 }}>
+        <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 240 }}>
           <defs>
-            <linearGradient id="redGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.05" />
+            {/* Red gradient for up area */}
+            <linearGradient id="upAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
             </linearGradient>
-            <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#22c55e" stopOpacity="0.05" />
-              <stop offset="100%" stopColor="#22c55e" stopOpacity="0.35" />
+            {/* Green gradient for down area */}
+            <linearGradient id="downAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#22c55e" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" />
             </linearGradient>
           </defs>
 
@@ -205,25 +196,33 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
               stroke="currentColor" className="text-border" strokeWidth={0.4}
               strokeDasharray={t.label === "0" ? "none" : "2,3"} />
           ))}
-
           {/* Zero line (prominent) */}
-          <line x1={px} y1={zeroY} x2={px + chartW} y2={zeroY}
-            stroke="currentColor" className="text-muted-foreground" strokeWidth={0.8} />
+          <line x1={px} y1={toY(0)} x2={px + chartW} y2={toY(0)}
+            stroke="currentColor" className="text-muted-foreground" strokeWidth={0.6} />
 
-          {/* Red area (diff > 0) */}
-          {redAreaPath && <path d={redAreaPath} fill="url(#redGrad)" />}
-          {/* Green area (diff < 0) */}
-          {greenAreaPath && <path d={greenAreaPath} fill="url(#greenGrad)" />}
+          {/* Up area fill */}
+          <path d={upAreaPath} fill="url(#upAreaGrad)" />
+          {/* Down area fill */}
+          <path d={downAreaPath} fill="url(#downAreaGrad)" />
 
-          {/* Diff line */}
-          <path d={diffLinePath} fill="none" stroke={diffColor} strokeWidth={1.8} strokeLinejoin="round" />
+          {/* Up line (red) */}
+          <path d={upLinePath} fill="none" stroke="#ef4444" strokeWidth={1.8} strokeLinejoin="round" />
+          {/* Down line (green) */}
+          <path d={downLinePath} fill="none" stroke="#22c55e" strokeWidth={1.8} strokeLinejoin="round" />
 
-          {/* End dot with pulse */}
-          <circle cx={lastX} cy={toYFn(lastDiff)} r={4} fill={diffColor} opacity={0.3}>
+          {/* End dots with pulse - Up */}
+          <circle cx={lastX} cy={toY(lastPt.totalUp)} r={4} fill="#ef4444" opacity={0.3}>
             <animate attributeName="r" values="4;7;4" dur="2s" repeatCount="indefinite" />
             <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
           </circle>
-          <circle cx={lastX} cy={toYFn(lastDiff)} r={2.5} fill={diffColor} />
+          <circle cx={lastX} cy={toY(lastPt.totalUp)} r={2.5} fill="#ef4444" />
+
+          {/* End dots with pulse - Down */}
+          <circle cx={lastX} cy={toY(lastPt.totalDown)} r={4} fill="#22c55e" opacity={0.3}>
+            <animate attributeName="r" values="4;7;4" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
+          </circle>
+          <circle cx={lastX} cy={toY(lastPt.totalDown)} r={2.5} fill="#22c55e" />
 
           {/* Y-axis labels */}
           {yTicks.map((t, i) => (
@@ -243,22 +242,27 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
           {/* Right side: current values */}
           <g>
-            {/* Diff value */}
-            <text x={px + chartW + 4} y={toYFn(lastDiff)} fontSize={10} fontFamily="monospace" fontWeight={700}
-              fill={diffColor} dominantBaseline="middle">
-              {lastDiff >= 0 ? "+" : ""}{lastDiff}
-            </text>
             {/* Up count */}
-            <text x={px + chartW + 4} y={toYFn(Math.min(yMax, yMax * 0.7))} fontSize={8} fontFamily="monospace" fontWeight={600}
+            <rect x={px + chartW + 2} y={toY(lastPt.totalUp) - 7} width={52} height={14} rx={2}
+              fill="#ef4444" opacity={0.12} />
+            <text x={px + chartW + 6} y={toY(lastPt.totalUp)} fontSize={9} fontFamily="monospace" fontWeight={700}
               fill="#ef4444" dominantBaseline="middle">
-              ↑{lastUp}
+              ↑{lastPt.totalUp}
             </text>
             {/* Down count */}
-            <text x={px + chartW + 4} y={toYFn(Math.max(-yMax, -yMax * 0.7))} fontSize={8} fontFamily="monospace" fontWeight={600}
+            <rect x={px + chartW + 2} y={toY(lastPt.totalDown) - 7} width={52} height={14} rx={2}
+              fill="#22c55e" opacity={0.12} />
+            <text x={px + chartW + 6} y={toY(lastPt.totalDown)} fontSize={9} fontFamily="monospace" fontWeight={700}
               fill="#22c55e" dominantBaseline="middle">
-              ↓{lastDown}
+              ↓{lastPt.totalDown}
             </text>
           </g>
+
+          {/* Diff label at bottom right */}
+          <text x={px + chartW + 6} y={h - pb + 10} fontSize={8} fontFamily="monospace" fontWeight={600}
+            fill={diff >= 0 ? "#ef4444" : "#22c55e"} dominantBaseline="middle">
+            差{diff >= 0 ? "+" : ""}{diff}
+          </text>
         </svg>
 
         {/* Bottom ratio bar */}
@@ -275,78 +279,10 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
   );
 }
 
-/**
- * Build SVG path for diff area fill, clipped above or below zero line.
- * Uses intersection calculation where the diff line crosses zero.
- */
-function buildDiffAreaPath(
-  points: { diff: number }[],
-  toX: (i: number) => number,
-  toY: (v: number) => number,
-  zeroY: number,
-  mode: "positive" | "negative"
-): string {
-  if (points.length < 2) return "";
-
-  const segments: string[] = [];
-  let inRegion = false;
-  let pathParts: string[] = [];
-
-  for (let i = 0; i < points.length; i++) {
-    const d = points[i].diff;
-    const isTarget = mode === "positive" ? d >= 0 : d <= 0;
-    const x = toX(i);
-    const y = toY(d);
-
-    if (isTarget) {
-      if (!inRegion) {
-        // Entering the region — find intersection with zero line
-        if (i > 0) {
-          const prevD = points[i - 1].diff;
-          const prevIsTarget = mode === "positive" ? prevD >= 0 : prevD <= 0;
-          if (!prevIsTarget) {
-            // Linear interpolation to find zero crossing
-            const prevX = toX(i - 1);
-            const prevY = toY(prevD);
-            const t = Math.abs(prevD) / (Math.abs(prevD) + Math.abs(d));
-            const crossX = prevX + t * (x - prevX);
-            pathParts.push(`M${crossX.toFixed(1)},${zeroY.toFixed(1)}`);
-          }
-        }
-        if (pathParts.length === 0) {
-          pathParts.push(`M${x.toFixed(1)},${y.toFixed(1)}`);
-        } else {
-          pathParts.push(`L${x.toFixed(1)},${y.toFixed(1)}`);
-        }
-        inRegion = true;
-      } else {
-        pathParts.push(`L${x.toFixed(1)},${y.toFixed(1)}`);
-      }
-    } else {
-      if (inRegion) {
-        // Leaving the region — find intersection with zero line
-        const prevD = points[i - 1].diff;
-        const prevX = toX(i - 1);
-        const prevY = toY(prevD);
-        const t = Math.abs(prevD) / (Math.abs(prevD) + Math.abs(d));
-        const crossX = prevX + t * (x - prevX);
-        pathParts.push(`L${crossX.toFixed(1)},${zeroY.toFixed(1)}`);
-
-        // Close the path back along zero line to start
-        pathParts.push("Z");
-        segments.push(pathParts.join(" "));
-        pathParts = [];
-        inRegion = false;
-      }
-    }
-  }
-
-  // If still in region at end, close it
-  if (inRegion && pathParts.length > 0) {
-    pathParts.push(`L${toX(points.length - 1).toFixed(1)},${zeroY.toFixed(1)}`);
-    pathParts.push("Z");
-    segments.push(pathParts.join(" "));
-  }
-
-  return segments.join(" ");
+/** Format current time as HH:MM in China timezone */
+function formatNowTime(): string {
+  const now = new Date();
+  const h = (now.getUTCHours() + 8) % 24;
+  const m = now.getUTCMinutes();
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
