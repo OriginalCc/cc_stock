@@ -202,19 +202,19 @@ function computeSentiment(
   let bgClass: string;
 
   if (score <= 15) {
-    level = "极度恐慌"; color = "#059669"; bgClass = "bg-emerald-600/10 border-emerald-600/30";
+    level = "极度恐慌"; color = "#047857"; bgClass = "bg-emerald-800/15 border-emerald-700/40";
   } else if (score <= 30) {
-    level = "恐慌"; color = "#10b981"; bgClass = "bg-emerald-500/8 border-emerald-500/20";
+    level = "恐慌"; color = "#059669"; bgClass = "bg-emerald-700/12 border-emerald-600/30";
   } else if (score <= 42) {
-    level = "偏弱"; color = "#84cc16"; bgClass = "bg-lime-500/8 border-lime-500/20";
+    level = "偏弱"; color = "#4d7c0f"; bgClass = "bg-lime-700/12 border-lime-600/30";
   } else if (score <= 58) {
-    level = "中性"; color = "#eab308"; bgClass = "bg-yellow-500/8 border-yellow-500/20";
+    level = "中性"; color = "#a16207"; bgClass = "bg-yellow-700/12 border-yellow-600/30";
   } else if (score <= 70) {
-    level = "偏强"; color = "#f97316"; bgClass = "bg-orange-500/8 border-orange-500/20";
+    level = "偏强"; color = "#c2410c"; bgClass = "bg-orange-700/12 border-orange-600/30";
   } else if (score <= 85) {
-    level = "乐观"; color = "#ef4444"; bgClass = "bg-red-500/8 border-red-500/20";
+    level = "乐观"; color = "#dc2626"; bgClass = "bg-red-700/12 border-red-600/30";
   } else {
-    level = "极度乐观"; color = "#dc2626"; bgClass = "bg-red-600/10 border-red-600/30";
+    level = "极度乐观"; color = "#b91c1c"; bgClass = "bg-red-800/15 border-red-700/40";
   }
 
   return {
@@ -282,7 +282,7 @@ export function MarketSentiment({
 
   // Trend arrow
   const trendIcon = trend === "up" ? "↑" : trend === "down" ? "↓" : "→";
-  const trendColor = trend === "up" ? "#ef4444" : trend === "down" ? "#22c55e" : "#eab308";
+  const trendColor = trend === "up" ? "#dc2626" : trend === "down" ? "#059669" : "#a16207";
 
   return (
     <Card className={`border overflow-hidden ${bgClass}`}>
@@ -300,27 +300,27 @@ export function MarketSentiment({
           <div className="shrink-0">
             <svg width="140" height="90" viewBox="0 0 140 90" className="w-[140px]">
               {/* Background arc segments */}
-              {/* 0-15 极度恐慌 (green) */}
+              {/* 0-15 极度恐慌 (dark green) */}
               <path d={gaugePath(gaugeStartAngle, gaugeStartAngle + gaugeRange * 0.15, gaugeR)}
-                fill="none" stroke="#059669" strokeWidth={8} strokeLinecap="round" opacity={0.6} />
+                fill="none" stroke="#047857" strokeWidth={8} strokeLinecap="round" opacity={0.75} />
               {/* 15-30 恐慌 */}
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.15, gaugeStartAngle + gaugeRange * 0.30, gaugeR)}
-                fill="none" stroke="#10b981" strokeWidth={8} strokeLinecap="round" opacity={0.5} />
+                fill="none" stroke="#059669" strokeWidth={8} strokeLinecap="round" opacity={0.65} />
               {/* 30-42 偏弱 */}
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.30, gaugeStartAngle + gaugeRange * 0.42, gaugeR)}
-                fill="none" stroke="#84cc16" strokeWidth={8} strokeLinecap="round" opacity={0.5} />
+                fill="none" stroke="#4d7c0f" strokeWidth={8} strokeLinecap="round" opacity={0.65} />
               {/* 42-58 中性 */}
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.42, gaugeStartAngle + gaugeRange * 0.58, gaugeR)}
-                fill="none" stroke="#eab308" strokeWidth={8} strokeLinecap="round" opacity={0.5} />
+                fill="none" stroke="#a16207" strokeWidth={8} strokeLinecap="round" opacity={0.65} />
               {/* 58-70 偏强 */}
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.58, gaugeStartAngle + gaugeRange * 0.70, gaugeR)}
-                fill="none" stroke="#f97316" strokeWidth={8} strokeLinecap="round" opacity={0.5} />
+                fill="none" stroke="#c2410c" strokeWidth={8} strokeLinecap="round" opacity={0.65} />
               {/* 70-85 乐观 */}
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.70, gaugeStartAngle + gaugeRange * 0.85, gaugeR)}
-                fill="none" stroke="#ef4444" strokeWidth={8} strokeLinecap="round" opacity={0.5} />
+                fill="none" stroke="#dc2626" strokeWidth={8} strokeLinecap="round" opacity={0.65} />
               {/* 85-100 极度乐观 */}
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.85, gaugeEndAngle, gaugeR)}
-                fill="none" stroke="#dc2626" strokeWidth={8} strokeLinecap="round" opacity={0.6} />
+                fill="none" stroke="#991b1b" strokeWidth={8} strokeLinecap="round" opacity={0.75} />
 
               {/* Active arc (filled portion up to score) */}
               <path d={gaugePath(gaugeStartAngle, scoreAngle, gaugeR - 1)}
@@ -359,12 +359,12 @@ export function MarketSentiment({
                       className="h-full rounded-full transition-all duration-700"
                       style={{
                         width: `${f.score}%`,
-                        backgroundColor: f.score >= 65 ? "#ef4444" : f.score >= 50 ? "#f97316" : f.score >= 35 ? "#eab308" : "#22c55e",
+                        backgroundColor: f.score >= 65 ? "#dc2626" : f.score >= 50 ? "#c2410c" : f.score >= 35 ? "#a16207" : "#059669",
                       }}
                     />
                   </div>
                   <span className="text-[10px] font-mono font-semibold w-7 text-right tabular-nums"
-                    style={{ color: f.score >= 65 ? "#ef4444" : f.score >= 50 ? "#f97316" : f.score >= 35 ? "#eab308" : "#22c55e" }}>
+                    style={{ color: f.score >= 65 ? "#dc2626" : f.score >= 50 ? "#c2410c" : f.score >= 35 ? "#a16207" : "#059669" }}>
                     {f.score}
                   </span>
                 </div>
@@ -380,22 +380,22 @@ export function MarketSentiment({
         {/* Sentiment bar */}
         <div className="mt-3">
           <div className="h-2.5 w-full rounded-full overflow-hidden flex relative">
-            <div className="h-full bg-emerald-600/70" style={{ width: "15%" }} />
-            <div className="h-full bg-emerald-500/60" style={{ width: "15%" }} />
-            <div className="h-full bg-lime-500/60" style={{ width: "12%" }} />
-            <div className="h-full bg-yellow-500/60" style={{ width: "16%" }} />
-            <div className="h-full bg-orange-500/60" style={{ width: "12%" }} />
-            <div className="h-full bg-red-500/60" style={{ width: "15%" }} />
-            <div className="h-full bg-red-600/70" style={{ width: "15%" }} />
+            <div className="h-full bg-emerald-800/80" style={{ width: "15%" }} />
+            <div className="h-full bg-emerald-700/70" style={{ width: "15%" }} />
+            <div className="h-full bg-lime-700/70" style={{ width: "12%" }} />
+            <div className="h-full bg-yellow-700/70" style={{ width: "16%" }} />
+            <div className="h-full bg-orange-700/70" style={{ width: "12%" }} />
+            <div className="h-full bg-red-700/70" style={{ width: "15%" }} />
+            <div className="h-full bg-red-800/80" style={{ width: "15%" }} />
             {/* Score indicator */}
             <div className="absolute top-0 h-full transition-all duration-700" style={{ left: `${score}%`, transform: "translateX(-50%)" }}>
               <div className="w-0.5 h-full bg-white rounded-full shadow-sm" />
             </div>
           </div>
           <div className="flex justify-between mt-0.5">
-            <span className="text-[8px] text-emerald-500">恐慌</span>
-            <span className="text-[8px] text-yellow-500">中性</span>
-            <span className="text-[8px] text-red-500">乐观</span>
+            <span className="text-[8px] text-emerald-700">恐慌</span>
+            <span className="text-[8px] text-yellow-700">中性</span>
+            <span className="text-[8px] text-red-700">乐观</span>
           </div>
         </div>
       </CardContent>
