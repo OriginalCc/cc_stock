@@ -34,7 +34,7 @@ const RiskAlertPanel = dynamic(() => import("@/components/risk-alert-panel").the
 const TradingRulesCard = dynamic(() => import("@/components/trading-rules-card").then(m => ({ default: m.TradingRulesCard })), { ssr: false, loading: () => <div className="h-[120px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载交易规矩...</span></div> });
 const PositionSignalCard = dynamic(() => import("@/components/position-signal-card").then(m => ({ default: m.PositionSignalCard })), { ssr: false, loading: () => <div className="h-[60px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载仓位信号...</span></div> });
 const PasswordManageDialog = dynamic(() => import("@/components/password-manage-dialog").then(m => ({ default: m.PasswordManageDialog })), { ssr: false });
-const MarketBreadthChart = dynamic(() => import("@/components/market-breadth-chart").then(m => ({ default: m.MarketBreadthChart })), { ssr: false, loading: () => <div className="h-[180px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨跌家数图...</span></div> });
+const MarketBreadthChart = dynamic(() => import("@/components/market-breadth-chart").then(m => ({ default: m.MarketBreadthChart })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨跌家数图...</span></div> });
 import { PasswordGate } from "@/components/password-gate";
 import { LazyMount } from "@/components/lazy-mount";
 import { calculateMACD } from "@/lib/indicators";
