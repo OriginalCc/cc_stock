@@ -282,9 +282,9 @@ export function MarketSentiment({
 
   return (
     <Card className={`border overflow-hidden ${bgClass}`}>
-      <CardContent className="p-3 sm:p-4">
+      <CardContent className="px-3 py-2 sm:px-4 sm:py-2">
         {/* Header */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1.5">
           <span className="text-sm font-bold text-foreground/90">市场情绪指数</span>
           <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
             style={{ backgroundColor: `${trendColor}20`, color: trendColor }}>
@@ -292,10 +292,10 @@ export function MarketSentiment({
           </span>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {/* Gauge */}
           <div className="shrink-0">
-            <svg width="160" height="100" viewBox="0 0 160 100" className="w-[160px]">
+            <svg width="160" height="90" viewBox="0 0 160 90" className="w-[140px]">
               <defs>
                 <filter id="gaugeGlow" x="-30%" y="-30%" width="160%" height="160%">
                   <feGaussianBlur stdDeviation="2" result="blur" />
@@ -362,7 +362,7 @@ export function MarketSentiment({
           </div>
 
           {/* Factor breakdown */}
-          <div className="flex-1 min-w-0 space-y-2">
+          <div className="flex-1 min-w-0 space-y-1.5">
             {Object.entries(factors).map(([key, f]) => {
               const fc = getFactorColor(f.score);
               return (
@@ -391,8 +391,8 @@ export function MarketSentiment({
         </div>
 
         {/* Sentiment bar — bigger & bolder */}
-        <div className="mt-3">
-          <div className="h-4 w-full rounded-full overflow-hidden flex relative shadow-inner">
+        <div className="mt-2">
+          <div className="h-3 w-full rounded-full overflow-hidden flex relative shadow-inner">
             <div className="h-full bg-green-600/80" style={{ width: "15%" }} />
             <div className="h-full bg-green-500/70" style={{ width: "15%" }} />
             <div className="h-full bg-lime-500/70" style={{ width: "12%" }} />
