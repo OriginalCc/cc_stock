@@ -134,7 +134,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     if (data.length < 2) return null;
 
     const w = 640, h = 280;
-    const px = 46, pr = 10, pt = 20, pb = 26;
+    const px = 46, pr = 10, pt = 20, pb = 34;
     const chartW = w - px - pr;
     const chartH = h - pt - pb;
 
@@ -367,10 +367,10 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {/* X-axis with tick marks */}
           {xTicks.map((t, i) => (
             <g key={`xl-${i}`}>
-              <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 3}
-                stroke="currentColor" className="text-muted-foreground/40" strokeWidth={0.5} />
-              <text x={t.x} y={h - 6} textAnchor="middle"
-                fontSize={7.5} fontFamily="monospace" fill="currentColor" className="text-muted-foreground/70">
+              <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 4}
+                stroke="currentColor" className="text-foreground/30" strokeWidth={0.6} />
+              <text x={t.x} y={h - 7} textAnchor="middle"
+                fontSize={10} fontFamily="monospace" fontWeight={700} fill="currentColor" className="text-foreground/80">
                 {t.label}
               </text>
             </g>
