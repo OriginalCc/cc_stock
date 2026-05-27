@@ -282,7 +282,7 @@ export function MarketSentiment({
 
   return (
     <Card className={`border overflow-hidden ${bgClass}`}>
-      <CardContent className="px-3 py-2 sm:px-4 sm:py-2">
+      <CardContent className="px-3 py-1 sm:px-4 sm:py-1">
         {/* Header */}
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-sm font-bold text-foreground/90">市场情绪指数</span>
