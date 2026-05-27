@@ -36,10 +36,10 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
   // Chart dimensions
   const w = 640;
-  const h = 240;
+  const h = 260;
   const px = 42;  // left padding for Y labels
   const pr = 58;  // right padding for value labels
-  const pt = 12;  // top padding
+  const pt = 16;  // top padding (more room for labels above up line)
   const pb = 24;  // bottom padding for time labels
   const chartW = w - px - pr;
   const chartH = h - pt - pb;
@@ -176,7 +176,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         </div>
 
         {/* SVG Chart */}
-        <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 240 }}>
+        <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 260 }}>
           <defs>
             {/* Red gradient for up area */}
             <linearGradient id="upAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -210,19 +210,58 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {/* Down line (green) */}
           <path d={downLinePath} fill="none" stroke="#22c55e" strokeWidth={1.8} strokeLinejoin="round" />
 
+          {/* Data point dots & number labels */}
+          {/* Determine label interval: show every point if <=8, otherwise thin out */}
+          {data.map((d, i) => {
+            const x = toX(i);
+            const yUp = toY(d.totalUp);
+            const yDown = toY(d.totalDown);
+            const isLast = i === data.length - 1;
+            const isFirst = i === 0;
+            const labelInterval = data.length <= 8 ? 1 : Math.max(1, Math.floor(data.length / 8));
+            const showLabel = isFirst || isLast || i % labelInterval === 0;
+            const upLabelY = yUp - 5;
+            const downLabelY = yDown + 10;
+
+            return (
+              <g key={`pt-${i}`}>
+                {/* Up dot */}
+                <circle cx={x} cy={yUp} r={isLast ? 2.5 : 1.8} fill="#ef4444" />
+                {/* Down dot */}
+                <circle cx={x} cy={yDown} r={isLast ? 2.5 : 1.8} fill="#22c55e" />
+
+                {/* Number labels */}
+                {showLabel && (
+                  <>
+                    {/* Up count label (above the up line) */}
+                    <text x={x} y={upLabelY} textAnchor="middle"
+                      fontSize={7.5} fontFamily="monospace" fontWeight={700}
+                      fill="#ef4444" opacity={0.9}>
+                      {d.totalUp}
+                    </text>
+                    {/* Down count label (below the down line) */}
+                    <text x={x} y={downLabelY} textAnchor="middle"
+                      fontSize={7.5} fontFamily="monospace" fontWeight={700}
+                      fill="#22c55e" opacity={0.9}>
+                      {d.totalDown}
+                    </text>
+                  </>
+                )}
+              </g>
+            );
+          })}
+
           {/* End dots with pulse - Up */}
           <circle cx={lastX} cy={toY(lastPt.totalUp)} r={4} fill="#ef4444" opacity={0.3}>
             <animate attributeName="r" values="4;7;4" dur="2s" repeatCount="indefinite" />
             <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
           </circle>
-          <circle cx={lastX} cy={toY(lastPt.totalUp)} r={2.5} fill="#ef4444" />
 
           {/* End dots with pulse - Down */}
           <circle cx={lastX} cy={toY(lastPt.totalDown)} r={4} fill="#22c55e" opacity={0.3}>
             <animate attributeName="r" values="4;7;4" dur="2s" repeatCount="indefinite" />
             <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
           </circle>
-          <circle cx={lastX} cy={toY(lastPt.totalDown)} r={2.5} fill="#22c55e" />
 
           {/* Y-axis labels */}
           {yTicks.map((t, i) => (
