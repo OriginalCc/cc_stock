@@ -250,17 +250,17 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-foreground/80">涨跌家数分时</span>
           <div className="flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
+            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded"
               style={{ backgroundColor: `${UP_COLOR}18`, color: UP_COLOR }}>
-              <span className="inline-block w-2.5 h-1 rounded-full" style={{ backgroundColor: UP_COLOR }} />
+              <span className="inline-block w-3 h-1 rounded-full" style={{ backgroundColor: UP_COLOR }} />
               涨 {lastPt.totalUp}
             </span>
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
+            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded"
               style={{ backgroundColor: `${DOWN_COLOR}18`, color: DOWN_COLOR }}>
-              <span className="inline-block w-2.5 h-1 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
+              <span className="inline-block w-3 h-1 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
               跌 {lastPt.totalDown}
             </span>
-            <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded"
+            <span className="inline-flex items-center text-xs font-bold px-2 py-0.5 rounded"
               style={{ backgroundColor: diff >= 0 ? `${UP_COLOR}12` : `${DOWN_COLOR}12`, color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>
               差{diff >= 0 ? "+" : ""}{diff}
             </span>
@@ -328,16 +328,16 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
                 {showLabel && (
                   <>
                     {/* Up pill */}
-                    <rect x={x - 15} y={yUp - (linesClose ? 17 : 13) - 10}
-                      width={30} height={11} rx={3} fill={UP_COLOR} opacity={0.92} />
-                    <text x={x} y={yUp - (linesClose ? 17 : 13) - 4.5}
-                      textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
+                    <rect x={x - 18} y={yUp - (linesClose ? 19 : 15) - 11}
+                      width={36} height={13} rx={3} fill={UP_COLOR} opacity={0.92} />
+                    <text x={x} y={yUp - (linesClose ? 19 : 15) - 4.5}
+                      textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                       fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
                     {/* Down pill */}
-                    <rect x={x - 15} y={yDown + (linesClose ? 6 : 6)}
-                      width={30} height={11} rx={3} fill={DOWN_COLOR} opacity={0.92} />
-                    <text x={x} y={yDown + (linesClose ? 6 : 6) + 5.5}
-                      textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
+                    <rect x={x - 18} y={yDown + (linesClose ? 7 : 7)}
+                      width={36} height={13} rx={3} fill={DOWN_COLOR} opacity={0.92} />
+                    <text x={x} y={yDown + (linesClose ? 7 : 7) + 6.5}
+                      textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                       fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
                   </>
                 )}
@@ -383,13 +383,13 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
         {/* Bottom ratio bar */}
         <div className="mt-2 flex items-center gap-2">
-          <span className="text-[9px] font-bold tabular-nums w-8 text-right" style={{ color: UP_COLOR }}>{ratio}%</span>
+          <span className="text-[10px] font-bold tabular-nums w-9 text-right" style={{ color: UP_COLOR }}>{ratio}%</span>
           <div className="flex-1 h-3 rounded-full overflow-hidden flex bg-muted/30 relative">
             <div className="h-full rounded-l-full transition-all duration-700" style={{ width: `${ratio}%`, backgroundColor: UP_COLOR, opacity: 0.75 }} />
             <div className="h-full rounded-r-full transition-all duration-700" style={{ width: `${100 - parseFloat(ratio)}%`, backgroundColor: DOWN_COLOR, opacity: 0.75 }} />
             <div className="absolute left-1/2 top-0 bottom-0 w-px bg-muted-foreground/20 -translate-x-1/2" />
           </div>
-          <span className="text-[9px] font-bold tabular-nums w-8" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(ratio)).toFixed(1)}%</span>
+          <span className="text-[10px] font-bold tabular-nums w-9" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(ratio)).toFixed(1)}%</span>
         </div>
       </CardContent>
     </Card>
