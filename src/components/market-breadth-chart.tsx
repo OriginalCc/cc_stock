@@ -17,6 +17,12 @@ interface MarketBreadthChartProps {
   currentUp: number;
   currentDown: number;
   currentFlat: number;
+  limitUp?: number;
+  limitDown?: number;
+  shUp?: number;
+  shDown?: number;
+  szUp?: number;
+  szDown?: number;
 }
 
 // ── Colors ──
@@ -115,7 +121,7 @@ function buildBetweenArea(
   return segments.join(" ");
 }
 
-export function MarketBreadthChart({ history, currentUp, currentDown, currentFlat }: MarketBreadthChartProps) {
+export function MarketBreadthChart({ history, currentUp, currentDown, currentFlat, limitUp = 0, limitDown = 0, shUp = 0, shDown = 0, szUp = 0, szDown = 0 }: MarketBreadthChartProps) {
   // Merge current live data
   const data = useMemo(() => {
     if (currentUp === 0 && currentDown === 0 && history.length === 0) return [];
@@ -180,13 +186,54 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
   const diff = lastPt ? lastPt.totalUp - lastPt.totalDown : 0;
   const total = lastPt ? lastPt.totalUp + lastPt.totalDown + currentFlat || 1 : 1;
   const ratio = lastPt ? ((lastPt.totalUp / total) * 100).toFixed(1) : "50.0";
+  const isBullish = currentUp > currentDown;
+
+  // ── Summary stats row (shared across all states) ──
+  const summaryRow = (
+    <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-1">
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: UP_COLOR }} />
+        <span className="font-bold tabular-nums text-sm" style={{ color: UP_COLOR }}>{currentUp}</span>
+        <span className="text-[10px] text-muted-foreground">涨</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
+        <span className="font-bold tabular-nums text-sm" style={{ color: DOWN_COLOR }}>{currentDown}</span>
+        <span className="text-[10px] text-muted-foreground">跌</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+        <span className="text-muted-foreground font-bold tabular-nums text-sm">{currentFlat}</span>
+        <span className="text-[10px] text-muted-foreground">平</span>
+      </div>
+      {(limitUp > 0 || limitDown > 0) && (
+        <div className="flex items-center gap-2 ml-1 pl-2 border-l border-border">
+          {limitUp > 0 && <span className="text-[10px] text-red-500 font-medium">涨停 {limitUp}</span>}
+          {limitDown > 0 && <span className="text-[10px] text-green-500 font-medium">跌停 {limitDown}</span>}
+        </div>
+      )}
+    </div>
+  );
+
+  const subInfoRow = (shUp > 0 || szUp > 0) ? (
+    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+      <span>沪 {shUp}:{shDown}</span>
+      <span className="text-muted-foreground/30">|</span>
+      <span>深 {szUp}:{szDown}</span>
+      <span className="text-muted-foreground/30">|</span>
+      <span style={{ color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>差{diff >= 0 ? "+" : ""}{diff}</span>
+    </div>
+  ) : null;
 
   // ── No data at all ──
   if (data.length === 0) {
     return (
-      <Card className="border overflow-hidden">
+      <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
         <CardContent className="p-3">
-          <div className="text-xs text-muted-foreground text-center py-8">等待涨跌家数数据...</div>
+          <div className="text-xs font-semibold text-foreground/80 mb-2">市场涨跌家数</div>
+          {summaryRow}
+          {subInfoRow}
+          <div className="text-xs text-muted-foreground text-center py-4 mt-2 border-t border-border/40">等待分时数据...</div>
         </CardContent>
       </Card>
     );
@@ -200,30 +247,15 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     const sRatio = ((pt0.totalUp / sTotal) * 100).toFixed(1);
 
     return (
-      <Card className="border overflow-hidden">
+      <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
         <CardContent className="p-3">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-foreground/80">涨跌家数分时</span>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-foreground/80">市场涨跌家数</span>
             <span className="text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">第1个数据点</span>
           </div>
-          <div className="flex items-center justify-center gap-6 py-4">
-            <div className="text-center">
-              <div className="text-2xl font-extrabold tabular-nums" style={{ color: UP_COLOR }}>{pt0.totalUp}</div>
-              <div className="text-[10px] font-medium mt-0.5" style={{ color: UP_COLOR, opacity: 0.7 }}>上涨</div>
-            </div>
-            <div className="text-muted-foreground/30 text-xl font-light">:</div>
-            <div className="text-center">
-              <div className="text-2xl font-extrabold tabular-nums" style={{ color: DOWN_COLOR }}>{pt0.totalDown}</div>
-              <div className="text-[10px] font-medium mt-0.5" style={{ color: DOWN_COLOR, opacity: 0.7 }}>下跌</div>
-            </div>
-            <div className="ml-4 pl-4 border-l border-border/60">
-              <div className="text-2xl font-extrabold tabular-nums" style={{ color: sDiff >= 0 ? UP_COLOR : DOWN_COLOR }}>
-                {sDiff >= 0 ? "+" : ""}{sDiff}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">涨跌差</div>
-            </div>
-          </div>
-          <div className="h-3 w-full rounded-full overflow-hidden flex bg-muted/30">
+          {summaryRow}
+          {subInfoRow}
+          <div className="h-3 w-full rounded-full overflow-hidden flex bg-muted/30 mt-2">
             <div className="h-full rounded-l-full transition-all duration-500" style={{ width: `${sRatio}%`, backgroundColor: UP_COLOR, opacity: 0.8 }} />
             <div className="h-full rounded-r-full transition-all duration-500" style={{ width: `${100 - parseFloat(sRatio)}%`, backgroundColor: DOWN_COLOR, opacity: 0.8 }} />
           </div>
@@ -244,30 +276,17 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
   const lastX = toX(data.length - 1);
 
   return (
-    <Card className="border overflow-hidden">
+    <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
       <CardContent className="p-3">
-        {/* Header with live stats */}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-foreground/80">涨跌家数分时</span>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded"
-              style={{ backgroundColor: `${UP_COLOR}18`, color: UP_COLOR }}>
-              <span className="inline-block w-3 h-1 rounded-full" style={{ backgroundColor: UP_COLOR }} />
-              涨 {lastPt.totalUp}
-            </span>
-            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded"
-              style={{ backgroundColor: `${DOWN_COLOR}18`, color: DOWN_COLOR }}>
-              <span className="inline-block w-3 h-1 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
-              跌 {lastPt.totalDown}
-            </span>
-            <span className="inline-flex items-center text-xs font-bold px-2 py-0.5 rounded"
-              style={{ backgroundColor: diff >= 0 ? `${UP_COLOR}12` : `${DOWN_COLOR}12`, color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>
-              差{diff >= 0 ? "+" : ""}{diff}
-            </span>
-          </div>
-        </div>
+        {/* Header with title */}
+        <div className="text-xs font-semibold text-foreground/80 mb-2">市场涨跌家数</div>
+        {/* Summary stats row */}
+        {summaryRow}
+        {/* Sub info row (沪深差) */}
+        {subInfoRow}
 
         {/* SVG Chart */}
+        <div className="mt-2">
         <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 280 }}>
           <defs>
             <linearGradient id="betweenRed" x1="0" y1="0" x2="0" y2="1">
@@ -380,6 +399,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           <line x1={cPx} y1={cPt} x2={cPx} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.5} />
           <line x1={cPx} y1={h - cPb} x2={cPx + cW} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.5} />
         </svg>
+        </div>
 
         {/* Bottom ratio bar */}
         <div className="mt-2 flex items-center gap-2">

@@ -817,65 +817,20 @@ export default function StockTAssistant() {
         {/* Market Breadth 涨跌家数 (only in timeline modes) */}
         {quote && isTimelineActive && liveTimeline.length > 0 && marketBreadth && (() => {
           const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;
-          const total = totalUp + totalDown + totalFlat;
-          const upPct = total > 0 ? (totalUp / total * 100) : 0;
-          const downPct = total > 0 ? (totalDown / total * 100) : 0;
-          const isBullish = totalUp > totalDown;
           return (
             <div className="mb-4 space-y-2">
-              <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
-                <CardContent className="p-2 sm:p-2.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-muted-foreground mb-1.5">市场涨跌家数</div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1">
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
-                          <span className="text-red-600 dark:text-red-400 font-bold tabular-nums text-sm">{totalUp}</span>
-                          <span className="text-[10px] text-muted-foreground">涨</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
-                          <span className="text-green-600 dark:text-green-400 font-bold tabular-nums text-sm">{totalDown}</span>
-                          <span className="text-[10px] text-muted-foreground">跌</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
-                          <span className="text-muted-foreground font-bold tabular-nums text-sm">{totalFlat}</span>
-                          <span className="text-[10px] text-muted-foreground">平</span>
-                        </div>
-                        {(limitUp > 0 || limitDown > 0) && (
-                          <div className="flex items-center gap-2 ml-1 pl-2 border-l border-border">
-                            {limitUp > 0 && <span className="text-[10px] text-red-500 font-medium">涨停 {limitUp}</span>}
-                            {limitDown > 0 && <span className="text-[10px] text-green-500 font-medium">跌停 {limitDown}</span>}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="shrink-0 w-28">
-                      <div className="flex items-center gap-1 mb-1">
-                        <span className="text-[9px] text-muted-foreground">沪 {shUp}</span>
-                        <span className="text-[9px] text-muted-foreground/50">:</span>
-                        <span className="text-[9px] text-muted-foreground">{shDown}</span>
-                        <span className="text-[9px] text-muted-foreground/40 ml-1">深 {szUp}</span>
-                        <span className="text-[9px] text-muted-foreground/50">:</span>
-                        <span className="text-[9px] text-muted-foreground">{szDown}</span>
-                      </div>
-                      {/* Ratio bar */}
-                      <div className="h-2 w-full rounded-full overflow-hidden flex bg-muted/30">
-                        <div className="h-full bg-red-500 transition-all duration-500" style={{ width: `${upPct}%` }} />
-                        <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${downPct}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              {/* 涨跌家数分时图 */}
+              {/* 涨跌家数（融合版：摘要+分时图） */}
               <MarketBreadthChart
                 history={history || []}
                 currentUp={totalUp}
                 currentDown={totalDown}
                 currentFlat={totalFlat}
+                limitUp={limitUp}
+                limitDown={limitDown}
+                shUp={shUp}
+                shDown={shDown}
+                szUp={szUp}
+                szDown={szDown}
               />
               {/* 市场情绪指数 */}
               <MarketSentiment
