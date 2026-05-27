@@ -400,12 +400,20 @@ export function MarketSentiment({
             <div className="h-full bg-orange-500/70" style={{ width: "12%" }} />
             <div className="h-full bg-red-500/70" style={{ width: "15%" }} />
             <div className="h-full bg-red-600/80" style={{ width: "15%" }} />
-            {/* Score indicator — prominent triangle marker */}
+            {/* Score indicator line */}
             <div className="absolute top-0 h-full transition-all duration-700" style={{ left: `${score}%`, transform: "translateX(-50%)" }}>
               <div className="w-1 h-full bg-white rounded-full shadow-[0_0_6px_2px_rgba(255,255,255,0.6)]" />
             </div>
           </div>
-          <div className="flex justify-between mt-1">
+          {/* Triangle pointer above the bar */}
+          <div className="relative h-0" style={{ marginTop: '-1px' }}>
+            <div className="absolute transition-all duration-700" style={{ left: `${score}%`, transform: "translateX(-50%)" }}>
+              <svg width="10" height="6" viewBox="0 0 10 6" style={{ display: 'block' }}>
+                <polygon points="5,6 0,0 10,0" fill={color} />
+              </svg>
+            </div>
+          </div>
+          <div className="flex justify-between mt-0.5">
             <span className="text-[10px] text-green-600 font-bold">恐慌</span>
             <span className="text-[10px] text-yellow-600 font-bold">中性</span>
             <span className="text-[10px] text-red-600 font-bold">乐观</span>
