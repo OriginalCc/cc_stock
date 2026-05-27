@@ -131,7 +131,7 @@ export async function GET() {
   // Only record during extended hours (9:00 ~ 15:30) to cover pre/post market
   const slotH = parseInt(currentSlot.slice(0, 2));
   const slotM = parseInt(currentSlot.slice(3, 5));
-  const slotVal = slotH * 60 + slotM;
+  const slotVal = slotH * 100 + slotM;  // HHMM format: 9:30 = 930, 11:22 = 1122
   const isRecordableTime = slotVal >= 900 && slotVal <= 1530;
 
   // Reset history if date changed
@@ -149,29 +149,26 @@ export async function GET() {
     }
 
     const points = memoryHistory.points;
-    const lastSlot = memoryHistory.lastSlot;
 
-    // Record if we're in a new slot, or if history is empty (first data point)
-    if (currentSlot !== lastSlot || points.length === 0) {
-      const existingIdx = points.findIndex(p => p.time === currentSlot);
-      const point: BreadthHistoryPoint = {
-        time: currentSlot,
-        totalUp: rawData.totalUp,
-        totalDown: rawData.totalDown,
-        totalFlat: rawData.totalFlat,
-        limitUp: rawData.limitUp,
-        limitDown: rawData.limitDown,
-      };
-      if (existingIdx >= 0) {
-        points[existingIdx] = point; // Update existing
-      } else {
-        points.push(point);
-      }
-      memoryHistory.lastSlot = currentSlot;
-
-      // Persist to file after each update
-      persistHistory(todayStr, points, currentSlot);
+    // Always record/update: new slot → add point, same slot → update with latest data
+    const existingIdx = points.findIndex(p => p.time === currentSlot);
+    const point: BreadthHistoryPoint = {
+      time: currentSlot,
+      totalUp: rawData.totalUp,
+      totalDown: rawData.totalDown,
+      totalFlat: rawData.totalFlat,
+      limitUp: rawData.limitUp,
+      limitDown: rawData.limitDown,
+    };
+    if (existingIdx >= 0) {
+      points[existingIdx] = point; // Update existing slot with latest data
+    } else {
+      points.push(point); // New time slot
     }
+    memoryHistory.lastSlot = currentSlot;
+
+    // Persist to file after each update
+    persistHistory(todayStr, points, currentSlot);
   }
 
   const result: MarketBreadthData = {
