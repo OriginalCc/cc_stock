@@ -68,6 +68,7 @@ export default function StockTAssistant() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [autoExpanded, setAutoExpanded] = useState<boolean>(false);
+  const [marketBreadth, setMarketBreadth] = useState<{ totalUp: number; totalDown: number; totalFlat: number; shUp: number; shDown: number; szUp: number; szDown: number; limitUp: number; limitDown: number } | null>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Auto-show opening reminder badge in first 3 minutes of market open ──
@@ -198,6 +199,38 @@ export default function StockTAssistant() {
     }
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
+
+  // ── Market Breadth (涨跌家数) ──
+  useEffect(() => {
+    if (pageMode !== "t-assistant") return;
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const fetchBreadth = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch("/api/stock/market-breadth", { signal: AbortSignal.timeout(6000) });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.error && !cancelled) {
+          setMarketBreadth(data);
+        }
+      } catch { /* ignore */ }
+    };
+
+    const isTradingHours = () => {
+      const now = new Date(); const h = (now.getUTCHours() + 8) % 24; const m = now.getUTCMinutes();
+      const t = h * 100 + m; const day = now.getUTCDay();
+      return day >= 1 && day <= 5 && ((t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505));
+    };
+
+    // Initial fetch with delay to avoid competing with stock data
+    setTimeout(fetchBreadth, 2000);
+    if (isTradingHours()) {
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchBreadth(); }, 30000);
+    }
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
+  }, [pageMode]);
 
   const szIndexRegime = indexRegimes[activeIndexKey];
   const cycleIndexKey = useCallback(() => { setActiveIndexKey(prev => { const idx = INDEX_KEYS.indexOf(prev); return INDEX_KEYS[(idx + 1) % INDEX_KEYS.length]; }); }, []);
@@ -826,6 +859,63 @@ export default function StockTAssistant() {
                 </div>
               </CardContent>
             </Card>
+            {/* Market Breadth 涨跌家数 */}
+            {marketBreadth && (() => {
+              const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown } = marketBreadth;
+              const total = totalUp + totalDown + totalFlat;
+              const upPct = total > 0 ? (totalUp / total * 100) : 0;
+              const downPct = total > 0 ? (totalDown / total * 100) : 0;
+              const isBullish = totalUp > totalDown;
+              return (
+                <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
+                  <CardContent className="p-2 sm:p-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-muted-foreground mb-1.5">市场涨跌家数</div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
+                            <span className="text-red-600 dark:text-red-400 font-bold tabular-nums text-sm">{totalUp}</span>
+                            <span className="text-[10px] text-muted-foreground">涨</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span className="text-green-600 dark:text-green-400 font-bold tabular-nums text-sm">{totalDown}</span>
+                            <span className="text-[10px] text-muted-foreground">跌</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+                            <span className="text-muted-foreground font-bold tabular-nums text-sm">{totalFlat}</span>
+                            <span className="text-[10px] text-muted-foreground">平</span>
+                          </div>
+                          {(limitUp > 0 || limitDown > 0) && (
+                            <div className="flex items-center gap-2 ml-1 pl-2 border-l border-border">
+                              {limitUp > 0 && <span className="text-[10px] text-red-500 font-medium">涨停 {limitUp}</span>}
+                              {limitDown > 0 && <span className="text-[10px] text-green-500 font-medium">跌停 {limitDown}</span>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="shrink-0 w-28">
+                        <div className="flex items-center gap-1 mb-1">
+                          <span className="text-[9px] text-muted-foreground">沪 {shUp}</span>
+                          <span className="text-[9px] text-muted-foreground/50">:</span>
+                          <span className="text-[9px] text-muted-foreground">{shDown}</span>
+                          <span className="text-[9px] text-muted-foreground/40 ml-1">深 {szUp}</span>
+                          <span className="text-[9px] text-muted-foreground/50">:</span>
+                          <span className="text-[9px] text-muted-foreground">{szDown}</span>
+                        </div>
+                        {/* Ratio bar */}
+                        <div className="h-2 w-full rounded-full overflow-hidden flex bg-muted/30">
+                          <div className="h-full bg-red-500 transition-all duration-500" style={{ width: `${upPct}%` }} />
+                          <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${downPct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </div>
         )}
 
