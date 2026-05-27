@@ -812,112 +812,65 @@ export default function StockTAssistant() {
           </CardContent>
         </Card>
 
-        {/* T-Index & Smart Action Panel (only in timeline modes) */}
-        {quote && isTimelineActive && liveTimeline.length > 0 && (
-          <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Card className="border overflow-hidden">
-              <CardContent className="p-2 sm:p-2.5">
-                <div className="flex items-center gap-3">
-                  <div className="relative shrink-0">
-                    <svg width="72" height="72" viewBox="0 0 72 72">
-                      <circle cx="36" cy="36" r="30" fill="none" stroke="currentColor" className="text-muted/30" strokeWidth="6" strokeDasharray={`${Math.PI * 30}`} strokeDashoffset="0" transform="rotate(-90 36 36)" strokeLinecap="round" />
-                      <circle cx="36" cy="36" r="30" fill="none" stroke={getTIndexColor(tIndex)} strokeWidth="6" strokeDasharray={`${(tIndex / 100) * Math.PI * 30} ${Math.PI * 30}`} strokeDashoffset="0" transform="rotate(-90 36 36)" strokeLinecap="round" style={{ transition: 'stroke-dasharray 0.5s ease, stroke 0.5s ease' }} />
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center"><span className="text-xl font-bold tabular-nums" style={{ color: getTIndexColor(tIndex) }}>{tIndex}</span></div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs text-muted-foreground mb-1">做T指数</div>
-                    <div className={`text-base font-bold ${getTIndexLabelColor(tIndex)}`}>{getTIndexLabel(tIndex)}</div>
-                    <div className="mt-1 h-2 w-full bg-muted/30 rounded-full overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${tIndex}%`, backgroundColor: getTIndexColor(tIndex) }} /></div>
-                    <div className="flex justify-between mt-1 text-[9px] text-muted-foreground"><span>卖出</span><span>观望</span><span>做T</span><span>优质</span></div>
-                  </div>
-                  {latestTimelineSignal?.strength === 'strong' && (
-                    <div className="animate-signal-pulse shrink-0"><Volume2 className="h-5 w-5" style={{ color: latestTimelineSignal.type === 'buy' ? '#22c55e' : latestTimelineSignal.type === 'stoploss' ? '#f59e0b' : '#ef4444' }} /></div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className={`border overflow-hidden ${smartAction.bgColor}`}>
-              <CardContent className="p-2 sm:p-2.5">
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs text-muted-foreground mb-1">智能操作建议</div>
-                    <div className={`text-lg font-bold ${smartAction.color}`}>{smartAction.icon} {smartAction.text}</div>
-                    <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{smartAction.reason}</div>
-                    {(() => { const lastTime = liveTimeline[liveTimeline.length - 1]?.time; const tw = lastTime ? getTimeWindow(lastTime) : null; if (!tw) return null; const twColor = tw === '开盘观察' || tw === '尾盘不操作' ? 'text-muted-foreground bg-muted/50' : tw.includes('卖出') ? 'text-red-600 bg-red-500/10' : 'text-green-600 bg-green-500/10'; return <Badge variant="outline" className={`text-[10px] h-5 mt-2 ${twColor}`}><Clock className="h-2.5 w-2.5 mr-0.5" />{tw}</Badge>; })()}
-                    {newsData && (newsData.market || newsData.sector || newsData.stock) && (
-                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                        {(["market", "sector", "stock"] as const).map((tab) => { const d = newsData[tab]; if (!d?.analysis) return null; const a = d.analysis; const labels = { market: "大盘", sector: d.sectorName ? `${d.sectorName}` : "板块", stock: quote?.name || "个股" }; const trendColors: Record<string, string> = { "上升": "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20", "下降": "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20", "震荡": "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20" }; const sentimentIcons: Record<string, string> = { "偏多": "🔺", "偏空": "🔻", "中性": "↔️" }; const tc = trendColors[a.trend] || trendColors["震荡"]; const si = sentimentIcons[a.newsSentiment] || "↔️"; return <span key={tab} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border text-[10px] font-medium ${tc}`}>{labels[tab]}: {a.trend} {si}</span>; })}
-                      </div>
-                    )}
-                  </div>
-                  <div className="shrink-0 w-16 text-center">
-                    <div className="text-[10px] text-muted-foreground mb-1">信心度</div>
-                    <div className="text-sm font-bold tabular-nums" style={{ color: smartAction.confidence >= 80 ? '#22c55e' : smartAction.confidence >= 50 ? '#f59e0b' : '#9ca3af' }}>{Math.min(smartAction.confidence, 100)}%</div>
-                    <div className="mt-1 h-1.5 w-full bg-muted/30 rounded-full overflow-hidden"><div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(smartAction.confidence, 100)}%`, backgroundColor: smartAction.confidence >= 80 ? '#22c55e' : smartAction.confidence >= 50 ? '#f59e0b' : '#9ca3af' }} /></div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            {/* Market Breadth 涨跌家数 */}
-            {marketBreadth && (() => {
-              const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown } = marketBreadth;
-              const total = totalUp + totalDown + totalFlat;
-              const upPct = total > 0 ? (totalUp / total * 100) : 0;
-              const downPct = total > 0 ? (totalDown / total * 100) : 0;
-              const isBullish = totalUp > totalDown;
-              return (
-                <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
-                  <CardContent className="p-2 sm:p-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-muted-foreground mb-1.5">市场涨跌家数</div>
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
-                            <span className="text-red-600 dark:text-red-400 font-bold tabular-nums text-sm">{totalUp}</span>
-                            <span className="text-[10px] text-muted-foreground">涨</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
-                            <span className="text-green-600 dark:text-green-400 font-bold tabular-nums text-sm">{totalDown}</span>
-                            <span className="text-[10px] text-muted-foreground">跌</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
-                            <span className="text-muted-foreground font-bold tabular-nums text-sm">{totalFlat}</span>
-                            <span className="text-[10px] text-muted-foreground">平</span>
-                          </div>
-                          {(limitUp > 0 || limitDown > 0) && (
-                            <div className="flex items-center gap-2 ml-1 pl-2 border-l border-border">
-                              {limitUp > 0 && <span className="text-[10px] text-red-500 font-medium">涨停 {limitUp}</span>}
-                              {limitDown > 0 && <span className="text-[10px] text-green-500 font-medium">跌停 {limitDown}</span>}
-                            </div>
-                          )}
+        {/* Market Breadth 涨跌家数 (only in timeline modes) */}
+        {quote && isTimelineActive && liveTimeline.length > 0 && marketBreadth && (() => {
+          const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown } = marketBreadth;
+          const total = totalUp + totalDown + totalFlat;
+          const upPct = total > 0 ? (totalUp / total * 100) : 0;
+          const downPct = total > 0 ? (totalDown / total * 100) : 0;
+          const isBullish = totalUp > totalDown;
+          return (
+            <div className="mb-4">
+              <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
+                <CardContent className="p-2 sm:p-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-muted-foreground mb-1.5">市场涨跌家数</div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
+                          <span className="text-red-600 dark:text-red-400 font-bold tabular-nums text-sm">{totalUp}</span>
+                          <span className="text-[10px] text-muted-foreground">涨</span>
                         </div>
-                      </div>
-                      <div className="shrink-0 w-28">
-                        <div className="flex items-center gap-1 mb-1">
-                          <span className="text-[9px] text-muted-foreground">沪 {shUp}</span>
-                          <span className="text-[9px] text-muted-foreground/50">:</span>
-                          <span className="text-[9px] text-muted-foreground">{shDown}</span>
-                          <span className="text-[9px] text-muted-foreground/40 ml-1">深 {szUp}</span>
-                          <span className="text-[9px] text-muted-foreground/50">:</span>
-                          <span className="text-[9px] text-muted-foreground">{szDown}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
+                          <span className="text-green-600 dark:text-green-400 font-bold tabular-nums text-sm">{totalDown}</span>
+                          <span className="text-[10px] text-muted-foreground">跌</span>
                         </div>
-                        {/* Ratio bar */}
-                        <div className="h-2 w-full rounded-full overflow-hidden flex bg-muted/30">
-                          <div className="h-full bg-red-500 transition-all duration-500" style={{ width: `${upPct}%` }} />
-                          <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${downPct}%` }} />
+                        <div className="flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+                          <span className="text-muted-foreground font-bold tabular-nums text-sm">{totalFlat}</span>
+                          <span className="text-[10px] text-muted-foreground">平</span>
                         </div>
+                        {(limitUp > 0 || limitDown > 0) && (
+                          <div className="flex items-center gap-2 ml-1 pl-2 border-l border-border">
+                            {limitUp > 0 && <span className="text-[10px] text-red-500 font-medium">涨停 {limitUp}</span>}
+                            {limitDown > 0 && <span className="text-[10px] text-green-500 font-medium">跌停 {limitDown}</span>}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })()}
-          </div>
-        )}
+                    <div className="shrink-0 w-28">
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="text-[9px] text-muted-foreground">沪 {shUp}</span>
+                        <span className="text-[9px] text-muted-foreground/50">:</span>
+                        <span className="text-[9px] text-muted-foreground">{shDown}</span>
+                        <span className="text-[9px] text-muted-foreground/40 ml-1">深 {szUp}</span>
+                        <span className="text-[9px] text-muted-foreground/50">:</span>
+                        <span className="text-[9px] text-muted-foreground">{szDown}</span>
+                      </div>
+                      {/* Ratio bar */}
+                      <div className="h-2 w-full rounded-full overflow-hidden flex bg-muted/30">
+                        <div className="h-full bg-red-500 transition-all duration-500" style={{ width: `${upPct}%` }} />
+                        <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${downPct}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          );
+        })()}
 
         {/* Position Signal Card — hidden in 5d-timeline mode */}
         {chartMode !== "5d-timeline" && (
