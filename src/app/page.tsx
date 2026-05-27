@@ -34,6 +34,7 @@ const RiskAlertPanel = dynamic(() => import("@/components/risk-alert-panel").the
 const TradingRulesCard = dynamic(() => import("@/components/trading-rules-card").then(m => ({ default: m.TradingRulesCard })), { ssr: false, loading: () => <div className="h-[120px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载交易规矩...</span></div> });
 const PositionSignalCard = dynamic(() => import("@/components/position-signal-card").then(m => ({ default: m.PositionSignalCard })), { ssr: false, loading: () => <div className="h-[60px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载仓位信号...</span></div> });
 const PasswordManageDialog = dynamic(() => import("@/components/password-manage-dialog").then(m => ({ default: m.PasswordManageDialog })), { ssr: false });
+const MarketBreadthChart = dynamic(() => import("@/components/market-breadth-chart").then(m => ({ default: m.MarketBreadthChart })), { ssr: false, loading: () => <div className="h-[180px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨跌家数图...</span></div> });
 import { PasswordGate } from "@/components/password-gate";
 import { LazyMount } from "@/components/lazy-mount";
 import { calculateMACD } from "@/lib/indicators";
@@ -68,7 +69,7 @@ export default function StockTAssistant() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [autoExpanded, setAutoExpanded] = useState<boolean>(false);
-  const [marketBreadth, setMarketBreadth] = useState<{ totalUp: number; totalDown: number; totalFlat: number; shUp: number; shDown: number; szUp: number; szDown: number; limitUp: number; limitDown: number } | null>(null);
+  const [marketBreadth, setMarketBreadth] = useState<{ totalUp: number; totalDown: number; totalFlat: number; shUp: number; shDown: number; szUp: number; szDown: number; limitUp: number; limitDown: number; history: { time: string; totalUp: number; totalDown: number; totalFlat: number; limitUp: number; limitDown: number }[] } | null>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Auto-show opening reminder badge in first 3 minutes of market open ──
@@ -814,13 +815,13 @@ export default function StockTAssistant() {
 
         {/* Market Breadth 涨跌家数 (only in timeline modes) */}
         {quote && isTimelineActive && liveTimeline.length > 0 && marketBreadth && (() => {
-          const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown } = marketBreadth;
+          const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;
           const total = totalUp + totalDown + totalFlat;
           const upPct = total > 0 ? (totalUp / total * 100) : 0;
           const downPct = total > 0 ? (totalDown / total * 100) : 0;
           const isBullish = totalUp > totalDown;
           return (
-            <div className="mb-4">
+            <div className="mb-4 space-y-2">
               <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
                 <CardContent className="p-2 sm:p-2.5">
                   <div className="flex items-center justify-between gap-3">
@@ -868,6 +869,13 @@ export default function StockTAssistant() {
                   </div>
                 </CardContent>
               </Card>
+              {/* 涨跌家数分时图 */}
+              <MarketBreadthChart
+                history={history || []}
+                currentUp={totalUp}
+                currentDown={totalDown}
+                currentFlat={totalFlat}
+              />
             </div>
           );
         })()}

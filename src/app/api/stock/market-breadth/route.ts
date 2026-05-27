@@ -3,8 +3,17 @@ import { NextResponse } from "next/server";
 /**
  * GET /api/stock/market-breadth
  * Fetch A-share market breadth data (涨跌家数) from East Money API
- * Returns up/down/flat stock counts for Shanghai, Shenzhen, and total market
+ * Returns up/down/flat stock counts + 5-min interval history for the current trading day
  */
+
+export interface BreadthHistoryPoint {
+  time: string;     // "09:30", "09:35", ...
+  totalUp: number;
+  totalDown: number;
+  totalFlat: number;
+  limitUp: number;
+  limitDown: number;
+}
 
 export interface MarketBreadthData {
   shUp: number;
@@ -16,33 +25,108 @@ export interface MarketBreadthData {
   totalUp: number;
   totalDown: number;
   totalFlat: number;
-  limitUp: number;    // 涨停数
-  limitDown: number;  // 跌停数
+  limitUp: number;
+  limitDown: number;
   timestamp: number;
+  history: BreadthHistoryPoint[];
 }
 
-// Cache: 15s TTL
-let cached: { data: MarketBreadthData; ts: number } | null = null;
+// ── In-memory 5-min history cache ──
+// Key: date string "2025-01-15", Value: sorted array of BreadthHistoryPoint
+const historyStore: Map<string, BreadthHistoryPoint[]> = new Map();
+let lastHistoryTime = "";  // Last 5-min slot recorded, e.g. "09:35"
+
+function getCurrent5MinSlot(): string {
+  const now = new Date();
+  // Use China timezone
+  const h = (now.getUTCHours() + 8) % 24;
+  const m = now.getUTCMinutes();
+  const slotMin = Math.floor(m / 5) * 5;
+  return `${String(h).padStart(2, "0")}:${String(slotMin).padStart(2, "0")}`;
+}
+
+function getTodayDateStr(): string {
+  const now = new Date();
+  const h = (now.getUTCHours() + 8) % 24;
+  const utcNow = now.getTime();
+  const chinaOffset = 8 * 60 * 60 * 1000;
+  const chinaTime = new Date(utcNow + chinaOffset);
+  // Adjust if UTC+8 pushes to next day
+  const d = new Date(utcNow + chinaOffset);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+// Cache: 15s TTL for raw data fetch
+let cached: { data: Omit<MarketBreadthData, "history">; ts: number } | null = null;
 const CACHE_TTL = 15_000;
 
 export async function GET() {
-  if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    return NextResponse.json(cached.data);
+  // Determine if we need to re-fetch
+  const needsFetch = !cached || Date.now() - cached.ts >= CACHE_TTL;
+
+  let rawData: Omit<MarketBreadthData, "history">;
+
+  if (needsFetch) {
+    try {
+      rawData = await fetchMarketBreadth();
+      cached = { data: rawData, ts: Date.now() };
+    } catch (err) {
+      console.error("market-breadth error:", err);
+      if (cached) {
+        rawData = cached.data;
+      } else {
+        return NextResponse.json({ error: "Failed to fetch market breadth" }, { status: 500 });
+      }
+    }
+  } else {
+    rawData = cached!.data;
   }
 
-  try {
-    const data = await fetchMarketBreadth();
-    cached = { data, ts: Date.now() };
-    return NextResponse.json(data);
-  } catch (err) {
-    console.error("market-breadth error:", err);
-    // Return stale cache if available
-    if (cached) return NextResponse.json(cached.data);
-    return NextResponse.json({ error: "Failed to fetch market breadth" }, { status: 500 });
+  // ── Record history point (5-min interval) ──
+  const todayStr = getTodayDateStr();
+  const currentSlot = getCurrent5MinSlot();
+
+  // Only record during trading hours (9:25 ~ 15:05)
+  const slotH = parseInt(currentSlot.slice(0, 2));
+  const slotM = parseInt(currentSlot.slice(3, 5));
+  const slotVal = slotH * 60 + slotM;
+  const isTradingTime = (slotVal >= 925 && slotVal <= 1135) || (slotVal >= 1300 && slotVal <= 1505);
+
+  if (isTradingTime && currentSlot !== lastHistoryTime) {
+    const history = historyStore.get(todayStr) || [];
+    // Check if this slot already exists (avoid duplicates)
+    const existingIdx = history.findIndex(p => p.time === currentSlot);
+    const point: BreadthHistoryPoint = {
+      time: currentSlot,
+      totalUp: rawData.totalUp,
+      totalDown: rawData.totalDown,
+      totalFlat: rawData.totalFlat,
+      limitUp: rawData.limitUp,
+      limitDown: rawData.limitDown,
+    };
+    if (existingIdx >= 0) {
+      history[existingIdx] = point; // Update existing
+    } else {
+      history.push(point);
+    }
+    historyStore.set(todayStr, history);
+    lastHistoryTime = currentSlot;
   }
+
+  // Clean up old dates (keep only today)
+  for (const key of historyStore.keys()) {
+    if (key !== todayStr) historyStore.delete(key);
+  }
+
+  const result: MarketBreadthData = {
+    ...rawData,
+    history: historyStore.get(todayStr) || [],
+  };
+
+  return NextResponse.json(result);
 }
 
-async function fetchMarketBreadth(): Promise<MarketBreadthData> {
+async function fetchMarketBreadth(): Promise<Omit<MarketBreadthData, "history">> {
   // Use East Money real-time market breadth API
   // f104 = 上涨家数, f105 = 下跌家数, f106 = 平盘家数
   // f13 = market ID: 1=SH(1.000001), 0=SZ(0.399001)
