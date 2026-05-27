@@ -164,13 +164,13 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs font-medium text-muted-foreground">涨跌家数分时</span>
           <div className="flex items-center gap-3 text-[10px]">
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-3 h-0.5 bg-red-500 rounded-full" />
-              <span className="text-red-400">上涨家数</span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-4 h-1.5 bg-red-600 rounded-sm" />
+              <span className="text-red-600 font-semibold">上涨家数</span>
             </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-3 h-0.5 bg-green-500 rounded-full" />
-              <span className="text-green-400">下跌家数</span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-4 h-1.5 bg-emerald-600 rounded-sm" />
+              <span className="text-emerald-600 font-semibold">下跌家数</span>
             </span>
           </div>
         </div>
@@ -178,15 +178,15 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         {/* SVG Chart */}
         <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 260 }}>
           <defs>
-            {/* Red gradient for up area */}
+            {/* Red gradient for up area — more vivid */}
             <linearGradient id="upAreaGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
+              <stop offset="0%" stopColor="#dc2626" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#dc2626" stopOpacity="0.03" />
             </linearGradient>
-            {/* Green gradient for down area */}
+            {/* Green gradient for down area — more vivid */}
             <linearGradient id="downAreaGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#22c55e" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" />
+              <stop offset="0%" stopColor="#059669" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#059669" stopOpacity="0.03" />
             </linearGradient>
           </defs>
 
@@ -205,10 +205,10 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {/* Down area fill */}
           <path d={downAreaPath} fill="url(#downAreaGrad)" />
 
-          {/* Up line (red) */}
-          <path d={upLinePath} fill="none" stroke="#ef4444" strokeWidth={1.8} strokeLinejoin="round" />
-          {/* Down line (green) */}
-          <path d={downLinePath} fill="none" stroke="#22c55e" strokeWidth={1.8} strokeLinejoin="round" />
+          {/* Up line (red) — thicker, deeper red */}
+          <path d={upLinePath} fill="none" stroke="#dc2626" strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
+          {/* Down line (green) — thicker, deeper green */}
+          <path d={downLinePath} fill="none" stroke="#059669" strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
 
           {/* Data point dots & number labels */}
           {/* Determine label interval: show every point if <=8, otherwise thin out */}
@@ -226,23 +226,29 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             return (
               <g key={`pt-${i}`}>
                 {/* Up dot */}
-                <circle cx={x} cy={yUp} r={isLast ? 2.5 : 1.8} fill="#ef4444" />
+                <circle cx={x} cy={yUp} r={isLast ? 3.5 : 2.5} fill="#dc2626" />
+                {isLast && <circle cx={x} cy={yUp} r={2} fill="#fff" opacity={0.5} />}
                 {/* Down dot */}
-                <circle cx={x} cy={yDown} r={isLast ? 2.5 : 1.8} fill="#22c55e" />
+                <circle cx={x} cy={yDown} r={isLast ? 3.5 : 2.5} fill="#059669" />
+                {isLast && <circle cx={x} cy={yDown} r={2} fill="#fff" opacity={0.5} />}
 
                 {/* Number labels */}
                 {showLabel && (
                   <>
                     {/* Up count label (above the up line) */}
+                    <rect x={x - 14} y={upLabelY - 7} width={28} height={10} rx={2}
+                      fill="#dc2626" opacity={0.12} />
                     <text x={x} y={upLabelY} textAnchor="middle"
-                      fontSize={7.5} fontFamily="monospace" fontWeight={700}
-                      fill="#ef4444" opacity={0.9}>
+                      fontSize={8} fontFamily="monospace" fontWeight={800}
+                      fill="#dc2626">
                       {d.totalUp}
                     </text>
                     {/* Down count label (below the down line) */}
+                    <rect x={x - 14} y={downLabelY - 7} width={28} height={10} rx={2}
+                      fill="#059669" opacity={0.12} />
                     <text x={x} y={downLabelY} textAnchor="middle"
-                      fontSize={7.5} fontFamily="monospace" fontWeight={700}
-                      fill="#22c55e" opacity={0.9}>
+                      fontSize={8} fontFamily="monospace" fontWeight={800}
+                      fill="#059669">
                       {d.totalDown}
                     </text>
                   </>
@@ -252,15 +258,15 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           })}
 
           {/* End dots with pulse - Up */}
-          <circle cx={lastX} cy={toY(lastPt.totalUp)} r={4} fill="#ef4444" opacity={0.3}>
-            <animate attributeName="r" values="4;7;4" dur="2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
+          <circle cx={lastX} cy={toY(lastPt.totalUp)} r={5} fill="#dc2626" opacity={0.25}>
+            <animate attributeName="r" values="5;9;5" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.25;0.08;0.25" dur="2s" repeatCount="indefinite" />
           </circle>
 
           {/* End dots with pulse - Down */}
-          <circle cx={lastX} cy={toY(lastPt.totalDown)} r={4} fill="#22c55e" opacity={0.3}>
-            <animate attributeName="r" values="4;7;4" dur="2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
+          <circle cx={lastX} cy={toY(lastPt.totalDown)} r={5} fill="#059669" opacity={0.25}>
+            <animate attributeName="r" values="5;9;5" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.25;0.08;0.25" dur="2s" repeatCount="indefinite" />
           </circle>
 
           {/* Y-axis labels */}
@@ -282,36 +288,42 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {/* Right side: current values */}
           <g>
             {/* Up count */}
-            <rect x={px + chartW + 2} y={toY(lastPt.totalUp) - 7} width={52} height={14} rx={2}
-              fill="#ef4444" opacity={0.12} />
-            <text x={px + chartW + 6} y={toY(lastPt.totalUp)} fontSize={9} fontFamily="monospace" fontWeight={700}
-              fill="#ef4444" dominantBaseline="middle">
+            <rect x={px + chartW + 1} y={toY(lastPt.totalUp) - 8} width={54} height={16} rx={3}
+              fill="#dc2626" opacity={0.15} />
+            <rect x={px + chartW + 1} y={toY(lastPt.totalUp) - 8} width={54} height={16} rx={3}
+              fill="none" stroke="#dc2626" strokeWidth={0.6} opacity={0.4} />
+            <text x={px + chartW + 6} y={toY(lastPt.totalUp)} fontSize={10} fontFamily="monospace" fontWeight={800}
+              fill="#dc2626" dominantBaseline="middle">
               ↑{lastPt.totalUp}
             </text>
             {/* Down count */}
-            <rect x={px + chartW + 2} y={toY(lastPt.totalDown) - 7} width={52} height={14} rx={2}
-              fill="#22c55e" opacity={0.12} />
-            <text x={px + chartW + 6} y={toY(lastPt.totalDown)} fontSize={9} fontFamily="monospace" fontWeight={700}
-              fill="#22c55e" dominantBaseline="middle">
+            <rect x={px + chartW + 1} y={toY(lastPt.totalDown) - 8} width={54} height={16} rx={3}
+              fill="#059669" opacity={0.15} />
+            <rect x={px + chartW + 1} y={toY(lastPt.totalDown) - 8} width={54} height={16} rx={3}
+              fill="none" stroke="#059669" strokeWidth={0.6} opacity={0.4} />
+            <text x={px + chartW + 6} y={toY(lastPt.totalDown)} fontSize={10} fontFamily="monospace" fontWeight={800}
+              fill="#059669" dominantBaseline="middle">
               ↓{lastPt.totalDown}
             </text>
           </g>
 
           {/* Diff label at bottom right */}
-          <text x={px + chartW + 6} y={h - pb + 10} fontSize={8} fontFamily="monospace" fontWeight={600}
-            fill={diff >= 0 ? "#ef4444" : "#22c55e"} dominantBaseline="middle">
+          <rect x={px + chartW + 1} y={h - pb + 3} width={54} height={14} rx={3}
+            fill={diff >= 0 ? "#dc2626" : "#059669"} opacity={0.12} />
+          <text x={px + chartW + 6} y={h - pb + 10} fontSize={9} fontFamily="monospace" fontWeight={700}
+            fill={diff >= 0 ? "#dc2626" : "#059669"} dominantBaseline="middle">
             差{diff >= 0 ? "+" : ""}{diff}
           </text>
         </svg>
 
         {/* Bottom ratio bar */}
         <div className="mt-1.5 flex items-center gap-2">
-          <span className="text-[9px] text-red-400 font-medium tabular-nums w-8 text-right">{ratio}%</span>
-          <div className="flex-1 h-2 rounded-full overflow-hidden flex bg-muted/30">
-            <div className="h-full bg-red-500/70 transition-all duration-700" style={{ width: `${ratio}%` }} />
-            <div className="h-full bg-green-500/70 transition-all duration-700" style={{ width: `${100 - parseFloat(ratio)}%` }} />
+          <span className="text-[9px] text-red-600 font-bold tabular-nums w-8 text-right">{ratio}%</span>
+          <div className="flex-1 h-2.5 rounded-full overflow-hidden flex bg-muted/30">
+            <div className="h-full bg-red-600/80 transition-all duration-700" style={{ width: `${ratio}%` }} />
+            <div className="h-full bg-emerald-600/80 transition-all duration-700" style={{ width: `${100 - parseFloat(ratio)}%` }} />
           </div>
-          <span className="text-[9px] text-green-400 font-medium tabular-nums w-8">{(100 - parseFloat(ratio)).toFixed(1)}%</span>
+          <span className="text-[9px] text-emerald-600 font-bold tabular-nums w-8">{(100 - parseFloat(ratio)).toFixed(1)}%</span>
         </div>
       </CardContent>
     </Card>
