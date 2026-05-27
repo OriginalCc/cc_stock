@@ -64,8 +64,8 @@ function computeSentiment(
   const total = totalUp + totalDown + totalFlat || 1;
 
   // ── Factor 1: A/D Ratio (涨跌比率) — weight 30 ──
-  const adRatio = totalUp / (totalUp + totalDown || 1); // 0~1, 0.5=neutral
-  const adScore = Math.round(adRatio * 100); // 0~100
+  const adRatio = totalUp / (totalUp + totalDown || 1);
+  const adScore = Math.round(adRatio * 100);
   const adDesc = totalUp > totalDown
     ? `上涨${totalUp}家 > 下跌${totalDown}家，多方占优`
     : totalUp < totalDown
@@ -73,7 +73,7 @@ function computeSentiment(
     : "涨跌持平";
 
   // ── Factor 2: Limit Up/Down Ratio (涨停跌停比) — weight 15 ──
-  let limitScore = 50; // neutral
+  let limitScore = 50;
   let limitDesc = "暂无涨跌停数据";
   if (limitUp > 0 || limitDown > 0) {
     const limitTotal = limitUp + limitDown;
@@ -99,19 +99,14 @@ function computeSentiment(
   if (breadthHistory.length >= 3) {
     const recent = breadthHistory.slice(-5);
     const diffs = recent.map(d => d.totalUp - d.totalDown);
-    // Simple linear trend: compare first half avg vs second half avg
     const half = Math.floor(diffs.length / 2) || 1;
     const firstHalf = diffs.slice(0, half);
     const secondHalf = diffs.slice(half);
     const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
     const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
     const improvement = secondAvg - firstAvg;
-
-    // Normalize improvement to 0~100 scale
-    // A change of ±500 is significant for a market with ~5000 stocks
     const trendNorm = Math.max(-1, Math.min(1, improvement / 500));
     trendScore = Math.round(50 + trendNorm * 50);
-
     if (improvement > 100) {
       trendDirection = "up";
       trendDesc = `涨跌差从${Math.round(firstAvg)}改善至${Math.round(secondAvg)}，情绪回升`;
@@ -131,7 +126,7 @@ function computeSentiment(
 
   // ── Factor 4: Breadth Strength (涨跌差幅度) — weight 15 ──
   const diff = totalUp - totalDown;
-  const strengthRatio = diff / total; // -1 ~ 1
+  const strengthRatio = diff / total;
   const strengthScore = Math.round(50 + strengthRatio * 50);
   let strengthDesc: string;
   const absStrength = Math.abs(strengthRatio);
@@ -150,19 +145,18 @@ function computeSentiment(
   let regimeDesc = "指数状态未知";
   const regimes = [indexRegimes.sh, indexRegimes.sz, indexRegimes.cyb].filter(Boolean) as IndexRegime[];
   if (regimes.length > 0) {
-    // Average regime score across all indices
     let regimeTotal = 0;
     const regimeLabels: string[] = [];
     for (const r of regimes) {
       let rScore = 50;
       if (r.regime === "上升通道") {
-        rScore = 75 + r.momentum * 15; // momentum is -1~1
+        rScore = 75 + r.momentum * 15;
         regimeLabels.push("上升");
       } else if (r.regime === "下跌趋势") {
         rScore = 25 + r.momentum * 15;
         regimeLabels.push("下跌");
       } else if (r.regime === "横盘末期") {
-        rScore = 55; // slightly bullish bias (breakout anticipation)
+        rScore = 55;
         regimeLabels.push("横盘末期");
       } else {
         rScore = 50 + r.momentum * 10;
@@ -202,19 +196,19 @@ function computeSentiment(
   let bgClass: string;
 
   if (score <= 15) {
-    level = "极度恐慌"; color = "#16a34a"; bgClass = "bg-green-600/12 border-green-600/35";
+    level = "极度恐慌"; color = "#16a34a"; bgClass = "bg-green-600/15 border-green-600/40";
   } else if (score <= 30) {
-    level = "恐慌"; color = "#22c55e"; bgClass = "bg-green-500/10 border-green-500/25";
+    level = "恐慌"; color = "#22c55e"; bgClass = "bg-green-500/12 border-green-500/30";
   } else if (score <= 42) {
-    level = "偏弱"; color = "#84cc16"; bgClass = "bg-lime-500/10 border-lime-500/25";
+    level = "偏弱"; color = "#84cc16"; bgClass = "bg-lime-500/12 border-lime-500/30";
   } else if (score <= 58) {
-    level = "中性"; color = "#eab308"; bgClass = "bg-yellow-500/10 border-yellow-500/25";
+    level = "中性"; color = "#eab308"; bgClass = "bg-yellow-500/12 border-yellow-500/30";
   } else if (score <= 70) {
-    level = "偏强"; color = "#f97316"; bgClass = "bg-orange-500/10 border-orange-500/25";
+    level = "偏强"; color = "#f97316"; bgClass = "bg-orange-500/12 border-orange-500/30";
   } else if (score <= 85) {
-    level = "乐观"; color = "#ef4444"; bgClass = "bg-red-500/10 border-red-500/25";
+    level = "乐观"; color = "#ef4444"; bgClass = "bg-red-500/12 border-red-500/30";
   } else {
-    level = "极度乐观"; color = "#dc2626"; bgClass = "bg-red-600/12 border-red-600/35";
+    level = "极度乐观"; color = "#dc2626"; bgClass = "bg-red-600/15 border-red-600/40";
   }
 
   return {
@@ -233,6 +227,15 @@ function computeSentiment(
   };
 }
 
+function getFactorColor(score: number): string {
+  if (score >= 70) return "#dc2626";
+  if (score >= 58) return "#ef4444";
+  if (score >= 50) return "#f97316";
+  if (score >= 42) return "#eab308";
+  if (score >= 30) return "#84cc16";
+  return "#22c55e";
+}
+
 export function MarketSentiment({
   totalUp, totalDown, totalFlat,
   limitUp, limitDown,
@@ -247,9 +250,9 @@ export function MarketSentiment({
   const { score, level, color, bgClass, factors, trend } = result;
 
   // Gauge arc SVG
-  const gaugeR = 50;
-  const gaugeCx = 70;
-  const gaugeCy = 58;
+  const gaugeR = 56;
+  const gaugeCx = 80;
+  const gaugeCy = 62;
   const gaugeStartAngle = -225;
   const gaugeEndAngle = 45;
   const gaugeRange = gaugeEndAngle - gaugeStartAngle; // 270 degrees
@@ -267,135 +270,145 @@ export function MarketSentiment({
     return `M${s.x.toFixed(1)},${s.y.toFixed(1)} A${r},${r} 0 ${largeArc} 1 ${e.x.toFixed(1)},${e.y.toFixed(1)}`;
   };
 
-  // Tick marks for gauge
-  const tickMarks = [0, 15, 30, 42, 58, 70, 85, 100].map(v => {
-    const angle = gaugeStartAngle + (v / 100) * gaugeRange;
-    const inner = polarToCart(gaugeCx, gaugeCy, gaugeR - 6, angle);
-    const outer = polarToCart(gaugeCx, gaugeCy, gaugeR + 2, angle);
-    return { inner, outer, v };
-  });
-
   // Score needle
-  const needleTip = polarToCart(gaugeCx, gaugeCy, gaugeR - 10, scoreAngle);
-  const needleBase1 = polarToCart(gaugeCx, gaugeCy, 4, scoreAngle - 90);
-  const needleBase2 = polarToCart(gaugeCx, gaugeCy, 4, scoreAngle + 90);
+  const needleTip = polarToCart(gaugeCx, gaugeCy, gaugeR - 12, scoreAngle);
+  const needleBase1 = polarToCart(gaugeCx, gaugeCy, 5, scoreAngle - 90);
+  const needleBase2 = polarToCart(gaugeCx, gaugeCy, 5, scoreAngle + 90);
 
   // Trend arrow
-  const trendIcon = trend === "up" ? "↑" : trend === "down" ? "↓" : "→";
+  const trendIcon = trend === "up" ? "▲" : trend === "down" ? "▼" : "●";
   const trendColor = trend === "up" ? "#ef4444" : trend === "down" ? "#22c55e" : "#eab308";
+  const trendLabel = trend === "up" ? "情绪回升" : trend === "down" ? "情绪走弱" : "情绪平稳";
 
   return (
     <Card className={`border overflow-hidden ${bgClass}`}>
       <CardContent className="p-3 sm:p-4">
         {/* Header */}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-muted-foreground">市场情绪指数</span>
-          <span className="text-[10px] text-muted-foreground">
-            {trendIcon} <span style={{ color: trendColor }}>{trend === "up" ? "情绪回升" : trend === "down" ? "情绪走弱" : "情绪平稳"}</span>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-bold text-foreground/90">市场情绪指数</span>
+          <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: `${trendColor}20`, color: trendColor }}>
+            {trendIcon} {trendLabel}
           </span>
         </div>
 
-        <div className="flex items-start gap-3">
+        <div className="flex items-center gap-4">
           {/* Gauge */}
           <div className="shrink-0">
-            <svg width="140" height="90" viewBox="0 0 140 90" className="w-[140px]">
-              {/* Background arc: 绿→黄→红 渐变 */}
-              {/* 0-15 极度恐慌 (深绿) */}
+            <svg width="160" height="100" viewBox="0 0 160 100" className="w-[160px]">
+              <defs>
+                <filter id="gaugeGlow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="2" result="blur" />
+                  <feFlood floodColor={color} floodOpacity="0.35" />
+                  <feComposite in2="blur" operator="in" />
+                  <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+                <filter id="needleGlow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="1.5" result="blur" />
+                  <feFlood floodColor={color} floodOpacity="0.5" />
+                  <feComposite in2="blur" operator="in" />
+                  <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+              </defs>
+
+              {/* Background arc: 绿→黄→红 渐变 segments */}
               <path d={gaugePath(gaugeStartAngle, gaugeStartAngle + gaugeRange * 0.15, gaugeR)}
-                fill="none" stroke="#16a34a" strokeWidth={8} strokeLinecap="round" opacity={0.8} />
-              {/* 15-30 恐慌 (绿) */}
+                fill="none" stroke="#16a34a" strokeWidth={10} strokeLinecap="round" opacity={0.6} />
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.15, gaugeStartAngle + gaugeRange * 0.30, gaugeR)}
-                fill="none" stroke="#22c55e" strokeWidth={8} strokeLinecap="round" opacity={0.7} />
-              {/* 30-42 偏弱 (黄绿) */}
+                fill="none" stroke="#22c55e" strokeWidth={10} strokeLinecap="round" opacity={0.55} />
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.30, gaugeStartAngle + gaugeRange * 0.42, gaugeR)}
-                fill="none" stroke="#84cc16" strokeWidth={8} strokeLinecap="round" opacity={0.7} />
-              {/* 42-58 中性 (黄) */}
+                fill="none" stroke="#84cc16" strokeWidth={10} strokeLinecap="round" opacity={0.55} />
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.42, gaugeStartAngle + gaugeRange * 0.58, gaugeR)}
-                fill="none" stroke="#eab308" strokeWidth={8} strokeLinecap="round" opacity={0.7} />
-              {/* 58-70 偏强 (橙) */}
+                fill="none" stroke="#eab308" strokeWidth={10} strokeLinecap="round" opacity={0.55} />
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.58, gaugeStartAngle + gaugeRange * 0.70, gaugeR)}
-                fill="none" stroke="#f97316" strokeWidth={8} strokeLinecap="round" opacity={0.7} />
-              {/* 70-85 乐观 (红) */}
+                fill="none" stroke="#f97316" strokeWidth={10} strokeLinecap="round" opacity={0.55} />
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.70, gaugeStartAngle + gaugeRange * 0.85, gaugeR)}
-                fill="none" stroke="#ef4444" strokeWidth={8} strokeLinecap="round" opacity={0.7} />
-              {/* 85-100 极度乐观 (深红) */}
+                fill="none" stroke="#ef4444" strokeWidth={10} strokeLinecap="round" opacity={0.55} />
               <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.85, gaugeEndAngle, gaugeR)}
-                fill="none" stroke="#dc2626" strokeWidth={8} strokeLinecap="round" opacity={0.8} />
+                fill="none" stroke="#dc2626" strokeWidth={10} strokeLinecap="round" opacity={0.6} />
 
-              {/* Active arc (filled portion up to score) */}
+              {/* Active arc (filled portion up to score) — with glow */}
               <path d={gaugePath(gaugeStartAngle, scoreAngle, gaugeR - 1)}
-                fill="none" stroke={color} strokeWidth={4} strokeLinecap="round" />
+                fill="none" stroke={color} strokeWidth={5} strokeLinecap="round" filter="url(#gaugeGlow)" />
 
-              {/* Needle */}
+              {/* Needle — with glow */}
               <polygon
                 points={`${needleTip.x.toFixed(1)},${needleTip.y.toFixed(1)} ${needleBase1.x.toFixed(1)},${needleBase1.y.toFixed(1)} ${needleBase2.x.toFixed(1)},${needleBase2.y.toFixed(1)}`}
-                fill={color} opacity={0.9}
+                fill={color} filter="url(#needleGlow)"
               />
-              <circle cx={gaugeCx} cy={gaugeCy} r={3} fill={color} />
+              <circle cx={gaugeCx} cy={gaugeCy} r={4} fill={color} />
+              <circle cx={gaugeCx} cy={gaugeCy} r={2} fill="#fff" opacity={0.5} />
 
-              {/* Score text */}
-              <text x={gaugeCx} y={gaugeCy + 22} textAnchor="middle" fontSize={18} fontWeight={800} fontFamily="monospace" fill={color}>
+              {/* Score text — big & bold */}
+              <text x={gaugeCx} y={gaugeCy + 24} textAnchor="middle" fontSize={24} fontWeight={900} fontFamily="monospace" fill={color}>
                 {score}
               </text>
-              <text x={gaugeCx} y={gaugeCy + 34} textAnchor="middle" fontSize={9} fontWeight={600} fill={color}>
+              {/* Level label */}
+              <text x={gaugeCx} y={gaugeCy + 38} textAnchor="middle" fontSize={11} fontWeight={700} fill={color}>
                 {level}
               </text>
 
               {/* Tick labels */}
-              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 12, gaugeStartAngle).x} y={polarToCart(gaugeCx, gaugeCy, gaugeR + 12, gaugeStartAngle).y} textAnchor="middle" fontSize={7} fill="currentColor" className="text-muted-foreground">0</text>
-              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 12, gaugeStartAngle + gaugeRange * 0.5).x} y={polarToCart(gaugeCx, gaugeCy, gaugeR + 12, gaugeStartAngle + gaugeRange * 0.5).y} textAnchor="middle" fontSize={7} fill="currentColor" className="text-muted-foreground">50</text>
-              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 12, gaugeEndAngle).x} y={polarToCart(gaugeCx, gaugeCy, gaugeR + 12, gaugeEndAngle).y} textAnchor="middle" fontSize={7} fill="currentColor" className="text-muted-foreground">100</text>
+              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeStartAngle).x}
+                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeStartAngle).y + 3}
+                textAnchor="middle" fontSize={8} fontWeight={600} fill="currentColor" className="text-muted-foreground">0</text>
+              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeStartAngle + gaugeRange * 0.5).x}
+                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeStartAngle + gaugeRange * 0.5).y + 3}
+                textAnchor="middle" fontSize={8} fontWeight={600} fill="currentColor" className="text-muted-foreground">50</text>
+              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeEndAngle).x}
+                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeEndAngle).y + 3}
+                textAnchor="middle" fontSize={8} fontWeight={600} fill="currentColor" className="text-muted-foreground">100</text>
             </svg>
           </div>
 
           {/* Factor breakdown */}
-          <div className="flex-1 min-w-0 space-y-1.5 pt-0.5">
-            {Object.entries(factors).map(([key, f]) => (
-              <div key={key} className="group">
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-[10px] text-muted-foreground w-14 shrink-0">{f.label}</span>
-                  <div className="flex-1 h-1.5 rounded-full bg-muted/40 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{
-                        width: `${f.score}%`,
-                        backgroundColor: f.score >= 65 ? "#ef4444" : f.score >= 50 ? "#f97316" : f.score >= 35 ? "#84cc16" : "#22c55e",
-                      }}
-                    />
+          <div className="flex-1 min-w-0 space-y-2">
+            {Object.entries(factors).map(([key, f]) => {
+              const fc = getFactorColor(f.score);
+              return (
+                <div key={key} className="group">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold w-16 shrink-0" style={{ color: fc }}>{f.label}</span>
+                    <div className="flex-1 h-2.5 rounded-full bg-muted/30 overflow-hidden relative">
+                      {/* Background track segments for context */}
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${f.score}%`, backgroundColor: fc, opacity: 0.85 }}
+                      />
+                    </div>
+                    <span className="text-xs font-mono font-bold w-8 text-right tabular-nums" style={{ color: fc }}>
+                      {f.score}
+                    </span>
                   </div>
-                  <span className="text-[10px] font-mono font-semibold w-7 text-right tabular-nums"
-                    style={{ color: f.score >= 65 ? "#ef4444" : f.score >= 50 ? "#f97316" : f.score >= 35 ? "#84cc16" : "#22c55e" }}>
-                    {f.score}
-                  </span>
+                  {/* Hover description */}
+                  <div className="hidden group-hover:block text-[10px] text-muted-foreground/80 mt-0.5 pl-16 truncate">
+                    {f.desc}
+                  </div>
                 </div>
-                {/* Hover description */}
-                <div className="hidden group-hover:block text-[9px] text-muted-foreground/80 mt-0.5 pl-14 truncate">
-                  {f.desc}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* Sentiment bar */}
+        {/* Sentiment bar — bigger & bolder */}
         <div className="mt-3">
-          <div className="h-2.5 w-full rounded-full overflow-hidden flex relative">
-            <div className="h-full bg-green-600" style={{ width: "15%" }} />
-            <div className="h-full bg-green-500" style={{ width: "15%" }} />
-            <div className="h-full bg-lime-500" style={{ width: "12%" }} />
-            <div className="h-full bg-yellow-500" style={{ width: "16%" }} />
-            <div className="h-full bg-orange-500" style={{ width: "12%" }} />
-            <div className="h-full bg-red-500" style={{ width: "15%" }} />
-            <div className="h-full bg-red-600" style={{ width: "15%" }} />
-            {/* Score indicator */}
+          <div className="h-4 w-full rounded-full overflow-hidden flex relative shadow-inner">
+            <div className="h-full bg-green-600/80" style={{ width: "15%" }} />
+            <div className="h-full bg-green-500/70" style={{ width: "15%" }} />
+            <div className="h-full bg-lime-500/70" style={{ width: "12%" }} />
+            <div className="h-full bg-yellow-500/70" style={{ width: "16%" }} />
+            <div className="h-full bg-orange-500/70" style={{ width: "12%" }} />
+            <div className="h-full bg-red-500/70" style={{ width: "15%" }} />
+            <div className="h-full bg-red-600/80" style={{ width: "15%" }} />
+            {/* Score indicator — prominent triangle marker */}
             <div className="absolute top-0 h-full transition-all duration-700" style={{ left: `${score}%`, transform: "translateX(-50%)" }}>
-              <div className="w-0.5 h-full bg-white rounded-full shadow-sm" />
+              <div className="w-1 h-full bg-white rounded-full shadow-[0_0_6px_2px_rgba(255,255,255,0.6)]" />
             </div>
           </div>
-          <div className="flex justify-between mt-0.5">
-            <span className="text-[8px] text-green-600 font-medium">恐慌</span>
-            <span className="text-[8px] text-yellow-600 font-medium">中性</span>
-            <span className="text-[8px] text-red-600 font-medium">乐观</span>
+          <div className="flex justify-between mt-1">
+            <span className="text-[10px] text-green-600 font-bold">恐慌</span>
+            <span className="text-[10px] text-yellow-600 font-bold">中性</span>
+            <span className="text-[10px] text-red-600 font-bold">乐观</span>
           </div>
         </div>
       </CardContent>
