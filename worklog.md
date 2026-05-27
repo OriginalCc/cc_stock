@@ -975,3 +975,22 @@ Stage Summary:
 - All display values now use `?.toFixed(N) ?? "--"` or `(val ?? 0).toFixed(N)` pattern
 - All computed/fingerprint values use `(val ?? 0).toFixed(N)` pattern
 - Remaining unprotected `.toFixed()` calls are all on locally-computed values (Math.max, arithmetic, etc.) that are guaranteed to be numbers
+---
+Task ID: 1
+Agent: main
+Task: 将涨跌家数分时图采集间隔改为2分钟 + 提供初始数据
+
+Work Log:
+- 修改后端 `/api/stock/market-breadth/route.ts`：5分钟→2分钟间隔
+- 将历史数据从纯内存存储改为文件持久化（`db/market-breadth-history.json`）
+- 放宽数据记录条件：历史为空时始终记录第一个数据点（不限交易时段）
+- 交易时段扩展到 9:00~15:30 覆盖盘前盘后
+- 修改前端图表组件支持1个数据点展示（单点模式：显示红绿蓝三个圆点+数值）
+- 修复 lint 错误（useMemo 条件调用）
+- 测试验证：API 返回 1 个初始历史点，持久化文件正确创建
+
+Stage Summary:
+- 采集间隔从5分钟改为2分钟
+- 历史数据持久化到文件，服务重启不丢失
+- 即使不在交易时段，第一次请求也会记录初始数据点
+- 图表支持1个数据点展示，2分钟后再采集第二个点即可显示完整曲线
