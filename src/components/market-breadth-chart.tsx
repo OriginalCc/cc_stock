@@ -176,8 +176,8 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     //   XAxis domain: [0, 241] mapped to ALL_TRADE_TIMES
     //
     // We use the same left/right offsets so the chart areas align perfectly.
-    const w = 640, h = 220;
-    const px = 57, pr = 83, pt = 20, pb = 28;
+    const w = 640, h = 170;
+    const px = 57, pr = 83, pt = 12, pb = 20;
     const chartW = w - px - pr;
     const chartH = h - pt - pb;
 
@@ -244,50 +244,50 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
   // ── Summary stats row (shared across all states) ──
   const summaryRow = (
-    <div className="flex items-center gap-3 flex-wrap">
-      <div className="flex items-center gap-1">
-        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: UP_COLOR }} />
-        <span className="font-bold tabular-nums text-sm" style={{ color: UP_COLOR }}>{currentUp}</span>
-        <span className="text-[10px] text-muted-foreground">涨</span>
+    <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-0.5">
+        <span className="inline-block w-1 h-1 rounded-full" style={{ backgroundColor: UP_COLOR }} />
+        <span className="font-bold tabular-nums text-xs" style={{ color: UP_COLOR }}>{currentUp}</span>
+        <span className="text-[9px] text-muted-foreground">涨</span>
       </div>
-      <div className="flex items-center gap-1">
-        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
-        <span className="font-bold tabular-nums text-sm" style={{ color: DOWN_COLOR }}>{currentDown}</span>
-        <span className="text-[10px] text-muted-foreground">跌</span>
+      <div className="flex items-center gap-0.5">
+        <span className="inline-block w-1 h-1 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
+        <span className="font-bold tabular-nums text-xs" style={{ color: DOWN_COLOR }}>{currentDown}</span>
+        <span className="text-[9px] text-muted-foreground">跌</span>
       </div>
-      <div className="flex items-center gap-1">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
-        <span className="text-muted-foreground font-bold tabular-nums text-sm">{currentFlat}</span>
-        <span className="text-[10px] text-muted-foreground">平</span>
+      <div className="flex items-center gap-0.5">
+        <span className="inline-block w-1 h-1 rounded-full bg-muted-foreground/50" />
+        <span className="text-muted-foreground font-bold tabular-nums text-xs">{currentFlat}</span>
+        <span className="text-[9px] text-muted-foreground">平</span>
       </div>
       {(limitUp > 0 || limitDown > 0) && (
-        <div className="flex items-center gap-2 ml-1 pl-2 border-l border-border">
-          {limitUp > 0 && <span className="text-[10px] text-red-500 font-medium">涨停 {limitUp}</span>}
-          {limitDown > 0 && <span className="text-[10px] text-green-500 font-medium">跌停 {limitDown}</span>}
+        <div className="flex items-center gap-1.5 ml-0.5 pl-1.5 border-l border-border">
+          {limitUp > 0 && <span className="text-[9px] text-red-500 font-medium">涨停{limitUp}</span>}
+          {limitDown > 0 && <span className="text-[9px] text-green-500 font-medium">跌停{limitDown}</span>}
+        </div>
+      )}
+      {(shUp > 0 || szUp > 0) && (
+        <div className="flex items-center gap-1 text-[9px] text-muted-foreground ml-0.5 pl-1.5 border-l border-border">
+          <span>沪{shUp}:{shDown}</span>
+          <span className="text-muted-foreground/30">|</span>
+          <span>深{szUp}:{szDown}</span>
+          <span className="text-muted-foreground/30">|</span>
+          <span style={{ color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>差{diff >= 0 ? "+" : ""}{diff}</span>
         </div>
       )}
     </div>
   );
 
-  const subInfoRow = (shUp > 0 || szUp > 0) ? (
-    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-      <span>沪 {shUp}:{shDown}</span>
-      <span className="text-muted-foreground/30">|</span>
-      <span>深 {szUp}:{szDown}</span>
-      <span className="text-muted-foreground/30">|</span>
-      <span style={{ color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>差{diff >= 0 ? "+" : ""}{diff}</span>
-    </div>
-  ) : null;
+  const subInfoRow = null;
 
   // ── No data at all ──
   if (data.length === 0) {
     return (
       <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
-        <CardContent className="p-3">
-          <div className="text-xs font-semibold text-foreground/80 mb-2">市场涨跌家数</div>
+        <CardContent className="p-2">
+          <div className="text-[11px] font-semibold text-foreground/80 mb-1">市场涨跌家数</div>
           {summaryRow}
-          {subInfoRow}
-          <div className="text-xs text-muted-foreground text-center py-4 mt-2 border-t border-border/40">等待分时数据...</div>
+          <div className="text-xs text-muted-foreground text-center py-3 mt-1 border-t border-border/40">等待分时数据...</div>
         </CardContent>
       </Card>
     );
@@ -302,14 +302,13 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
     return (
       <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
-        <CardContent className="p-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-foreground/80">市场涨跌家数</span>
-            <span className="text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">第1个数据点</span>
+        <CardContent className="p-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-semibold text-foreground/80">市场涨跌家数</span>
+            <span className="text-[9px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-full">第1个数据点</span>
           </div>
           {summaryRow}
-          {subInfoRow}
-          <div className="h-3 w-full rounded-full overflow-hidden flex bg-muted/30 mt-2">
+          <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted/30 mt-1.5">
             <div className="h-full rounded-l-full transition-all duration-500" style={{ width: `${sRatio}%`, backgroundColor: UP_COLOR, opacity: 0.8 }} />
             <div className="h-full rounded-r-full transition-all duration-500" style={{ width: `${100 - parseFloat(sRatio)}%`, backgroundColor: DOWN_COLOR, opacity: 0.8 }} />
           </div>
@@ -331,16 +330,14 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
   return (
     <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
-      <CardContent className="p-3">
+      <CardContent className="p-2">
         {/* Header with title */}
-        <div className="text-xs font-semibold text-foreground/80 mb-2">市场涨跌家数</div>
-        {/* Summary stats row */}
+        <div className="text-[11px] font-semibold text-foreground/80 mb-1">市场涨跌家数</div>
+        {/* Summary stats row (includes 沪深差) */}
         {summaryRow}
-        {/* Sub info row (沪深差) */}
-        {subInfoRow}
 
         {/* SVG Chart — aligned with TimeSharingPanel's coordinate system */}
-        <div className="mt-2">
+        <div className="mt-1">
         <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" preserveAspectRatio="xMinYMid meet">
           <defs>
             <linearGradient id="betweenRed" x1="0" y1="0" x2="0" y2="1">
@@ -513,14 +510,14 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         </div>
 
         {/* Bottom ratio bar */}
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-[10px] font-bold tabular-nums w-9 text-right" style={{ color: UP_COLOR }}>{ratio}%</span>
-          <div className="flex-1 h-3 rounded-full overflow-hidden flex bg-muted/30 relative">
+        <div className="mt-1 flex items-center gap-1.5">
+          <span className="text-[9px] font-bold tabular-nums w-8 text-right" style={{ color: UP_COLOR }}>{ratio}%</span>
+          <div className="flex-1 h-2.5 rounded-full overflow-hidden flex bg-muted/30 relative">
             <div className="h-full rounded-l-full transition-all duration-700" style={{ width: `${ratio}%`, backgroundColor: UP_COLOR, opacity: 0.75 }} />
             <div className="h-full rounded-r-full transition-all duration-700" style={{ width: `${100 - parseFloat(ratio)}%`, backgroundColor: DOWN_COLOR, opacity: 0.75 }} />
             <div className="absolute left-1/2 top-0 bottom-0 w-px bg-muted-foreground/20 -translate-x-1/2" />
           </div>
-          <span className="text-[10px] font-bold tabular-nums w-9" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(ratio)).toFixed(1)}%</span>
+          <span className="text-[9px] font-bold tabular-nums w-8" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(ratio)).toFixed(1)}%</span>
         </div>
       </CardContent>
     </Card>
