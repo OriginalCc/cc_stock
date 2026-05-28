@@ -378,6 +378,13 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
                 <circle cx={x} cy={yDown} r={isLast ? 3 : 1.8} fill={DOWN_COLOR} />
                 {isLast && <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />}
 
+                {/* Dashed connector: up-line → up pill */}
+                <line x1={x} y1={yUp} x2={x} y2={yUp - upOff + pillH}
+                  stroke={UP_COLOR} strokeWidth={0.6} strokeDasharray="2,2" opacity={0.5} />
+                {/* Dashed connector: down-line → down pill */}
+                <line x1={x} y1={yDown} x2={x} y2={yDown + downOff}
+                  stroke={DOWN_COLOR} strokeWidth={0.6} strokeDasharray="2,2" opacity={0.5} />
+
                 {/* Up pill — above the up line */}
                 <rect x={x - 18} y={yUp - upOff}
                   width={36} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
