@@ -158,7 +158,7 @@ const CHART_LEFT_PX = 57;
 const CHART_RIGHT_PX = 83;
 const CHART_TOP_PX = 12;
 const CHART_BOTTOM_PX = 20;
-const CHART_HEIGHT = 170;
+const CHART_HEIGHT = 190;
 
 export function MarketBreadthChart({ history, currentUp, currentDown, currentFlat, limitUp = 0, limitDown = 0, shUp = 0, shDown = 0, szUp = 0, szDown = 0 }: MarketBreadthChartProps) {
   // ── Measure container width so SVG coords are 1:1 with pixels ──
