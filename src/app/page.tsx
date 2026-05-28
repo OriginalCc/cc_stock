@@ -814,28 +814,6 @@ export default function StockTAssistant() {
           </CardContent>
         </Card>
 
-        {/* Market Breadth 涨跌家数 (only in timeline modes) */}
-        {quote && isTimelineActive && liveTimeline.length > 0 && marketBreadth && (() => {
-          const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;
-          return (
-            <div className="mb-4 space-y-2">
-              {/* 涨跌家数（融合版：摘要+分时图） */}
-              <MarketBreadthChart
-                history={history || []}
-                currentUp={totalUp}
-                currentDown={totalDown}
-                currentFlat={totalFlat}
-                limitUp={limitUp}
-                limitDown={limitDown}
-                shUp={shUp}
-                shDown={shDown}
-                szUp={szUp}
-                szDown={szDown}
-              />
-            </div>
-          );
-        })()}
-
         {/* Position Signal Card — hidden in 5d-timeline mode */}
         {chartMode !== "5d-timeline" && (
         <PositionSignalCard
@@ -870,19 +848,33 @@ export default function StockTAssistant() {
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
             <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />
-            {/* 市场情绪指数 — 放在深证成指分时图后面 */}
+            {/* 涨跌家数 + 市场情绪指数 — 放在深证成指分时图后面 */}
             {marketBreadth && (() => {
-              const { totalUp, totalDown, totalFlat, limitUp, limitDown, history } = marketBreadth;
+              const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;
               return (
-                <MarketSentiment
-                  totalUp={totalUp}
-                  totalDown={totalDown}
-                  totalFlat={totalFlat}
-                  limitUp={limitUp}
-                  limitDown={limitDown}
-                  breadthHistory={history || []}
-                  indexRegimes={indexRegimes}
-                />
+                <div className="space-y-2">
+                  <MarketBreadthChart
+                    history={history || []}
+                    currentUp={totalUp}
+                    currentDown={totalDown}
+                    currentFlat={totalFlat}
+                    limitUp={limitUp}
+                    limitDown={limitDown}
+                    shUp={shUp}
+                    shDown={shDown}
+                    szUp={szUp}
+                    szDown={szDown}
+                  />
+                  <MarketSentiment
+                    totalUp={totalUp}
+                    totalDown={totalDown}
+                    totalFlat={totalFlat}
+                    limitUp={limitUp}
+                    limitDown={limitDown}
+                    breadthHistory={history || []}
+                    indexRegimes={indexRegimes}
+                  />
+                </div>
               );
             })()}
           </div>
