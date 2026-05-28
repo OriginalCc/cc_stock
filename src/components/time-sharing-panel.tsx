@@ -1755,86 +1755,293 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     return intradayIntentCache.compute(fp, () => analyzeIntradayIntent(data, prevClose));
   }, [data, prevClose]);
 
-  // ── 早盘放量下跌禁买检测（动态分级制） ──
-  // 根据下跌强度自动选择禁买窗口：
-  //   轻微 (跌幅<1%, 量比<2x)  → 9:45 解禁
-  //   中等 (跌幅1-2%, 量比2-3x) → 10:00 解禁
-  //   强烈 (跌幅>2%, 量比>3x)  → 10:15 解禁
-  //   极端 (跌幅>3%+跳空低开)  → 10:30 解禁
+  // ── 早盘放量下跌禁买检测（智能动态分级制 v2） ──
+  // 多维度综合评分，精确计算量比，动态调整禁买截止时间：
+  //   1. 精确量比：从原始成交量数据计算，而非估算
+  //   2. 下跌速度：急跌 vs 阴跌，速度越快越危险
+  //   3. 企稳判断：已止跌反弹可提前解除
+  //   4. 多波下跌：连续多波比单波更危险
+  //   5. VWAP偏离：远离均价更危险
+  //   6. 跳空低开：结合量能判断
+  //   7. 动态时间：基于危险指数精确计算禁买截止时间
   const earlyVolDeclineBan = useMemo((): {
     tier: "mild" | "medium" | "strong" | "extreme";
-    banEndTime: number; // minutes from midnight (e.g. 585=9:45, 600=10:00, 615=10:15, 630=10:30)
+    banEndTime: number; // minutes from midnight
     banEndTimeStr: string;
     declineScore: number;
     dropRate: number;
     volRatio: number;
+    speedIndex: number;       // 下跌速度指数 0-100
+    stabilityIndex: number;   // 企稳指数 0-100 (越高越稳)
+    waveCount: number;        // 下跌波数
+    vwapDeviation: number;    // VWAP偏离度(%)
+    gapDownRate: number;      // 跳空低开幅度(%)
+    dangerIndex: number;      // 综合危险指数 0-100
+    earlyLifted: boolean;     // 是否因企稳提前解禁
   } | null => {
     if (!pvMarkers || pvMarkers.length === 0) return null;
-    // 检测10:30前是否存在放量下跌标记
+
+    // ── 1. 收集早盘放量下跌标记 ──
     const earlyVolDeclines = pvMarkers.filter(m => {
       if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
       const mins = pvParseTime(m.time);
       return mins >= 570 && mins < 630;
     });
     if (earlyVolDeclines.length === 0) return null;
-    // 取绝对值最大的分数作为代表
-    const worstMarker = earlyVolDeclines.reduce((best, m) =>
-      Math.abs(m.score) > Math.abs(best.score) ? m : best
-    , earlyVolDeclines[0]);
 
-    // 二次校验：如果早盘整体趋势是上涨的，不应触发禁买
+    // ── 2. 提取早盘原始数据 ──
     const earlyData = data.filter(d => {
       const mins = pvParseTime(d.time);
       return mins >= 570 && mins < 630;
     });
-    if (earlyData.length >= 2) {
-      const earlyStartPrice = earlyData[0].price;
-      const earlyEndPrice = earlyData[earlyData.length - 1].price;
-      const earlyNetChange = earlyStartPrice > 0
-        ? ((earlyEndPrice - earlyStartPrice) / earlyStartPrice) * 100
-        : 0;
-      // 早盘整体上涨 → 不是真正的放量下跌，不触发禁买
-      if (earlyNetChange > 0) return null;
-      // 相对昨收上涨 → 也不是真正的放量下跌
-      if (prevClose > 0 && earlyEndPrice > prevClose) return null;
+    if (earlyData.length < 5) return null;
+
+    const openPrice = earlyData[0].price;
+    const lowPrice = Math.min(...earlyData.map(d => d.price));
+    const highPrice = Math.max(...earlyData.map(d => d.price));
+    const lastEarlyPrice = earlyData[earlyData.length - 1].price;
+
+    // ── 3. 二次校验：早盘整体趋势 ──
+    const earlyNetChange = openPrice > 0
+      ? ((lastEarlyPrice - openPrice) / openPrice) * 100 : 0;
+    // 早盘整体上涨 → 不是真正的放量下跌，不触发禁买
+    if (earlyNetChange > 0) return null;
+    // 相对昨收上涨 → 也不是真正的放量下跌
+    if (prevClose > 0 && lastEarlyPrice > prevClose) return null;
+
+    // ── 4. 精确计算量比 ──
+    // 用全日数据的前15分钟作为基线，计算早盘量比
+    const allData = data;
+    const baselineLen = Math.min(15, allData.length);
+    const baselineAvgVol = allData.slice(0, baselineLen).reduce((s, d) => s + d.volume, 0) / baselineLen;
+    // 早盘下跌时段的均量
+    const declineMinutes = earlyData.filter(d => d.price < openPrice);
+    const declineAvgVol = declineMinutes.length > 0
+      ? declineMinutes.reduce((s, d) => s + d.volume, 0) / declineMinutes.length : baselineAvgVol;
+    const volRatio = baselineAvgVol > 0 ? declineAvgVol / baselineAvgVol : 1;
+
+    // ── 5. 下跌速度指数 ──
+    // 找到最大连续下跌段，计算速度
+    let maxDropPerMin = 0;
+    let totalDropMinutes = 0;
+    let totalDropAmount = 0;
+    for (let i = 1; i < earlyData.length; i++) {
+      const prevP = earlyData[i - 1].price;
+      const curP = earlyData[i].price;
+      if (prevP > 0 && curP < prevP) {
+        const dropPct = ((prevP - curP) / prevP) * 100;
+        totalDropMinutes++;
+        totalDropAmount += dropPct;
+        if (dropPct > maxDropPerMin) maxDropPerMin = dropPct;
+      }
+    }
+    // speedIndex: 最大单分钟跌幅 * 10 + 平均每分钟跌幅 * 20
+    const avgDropPerMin = totalDropMinutes > 0 ? totalDropAmount / totalDropMinutes : 0;
+    const speedIndex = Math.min(100, Math.round(maxDropPerMin * 10 + avgDropPerMin * 20));
+
+    // ── 6. 企稳判断 ──
+    // 检查低点后的走势：是否反弹、是否缩量
+    let lowIdx = 0;
+    let lowP = Infinity;
+    for (let i = 0; i < earlyData.length; i++) {
+      if (earlyData[i].price < lowP) { lowP = earlyData[i].price; lowIdx = i; }
+    }
+    const afterLow = earlyData.slice(lowIdx);
+    let stabilityIndex = 0;
+    if (afterLow.length >= 3) {
+      // 反弹幅度
+      const reboundRate = lowP > 0 ? ((afterLow[afterLow.length - 1].price - lowP) / lowP) * 100 : 0;
+      // 反弹后是否站稳（不创新低）
+      const madeNewLow = afterLow.slice(1).some(d => d.price < lowP);
+      // 低点后缩量程度
+      const afterLowAvgVol = afterLow.reduce((s, d) => s + d.volume, 0) / afterLow.length;
+      const beforeLowAvgVol = earlyData.slice(0, Math.max(1, lowIdx)).reduce((s, d) => s + d.volume, 0) / Math.max(1, lowIdx);
+      const volShrink = beforeLowAvgVol > 0 ? afterLowAvgVol / beforeLowAvgVol : 1;
+
+      // 企稳指数综合
+      if (!madeNewLow) stabilityIndex += 30;
+      if (reboundRate >= 1) stabilityIndex += 30;
+      else if (reboundRate >= 0.5) stabilityIndex += 20;
+      else if (reboundRate >= 0.2) stabilityIndex += 10;
+      if (volShrink < 0.6) stabilityIndex += 25;
+      else if (volShrink < 0.8) stabilityIndex += 15;
+      else if (volShrink < 1) stabilityIndex += 5;
+      // 低点后上涨分钟占比
+      const upAfterLow = afterLow.filter((d, i) => i > 0 && d.price > afterLow[i - 1].price).length;
+      const upRatio = (afterLow.length - 1) > 0 ? upAfterLow / (afterLow.length - 1) : 0;
+      if (upRatio >= 0.6) stabilityIndex += 15;
+      else if (upRatio >= 0.5) stabilityIndex += 8;
     }
 
-    // 计算早盘跌幅和量比，用于分级
-    const absScore = Math.abs(worstMarker.score);
-    const openPrice = earlyData.length > 0 ? earlyData[0].price : 0;
-    const lowPrice = earlyData.length > 0 ? Math.min(...earlyData.map(d => d.price)) : 0;
-    const dropRate = openPrice > 0 ? ((openPrice - lowPrice) / openPrice) * 100 : 0;
-    // 跳空低开检测
+    // ── 7. 多波下跌检测 ──
+    // 找下跌-反弹-再下跌的模式，每波低点更低
+    let waveCount = 0;
+    {
+      const prices = earlyData.map(d => d.price);
+      // 用5分钟滑动窗口找局部低点
+      const windowSize = 5;
+      const localLows: { idx: number; price: number }[] = [];
+      for (let i = 0; i <= prices.length - windowSize; i++) {
+        const slice = prices.slice(i, i + windowSize);
+        const minVal = Math.min(...slice);
+        const minIdx = i + slice.indexOf(minVal);
+        if (minIdx === i + Math.floor(windowSize / 2)) {
+          localLows.push({ idx: minIdx, price: minVal });
+        }
+      }
+      // 去重：相邻的局部低点合并
+      const filteredLows: typeof localLows = [];
+      for (const low of localLows) {
+        if (filteredLows.length === 0 || low.idx - filteredLows[filteredLows.length - 1].idx >= 5) {
+          filteredLows.push(low);
+        }
+      }
+      // 计算波数：连续创新低的局部低点序列
+      if (filteredLows.length >= 2) {
+        for (let i = 1; i < filteredLows.length; i++) {
+          if (filteredLows[i].price < filteredLows[i - 1].price * 0.998) {
+            waveCount++;
+          }
+        }
+        waveCount = Math.min(waveCount, 4); // 最多4波
+      } else {
+        waveCount = 1;
+      }
+    }
+
+    // ── 8. VWAP偏离度 ──
+    // 早盘均价
+    let vwapDeviation = 0;
+    {
+      let totalAmount = 0, totalVol = 0;
+      for (const d of earlyData) {
+        totalAmount += d.price * d.volume;
+        totalVol += d.volume;
+      }
+      const vwap = totalVol > 0 ? totalAmount / totalVol : 0;
+      vwapDeviation = vwap > 0 ? ((lastEarlyPrice - vwap) / vwap) * 100 : 0;
+    }
+
+    // ── 9. 跳空低开 ──
     const gapDownRate = prevClose > 0 && openPrice > 0
       ? ((prevClose - openPrice) / prevClose) * 100 : 0;
 
-    // 估算量比（用标记金额或分数推算）
-    const volRatio = absScore >= 50 ? 3.5 : absScore >= 30 ? 2.5 : absScore >= 15 ? 1.8 : 1.2;
+    // ── 10. 综合危险指数 ──
+    const dropRate = openPrice > 0 ? ((openPrice - lowPrice) / openPrice) * 100 : 0;
+    const absScore = Math.abs(earlyVolDeclines.reduce((best, m) =>
+      Math.abs(m.score) > Math.abs(best.score) ? m : best
+    , earlyVolDeclines[0]).score);
 
-    // ── 分级判定 ──
+    let dangerIndex = 0;
+
+    // A. 跌幅 (权重 25%)
+    if (dropRate >= 4) dangerIndex += 25;
+    else if (dropRate >= 3) dangerIndex += 22;
+    else if (dropRate >= 2) dangerIndex += 18;
+    else if (dropRate >= 1.5) dangerIndex += 14;
+    else if (dropRate >= 1) dangerIndex += 10;
+    else if (dropRate >= 0.5) dangerIndex += 5;
+
+    // B. 精确量比 (权重 20%)
+    if (volRatio >= 4) dangerIndex += 20;
+    else if (volRatio >= 3) dangerIndex += 17;
+    else if (volRatio >= 2.5) dangerIndex += 14;
+    else if (volRatio >= 2) dangerIndex += 11;
+    else if (volRatio >= 1.5) dangerIndex += 7;
+    else if (volRatio >= 1.2) dangerIndex += 3;
+
+    // C. 下跌速度 (权重 15%)
+    if (speedIndex >= 50) dangerIndex += 15;
+    else if (speedIndex >= 30) dangerIndex += 12;
+    else if (speedIndex >= 20) dangerIndex += 9;
+    else if (speedIndex >= 10) dangerIndex += 5;
+    else dangerIndex += 2;
+
+    // D. 信号分数 (权重 10%)
+    if (absScore >= 60) dangerIndex += 10;
+    else if (absScore >= 40) dangerIndex += 8;
+    else if (absScore >= 25) dangerIndex += 6;
+    else if (absScore >= 15) dangerIndex += 4;
+    else dangerIndex += 2;
+
+    // E. 多波下跌 (权重 10%)
+    if (waveCount >= 3) dangerIndex += 10;
+    else if (waveCount >= 2) dangerIndex += 7;
+    else dangerIndex += 3;
+
+    // F. 跳空低开 (权重 8%)
+    if (gapDownRate >= 2) dangerIndex += 8;
+    else if (gapDownRate >= 1) dangerIndex += 6;
+    else if (gapDownRate >= 0.5) dangerIndex += 3;
+
+    // G. VWAP偏离 (权重 7%) - 偏离越大越危险
+    const absVwapDev = Math.abs(vwapDeviation);
+    if (absVwapDev >= 2) dangerIndex += 7;
+    else if (absVwapDev >= 1.5) dangerIndex += 5;
+    else if (absVwapDev >= 1) dangerIndex += 3;
+    else dangerIndex += 1;
+
+    // H. 企稳折扣 - 已企稳则降低危险指数
+    const stabilityDiscount = stabilityIndex / 100; // 0~1
+    dangerIndex = Math.round(dangerIndex * (1 - stabilityDiscount * 0.5)); // 最多打5折
+
+    dangerIndex = Math.max(0, Math.min(100, dangerIndex));
+
+    // ── 11. 分级判定 + 动态禁买时间 ──
     let tier: "mild" | "medium" | "strong" | "extreme";
-    let banEndTime: number; // minutes from midnight
+    // 动态计算禁买截止时间（基于危险指数）
+    // 基础时间9:45(585min)，每10点危险指数增加5分钟
+    // 最短9:45(585)，最长10:30(630)
+    let banEndTime: number;
     let banEndTimeStr: string;
+    let earlyLifted = false;
 
-    if (dropRate > 3 || (dropRate > 2 && gapDownRate >= 1) || absScore >= 60) {
+    if (dangerIndex >= 70) {
       tier = "extreme";
       banEndTime = 630; // 10:30
-      banEndTimeStr = "10:30";
-    } else if (dropRate > 2 || volRatio > 3 || absScore >= 40) {
+    } else if (dangerIndex >= 50) {
       tier = "strong";
-      banEndTime = 615; // 10:15
-      banEndTimeStr = "10:15";
-    } else if (dropRate >= 1 || volRatio >= 2 || absScore >= 20) {
+      // 动态：50→10:10(610), 69→10:25(625)
+      banEndTime = 585 + Math.round((dangerIndex - 30) / 70 * 45);
+      banEndTime = Math.min(625, Math.max(610, banEndTime));
+    } else if (dangerIndex >= 30) {
       tier = "medium";
-      banEndTime = 600; // 10:00
-      banEndTimeStr = "10:00";
+      // 动态：30→9:55(595), 49→10:05(605)
+      banEndTime = 585 + Math.round((dangerIndex - 15) / 55 * 20);
+      banEndTime = Math.min(605, Math.max(595, banEndTime));
     } else {
       tier = "mild";
-      banEndTime = 585; // 9:45
-      banEndTimeStr = "9:45";
+      // 动态：0→9:40(580), 29→9:50(590)
+      banEndTime = 580 + Math.round(dangerIndex / 30 * 10);
+      banEndTime = Math.min(590, Math.max(580, banEndTime));
     }
 
-    return { tier, banEndTime, banEndTimeStr, declineScore: absScore, dropRate, volRatio };
+    // ── 12. 企稳提前解禁 ──
+    // 如果企稳指数很高(>=60)且当前已过下跌低点时刻+10分钟，可以提前解禁
+    if (stabilityIndex >= 60 && lowIdx > 0) {
+      const lowTime = pvParseTime(earlyData[lowIdx].time);
+      const potentialLiftTime = lowTime + 10; // 低点后10分钟
+      // 只在企稳显著时提前，且不能早于基础禁买时间的50%
+      const minBanTime = 570 + Math.round((banEndTime - 570) * 0.5);
+      const adjustedBanEnd = Math.max(minBanTime, potentialLiftTime);
+      if (adjustedBanEnd < banEndTime) {
+        banEndTime = adjustedBanEnd;
+        earlyLifted = true;
+      }
+    }
+
+    // 对齐到5分钟整数（方便显示）
+    banEndTime = Math.round(banEndTime / 5) * 5;
+    banEndTime = Math.min(630, Math.max(580, banEndTime));
+    const banH = Math.floor(banEndTime / 60);
+    const banM = banEndTime % 60;
+    banEndTimeStr = `${banH}:${banM.toString().padStart(2, '0')}`;
+
+    return {
+      tier, banEndTime, banEndTimeStr, declineScore: absScore, dropRate,
+      volRatio, speedIndex, stabilityIndex, waveCount, vwapDeviation,
+      gapDownRate, dangerIndex, earlyLifted,
+    };
   }, [pvMarkers, data, prevClose]);
 
   // ── Memoize tooltip components (stable references to avoid re-renders) ──
@@ -2052,13 +2259,14 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         )}
         {/* 早盘放量下跌禁买警告 */}
         {earlyVolDeclineBan && (() => {
+          const ban = earlyVolDeclineBan;
           const now = new Date();
           const curMins = now.getHours() * 60 + now.getMinutes();
-          if (curMins >= earlyVolDeclineBan.banEndTime) return null;
-          const tierLabel = { mild: "轻微", medium: "中等", strong: "强烈", extreme: "极端" }[earlyVolDeclineBan.tier];
+          if (curMins >= ban.banEndTime) return null;
+          const tierLabel = { mild: "轻微", medium: "中等", strong: "强烈", extreme: "极端" }[ban.tier];
           return (
-            <span className="flex items-center gap-1 text-red-500 font-bold animate-pulse">
-              🚫 {earlyVolDeclineBan.banEndTimeStr}前禁买({tierLabel})
+            <span className="flex items-center gap-1 text-red-500 font-bold animate-pulse" title={`危险指数:${ban.dangerIndex} 跌幅:${ban.dropRate.toFixed(1)}% 量比:${ban.volRatio.toFixed(1)}x 速度:${ban.speedIndex} 企稳:${ban.stabilityIndex} 波数:${ban.waveCount}${ban.earlyLifted ? ' (提前解禁)' : ''}`}>
+              🚫 {ban.banEndTimeStr}前禁买({tierLabel}) 危险{ban.dangerIndex}
             </span>
           );
         })()}
@@ -2286,7 +2494,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         </div>
       </div>
 
-      {/* ─── Early Volume Decline Ban Banner (动态分级) ─── */}
+      {/* ─── Early Volume Decline Ban Banner (智能动态分级 v2) ─── */}
       {earlyVolDeclineBan && (() => {
         const ban = earlyVolDeclineBan;
         const now = new Date();
@@ -2318,13 +2526,16 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           extreme: "text-red-700 dark:text-red-200",
         }[ban.tier];
         return (
-          <div className={`px-3 py-1.5 ${tierBg} border-b flex items-center justify-center gap-2`}>
+          <div className={`px-3 py-1.5 ${tierBg} border-b flex items-center justify-center gap-2 flex-wrap`}>
             <span className="text-red-500 text-xs">🚫</span>
             <span className={`text-xs font-bold ${tierText}`}>
               {tierDesc}，{ban.banEndTimeStr}前禁止买入！
             </span>
-            <span className={`text-[10px] font-bold ${tierSubText}`}>| 跌幅{ban.dropRate.toFixed(1)}% · 量比{ban.volRatio.toFixed(1)}x · {tierLabel}级别</span>
-            {isStillBeforeBan && <span className="text-[10px] text-red-400 animate-pulse">⏳ 当前仍在禁买期</span>}
+            <span className={`text-[10px] font-bold ${tierSubText}`}>
+              | 危险{ban.dangerIndex} · 跌{ban.dropRate.toFixed(1)}% · 量比{ban.volRatio.toFixed(1)}x · 速度{ban.speedIndex} · {ban.waveCount}波 · {tierLabel}
+            </span>
+            {ban.earlyLifted && <span className="text-[10px] text-green-400 font-bold">✅ 企稳提前解禁</span>}
+            {isStillBeforeBan && !ban.earlyLifted && <span className="text-[10px] text-red-400 animate-pulse">⏳ 当前仍在禁买期</span>}
           </div>
         );
       })()}
@@ -2656,16 +2867,17 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               }
               return null;
             })()}
-            {/* ── 早盘放量下跌禁买区（动态分级） ── */}
+            {/* ── 早盘放量下跌禁买区（智能动态分级 v2） ── */}
             {earlyVolDeclineBan && (() => {
-              const banIdx = zoomData.findIndex(d => d.time === earlyVolDeclineBan.banEndTimeStr);
+              const ban = earlyVolDeclineBan;
+              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
               if (banIdx < 0) return null;
-              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[earlyVolDeclineBan.tier];
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
-                <ReferenceLine yAxisId="price" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: `${earlyVolDeclineBan.banEndTimeStr} 禁买线`, position: "insideTopRight", fill: tierColor, fontSize: 9, fontWeight: 700, fillOpacity: 0.8 }} />
+                <ReferenceLine yAxisId="price" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: `${ban.banEndTimeStr} 禁买线`, position: "insideTopRight", fill: tierColor, fontSize: 9, fontWeight: 700, fillOpacity: 0.8 }} />
               </>);
             })()}
-            {/* ── 早盘放量下跌禁买蒙版（动态分级） ── */}
+            {/* ── 早盘放量下跌禁买蒙版（智能动态分级 v2） ── */}
             <Customized component={(props: any) => {
               if (!earlyVolDeclineBan) return null;
               const ban = earlyVolDeclineBan;
@@ -2685,7 +2897,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               if (w <= 0 || h <= 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               const tierLabel = { mild: "轻微", medium: "中等", strong: "强烈", extreme: "极端" }[ban.tier];
-              const bgOpacity = { mild: 0.04, medium: 0.08, strong: 0.10, extreme: 0.14 }[ban.tier];
+              // 根据危险指数动态调整蒙版透明度
+              const bgOpacity = 0.02 + (ban.dangerIndex / 100) * 0.12;
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {
@@ -2693,6 +2906,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   <line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.18} />
                 );
               }
+              const extraInfo = ban.earlyLifted ? `${tierLabel}·提前解禁` : `${tierLabel}·危险${ban.dangerIndex}`;
               return (
                 <g>
                   <defs>
@@ -2712,7 +2926,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={0.8} strokeOpacity={0.25} />
                   {/* 禁买文字 */}
                   <text x={x1 + w / 2} y={y1 + h / 2 - 8} textAnchor="middle" fontSize={13} fontWeight={800} fill={tierColor} fillOpacity={0.35} fontFamily="sans-serif">禁买区</text>
-                  <text x={x1 + w / 2} y={y1 + h / 2 + 10} textAnchor="middle" fontSize={10} fontWeight={600} fill={tierColor} fillOpacity={0.28} fontFamily="sans-serif">{ban.banEndTimeStr}前禁止买入 · {tierLabel}</text>
+                  <text x={x1 + w / 2} y={y1 + h / 2 + 10} textAnchor="middle" fontSize={10} fontWeight={600} fill={tierColor} fillOpacity={0.28} fontFamily="sans-serif">{ban.banEndTimeStr}前禁止买入 · {extraInfo}</text>
                 </g>
               );
             }} />
@@ -2956,11 +3170,12 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <Tooltip content={volumeTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="vol-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
-            {/* ── 早盘放量下跌禁买蒙版 (成交量图，动态分级) ── */}
+            {/* ── 早盘放量下跌禁买蒙版 (成交量图，智能动态分级 v2) ── */}
             {earlyVolDeclineBan && (() => {
-              const banIdx = zoomData.findIndex(d => d.time === earlyVolDeclineBan.banEndTimeStr);
+              const ban = earlyVolDeclineBan;
+              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
               if (banIdx < 0) return null;
-              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[earlyVolDeclineBan.tier];
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
                 <ReferenceLine yAxisId="vol-right" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
               </>);
@@ -2983,7 +3198,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
-              const bgOpacity = { mild: 0.04, medium: 0.08, strong: 0.10, extreme: 0.14 }[ban.tier];
+              const bgOpacity = 0.02 + (ban.dangerIndex / 100) * 0.12;
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {
@@ -3077,11 +3292,12 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <ReferenceLine yAxisId="macd-right" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.5} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="macd-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
-            {/* ── 早盘放量下跌禁买蒙版 (MACD图，动态分级) ── */}
+            {/* ── 早盘放量下跌禁买蒙版 (MACD图，智能动态分级 v2) ── */}
             {earlyVolDeclineBan && (() => {
-              const banIdx = zoomData.findIndex(d => d.time === earlyVolDeclineBan.banEndTimeStr);
+              const ban = earlyVolDeclineBan;
+              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
               if (banIdx < 0) return null;
-              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[earlyVolDeclineBan.tier];
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
                 <ReferenceLine yAxisId="macd-right" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
               </>);
@@ -3104,7 +3320,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
-              const bgOpacity = { mild: 0.04, medium: 0.08, strong: 0.10, extreme: 0.14 }[ban.tier];
+              const bgOpacity = 0.02 + (ban.dangerIndex / 100) * 0.12;
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {

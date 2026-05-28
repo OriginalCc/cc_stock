@@ -1093,3 +1093,39 @@ Stage Summary:
 - 收藏状态在页面刷新/重新进入后不会丢失
 - 放量下跌检测算法三重防误判：算法层（chart-shared.ts）+ UI层（earlyVolDeclineBan）+ 新增prevClose校验
 - pulse_decline 新增整体趋势校验，上涨股票不再被误判为脉冲下跌
+
+---
+Task ID: 11
+Agent: main
+Task: 优化早盘放量下跌禁买算法，实现智能动态分级制v2
+
+Work Log:
+- 分析现有 earlyVolDeclineBan 算法的6个弱点：量比估算不准、分级粗糙、未考虑下跌速度、无企稳判断、无多波检测、固定时间节点
+- 完全重写 earlyVolDeclineBan useMemo 逻辑（time-sharing-panel.tsx 第1758-2045行）
+- 新增7个评分维度：
+  1. 精确量比：从原始成交量数据计算（下跌均量/前15分钟基线），替代旧版的估算方式
+  2. 下跌速度指数(speedIndex)：最大单分钟跌幅×10 + 平均跌幅×20
+  3. 企稳指数(stabilityIndex)：反弹幅度、是否创新低、低点后缩量程度、上涨分钟占比
+  4. 多波下跌检测(waveCount)：5分钟滑动窗口找局部低点，计算创新低的波数
+  5. VWAP偏离度(vwapDeviation)：当前价与早盘均价的偏离
+  6. 跳空低开(gapDownRate)：从昨收到开盘的跌幅
+  7. 综合危险指数(dangerIndex)：8个维度加权评分(A-H)，企稳折扣最多50%
+- 动态禁买截止时间：基于dangerIndex精确计算，而非4个固定节点
+  - mild: 9:40~9:50 (dangerIndex 0-29)
+  - medium: 9:55~10:05 (dangerIndex 30-49)
+  - strong: 10:10~10:25 (dangerIndex 50-69)
+  - extreme: 10:30 (dangerIndex >=70)
+- 企稳提前解禁：stabilityIndex>=60时，低点后10分钟可提前解禁（不低于基础时间50%）
+- 时间对齐到5分钟整数（方便显示）
+- 更新UI展示：横幅增加危险指数、速度、波数、企稳提前解禁标签
+- 图表蒙版透明度改为基于dangerIndex动态计算(0.02+dangerIndex/100*0.12)
+- 更新所有3处蒙版（价格图/成交量图/MACD图）的渲染逻辑
+- Lint通过，dev server正常运行
+
+Stage Summary:
+- 禁买算法从粗糙的3维（跌幅+量比估算+分数）升级为8维综合评分系统
+- 量比现在从原始数据精确计算，不再估算
+- 新增下跌速度、企稳判断、多波检测、VWAP偏离4个全新维度
+- 禁买时间从4个固定节点变为基于危险指数的动态计算
+- 企稳显著时可提前解禁，避免过度限制
+- UI展示更丰富的多维指标（危险指数、速度、波数、提前解禁标记）
