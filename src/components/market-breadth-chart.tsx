@@ -247,27 +247,27 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     <div className="flex items-center gap-2 flex-wrap">
       <div className="flex items-center gap-0.5">
         <span className="inline-block w-1 h-1 rounded-full" style={{ backgroundColor: UP_COLOR }} />
-        <span className="font-bold tabular-nums text-xs" style={{ color: UP_COLOR }}>{currentUp}</span>
-        <span className="text-[9px] text-muted-foreground">涨</span>
+        <span className="font-bold tabular-nums text-[10px]" style={{ color: UP_COLOR }}>{currentUp}</span>
+        <span className="text-[8px] text-muted-foreground">涨</span>
       </div>
       <div className="flex items-center gap-0.5">
         <span className="inline-block w-1 h-1 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
-        <span className="font-bold tabular-nums text-xs" style={{ color: DOWN_COLOR }}>{currentDown}</span>
-        <span className="text-[9px] text-muted-foreground">跌</span>
+        <span className="font-bold tabular-nums text-[10px]" style={{ color: DOWN_COLOR }}>{currentDown}</span>
+        <span className="text-[8px] text-muted-foreground">跌</span>
       </div>
       <div className="flex items-center gap-0.5">
         <span className="inline-block w-1 h-1 rounded-full bg-muted-foreground/50" />
-        <span className="text-muted-foreground font-bold tabular-nums text-xs">{currentFlat}</span>
-        <span className="text-[9px] text-muted-foreground">平</span>
+        <span className="text-muted-foreground font-bold tabular-nums text-[10px]">{currentFlat}</span>
+        <span className="text-[8px] text-muted-foreground">平</span>
       </div>
       {(limitUp > 0 || limitDown > 0) && (
         <div className="flex items-center gap-1.5 ml-0.5 pl-1.5 border-l border-border">
-          {limitUp > 0 && <span className="text-[9px] text-red-500 font-medium">涨停{limitUp}</span>}
-          {limitDown > 0 && <span className="text-[9px] text-green-500 font-medium">跌停{limitDown}</span>}
+          {limitUp > 0 && <span className="text-[8px] text-red-500 font-medium">涨停{limitUp}</span>}
+          {limitDown > 0 && <span className="text-[8px] text-green-500 font-medium">跌停{limitDown}</span>}
         </div>
       )}
       {(shUp > 0 || szUp > 0) && (
-        <div className="flex items-center gap-1 text-[9px] text-muted-foreground ml-0.5 pl-1.5 border-l border-border">
+        <div className="flex items-center gap-1 text-[8px] text-muted-foreground ml-0.5 pl-1.5 border-l border-border">
           <span>沪{shUp}:{shDown}</span>
           <span className="text-muted-foreground/30">|</span>
           <span>深{szUp}:{szDown}</span>
