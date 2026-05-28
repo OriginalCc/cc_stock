@@ -245,6 +245,24 @@ function getFactorBg(score: number): string {
   return "rgba(22,163,74,0.15)";
 }
 
+// CSS keyframes for pulse animation (injected once)
+const PULSE_STYLE_ID = "sentiment-pulse-style";
+if (typeof document !== "undefined" && !document.getElementById(PULSE_STYLE_ID)) {
+  const style = document.createElement("style");
+  style.id = PULSE_STYLE_ID;
+  style.textContent = `
+    @keyframes sentimentPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    @keyframes needleSweep {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 export function MarketSentiment({
   totalUp, totalDown, totalFlat,
   limitUp, limitDown,
@@ -258,10 +276,10 @@ export function MarketSentiment({
 
   const { score, level, color, bgClass, factors, trend } = result;
 
-  // Gauge arc SVG
-  const gaugeR = 58;
-  const gaugeCx = 85;
-  const gaugeCy = 64;
+  // Gauge arc SVG — bigger dimensions
+  const gaugeR = 62;
+  const gaugeCx = 90;
+  const gaugeCy = 66;
   const gaugeStartAngle = -225;
   const gaugeEndAngle = 45;
   const gaugeRange = gaugeEndAngle - gaugeStartAngle; // 270 degrees
@@ -279,124 +297,171 @@ export function MarketSentiment({
     return `M${s.x.toFixed(1)},${s.y.toFixed(1)} A${r},${r} 0 ${largeArc} 1 ${e.x.toFixed(1)},${e.y.toFixed(1)}`;
   };
 
-  // Score needle
-  const needleTip = polarToCart(gaugeCx, gaugeCy, gaugeR - 12, scoreAngle);
-  const needleBase1 = polarToCart(gaugeCx, gaugeCy, 5, scoreAngle - 90);
-  const needleBase2 = polarToCart(gaugeCx, gaugeCy, 5, scoreAngle + 90);
+  // Score needle — longer, more dramatic
+  const needleTip = polarToCart(gaugeCx, gaugeCy, gaugeR - 10, scoreAngle);
+  const needleBase1 = polarToCart(gaugeCx, gaugeCy, 6, scoreAngle - 90);
+  const needleBase2 = polarToCart(gaugeCx, gaugeCy, 6, scoreAngle + 90);
+  // Counter-weight on the opposite side
+  const needleTail = polarToCart(gaugeCx, gaugeCy, 14, scoreAngle + 180);
 
   // Trend arrow
   const trendIcon = trend === "up" ? "▲" : trend === "down" ? "▼" : "●";
   const trendColor = trend === "up" ? "#ef4444" : trend === "down" ? "#22c55e" : "#eab308";
   const trendLabel = trend === "up" ? "情绪回升" : trend === "down" ? "情绪走弱" : "情绪平稳";
 
+  // Sentiment bar zone definitions
+  const zones = [
+    { label: "极度", width: "15%", bg: "bg-emerald-700" },
+    { label: "恐慌", width: "15%", bg: "bg-green-600" },
+    { label: "偏弱", width: "12%", bg: "bg-lime-600" },
+    { label: "中性", width: "16%", bg: "bg-yellow-600" },
+    { label: "偏强", width: "12%", bg: "bg-orange-600" },
+    { label: "乐观", width: "15%", bg: "bg-red-600" },
+    { label: "极度", width: "15%", bg: "bg-red-800" },
+  ];
+
   return (
     <Card className={`border-2 overflow-hidden ${bgClass}`}>
-      <CardContent className="px-3 py-1.5 sm:px-4 sm:py-1.5">
+      <CardContent className="px-3 py-2 sm:px-4 sm:py-2">
         {/* Header */}
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-sm font-extrabold text-foreground/90">市场情绪指数</span>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-extrabold text-foreground/90 tracking-wide">市场情绪指数</span>
           <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full"
             style={{ backgroundColor: `${trendColor}25`, color: trendColor, boxShadow: `0 0 8px ${trendColor}30` }}>
             {trendIcon} {trendLabel}
           </span>
         </div>
 
-        <div className="flex items-center gap-4">
-          {/* Gauge */}
+        <div className="flex items-center gap-3">
+          {/* Gauge — larger & more dramatic */}
           <div className="shrink-0">
-            <svg width="170" height="96" viewBox="0 0 170 96" className="w-[150px]">
+            <svg width="180" height="100" viewBox="0 0 180 100" className="w-[160px]">
               <defs>
+                {/* Outer glow for the active arc */}
                 <filter id="gaugeGlow" x="-30%" y="-30%" width="160%" height="160%">
-                  <feGaussianBlur stdDeviation="4" result="blur" />
-                  <feFlood floodColor={color} floodOpacity="0.6" />
-                  <feComposite in2="blur" operator="in" />
-                  <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
-                </filter>
-                <filter id="needleGlow" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feGaussianBlur stdDeviation="5" result="blur" />
                   <feFlood floodColor={color} floodOpacity="0.7" />
                   <feComposite in2="blur" operator="in" />
                   <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
                 </filter>
-                <filter id="scoreGlow" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="4" result="blur" />
-                  <feFlood floodColor={color} floodOpacity="0.5" />
+                {/* Needle glow */}
+                <filter id="needleGlow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feFlood floodColor={color} floodOpacity="0.8" />
                   <feComposite in2="blur" operator="in" />
                   <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
                 </filter>
+                {/* Score text glow */}
+                <filter id="scoreGlow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="5" result="blur" />
+                  <feFlood floodColor={color} floodOpacity="0.6" />
+                  <feComposite in2="blur" operator="in" />
+                  <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+                {/* Radial gradient for gauge background */}
+                <radialGradient id="gaugeBgGrad" cx="50%" cy="50%" r="60%">
+                  <stop offset="0%" stopColor={color} stopOpacity="0.06" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0" />
+                </radialGradient>
               </defs>
 
-              {/* Background arc: 绿→黄→红 vivid segments with gaps */}
-              <path d={gaugePath(gaugeStartAngle + 1, gaugeStartAngle + gaugeRange * 0.15 - 0.5, gaugeR)}
-                fill="none" stroke="#059669" strokeWidth={14} strokeLinecap="round" opacity={0.95} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.15 + 0.5, gaugeStartAngle + gaugeRange * 0.30 - 0.5, gaugeR)}
-                fill="none" stroke="#16a34a" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.30 + 0.5, gaugeStartAngle + gaugeRange * 0.42 - 0.5, gaugeR)}
-                fill="none" stroke="#65a30d" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.42 + 0.5, gaugeStartAngle + gaugeRange * 0.58 - 0.5, gaugeR)}
-                fill="none" stroke="#ca8a04" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.58 + 0.5, gaugeStartAngle + gaugeRange * 0.70 - 0.5, gaugeR)}
-                fill="none" stroke="#ea580c" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.70 + 0.5, gaugeStartAngle + gaugeRange * 0.85 - 0.5, gaugeR)}
-                fill="none" stroke="#dc2626" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.85 + 0.5, gaugeEndAngle - 1, gaugeR)}
-                fill="none" stroke="#b91c1c" strokeWidth={14} strokeLinecap="round" opacity={0.95} />
+              {/* Subtle inner glow circle */}
+              <circle cx={gaugeCx} cy={gaugeCy} r={gaugeR - 18} fill="url(#gaugeBgGrad)" />
+
+              {/* Background arc: 7 vivid segments with gaps */}
+              <path d={gaugePath(gaugeStartAngle + 1.2, gaugeStartAngle + gaugeRange * 0.15 - 0.6, gaugeR)}
+                fill="none" stroke="#059669" strokeWidth={16} strokeLinecap="round" opacity={0.95} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.15 + 0.6, gaugeStartAngle + gaugeRange * 0.30 - 0.6, gaugeR)}
+                fill="none" stroke="#16a34a" strokeWidth={16} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.30 + 0.6, gaugeStartAngle + gaugeRange * 0.42 - 0.6, gaugeR)}
+                fill="none" stroke="#65a30d" strokeWidth={16} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.42 + 0.6, gaugeStartAngle + gaugeRange * 0.58 - 0.6, gaugeR)}
+                fill="none" stroke="#ca8a04" strokeWidth={16} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.58 + 0.6, gaugeStartAngle + gaugeRange * 0.70 - 0.6, gaugeR)}
+                fill="none" stroke="#ea580c" strokeWidth={16} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.70 + 0.6, gaugeStartAngle + gaugeRange * 0.85 - 0.6, gaugeR)}
+                fill="none" stroke="#dc2626" strokeWidth={16} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.85 + 0.6, gaugeEndAngle - 1.2, gaugeR)}
+                fill="none" stroke="#b91c1c" strokeWidth={16} strokeLinecap="round" opacity={0.95} />
+
+              {/* Tick marks at segment boundaries */}
+              {[0, 0.15, 0.30, 0.42, 0.58, 0.70, 0.85, 1].map((ratio, i) => {
+                const angle = gaugeStartAngle + gaugeRange * ratio;
+                const inner = polarToCart(gaugeCx, gaugeCy, gaugeR - 10, angle);
+                const outer = polarToCart(gaugeCx, gaugeCy, gaugeR + 2, angle);
+                return (
+                  <line key={i} x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y}
+                    stroke="white" strokeWidth={1.5} opacity={0.4} />
+                );
+              })}
 
               {/* Active arc (filled portion up to score) — bright & glowing */}
               <path d={gaugePath(gaugeStartAngle, scoreAngle, gaugeR - 2)}
-                fill="none" stroke={color} strokeWidth={8} strokeLinecap="round" filter="url(#gaugeGlow)" opacity={0.95} />
+                fill="none" stroke={color} strokeWidth={10} strokeLinecap="round" filter="url(#gaugeGlow)" opacity={0.95} />
 
-              {/* Needle — with glow */}
+              {/* Needle — with counter-weight and glow */}
+              <line x1={needleTail.x} y1={needleTail.y} x2={needleTip.x} y2={needleTip.y}
+                stroke={color} strokeWidth={2.5} filter="url(#needleGlow)" strokeLinecap="round" />
               <polygon
                 points={`${needleTip.x.toFixed(1)},${needleTip.y.toFixed(1)} ${needleBase1.x.toFixed(1)},${needleBase1.y.toFixed(1)} ${needleBase2.x.toFixed(1)},${needleBase2.y.toFixed(1)}`}
                 fill={color} filter="url(#needleGlow)"
               />
-              <circle cx={gaugeCx} cy={gaugeCy} r={5} fill={color} />
-              <circle cx={gaugeCx} cy={gaugeCy} r={2.5} fill="#fff" opacity={0.6} />
+              {/* Center hub */}
+              <circle cx={gaugeCx} cy={gaugeCy} r={7} fill="#1a1a2e" stroke={color} strokeWidth={2} />
+              <circle cx={gaugeCx} cy={gaugeCy} r={3} fill={color} style={{ animation: "sentimentPulse 2s ease-in-out infinite" }} />
 
               {/* Score text — big, bold & glowing */}
-              <text x={gaugeCx} y={gaugeCy + 24} textAnchor="middle" fontSize={28} fontWeight={900} fontFamily="monospace" fill={color} filter="url(#scoreGlow)">
+              <text x={gaugeCx} y={gaugeCy + 24} textAnchor="middle" fontSize={30} fontWeight={900} fontFamily="monospace" fill={color} filter="url(#scoreGlow)">
                 {score}
               </text>
               {/* Level label — pill background */}
-              <rect x={gaugeCx - 32} y={gaugeCy + 29} width={64} height={18} rx={5} fill={color} opacity={0.25} />
-              <text x={gaugeCx} y={gaugeCy + 42} textAnchor="middle" fontSize={13} fontWeight={800} fill={color}>
+              <rect x={gaugeCx - 34} y={gaugeCy + 30} width={68} height={20} rx={6} fill={color} opacity={0.22} />
+              <rect x={gaugeCx - 34} y={gaugeCy + 30} width={68} height={20} rx={6} fill="none" stroke={color} strokeWidth={1} opacity={0.3} />
+              <text x={gaugeCx} y={gaugeCy + 44} textAnchor="middle" fontSize={13} fontWeight={800} fill={color}>
                 {level}
               </text>
 
-              {/* Tick labels */}
-              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeStartAngle).x}
-                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeStartAngle).y + 3}
-                textAnchor="middle" fontSize={8} fontWeight={700} fill="currentColor" className="text-muted-foreground">0</text>
-              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeStartAngle + gaugeRange * 0.5).x}
-                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeStartAngle + gaugeRange * 0.5).y + 3}
-                textAnchor="middle" fontSize={8} fontWeight={700} fill="currentColor" className="text-muted-foreground">50</text>
-              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeEndAngle).x}
-                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 14, gaugeEndAngle).y + 3}
-                textAnchor="middle" fontSize={8} fontWeight={700} fill="currentColor" className="text-muted-foreground">100</text>
+              {/* Tick labels at 0, 50, 100 */}
+              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 16, gaugeStartAngle).x}
+                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 16, gaugeStartAngle).y + 3}
+                textAnchor="middle" fontSize={9} fontWeight={700} fill="currentColor" className="text-muted-foreground">0</text>
+              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 16, gaugeStartAngle + gaugeRange * 0.5).x}
+                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 16, gaugeStartAngle + gaugeRange * 0.5).y + 3}
+                textAnchor="middle" fontSize={9} fontWeight={700} fill="currentColor" className="text-muted-foreground">50</text>
+              <text x={polarToCart(gaugeCx, gaugeCy, gaugeR + 16, gaugeEndAngle).x}
+                y={polarToCart(gaugeCx, gaugeCy, gaugeR + 16, gaugeEndAngle).y + 3}
+                textAnchor="middle" fontSize={9} fontWeight={700} fill="currentColor" className="text-muted-foreground">100</text>
             </svg>
           </div>
 
-          {/* Factor breakdown */}
-          <div className="flex-1 min-w-0 space-y-1.5">
+          {/* Factor breakdown — enhanced bars */}
+          <div className="flex-1 min-w-0 space-y-2">
             {Object.entries(factors).map(([key, f]) => {
               const fc = getFactorColor(f.score);
+              const scoreLevel = f.score >= 70 ? "强" : f.score >= 58 ? "偏强" : f.score >= 42 ? "中性" : f.score >= 30 ? "偏弱" : "弱";
               return (
                 <div key={key} className="group">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-extrabold w-16 shrink-0" style={{ color: fc }}>{f.label}</span>
-                    <div className="flex-1 h-3.5 rounded-full overflow-hidden relative" style={{ backgroundColor: getFactorBg(f.score), boxShadow: `inset 0 1px 2px ${fc}15` }}>
+                    <span className="text-[11px] font-extrabold w-14 shrink-0" style={{ color: fc }}>{f.label}</span>
+                    <div className="flex-1 h-4 rounded-full overflow-hidden relative" style={{ backgroundColor: getFactorBg(f.score), boxShadow: `inset 0 1px 3px ${fc}20` }}>
+                      {/* Background scale marks */}
+                      <div className="absolute inset-0 flex">
+                        <div className="w-1/2 border-r border-white/5" />
+                      </div>
                       <div
-                        className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${f.score}%`, backgroundColor: fc, opacity: 0.95, boxShadow: `0 0 8px ${fc}50, inset 0 1px 0 rgba(255,255,255,0.2)` }}
-                      />
+                        className="h-full rounded-full transition-all duration-700 relative"
+                        style={{ width: `${f.score}%`, background: `linear-gradient(90deg, ${fc}cc, ${fc})`, boxShadow: `0 0 10px ${fc}40, inset 0 1px 0 rgba(255,255,255,0.25)` }}
+                      >
+                        {/* Shine highlight */}
+                        <div className="absolute top-0 left-0 right-0 h-1/2 rounded-t-full" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 100%)" }} />
+                      </div>
                     </div>
-                    <span className="text-xs font-mono font-extrabold w-8 text-right tabular-nums" style={{ color: fc }}>
+                    <span className="text-[11px] font-mono font-extrabold w-6 text-right tabular-nums" style={{ color: fc }}>
                       {f.score}
                     </span>
                   </div>
                   {/* Hover description */}
-                  <div className="hidden group-hover:block text-[10px] text-muted-foreground/80 mt-0.5 pl-16 truncate">
+                  <div className="hidden group-hover:block text-[10px] text-muted-foreground/80 mt-0.5 pl-14 truncate">
                     {f.desc}
                   </div>
                 </div>
@@ -405,39 +470,37 @@ export function MarketSentiment({
           </div>
         </div>
 
-        {/* Sentiment bar */}
-        <div className="mt-2">
-          <div className="h-5 w-full rounded-full overflow-hidden flex relative shadow-inner" style={{ boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.15)' }}>
-            <div className="h-full bg-emerald-700 border-r border-white/40" style={{ width: "15%" }} />
-            <div className="h-full bg-green-600 border-r border-white/40" style={{ width: "15%" }} />
-            <div className="h-full bg-lime-600 border-r border-white/40" style={{ width: "12%" }} />
-            <div className="h-full bg-yellow-600 border-r border-white/40" style={{ width: "16%" }} />
-            <div className="h-full bg-orange-600 border-r border-white/40" style={{ width: "12%" }} />
-            <div className="h-full bg-red-600 border-r border-white/40" style={{ width: "15%" }} />
-            <div className="h-full bg-red-800" style={{ width: "15%" }} />
+        {/* Sentiment bar — redesigned with separators and labels */}
+        <div className="mt-2.5">
+          <div className="h-6 w-full rounded-full overflow-hidden flex relative" style={{ boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.2)' }}>
+            {zones.map((zone, i) => (
+              <div key={i} className={`h-full ${zone.bg} ${i < zones.length - 1 ? 'border-r border-white/30' : ''} relative`} style={{ width: zone.width }}>
+                {/* Subtle shine */}
+                <div className="absolute inset-x-0 top-0 h-1/2" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 100%)" }} />
+              </div>
+            ))}
             {/* Zone labels inside bar */}
             <div className="absolute inset-0 flex items-center pointer-events-none">
-              <div className="w-[15%] flex justify-center items-center"><span className="text-[8px] font-bold text-white/80">极度</span></div>
-              <div className="w-[15%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">恐慌</span></div>
-              <div className="w-[12%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">偏弱</span></div>
-              <div className="w-[16%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">中性</span></div>
-              <div className="w-[12%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">偏强</span></div>
-              <div className="w-[15%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">乐观</span></div>
-              <div className="w-[15%] flex justify-center items-center"><span className="text-[8px] font-bold text-white/80">极度</span></div>
+              {zones.map((zone, i) => (
+                <div key={i} style={{ width: zone.width }} className="flex justify-center items-center h-full">
+                  <span className="text-[9px] font-bold text-white/90 drop-shadow-sm">{zone.label}</span>
+                </div>
+              ))}
             </div>
-            {/* Score indicator line */}
+            {/* Score indicator line — prominent */}
             <div className="absolute top-0 h-full transition-all duration-700" style={{ left: `${score}%`, transform: "translateX(-50%)" }}>
-              <div className="w-1.5 h-full bg-white rounded-full shadow-[0_0_10px_4px_rgba(255,255,255,0.8)]" />
+              <div className="w-0.5 h-full bg-white/90 rounded-full" style={{ boxShadow: '0 0 12px 5px rgba(255,255,255,0.7), 0 0 4px 2px rgba(255,255,255,0.9)' }} />
             </div>
           </div>
           {/* Triangle pointer below the bar */}
           <div className="relative h-0" style={{ marginTop: '-1px' }}>
             <div className="absolute transition-all duration-700" style={{ left: `${score}%`, transform: "translateX(-50%)" }}>
-              <svg width="14" height="8" viewBox="0 0 14 8" style={{ display: 'block' }}>
-                <polygon points="7,0 0,8 14,8" fill={color} />
+              <svg width="16" height="9" viewBox="0 0 16 9" style={{ display: 'block' }}>
+                <polygon points="8,0 0,9 16,9" fill={color} />
               </svg>
             </div>
           </div>
+          {/* Bottom labels */}
           <div className="flex justify-between mt-1">
             <span className="text-[11px] text-emerald-600 font-extrabold">恐慌</span>
             <span className="text-[11px] text-yellow-600 font-extrabold">中性</span>
