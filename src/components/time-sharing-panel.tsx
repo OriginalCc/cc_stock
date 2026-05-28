@@ -1755,21 +1755,37 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     return intradayIntentCache.compute(fp, () => analyzeIntradayIntent(data, prevClose));
   }, [data, prevClose]);
 
-  // ── 早盘放量下跌禁买检测 ──
-  // 算法层已对早盘上涨的窗口大幅降分，这里做二次校验确保不会误判
-  const earlyVolDeclineBan = useMemo(() => {
-    if (!pvMarkers || pvMarkers.length === 0) return false;
-    // 检测10点前(9:30-10:00)是否存在放量下跌标记
-    const earlyVolDecline = pvMarkers.find(m => {
+  // ── 早盘放量下跌禁买检测（动态分级制） ──
+  // 根据下跌强度自动选择禁买窗口：
+  //   轻微 (跌幅<1%, 量比<2x)  → 9:45 解禁
+  //   中等 (跌幅1-2%, 量比2-3x) → 10:00 解禁
+  //   强烈 (跌幅>2%, 量比>3x)  → 10:15 解禁
+  //   极端 (跌幅>3%+跳空低开)  → 10:30 解禁
+  const earlyVolDeclineBan = useMemo((): {
+    tier: "mild" | "medium" | "strong" | "extreme";
+    banEndTime: number; // minutes from midnight (e.g. 585=9:45, 600=10:00, 615=10:15, 630=10:30)
+    banEndTimeStr: string;
+    declineScore: number;
+    dropRate: number;
+    volRatio: number;
+  } | null => {
+    if (!pvMarkers || pvMarkers.length === 0) return null;
+    // 检测10:30前是否存在放量下跌标记
+    const earlyVolDeclines = pvMarkers.filter(m => {
       if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
       const mins = pvParseTime(m.time);
-      return mins >= 570 && mins < 600;
+      return mins >= 570 && mins < 630;
     });
-    if (!earlyVolDecline) return false;
+    if (earlyVolDeclines.length === 0) return null;
+    // 取绝对值最大的分数作为代表
+    const worstMarker = earlyVolDeclines.reduce((best, m) =>
+      Math.abs(m.score) > Math.abs(best.score) ? m : best
+    , earlyVolDeclines[0]);
+
     // 二次校验：如果早盘整体趋势是上涨的，不应触发禁买
     const earlyData = data.filter(d => {
       const mins = pvParseTime(d.time);
-      return mins >= 570 && mins < 600;
+      return mins >= 570 && mins < 630;
     });
     if (earlyData.length >= 2) {
       const earlyStartPrice = earlyData[0].price;
@@ -1778,11 +1794,47 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         ? ((earlyEndPrice - earlyStartPrice) / earlyStartPrice) * 100
         : 0;
       // 早盘整体上涨 → 不是真正的放量下跌，不触发禁买
-      if (earlyNetChange > 0) return false;
+      if (earlyNetChange > 0) return null;
       // 相对昨收上涨 → 也不是真正的放量下跌
-      if (prevClose > 0 && earlyEndPrice > prevClose) return false;
+      if (prevClose > 0 && earlyEndPrice > prevClose) return null;
     }
-    return true;
+
+    // 计算早盘跌幅和量比，用于分级
+    const absScore = Math.abs(worstMarker.score);
+    const openPrice = earlyData.length > 0 ? earlyData[0].price : 0;
+    const lowPrice = earlyData.length > 0 ? Math.min(...earlyData.map(d => d.price)) : 0;
+    const dropRate = openPrice > 0 ? ((openPrice - lowPrice) / openPrice) * 100 : 0;
+    // 跳空低开检测
+    const gapDownRate = prevClose > 0 && openPrice > 0
+      ? ((prevClose - openPrice) / prevClose) * 100 : 0;
+
+    // 估算量比（用标记金额或分数推算）
+    const volRatio = absScore >= 50 ? 3.5 : absScore >= 30 ? 2.5 : absScore >= 15 ? 1.8 : 1.2;
+
+    // ── 分级判定 ──
+    let tier: "mild" | "medium" | "strong" | "extreme";
+    let banEndTime: number; // minutes from midnight
+    let banEndTimeStr: string;
+
+    if (dropRate > 3 || (dropRate > 2 && gapDownRate >= 1) || absScore >= 60) {
+      tier = "extreme";
+      banEndTime = 630; // 10:30
+      banEndTimeStr = "10:30";
+    } else if (dropRate > 2 || volRatio > 3 || absScore >= 40) {
+      tier = "strong";
+      banEndTime = 615; // 10:15
+      banEndTimeStr = "10:15";
+    } else if (dropRate >= 1 || volRatio >= 2 || absScore >= 20) {
+      tier = "medium";
+      banEndTime = 600; // 10:00
+      banEndTimeStr = "10:00";
+    } else {
+      tier = "mild";
+      banEndTime = 585; // 9:45
+      banEndTimeStr = "9:45";
+    }
+
+    return { tier, banEndTime, banEndTimeStr, declineScore: absScore, dropRate, volRatio };
   }, [pvMarkers, data, prevClose]);
 
   // ── Memoize tooltip components (stable references to avoid re-renders) ──
@@ -2002,10 +2054,11 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         {earlyVolDeclineBan && (() => {
           const now = new Date();
           const curMins = now.getHours() * 60 + now.getMinutes();
-          if (curMins >= 600) return null; // 已过10点不再显示
+          if (curMins >= earlyVolDeclineBan.banEndTime) return null;
+          const tierLabel = { mild: "轻微", medium: "中等", strong: "强烈", extreme: "极端" }[earlyVolDeclineBan.tier];
           return (
             <span className="flex items-center gap-1 text-red-500 font-bold animate-pulse">
-              🚫 10点前禁买
+              🚫 {earlyVolDeclineBan.banEndTimeStr}前禁买({tierLabel})
             </span>
           );
         })()}
@@ -2233,20 +2286,45 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         </div>
       </div>
 
-      {/* ─── Early Volume Decline Ban Banner ─── */}
+      {/* ─── Early Volume Decline Ban Banner (动态分级) ─── */}
       {earlyVolDeclineBan && (() => {
-        // 当前时间是否还在10点前
+        const ban = earlyVolDeclineBan;
         const now = new Date();
         const curMins = now.getHours() * 60 + now.getMinutes();
-        const isBeforeTen = curMins < 600;
+        const isStillBeforeBan = curMins < ban.banEndTime;
+        const tierLabel = { mild: "轻微", medium: "中等", strong: "强烈", extreme: "极端" }[ban.tier];
+        const tierDesc = {
+          mild: "早盘小幅放量回调",
+          medium: "早盘放量下跌",
+          strong: "早盘强势放量下跌",
+          extreme: "早盘恐慌性暴跌",
+        }[ban.tier];
+        const tierBg = {
+          mild: "bg-amber-500/12 border-amber-500/25",
+          medium: "bg-red-500/12 border-red-500/25",
+          strong: "bg-red-600/15 border-red-600/30",
+          extreme: "bg-red-700/20 border-red-700/35",
+        }[ban.tier];
+        const tierText = {
+          mild: "text-amber-700 dark:text-amber-400",
+          medium: "text-red-600 dark:text-red-400",
+          strong: "text-red-700 dark:text-red-300",
+          extreme: "text-red-800 dark:text-red-200",
+        }[ban.tier];
+        const tierSubText = {
+          mild: "text-amber-600 dark:text-amber-400",
+          medium: "text-red-500",
+          strong: "text-red-600 dark:text-red-300",
+          extreme: "text-red-700 dark:text-red-200",
+        }[ban.tier];
         return (
-          <div className="px-3 py-1.5 bg-red-500/12 border-b border-red-500/25 flex items-center justify-center gap-2">
+          <div className={`px-3 py-1.5 ${tierBg} border-b flex items-center justify-center gap-2`}>
             <span className="text-red-500 text-xs">🚫</span>
-            <span className="text-xs font-bold text-red-600 dark:text-red-400">
-              早盘放量下跌，10点前禁止买入！
+            <span className={`text-xs font-bold ${tierText}`}>
+              {tierDesc}，{ban.banEndTimeStr}前禁止买入！
             </span>
-            <span className="text-[10px] text-red-500 font-bold">| 等待10:00后再考虑低吸</span>
-            {isBeforeTen && <span className="text-[10px] text-red-400 animate-pulse">⏳ 当前仍在10点前</span>}
+            <span className={`text-[10px] font-bold ${tierSubText}`}>| 跌幅{ban.dropRate.toFixed(1)}% · 量比{ban.volRatio.toFixed(1)}x · {tierLabel}级别</span>
+            {isStillBeforeBan && <span className="text-[10px] text-red-400 animate-pulse">⏳ 当前仍在禁买期</span>}
           </div>
         );
       })()}
@@ -2578,38 +2656,41 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               }
               return null;
             })()}
-            {/* ── 早盘放量下跌禁买区 (9:30~10:00) ── */}
+            {/* ── 早盘放量下跌禁买区（动态分级） ── */}
             {earlyVolDeclineBan && (() => {
-              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
-              if (tenIdx < 0) return null;
+              const banIdx = zoomData.findIndex(d => d.time === earlyVolDeclineBan.banEndTimeStr);
+              if (banIdx < 0) return null;
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[earlyVolDeclineBan.tier];
               return (<>
-                <ReferenceLine yAxisId="price" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: "10:00 禁买线", position: "insideTopRight", fill: "#ef4444", fontSize: 9, fontWeight: 700, fillOpacity: 0.8 }} />
+                <ReferenceLine yAxisId="price" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: `${earlyVolDeclineBan.banEndTimeStr} 禁买线`, position: "insideTopRight", fill: tierColor, fontSize: 9, fontWeight: 700, fillOpacity: 0.8 }} />
               </>);
             })()}
-            {/* ── 早盘放量下跌禁买蒙版 ── */}
+            {/* ── 早盘放量下跌禁买蒙版（动态分级） ── */}
             <Customized component={(props: any) => {
               if (!earlyVolDeclineBan) return null;
-              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
-              if (tenIdx < 0) return null;
+              const ban = earlyVolDeclineBan;
+              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              if (banIdx < 0) return null;
               const { xAxisMap, offset } = props;
               if (!xAxisMap || !offset) return null;
               const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
               if (!xAxis || !xAxis.scale) return null;
               const xScale = xAxis.scale;
               const x1 = xScale(0);
-              const x2 = xScale(tenIdx);
+              const x2 = xScale(banIdx);
               const y1 = offset.top;
               const y2 = offset.top + offset.height;
               const w = x2 - x1;
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
-              // 生成斜线条纹 pattern
-              const stripeId = "ban-stripe";
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
+              const tierLabel = { mild: "轻微", medium: "中等", strong: "强烈", extreme: "极端" }[ban.tier];
+              const bgOpacity = { mild: 0.04, medium: 0.08, strong: 0.10, extreme: 0.14 }[ban.tier];
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {
                 diagLines.push(
-                  <line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke="#ef4444" strokeWidth={1.2} strokeOpacity={0.18} />
+                  <line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.18} />
                 );
               }
               return (
@@ -2619,8 +2700,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                       <rect x={x1} y={y1} width={w} height={h} />
                     </clipPath>
                   </defs>
-                  {/* 红色半透明蒙版底色 */}
-                  <rect x={x1} y={y1} width={w} height={h} fill="#ef4444" fillOpacity={0.08} />
+                  {/* 半透明蒙版底色 */}
+                  <rect x={x1} y={y1} width={w} height={h} fill={tierColor} fillOpacity={bgOpacity} />
                   {/* 斜线条纹 */}
                   <g clipPath="url(#ban-clip)">
                     <g transform={`translate(${x1},${y1})`}>
@@ -2628,10 +2709,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                     </g>
                   </g>
                   {/* 边框 */}
-                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke="#ef4444" strokeWidth={0.8} strokeOpacity={0.25} />
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={0.8} strokeOpacity={0.25} />
                   {/* 禁买文字 */}
-                  <text x={x1 + w / 2} y={y1 + h / 2 - 8} textAnchor="middle" fontSize={13} fontWeight={800} fill="#ef4444" fillOpacity={0.35} fontFamily="sans-serif">禁买区</text>
-                  <text x={x1 + w / 2} y={y1 + h / 2 + 10} textAnchor="middle" fontSize={10} fontWeight={600} fill="#ef4444" fillOpacity={0.28} fontFamily="sans-serif">10点前禁止买入</text>
+                  <text x={x1 + w / 2} y={y1 + h / 2 - 8} textAnchor="middle" fontSize={13} fontWeight={800} fill={tierColor} fillOpacity={0.35} fontFamily="sans-serif">禁买区</text>
+                  <text x={x1 + w / 2} y={y1 + h / 2 + 10} textAnchor="middle" fontSize={10} fontWeight={600} fill={tierColor} fillOpacity={0.28} fontFamily="sans-serif">{ban.banEndTimeStr}前禁止买入 · {tierLabel}</text>
                 </g>
               );
             }} />
@@ -2875,41 +2956,45 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <Tooltip content={volumeTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="vol-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
-            {/* ── 早盘放量下跌禁买蒙版 (成交量图) ── */}
+            {/* ── 早盘放量下跌禁买蒙版 (成交量图，动态分级) ── */}
             {earlyVolDeclineBan && (() => {
-              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
-              if (tenIdx < 0) return null;
+              const banIdx = zoomData.findIndex(d => d.time === earlyVolDeclineBan.banEndTimeStr);
+              if (banIdx < 0) return null;
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[earlyVolDeclineBan.tier];
               return (<>
-                <ReferenceLine yAxisId="vol-right" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
+                <ReferenceLine yAxisId="vol-right" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
               </>);
             })()}
             <Customized component={(props: any) => {
               if (!earlyVolDeclineBan) return null;
-              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
-              if (tenIdx < 0) return null;
+              const ban = earlyVolDeclineBan;
+              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              if (banIdx < 0) return null;
               const { xAxisMap, offset } = props;
               if (!xAxisMap || !offset) return null;
               const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
               if (!xAxis || !xAxis.scale) return null;
               const xScale = xAxis.scale;
               const x1 = xScale(0);
-              const x2 = xScale(tenIdx);
+              const x2 = xScale(banIdx);
               const y1 = offset.top;
               const y2 = offset.top + offset.height;
               const w = x2 - x1;
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
+              const bgOpacity = { mild: 0.04, medium: 0.08, strong: 0.10, extreme: 0.14 }[ban.tier];
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {
-                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke="#ef4444" strokeWidth={1.2} strokeOpacity={0.18} />);
+                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.18} />);
               }
               return (
                 <g>
                   <defs><clipPath id="ban-clip-vol"><rect x={x1} y={y1} width={w} height={h} /></clipPath></defs>
-                  <rect x={x1} y={y1} width={w} height={h} fill="#ef4444" fillOpacity={0.08} />
+                  <rect x={x1} y={y1} width={w} height={h} fill={tierColor} fillOpacity={bgOpacity} />
                   <g clipPath="url(#ban-clip-vol)"><g transform={`translate(${x1},${y1})`}>{diagLines}</g></g>
-                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke="#ef4444" strokeWidth={0.8} strokeOpacity={0.25} />
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={0.8} strokeOpacity={0.25} />
                 </g>
               );
             }} />
@@ -2992,41 +3077,45 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <ReferenceLine yAxisId="macd-right" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.5} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="macd-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
-            {/* ── 早盘放量下跌禁买蒙版 (MACD图) ── */}
+            {/* ── 早盘放量下跌禁买蒙版 (MACD图，动态分级) ── */}
             {earlyVolDeclineBan && (() => {
-              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
-              if (tenIdx < 0) return null;
+              const banIdx = zoomData.findIndex(d => d.time === earlyVolDeclineBan.banEndTimeStr);
+              if (banIdx < 0) return null;
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[earlyVolDeclineBan.tier];
               return (<>
-                <ReferenceLine yAxisId="macd-right" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
+                <ReferenceLine yAxisId="macd-right" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
               </>);
             })()}
             <Customized component={(props: any) => {
               if (!earlyVolDeclineBan) return null;
-              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
-              if (tenIdx < 0) return null;
+              const ban = earlyVolDeclineBan;
+              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              if (banIdx < 0) return null;
               const { xAxisMap, offset } = props;
               if (!xAxisMap || !offset) return null;
               const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
               if (!xAxis || !xAxis.scale) return null;
               const xScale = xAxis.scale;
               const x1 = xScale(0);
-              const x2 = xScale(tenIdx);
+              const x2 = xScale(banIdx);
               const y1 = offset.top;
               const y2 = offset.top + offset.height;
               const w = x2 - x1;
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
+              const bgOpacity = { mild: 0.04, medium: 0.08, strong: 0.10, extreme: 0.14 }[ban.tier];
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {
-                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke="#ef4444" strokeWidth={1.2} strokeOpacity={0.18} />);
+                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.18} />);
               }
               return (
                 <g>
                   <defs><clipPath id="ban-clip-macd"><rect x={x1} y={y1} width={w} height={h} /></clipPath></defs>
-                  <rect x={x1} y={y1} width={w} height={h} fill="#ef4444" fillOpacity={0.08} />
+                  <rect x={x1} y={y1} width={w} height={h} fill={tierColor} fillOpacity={bgOpacity} />
                   <g clipPath="url(#ban-clip-macd)"><g transform={`translate(${x1},${y1})`}>{diagLines}</g></g>
-                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke="#ef4444" strokeWidth={0.8} strokeOpacity={0.25} />
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={0.8} strokeOpacity={0.25} />
                 </g>
               );
             }} />
