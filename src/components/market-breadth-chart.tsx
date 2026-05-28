@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { ALL_TRADE_TIMES } from "@/lib/trading-times";
 
 interface BreadthHistoryPoint {
@@ -149,7 +148,39 @@ function buildBetweenArea(
   return segments.join(" ");
 }
 
+// ── Shared layout constants (must match TimeSharingPanel) ──
+// TimeSharingPanel recharts:
+//   margin: { left: 2, right: 82 }
+//   YAxis width: 55 (left), 1 (right)
+//   Effective left offset: 2 + 55 = 57px
+//   Effective right offset: 82 + 1 = 83px
+const CHART_LEFT_PX = 57;
+const CHART_RIGHT_PX = 83;
+const CHART_TOP_PX = 12;
+const CHART_BOTTOM_PX = 20;
+const CHART_HEIGHT = 170;
+
 export function MarketBreadthChart({ history, currentUp, currentDown, currentFlat, limitUp = 0, limitDown = 0, shUp = 0, shDown = 0, szUp = 0, szDown = 0 }: MarketBreadthChartProps) {
+  // ── Measure container width so SVG coords are 1:1 with pixels ──
+  const svgWrapRef = useRef<HTMLDivElement>(null);
+  const [containerW, setContainerW] = useState(640);
+
+  const handleResize = useCallback((entries: ResizeObserverEntry[]) => {
+    for (const entry of entries) {
+      setContainerW(Math.round(entry.contentRect.width));
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = svgWrapRef.current;
+    if (!el) return;
+    // Initial measurement
+    setContainerW(Math.round(el.clientWidth));
+    const ro = new ResizeObserver(handleResize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [handleResize]);
+
   // Merge current live data
   const data = useMemo(() => {
     if (currentUp === 0 && currentDown === 0 && history.length === 0) return [];
@@ -167,27 +198,20 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
   const chart = useMemo(() => {
     if (data.length < 2) return null;
 
-    // ── Align with TimeSharingPanel's coordinate system ──
-    // TimeSharingPanel uses:
-    //   margin: { left: 2, right: 82 }
-    //   YAxis width: 55 (left), 1 (right)
-    //   Effective left offset: 2 + 55 = 57px
-    //   Effective right offset: 82 + 1 = 83px
-    //   XAxis domain: [0, 241] mapped to ALL_TRADE_TIMES
-    //
-    // We use the same left/right offsets so the chart areas align perfectly.
-    const w = 640, h = 170;
-    const px = 57, pr = 83, pt = 12, pb = 20;
+    // viewBox width = actual container pixel width
+    // This makes SVG coordinates 1:1 with screen pixels,
+    // so our CHART_LEFT_PX/CHART_RIGHT_PX match recharts exactly.
+    const w = containerW, h = CHART_HEIGHT;
+    const px = CHART_LEFT_PX, pr = CHART_RIGHT_PX, pt = CHART_TOP_PX, pb = CHART_BOTTOM_PX;
     const chartW = w - px - pr;
     const chartH = h - pt - pb;
 
     // ── Map each data point to its ALL_TRADE_TIMES slot index ──
-    // This ensures the X position matches the TimeSharingPanel's time axis
     const slotIndices = data.map(d => timeToSlotIdx(d.time));
     const idxMin = 0;
     const idxMax = TOTAL_SLOTS - 1; // 241
 
-    // X mapping: slot index → pixel position (same proportional space as TimeSharingPanel)
+    // X mapping: slot index → pixel position
     const slotToX = (slotIdx: number) => px + ((slotIdx - idxMin) / (idxMax - idxMin)) * chartW;
     const toX = (i: number) => slotToX(slotIndices[i]);
 
@@ -234,7 +258,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
       xTicks, yTicks, labelInterval,
       lastX: xs[xs.length - 1],
     };
-  }, [data]);
+  }, [data, containerW]);
 
   const lastPt = data[data.length - 1];
   const diff = lastPt ? lastPt.totalUp - lastPt.totalDown : 0;
@@ -278,18 +302,21 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     </div>
   );
 
-  const subInfoRow = null;
+  // ── Shared card class ──
+  const cardCls = `bg-card rounded-lg border border-border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`;
 
   // ── No data at all ──
   if (data.length === 0) {
     return (
-      <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
-        <CardContent className="p-2">
+      <div className={cardCls}>
+        <div className="px-2 pt-2 pb-1">
           <div className="text-[11px] font-semibold text-foreground/80 mb-1">市场涨跌家数</div>
           {summaryRow}
-          <div className="text-xs text-muted-foreground text-center py-3 mt-1 border-t border-border/40">等待分时数据...</div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="px-2 pb-2 pt-1">
+          <div className="text-xs text-muted-foreground text-center py-3 border-t border-border/40">等待分时数据...</div>
+        </div>
+      </div>
     );
   }
 
@@ -301,8 +328,8 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     const sRatio = ((pt0.totalUp / sTotal) * 100).toFixed(1);
 
     return (
-      <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
-        <CardContent className="p-2">
+      <div className={cardCls}>
+        <div className="px-2 pt-2 pb-1">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-semibold text-foreground/80">市场涨跌家数</span>
             <span className="text-[9px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-full">第1个数据点</span>
@@ -316,8 +343,8 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             <span className="text-[9px] font-bold tabular-nums" style={{ color: UP_COLOR }}>{sRatio}%</span>
             <span className="text-[9px] font-bold tabular-nums" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(sRatio)).toFixed(1)}%</span>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
@@ -329,16 +356,16 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     xTicks, yTicks, labelInterval, lastX } = chart;
 
   return (
-    <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
-      <CardContent className="p-2">
-        {/* Header with title */}
+    <div className={cardCls}>
+      {/* Header + summary — padded, like TimeSharingPanel's header px-3 */}
+      <div className="px-2 pt-2 pb-1">
         <div className="text-[11px] font-semibold text-foreground/80 mb-1">市场涨跌家数</div>
-        {/* Summary stats row (includes 沪深差) */}
         {summaryRow}
+      </div>
 
-        {/* SVG Chart — aligned with TimeSharingPanel's coordinate system */}
-        <div className="mt-1">
-        <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" preserveAspectRatio="xMinYMid meet">
+      {/* SVG Chart — NO horizontal padding, spans full card width (same as recharts) */}
+      <div ref={svgWrapRef} className="w-full">
+        <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
           <defs>
             <linearGradient id="betweenRed" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={UP_COLOR} stopOpacity="0.28" />
@@ -507,10 +534,11 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           <line x1={cPx} y1={cPt} x2={cPx} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.3} />
           <line x1={cPx} y1={h - cPb} x2={cPx + cW} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.3} />
         </svg>
-        </div>
+      </div>
 
-        {/* Bottom ratio bar */}
-        <div className="mt-1 flex items-center gap-1.5">
+      {/* Bottom ratio bar — padded */}
+      <div className="px-2 pb-2 pt-1">
+        <div className="flex items-center gap-1.5">
           <span className="text-[9px] font-bold tabular-nums w-8 text-right" style={{ color: UP_COLOR }}>{ratio}%</span>
           <div className="flex-1 h-2.5 rounded-full overflow-hidden flex bg-muted/30 relative">
             <div className="h-full rounded-l-full transition-all duration-700" style={{ width: `${ratio}%`, backgroundColor: UP_COLOR, opacity: 0.75 }} />
@@ -519,7 +547,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           </div>
           <span className="text-[9px] font-bold tabular-nums w-8" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(ratio)).toFixed(1)}%</span>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
