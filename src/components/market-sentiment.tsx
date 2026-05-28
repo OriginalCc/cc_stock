@@ -196,19 +196,19 @@ function computeSentiment(
   let bgClass: string;
 
   if (score <= 15) {
-    level = "极度恐慌"; color = "#16a34a"; bgClass = "bg-green-600/20 border-green-600/50";
+    level = "极度恐慌"; color = "#059669"; bgClass = "bg-emerald-600/25 border-emerald-600/60";
   } else if (score <= 30) {
-    level = "恐慌"; color = "#22c55e"; bgClass = "bg-green-500/15 border-green-500/40";
+    level = "恐慌"; color = "#16a34a"; bgClass = "bg-green-600/20 border-green-600/50";
   } else if (score <= 42) {
-    level = "偏弱"; color = "#84cc16"; bgClass = "bg-lime-500/15 border-lime-500/40";
+    level = "偏弱"; color = "#65a30d"; bgClass = "bg-lime-600/20 border-lime-600/50";
   } else if (score <= 58) {
-    level = "中性"; color = "#eab308"; bgClass = "bg-yellow-500/15 border-yellow-500/40";
+    level = "中性"; color = "#ca8a04"; bgClass = "bg-yellow-600/20 border-yellow-600/50";
   } else if (score <= 70) {
-    level = "偏强"; color = "#f97316"; bgClass = "bg-orange-500/15 border-orange-500/40";
+    level = "偏强"; color = "#ea580c"; bgClass = "bg-orange-600/20 border-orange-600/50";
   } else if (score <= 85) {
-    level = "乐观"; color = "#ef4444"; bgClass = "bg-red-500/15 border-red-500/40";
+    level = "乐观"; color = "#dc2626"; bgClass = "bg-red-600/20 border-red-600/50";
   } else {
-    level = "极度乐观"; color = "#dc2626"; bgClass = "bg-red-600/20 border-red-600/50";
+    level = "极度乐观"; color = "#b91c1c"; bgClass = "bg-red-700/25 border-red-700/60";
   }
 
   return {
@@ -228,21 +228,21 @@ function computeSentiment(
 }
 
 function getFactorColor(score: number): string {
-  if (score >= 70) return "#dc2626";
-  if (score >= 58) return "#ef4444";
-  if (score >= 50) return "#f97316";
-  if (score >= 42) return "#eab308";
-  if (score >= 30) return "#84cc16";
-  return "#22c55e";
+  if (score >= 70) return "#b91c1c";
+  if (score >= 58) return "#dc2626";
+  if (score >= 50) return "#ea580c";
+  if (score >= 42) return "#ca8a04";
+  if (score >= 30) return "#65a30d";
+  return "#16a34a";
 }
 
 function getFactorBg(score: number): string {
-  if (score >= 70) return "rgba(220,38,38,0.12)";
-  if (score >= 58) return "rgba(239,68,68,0.10)";
-  if (score >= 50) return "rgba(249,115,22,0.10)";
-  if (score >= 42) return "rgba(234,179,8,0.10)";
-  if (score >= 30) return "rgba(132,204,22,0.10)";
-  return "rgba(34,197,94,0.10)";
+  if (score >= 70) return "rgba(185,28,28,0.18)";
+  if (score >= 58) return "rgba(220,38,38,0.15)";
+  if (score >= 50) return "rgba(234,88,12,0.15)";
+  if (score >= 42) return "rgba(202,138,4,0.15)";
+  if (score >= 30) return "rgba(101,163,13,0.15)";
+  return "rgba(22,163,74,0.15)";
 }
 
 export function MarketSentiment({
@@ -259,9 +259,9 @@ export function MarketSentiment({
   const { score, level, color, bgClass, factors, trend } = result;
 
   // Gauge arc SVG
-  const gaugeR = 56;
-  const gaugeCx = 80;
-  const gaugeCy = 62;
+  const gaugeR = 58;
+  const gaugeCx = 85;
+  const gaugeCy = 64;
   const gaugeStartAngle = -225;
   const gaugeEndAngle = 45;
   const gaugeRange = gaugeEndAngle - gaugeStartAngle; // 270 degrees
@@ -304,47 +304,47 @@ export function MarketSentiment({
         <div className="flex items-center gap-4">
           {/* Gauge */}
           <div className="shrink-0">
-            <svg width="160" height="90" viewBox="0 0 160 90" className="w-[140px]">
+            <svg width="170" height="96" viewBox="0 0 170 96" className="w-[150px]">
               <defs>
                 <filter id="gaugeGlow" x="-30%" y="-30%" width="160%" height="160%">
-                  <feGaussianBlur stdDeviation="3" result="blur" />
-                  <feFlood floodColor={color} floodOpacity="0.5" />
-                  <feComposite in2="blur" operator="in" />
-                  <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
-                </filter>
-                <filter id="needleGlow" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="2" result="blur" />
+                  <feGaussianBlur stdDeviation="4" result="blur" />
                   <feFlood floodColor={color} floodOpacity="0.6" />
                   <feComposite in2="blur" operator="in" />
                   <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
                 </filter>
-                <filter id="scoreGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <filter id="needleGlow" x="-50%" y="-50%" width="200%" height="200%">
                   <feGaussianBlur stdDeviation="3" result="blur" />
-                  <feFlood floodColor={color} floodOpacity="0.4" />
+                  <feFlood floodColor={color} floodOpacity="0.7" />
+                  <feComposite in2="blur" operator="in" />
+                  <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+                <filter id="scoreGlow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="4" result="blur" />
+                  <feFlood floodColor={color} floodOpacity="0.5" />
                   <feComposite in2="blur" operator="in" />
                   <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
                 </filter>
               </defs>
 
-              {/* Background arc: 绿→黄→红 渐变 segments */}
-              <path d={gaugePath(gaugeStartAngle, gaugeStartAngle + gaugeRange * 0.15, gaugeR)}
-                fill="none" stroke="#16a34a" strokeWidth={10} strokeLinecap="round" opacity={0.7} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.15, gaugeStartAngle + gaugeRange * 0.30, gaugeR)}
-                fill="none" stroke="#22c55e" strokeWidth={10} strokeLinecap="round" opacity={0.65} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.30, gaugeStartAngle + gaugeRange * 0.42, gaugeR)}
-                fill="none" stroke="#84cc16" strokeWidth={10} strokeLinecap="round" opacity={0.65} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.42, gaugeStartAngle + gaugeRange * 0.58, gaugeR)}
-                fill="none" stroke="#eab308" strokeWidth={10} strokeLinecap="round" opacity={0.65} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.58, gaugeStartAngle + gaugeRange * 0.70, gaugeR)}
-                fill="none" stroke="#f97316" strokeWidth={10} strokeLinecap="round" opacity={0.65} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.70, gaugeStartAngle + gaugeRange * 0.85, gaugeR)}
-                fill="none" stroke="#ef4444" strokeWidth={10} strokeLinecap="round" opacity={0.65} />
-              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.85, gaugeEndAngle, gaugeR)}
-                fill="none" stroke="#dc2626" strokeWidth={10} strokeLinecap="round" opacity={0.7} />
+              {/* Background arc: 绿→黄→红 vivid segments with gaps */}
+              <path d={gaugePath(gaugeStartAngle + 1, gaugeStartAngle + gaugeRange * 0.15 - 0.5, gaugeR)}
+                fill="none" stroke="#059669" strokeWidth={14} strokeLinecap="round" opacity={0.95} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.15 + 0.5, gaugeStartAngle + gaugeRange * 0.30 - 0.5, gaugeR)}
+                fill="none" stroke="#16a34a" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.30 + 0.5, gaugeStartAngle + gaugeRange * 0.42 - 0.5, gaugeR)}
+                fill="none" stroke="#65a30d" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.42 + 0.5, gaugeStartAngle + gaugeRange * 0.58 - 0.5, gaugeR)}
+                fill="none" stroke="#ca8a04" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.58 + 0.5, gaugeStartAngle + gaugeRange * 0.70 - 0.5, gaugeR)}
+                fill="none" stroke="#ea580c" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.70 + 0.5, gaugeStartAngle + gaugeRange * 0.85 - 0.5, gaugeR)}
+                fill="none" stroke="#dc2626" strokeWidth={14} strokeLinecap="round" opacity={0.90} />
+              <path d={gaugePath(gaugeStartAngle + gaugeRange * 0.85 + 0.5, gaugeEndAngle - 1, gaugeR)}
+                fill="none" stroke="#b91c1c" strokeWidth={14} strokeLinecap="round" opacity={0.95} />
 
-              {/* Active arc (filled portion up to score) — with glow */}
-              <path d={gaugePath(gaugeStartAngle, scoreAngle, gaugeR - 1)}
-                fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" filter="url(#gaugeGlow)" />
+              {/* Active arc (filled portion up to score) — bright & glowing */}
+              <path d={gaugePath(gaugeStartAngle, scoreAngle, gaugeR - 2)}
+                fill="none" stroke={color} strokeWidth={8} strokeLinecap="round" filter="url(#gaugeGlow)" opacity={0.95} />
 
               {/* Needle — with glow */}
               <polygon
@@ -355,12 +355,12 @@ export function MarketSentiment({
               <circle cx={gaugeCx} cy={gaugeCy} r={2.5} fill="#fff" opacity={0.6} />
 
               {/* Score text — big, bold & glowing */}
-              <text x={gaugeCx} y={gaugeCy + 24} textAnchor="middle" fontSize={26} fontWeight={900} fontFamily="monospace" fill={color} filter="url(#scoreGlow)">
+              <text x={gaugeCx} y={gaugeCy + 24} textAnchor="middle" fontSize={28} fontWeight={900} fontFamily="monospace" fill={color} filter="url(#scoreGlow)">
                 {score}
               </text>
               {/* Level label — pill background */}
-              <rect x={gaugeCx - 30} y={gaugeCy + 29} width={60} height={16} rx={4} fill={color} opacity={0.2} />
-              <text x={gaugeCx} y={gaugeCy + 40} textAnchor="middle" fontSize={12} fontWeight={800} fill={color}>
+              <rect x={gaugeCx - 32} y={gaugeCy + 29} width={64} height={18} rx={5} fill={color} opacity={0.25} />
+              <text x={gaugeCx} y={gaugeCy + 42} textAnchor="middle" fontSize={13} fontWeight={800} fill={color}>
                 {level}
               </text>
 
@@ -384,11 +384,11 @@ export function MarketSentiment({
               return (
                 <div key={key} className="group">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold w-16 shrink-0" style={{ color: fc }}>{f.label}</span>
-                    <div className="flex-1 h-3 rounded-full overflow-hidden relative" style={{ backgroundColor: getFactorBg(f.score) }}>
+                    <span className="text-xs font-extrabold w-16 shrink-0" style={{ color: fc }}>{f.label}</span>
+                    <div className="flex-1 h-3.5 rounded-full overflow-hidden relative" style={{ backgroundColor: getFactorBg(f.score), boxShadow: `inset 0 1px 2px ${fc}15` }}>
                       <div
                         className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${f.score}%`, backgroundColor: fc, opacity: 0.9, boxShadow: `0 0 6px ${fc}40` }}
+                        style={{ width: `${f.score}%`, backgroundColor: fc, opacity: 0.95, boxShadow: `0 0 8px ${fc}50, inset 0 1px 0 rgba(255,255,255,0.2)` }}
                       />
                     </div>
                     <span className="text-xs font-mono font-extrabold w-8 text-right tabular-nums" style={{ color: fc }}>
@@ -407,31 +407,41 @@ export function MarketSentiment({
 
         {/* Sentiment bar */}
         <div className="mt-2">
-          <div className="h-4 w-full rounded-full overflow-hidden flex relative shadow-inner">
-            <div className="h-full bg-green-600/80" style={{ width: "15%" }} />
-            <div className="h-full bg-green-500/70" style={{ width: "15%" }} />
-            <div className="h-full bg-lime-500/70" style={{ width: "12%" }} />
-            <div className="h-full bg-yellow-500/70" style={{ width: "16%" }} />
-            <div className="h-full bg-orange-500/70" style={{ width: "12%" }} />
-            <div className="h-full bg-red-500/70" style={{ width: "15%" }} />
-            <div className="h-full bg-red-600/80" style={{ width: "15%" }} />
+          <div className="h-5 w-full rounded-full overflow-hidden flex relative shadow-inner" style={{ boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.15)' }}>
+            <div className="h-full bg-emerald-700 border-r border-white/40" style={{ width: "15%" }} />
+            <div className="h-full bg-green-600 border-r border-white/40" style={{ width: "15%" }} />
+            <div className="h-full bg-lime-600 border-r border-white/40" style={{ width: "12%" }} />
+            <div className="h-full bg-yellow-600 border-r border-white/40" style={{ width: "16%" }} />
+            <div className="h-full bg-orange-600 border-r border-white/40" style={{ width: "12%" }} />
+            <div className="h-full bg-red-600 border-r border-white/40" style={{ width: "15%" }} />
+            <div className="h-full bg-red-800" style={{ width: "15%" }} />
+            {/* Zone labels inside bar */}
+            <div className="absolute inset-0 flex items-center pointer-events-none">
+              <div className="w-[15%] flex justify-center items-center"><span className="text-[8px] font-bold text-white/80">极度</span></div>
+              <div className="w-[15%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">恐慌</span></div>
+              <div className="w-[12%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">偏弱</span></div>
+              <div className="w-[16%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">中性</span></div>
+              <div className="w-[12%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">偏强</span></div>
+              <div className="w-[15%] flex justify-center items-center"><span className="text-[9px] font-bold text-white/80">乐观</span></div>
+              <div className="w-[15%] flex justify-center items-center"><span className="text-[8px] font-bold text-white/80">极度</span></div>
+            </div>
             {/* Score indicator line */}
             <div className="absolute top-0 h-full transition-all duration-700" style={{ left: `${score}%`, transform: "translateX(-50%)" }}>
-              <div className="w-1.5 h-full bg-white rounded-full shadow-[0_0_8px_3px_rgba(255,255,255,0.7)]" />
+              <div className="w-1.5 h-full bg-white rounded-full shadow-[0_0_10px_4px_rgba(255,255,255,0.8)]" />
             </div>
           </div>
-          {/* Triangle pointer above the bar */}
+          {/* Triangle pointer below the bar */}
           <div className="relative h-0" style={{ marginTop: '-1px' }}>
             <div className="absolute transition-all duration-700" style={{ left: `${score}%`, transform: "translateX(-50%)" }}>
-              <svg width="12" height="7" viewBox="0 0 12 7" style={{ display: 'block' }}>
-                <polygon points="6,7 0,0 12,0" fill={color} />
+              <svg width="14" height="8" viewBox="0 0 14 8" style={{ display: 'block' }}>
+                <polygon points="7,0 0,8 14,8" fill={color} />
               </svg>
             </div>
           </div>
-          <div className="flex justify-between mt-0.5">
-            <span className="text-[10px] text-green-600 font-extrabold">恐慌</span>
-            <span className="text-[10px] text-yellow-600 font-extrabold">中性</span>
-            <span className="text-[10px] text-red-600 font-extrabold">乐观</span>
+          <div className="flex justify-between mt-1">
+            <span className="text-[11px] text-emerald-600 font-extrabold">恐慌</span>
+            <span className="text-[11px] text-yellow-600 font-extrabold">中性</span>
+            <span className="text-[11px] text-red-600 font-extrabold">乐观</span>
           </div>
         </div>
       </CardContent>
