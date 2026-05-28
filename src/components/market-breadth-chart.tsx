@@ -350,7 +350,26 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             const yUp = toY(d.totalUp);
             const yDown = toY(d.totalDown);
             const isLast = i === data.length - 1;
-            const linesClose = Math.abs(yUp - yDown) < 30;
+
+            // Dynamic label offsets to ensure minimum gap between pills
+            // Up pill bottom = yUp - upOff + 13 (pill height)
+            // Down pill top = yDown + downOff
+            // Required: (yDown + downOff) - (yUp - upOff + 13) >= minGap
+            const minGap = 6; // minimum px between pills
+            const baseUpOff = 22; // base offset above up-line
+            const baseDownOff = 10; // base offset below down-line
+            const pillH = 13;
+
+            // Current gap without adjustment
+            const currentGap = (yDown + baseDownOff) - (yUp - baseUpOff + pillH);
+            let upOff = baseUpOff;
+            let downOff = baseDownOff;
+            if (currentGap < minGap) {
+              // Need to push apart: distribute extra space to both sides
+              const extra = (minGap - currentGap) / 2 + 1;
+              upOff += extra;
+              downOff += extra;
+            }
 
             return (
               <g key={`pt-${i}`}>
@@ -359,16 +378,16 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
                 <circle cx={x} cy={yDown} r={isLast ? 3 : 1.8} fill={DOWN_COLOR} />
                 {isLast && <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />}
 
-                {/* Up pill — always above the up line */}
-                <rect x={x - 18} y={yUp - 24}
-                  width={36} height={13} rx={3} fill={UP_COLOR} opacity={0.92} />
-                <text x={x} y={yUp - 17.5}
+                {/* Up pill — above the up line */}
+                <rect x={x - 18} y={yUp - upOff}
+                  width={36} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
+                <text x={x} y={yUp - upOff + pillH / 2}
                   textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                {/* Down pill — always below the down line */}
-                <rect x={x - 18} y={yDown + 12}
-                  width={36} height={13} rx={3} fill={DOWN_COLOR} opacity={0.92} />
-                <text x={x} y={yDown + 18.5}
+                {/* Down pill — below the down line */}
+                <rect x={x - 18} y={yDown + downOff}
+                  width={36} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
+                <text x={x} y={yDown + downOff + pillH / 2}
                   textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
               </g>
