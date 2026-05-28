@@ -13,7 +13,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  ReferenceArea,
   Customized,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
@@ -2573,16 +2572,67 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 return mins >= 570 && mins < 600;
               });
               if (!earlyVolDecline) return null;
-              // 找到zoomData中10:00的位置
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
-              // 红色区域从zoomData的起始位置到10:00
-              const areaStart = 0;
               return (<>
-                <ReferenceArea yAxisId="price" x1={areaStart} x2={tenIdx} fill="#ef4444" fillOpacity={0.06} stroke="none" />
-                <ReferenceLine yAxisId="price" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} label={{ value: "10:00 禁买线", position: "insideTopRight", fill: "#ef4444", fontSize: 9, fontWeight: 700, fillOpacity: 0.8 }} />
+                <ReferenceLine yAxisId="price" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: "10:00 禁买线", position: "insideTopRight", fill: "#ef4444", fontSize: 9, fontWeight: 700, fillOpacity: 0.8 }} />
               </>);
             })()}
+            {/* ── 早盘放量下跌禁买蒙版 ── */}
+            <Customized component={(props: any) => {
+              if (!pvMarkers || pvMarkers.length === 0) return null;
+              const earlyVolDecline = pvMarkers.find((m: PulseVolumeMarker) => {
+                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+                const mins = pvParseTime(m.time);
+                return mins >= 570 && mins < 600;
+              });
+              if (!earlyVolDecline) return null;
+              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
+              if (tenIdx < 0) return null;
+              const { xAxisMap, offset } = props;
+              if (!xAxisMap || !offset) return null;
+              const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
+              if (!xAxis || !xAxis.scale) return null;
+              const xScale = xAxis.scale;
+              const x1 = xScale(0);
+              const x2 = xScale(tenIdx);
+              const y1 = offset.top;
+              const y2 = offset.top + offset.height;
+              const w = x2 - x1;
+              const h = y2 - y1;
+              if (w <= 0 || h <= 0) return null;
+              // 生成斜线条纹 pattern
+              const stripeId = "ban-stripe";
+              const diagLines: React.ReactNode[] = [];
+              const gap = 14;
+              for (let i = -h; i < w + h; i += gap) {
+                diagLines.push(
+                  <line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke="#ef4444" strokeWidth={1.2} strokeOpacity={0.18} />
+                );
+              }
+              return (
+                <g>
+                  <defs>
+                    <clipPath id="ban-clip">
+                      <rect x={x1} y={y1} width={w} height={h} />
+                    </clipPath>
+                  </defs>
+                  {/* 红色半透明蒙版底色 */}
+                  <rect x={x1} y={y1} width={w} height={h} fill="#ef4444" fillOpacity={0.08} />
+                  {/* 斜线条纹 */}
+                  <g clipPath="url(#ban-clip)">
+                    <g transform={`translate(${x1},${y1})`}>
+                      {diagLines}
+                    </g>
+                  </g>
+                  {/* 边框 */}
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke="#ef4444" strokeWidth={0.8} strokeOpacity={0.25} />
+                  {/* 禁买文字 */}
+                  <text x={x1 + w / 2} y={y1 + h / 2 - 8} textAnchor="middle" fontSize={13} fontWeight={800} fill="#ef4444" fillOpacity={0.35} fontFamily="sans-serif">禁买区</text>
+                  <text x={x1 + w / 2} y={y1 + h / 2 + 10} textAnchor="middle" fontSize={10} fontWeight={600} fill="#ef4444" fillOpacity={0.28} fontFamily="sans-serif">10点前禁止买入</text>
+                </g>
+              );
+            }} />
             {/* Highest & Lowest price dashed lines + labels */}
             {highestPrice != null && highestPrice !== safePrevClose && (
               <ReferenceLine
@@ -2823,7 +2873,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <Tooltip content={volumeTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="vol-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
-            {/* ── 早盘放量下跌禁买区 (9:30~10:00) ── */}
+            {/* ── 早盘放量下跌禁买蒙版 (成交量图) ── */}
             {(() => {
               if (!pvMarkers || pvMarkers.length === 0) return null;
               const earlyVolDecline = pvMarkers.find(m => {
@@ -2835,10 +2885,45 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
               return (<>
-                <ReferenceArea yAxisId="vol-right" x1={0} x2={tenIdx} fill="#ef4444" fillOpacity={0.06} stroke="none" />
                 <ReferenceLine yAxisId="vol-right" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
               </>);
             })()}
+            <Customized component={(props: any) => {
+              if (!pvMarkers || pvMarkers.length === 0) return null;
+              const earlyVolDecline = pvMarkers.find((m: PulseVolumeMarker) => {
+                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+                const mins = pvParseTime(m.time);
+                return mins >= 570 && mins < 600;
+              });
+              if (!earlyVolDecline) return null;
+              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
+              if (tenIdx < 0) return null;
+              const { xAxisMap, offset } = props;
+              if (!xAxisMap || !offset) return null;
+              const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
+              if (!xAxis || !xAxis.scale) return null;
+              const xScale = xAxis.scale;
+              const x1 = xScale(0);
+              const x2 = xScale(tenIdx);
+              const y1 = offset.top;
+              const y2 = offset.top + offset.height;
+              const w = x2 - x1;
+              const h = y2 - y1;
+              if (w <= 0 || h <= 0) return null;
+              const diagLines: React.ReactNode[] = [];
+              const gap = 14;
+              for (let i = -h; i < w + h; i += gap) {
+                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke="#ef4444" strokeWidth={1.2} strokeOpacity={0.18} />);
+              }
+              return (
+                <g>
+                  <defs><clipPath id="ban-clip-vol"><rect x={x1} y={y1} width={w} height={h} /></clipPath></defs>
+                  <rect x={x1} y={y1} width={w} height={h} fill="#ef4444" fillOpacity={0.08} />
+                  <g clipPath="url(#ban-clip-vol)"><g transform={`translate(${x1},${y1})`}>{diagLines}</g></g>
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke="#ef4444" strokeWidth={0.8} strokeOpacity={0.25} />
+                </g>
+              );
+            }} />
             <Bar
               yAxisId="vol-right"
               dataKey="volume"
@@ -2918,7 +3003,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <ReferenceLine yAxisId="macd-right" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.5} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="macd-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
-            {/* ── 早盘放量下跌禁买区 (9:30~10:00) ── */}
+            {/* ── 早盘放量下跌禁买蒙版 (MACD图) ── */}
             {(() => {
               if (!pvMarkers || pvMarkers.length === 0) return null;
               const earlyVolDecline = pvMarkers.find(m => {
@@ -2930,10 +3015,45 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
               return (<>
-                <ReferenceArea yAxisId="macd-right" x1={0} x2={tenIdx} fill="#ef4444" fillOpacity={0.06} stroke="none" />
                 <ReferenceLine yAxisId="macd-right" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
               </>);
             })()}
+            <Customized component={(props: any) => {
+              if (!pvMarkers || pvMarkers.length === 0) return null;
+              const earlyVolDecline = pvMarkers.find((m: PulseVolumeMarker) => {
+                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+                const mins = pvParseTime(m.time);
+                return mins >= 570 && mins < 600;
+              });
+              if (!earlyVolDecline) return null;
+              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
+              if (tenIdx < 0) return null;
+              const { xAxisMap, offset } = props;
+              if (!xAxisMap || !offset) return null;
+              const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
+              if (!xAxis || !xAxis.scale) return null;
+              const xScale = xAxis.scale;
+              const x1 = xScale(0);
+              const x2 = xScale(tenIdx);
+              const y1 = offset.top;
+              const y2 = offset.top + offset.height;
+              const w = x2 - x1;
+              const h = y2 - y1;
+              if (w <= 0 || h <= 0) return null;
+              const diagLines: React.ReactNode[] = [];
+              const gap = 14;
+              for (let i = -h; i < w + h; i += gap) {
+                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke="#ef4444" strokeWidth={1.2} strokeOpacity={0.18} />);
+              }
+              return (
+                <g>
+                  <defs><clipPath id="ban-clip-macd"><rect x={x1} y={y1} width={w} height={h} /></clipPath></defs>
+                  <rect x={x1} y={y1} width={w} height={h} fill="#ef4444" fillOpacity={0.08} />
+                  <g clipPath="url(#ban-clip-macd)"><g transform={`translate(${x1},${y1})`}>{diagLines}</g></g>
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke="#ef4444" strokeWidth={0.8} strokeOpacity={0.25} />
+                </g>
+              );
+            }} />
             <Bar
               yAxisId="macd-right"
               dataKey="macd"
