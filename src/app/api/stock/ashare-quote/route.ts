@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
         change: quote.change,
         changePercent: quote.changePercent,
         volume: quote.volume * 100, // Convert 手 to shares
-        marketCap: quote.marketCap * 10000, // Convert 万元 to 元
+        marketCap: quote.marketCap * 100000000, // Convert 亿元 to 元
         peRatio: quote.pe,
         week52High: quote.high52week,
         week52Low: quote.low52week,

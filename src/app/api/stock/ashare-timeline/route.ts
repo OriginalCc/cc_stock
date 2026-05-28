@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
           change: quoteResult.change,
           changePercent: quoteResult.changePercent,
           volume: quoteResult.volume * 100, // 手 → 股
-          marketCap: quoteResult.marketCap * 10000, // 万元 → 元
+          marketCap: quoteResult.marketCap * 100000000, // 亿元 → 元
           peRatio: quoteResult.pe,
           week52High: quoteResult.high52week,
           week52Low: quoteResult.low52week,

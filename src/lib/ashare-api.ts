@@ -22,7 +22,7 @@ export interface AShareQuote {
   amount: number;        // 金额
   turnover: number;      // 换手率
   pe: number;
-  marketCap: number;     // 万元
+  marketCap: number;     // 亿元
   circulatingMarketCap: number;
   bidPrice: number;
   askPrice: number;
@@ -225,10 +225,10 @@ export async function getAShareQuote(symbol: string): Promise<AShareQuote | null
     const changePercent = parseFloat(fields[32]);
     const turnover = parseFloat(fields[38]);
     const pe = parseFloat(fields[39]);
-    const marketCap = parseFloat(fields[44]);      // 万
-    const circulatingMarketCap = parseFloat(fields[45]); // 万
-    const high52 = parseFloat(fields[33]);
-    const low52 = parseFloat(fields[34]);
+    const marketCap = parseFloat(fields[44]);      // 亿元
+    const circulatingMarketCap = parseFloat(fields[45]); // 亿元
+    const high52 = parseFloat(fields[47]);
+    const low52 = parseFloat(fields[48]);
 
     return {
       symbol: code,
