@@ -2920,7 +2920,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const ban = earlyVolDeclineBan;
               const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
               if (banIdx < 0) return null;
-              const tierColor = "#ef4444";
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
                 <ReferenceLine yAxisId="price" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: `${ban.banEndTimeStr} 禁买线`, position: "insideTopRight", fill: tierColor, fontSize: 9, fontWeight: 700, fillOpacity: 0.8 }} />
               </>);
@@ -2943,7 +2943,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const w = x2 - x1;
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
-              const tierColor = "#ef4444";
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               const tierLabel = { mild: "轻微", medium: "中等", strong: "强烈", extreme: "极端" }[ban.tier];
               // 根据危险指数动态调整蒙版透明度（加深版）
               const bgOpacity = 0.06 + (ban.dangerIndex / 100) * 0.20;
@@ -3223,7 +3223,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const ban = earlyVolDeclineBan;
               const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
               if (banIdx < 0) return null;
-              const tierColor = "#ef4444";
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
                 <ReferenceLine yAxisId="vol-right" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
               </>);
@@ -3245,7 +3245,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const w = x2 - x1;
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
-              const tierColor = "#ef4444";
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               const bgOpacity = 0.06 + (ban.dangerIndex / 100) * 0.20;
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
@@ -3345,7 +3345,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const ban = earlyVolDeclineBan;
               const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
               if (banIdx < 0) return null;
-              const tierColor = "#ef4444";
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
                 <ReferenceLine yAxisId="macd-right" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
               </>);
@@ -3367,7 +3367,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const w = x2 - x1;
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
-              const tierColor = "#ef4444";
+              const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               const bgOpacity = 0.06 + (ban.dangerIndex / 100) * 0.20;
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
