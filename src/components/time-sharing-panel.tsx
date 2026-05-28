@@ -13,6 +13,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
   Customized,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
@@ -27,6 +28,7 @@ import {
   generateTimelineSignals,
   getStrengthLabel,
   getStrengthColor,
+  pvParseTime,
 } from "@/lib/chart-shared";
 import { fullDayDataCache, regimeDetailCache, intradayIntentCache, FingerprintCache } from "@/lib/fingerprint-cache";
 import { ALL_TRADE_TIMES } from "@/lib/trading-times";
@@ -1967,6 +1969,24 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             ▲ 买{buySignals}
           </span>
         )}
+        {/* 早盘放量下跌禁买警告 */}
+        {(() => {
+          if (!pvMarkers || pvMarkers.length === 0) return null;
+          const earlyVolDecline = pvMarkers.find(m => {
+            if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+            const mins = pvParseTime(m.time);
+            return mins >= 570 && mins < 600;
+          });
+          if (!earlyVolDecline) return null;
+          const now = new Date();
+          const curMins = now.getHours() * 60 + now.getMinutes();
+          if (curMins >= 600) return null; // 已过10点不再显示
+          return (
+            <span className="flex items-center gap-1 text-red-500 font-bold animate-pulse">
+              🚫 10点前禁买
+            </span>
+          );
+        })()}
         {sellSignals > 0 && (
           <span className="flex items-center gap-1 text-green-500">
             ▼ 卖{sellSignals}
@@ -2190,6 +2210,32 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           )}
         </div>
       </div>
+
+      {/* ─── Early Volume Decline Ban Banner ─── */}
+      {(() => {
+        if (!pvMarkers || pvMarkers.length === 0) return null;
+        // 检测10点前(9:30-10:00)是否存在放量下跌标记
+        const earlyVolDecline = pvMarkers.find(m => {
+          if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+          const mins = pvParseTime(m.time);
+          return mins >= 570 && mins < 600; // 9:30 ~ 10:00
+        });
+        if (!earlyVolDecline) return null;
+        // 当前时间是否还在10点前
+        const now = new Date();
+        const curMins = now.getHours() * 60 + now.getMinutes();
+        const isBeforeTen = curMins < 600;
+        return (
+          <div className="px-3 py-1.5 bg-red-500/12 border-b border-red-500/25 flex items-center justify-center gap-2">
+            <span className="text-red-500 text-xs">🚫</span>
+            <span className="text-xs font-bold text-red-600 dark:text-red-400">
+              早盘放量下跌，10点前禁止买入！
+            </span>
+            <span className="text-[10px] text-red-500 font-bold">| 等待10:00后再考虑低吸</span>
+            {isBeforeTen && <span className="text-[10px] text-red-400 animate-pulse">⏳ 当前仍在10点前</span>}
+          </div>
+        );
+      })()}
 
       {/* ─── Position Rule Banner on Chart (5-tier + T-direction) ─── */}
       {(() => {
@@ -2518,6 +2564,25 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               }
               return null;
             })()}
+            {/* ── 早盘放量下跌禁买区 (9:30~10:00) ── */}
+            {(() => {
+              if (!pvMarkers || pvMarkers.length === 0) return null;
+              const earlyVolDecline = pvMarkers.find(m => {
+                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+                const mins = pvParseTime(m.time);
+                return mins >= 570 && mins < 600;
+              });
+              if (!earlyVolDecline) return null;
+              // 找到zoomData中10:00的位置
+              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
+              if (tenIdx < 0) return null;
+              // 红色区域从zoomData的起始位置到10:00
+              const areaStart = 0;
+              return (<>
+                <ReferenceArea yAxisId="price" x1={areaStart} x2={tenIdx} fill="#ef4444" fillOpacity={0.06} stroke="none" />
+                <ReferenceLine yAxisId="price" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} label={{ value: "10:00 禁买线", position: "insideTopRight", fill: "#ef4444", fontSize: 9, fontWeight: 700, fillOpacity: 0.8 }} />
+              </>);
+            })()}
             {/* Highest & Lowest price dashed lines + labels */}
             {highestPrice != null && highestPrice !== safePrevClose && (
               <ReferenceLine
@@ -2758,6 +2823,22 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <Tooltip content={volumeTooltipEl} cursor={false} wrapperStyle={tooltipWrapperStyle} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="vol-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
+            {/* ── 早盘放量下跌禁买区 (9:30~10:00) ── */}
+            {(() => {
+              if (!pvMarkers || pvMarkers.length === 0) return null;
+              const earlyVolDecline = pvMarkers.find(m => {
+                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+                const mins = pvParseTime(m.time);
+                return mins >= 570 && mins < 600;
+              });
+              if (!earlyVolDecline) return null;
+              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
+              if (tenIdx < 0) return null;
+              return (<>
+                <ReferenceArea yAxisId="vol-right" x1={0} x2={tenIdx} fill="#ef4444" fillOpacity={0.06} stroke="none" />
+                <ReferenceLine yAxisId="vol-right" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
+              </>);
+            })()}
             <Bar
               yAxisId="vol-right"
               dataKey="volume"
@@ -2837,6 +2918,22 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <ReferenceLine yAxisId="macd-right" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="2 2" strokeWidth={0.5} />
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="macd-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
+            {/* ── 早盘放量下跌禁买区 (9:30~10:00) ── */}
+            {(() => {
+              if (!pvMarkers || pvMarkers.length === 0) return null;
+              const earlyVolDecline = pvMarkers.find(m => {
+                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+                const mins = pvParseTime(m.time);
+                return mins >= 570 && mins < 600;
+              });
+              if (!earlyVolDecline) return null;
+              const tenIdx = zoomData.findIndex(d => d.time === "10:00");
+              if (tenIdx < 0) return null;
+              return (<>
+                <ReferenceArea yAxisId="macd-right" x1={0} x2={tenIdx} fill="#ef4444" fillOpacity={0.06} stroke="none" />
+                <ReferenceLine yAxisId="macd-right" x={tenIdx} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.6} />
+              </>);
+            })()}
             <Bar
               yAxisId="macd-right"
               dataKey="macd"
