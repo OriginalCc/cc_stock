@@ -380,9 +380,9 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {betweenGreen && <path d={betweenGreen} fill="url(#betweenGreen)" />}
 
           {/* Up line with glow */}
-          <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />
+          <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />
           {/* Down line with glow */}
-          <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />
+          <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />
 
           {/* Pre-compute label visibility: skip if same values as previous labeled point */}
           {(() => {
@@ -407,7 +407,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             const yUp = toY(d.totalUp);
             const yDown = toY(d.totalDown);
             const isLast = i === data.length - 1;
-            const pillH = 13;
+            const pillH = 11;
 
             // Determine which line is visually on top (lower y = higher on screen)
             const upIsOnTop = yUp <= yDown;
@@ -448,45 +448,45 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
             return (
               <g key={`pt-${i}`}>
-                <circle cx={x} cy={yUp} r={isLast ? 3 : 1.8} fill={UP_COLOR} />
-                {isLast && <circle cx={x} cy={yUp} r={1.5} fill="#fff" opacity={0.6} />}
-                <circle cx={x} cy={yDown} r={isLast ? 3 : 1.8} fill={DOWN_COLOR} />
-                {isLast && <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />}
+                <circle cx={x} cy={yUp} r={isLast ? 2.5 : 1.4} fill={UP_COLOR} />
+                {isLast && <circle cx={x} cy={yUp} r={1} fill="#fff" opacity={0.6} />}
+                <circle cx={x} cy={yDown} r={isLast ? 2.5 : 1.4} fill={DOWN_COLOR} />
+                {isLast && <circle cx={x} cy={yDown} r={1} fill="#fff" opacity={0.6} />}
 
                 <line x1={x} y1={upDashY1} x2={x} y2={upDashY2}
-                  stroke={UP_COLOR} strokeWidth={0.6} strokeDasharray="2,2" opacity={0.5} />
+                  stroke={UP_COLOR} strokeWidth={0.4} strokeDasharray="2,2" opacity={0.4} />
                 <line x1={x} y1={downDashY1} x2={x} y2={downDashY2}
-                  stroke={DOWN_COLOR} strokeWidth={0.6} strokeDasharray="2,2" opacity={0.5} />
+                  stroke={DOWN_COLOR} strokeWidth={0.4} strokeDasharray="2,2" opacity={0.4} />
 
-                <rect x={x - 18} y={upPillY}
-                  width={36} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
+                <rect x={x - 16} y={upPillY}
+                  width={32} height={pillH} rx={2.5} fill={UP_COLOR} opacity={0.88} />
                 <text x={x} y={upPillY + pillH / 2}
-                  textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
+                  textAnchor="middle" fontSize={8} fontFamily="monospace" fontWeight={700}
                   fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                <rect x={x - 18} y={downPillY}
-                  width={36} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
+                <rect x={x - 16} y={downPillY}
+                  width={32} height={pillH} rx={2.5} fill={DOWN_COLOR} opacity={0.88} />
                 <text x={x} y={downPillY + pillH / 2}
-                  textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
+                  textAnchor="middle" fontSize={8} fontFamily="monospace" fontWeight={700}
                   fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
               </g>
             );
           })}
 
           {/* End pulse — Up */}
-          <circle cx={lastX} cy={toY(lastPt.totalUp)} r={4} fill={UP_COLOR} opacity={0.2}>
-            <animate attributeName="r" values="4;10;4" dur="2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.2;0.05;0.2" dur="2s" repeatCount="indefinite" />
+          <circle cx={lastX} cy={toY(lastPt.totalUp)} r={3} fill={UP_COLOR} opacity={0.15}>
+            <animate attributeName="r" values="3;8;3" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.15;0.04;0.15" dur="2s" repeatCount="indefinite" />
           </circle>
           {/* End pulse — Down */}
-          <circle cx={lastX} cy={toY(lastPt.totalDown)} r={4} fill={DOWN_COLOR} opacity={0.2}>
-            <animate attributeName="r" values="4;10;4" dur="2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.2;0.05;0.2" dur="2s" repeatCount="indefinite" />
+          <circle cx={lastX} cy={toY(lastPt.totalDown)} r={3} fill={DOWN_COLOR} opacity={0.15}>
+            <animate attributeName="r" values="3;8;3" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.15;0.04;0.15" dur="2s" repeatCount="indefinite" />
           </circle>
 
           {/* Y-axis labels */}
           {yTicks.map((t, i) => (
             <text key={`yl-${i}`} x={cPx - 5} y={t.y} textAnchor="end" dominantBaseline="middle"
-              fontSize={7.5} fontFamily="monospace" fill="currentColor" className="text-muted-foreground/70">
+              fontSize={6.5} fontFamily="monospace" fill="currentColor" className="text-muted-foreground/70">
               {t.label}
             </text>
           ))}
@@ -494,18 +494,18 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {/* X-axis with tick marks (same key times as TimeSharingPanel) */}
           {xTicks.map((t, i) => (
             <g key={`xl-${i}`}>
-              <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 4}
-                stroke="currentColor" className="text-foreground/30" strokeWidth={0.6} />
+              <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 3}
+                stroke="currentColor" className="text-foreground/30" strokeWidth={0.4} />
               <text x={t.x} y={h - 7} textAnchor="middle"
-                fontSize={9} fontFamily="monospace" fontWeight={700} fill="currentColor" className="text-foreground/80">
+                fontSize={7.5} fontFamily="monospace" fontWeight={600} fill="currentColor" className="text-foreground/80">
                 {t.label}
               </text>
             </g>
           ))}
 
           {/* Axes */}
-          <line x1={cPx} y1={cPt} x2={cPx} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.5} />
-          <line x1={cPx} y1={h - cPb} x2={cPx + cW} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.5} />
+          <line x1={cPx} y1={cPt} x2={cPx} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.3} />
+          <line x1={cPx} y1={h - cPb} x2={cPx + cW} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.3} />
         </svg>
         </div>
 
