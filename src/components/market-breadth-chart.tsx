@@ -140,7 +140,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     if (data.length < 2) return null;
 
     const w = 640, h = 280;
-    const px = 46, pr = 10, pt = 20, pb = 34;
+    const px = 46, pr = 0, pt = 20, pb = 34;
     const chartW = w - px - pr;
     const chartH = h - pt - pb;
 
