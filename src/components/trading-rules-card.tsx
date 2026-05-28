@@ -14,7 +14,7 @@ interface TradingRulesCardProps {
 }
 
 // Map pvMarker types to rule section keys that should be highlighted
-type RuleKey = "vol_decline_danger" | "vol_decline_position" | "vol_surge_strong" | "pulse_caution" | "pulse_decline_danger" | "shrink_rise" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise_warn";
+type RuleKey = "vol_decline_danger" | "vol_decline_position" | "vol_surge_strong" | "pulse_caution" | "pulse_decline_danger" | "shrink_rise" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise_warn" | "slow_decline";
 
 function getActiveRules(markers: PulseVolumeMarker[]): Set<RuleKey> {
   const active = new Set<RuleKey>();
@@ -48,6 +48,10 @@ function getActiveRules(markers: PulseVolumeMarker[]): Set<RuleKey> {
       case "shrink_rise":
         active.add("shrink_rise");
         active.add("shrink_rise_warn");
+        break;
+      case "slow_decline":
+        active.add("slow_decline");
+        active.add("vol_decline_danger");
         break;
     }
   }
@@ -373,6 +377,16 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                     {activeBadge("early_vol_drop")}
                   </div>
                   <p>开盘30分钟内缩量下跌，说明市场不看好。不急于抄底，等放量企稳再参与。</p>
+                </div>
+              </div>
+              <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("slow_decline", "border-amber-500/10")}`}>
+                <span className="text-emerald-600 text-xs shrink-0">▼</span>
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    <span className="text-foreground font-medium">阴跌 → 持续走弱，严禁抄底</span>
+                    {activeBadge("slow_decline")}
+                  </div>
+                  <p>慢速持续下跌，单分钟跌幅不大但方向一致。阴跌比急跌更危险——持股者不舍得止损、越套越深。不做逆T买入。</p>
                 </div>
               </div>
               <div className={`flex items-start gap-2 p-1.5 rounded border ${ruleClass("wash_trade", "border-amber-500/10")}`}>

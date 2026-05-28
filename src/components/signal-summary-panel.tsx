@@ -122,9 +122,11 @@ export const SignalSummaryPanel = React.memo(function SignalSummaryPanel({
                       ? "bg-green-500/5 border-green-500/20 text-green-700 dark:text-green-300"
                       : m.type === "volume_decline"
                       ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                      : m.type === "slow_decline"
+                      ? "bg-emerald-700/5 border-emerald-700/20 text-emerald-800 dark:text-emerald-300"
                       : "bg-cyan-500/5 border-cyan-500/20 text-cyan-700 dark:text-cyan-300"
                   }`}>
-                    {m.type === "pulse" ? <Zap className="w-3 h-3" /> : m.type === "pulse_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "volume_decline" ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+                    {m.type === "pulse" ? <Zap className="w-3 h-3" /> : m.type === "pulse_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "volume_decline" ? <TrendingDown className="w-3 h-3" /> : m.type === "slow_decline" ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
                     <span className="font-mono">{m.time}</span>
                     <span className="font-medium">{m.label}</span>
                     {m.amount > 0 && <span className="font-mono text-muted-foreground">¥{formatAmount(m.amount)}</span>}

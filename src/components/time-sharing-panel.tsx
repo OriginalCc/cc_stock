@@ -413,10 +413,11 @@ function renderPulseVolumeMarker(
   const isPulseDecline = marker.type === "pulse_decline";
   const isVolumeDecline = marker.type === "volume_decline";
   const isEarlyVolDrop = marker.type === "early_vol_drop";
+  const isSlowDecline = marker.type === "slow_decline";
   const isWashTrade = marker.type === "wash_trade";
   const isVolRise = marker.type === "vol_rise";
   const isShrinkRise = marker.type === "shrink_rise";
-  const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop;
+  const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop || isSlowDecline;
 
   // Color schemes — A股惯例：上涨=红色，下跌=绿色
   // 上涨类(pulse, progressive_vol, vol_rise)用红色，下跌类(pulse_decline, volume_decline, early_vol_drop)用绿色
@@ -476,6 +477,13 @@ function renderPulseVolumeMarker(
     textColor = "#9a3412";
     iconColor = "#f97316";
     glowColor = "rgba(249, 115, 22, 0.35)";
+  } else if (isSlowDecline) {
+    // 阴跌 — 暗绿色（A股：下跌=绿，阴跌用更暗的绿表示隐蔽性）
+    bgColor = "rgba(20, 120, 60, 0.25)";
+    borderColor = "rgba(20, 120, 60, 0.85)";
+    textColor = "#14532d";
+    iconColor = "#15803d";
+    glowColor = "rgba(20, 120, 60, 0.35)";
   } else if (isWashTrade) {
     bgColor = "rgba(139, 92, 246, 0.25)";
     borderColor = "rgba(139, 92, 246, 0.85)";
@@ -558,7 +566,7 @@ function renderPulseVolumeMarker(
         textAnchor="middle" dominantBaseline="middle"
         fontSize={isVolumeDecline ? 8 : 7} fill={iconColor} fontWeight="bold"
       >
-        {isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "⚠" : "▲"}
+        {isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "⚠" : isSlowDecline ? "▼" : "▲"}
       </text>
       {/* White glow behind label pill for readability */}
       <rect
@@ -1781,11 +1789,14 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   } | null => {
     if (!pvMarkers || pvMarkers.length === 0) return null;
 
-    // ── 1. 收集早盘放量下跌标记 ──
+    // ── 1. 收集早盘下跌标记（扩展：含缩量下跌和阴跌） ──
     const earlyVolDeclines = pvMarkers.filter(m => {
-      if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+      if (m.type !== "volume_decline" && m.type !== "pulse_decline"
+          && m.type !== "early_vol_drop" && m.type !== "slow_decline") return false;
       const mins = pvParseTime(m.time);
-      return mins >= 570 && mins < 630;
+      // 动态窗口：从9:30到当前最新数据时间，不再固定<630
+      // 但最晚只看10:30(630min)，因为禁买不可能超过10:30
+      return mins >= 570 && mins <= 630;
     });
     if (earlyVolDeclines.length === 0) return null;
 
@@ -1871,6 +1882,27 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       const upRatio = (afterLow.length - 1) > 0 ? upAfterLow / (afterLow.length - 1) : 0;
       if (upRatio >= 0.6) stabilityIndex += 15;
       else if (upRatio >= 0.5) stabilityIndex += 8;
+
+      // ── VWAP回穿检测（关键增强） ──
+      // 价格从均线下方回到均线上方 = 最强企稳信号
+      // 计算早盘均价线
+      let totalAmount = 0, totalVol = 0;
+      for (const d of earlyData) {
+        totalAmount += d.price * d.volume;
+        totalVol += d.volume;
+      }
+      const earlyVWAP = totalVol > 0 ? totalAmount / totalVol : 0;
+      if (earlyVWAP > 0) {
+        // 检查最新价格是否回到均线上方
+        const lastFewPrices = afterLow.slice(-5);
+        const aboveVWAPCount = lastFewPrices.filter(d => d.price > earlyVWAP).length;
+        if (aboveVWAPCount >= 3) {
+          // 最近5分钟中3+分钟在均线上方 = 强势企稳
+          stabilityIndex += 20;
+        } else if (aboveVWAPCount >= 2) {
+          stabilityIndex += 10;
+        }
+      }
     }
 
     // ── 7. 多波下跌检测 ──
@@ -1932,6 +1964,14 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       Math.abs(m.score) > Math.abs(best.score) ? m : best
     , earlyVolDeclines[0]).score);
 
+    // 判断下跌类型组合（影响危险指数权重）
+    const hasVolDecline = earlyVolDeclines.some(m => m.type === "volume_decline");
+    const hasPulseDecline = earlyVolDeclines.some(m => m.type === "pulse_decline");
+    const hasSlowDecline = earlyVolDeclines.some(m => m.type === "slow_decline");
+    const hasEarlyVolDrop = earlyVolDeclines.some(m => m.type === "early_vol_drop");
+    // 多类型叠加 = 更危险
+    const typeCount = [hasVolDecline, hasPulseDecline, hasSlowDecline, hasEarlyVolDrop].filter(Boolean).length;
+
     let dangerIndex = 0;
 
     // A. 跌幅 (权重 25%)
@@ -1957,33 +1997,41 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     else if (speedIndex >= 10) dangerIndex += 5;
     else dangerIndex += 2;
 
-    // D. 信号分数 (权重 10%)
-    if (absScore >= 60) dangerIndex += 10;
-    else if (absScore >= 40) dangerIndex += 8;
-    else if (absScore >= 25) dangerIndex += 6;
-    else if (absScore >= 15) dangerIndex += 4;
-    else dangerIndex += 2;
-
-    // E. 多波下跌 (权重 10%)
-    if (waveCount >= 3) dangerIndex += 10;
-    else if (waveCount >= 2) dangerIndex += 7;
-    else dangerIndex += 3;
-
-    // F. 跳空低开 (权重 8%)
-    if (gapDownRate >= 2) dangerIndex += 8;
-    else if (gapDownRate >= 1) dangerIndex += 6;
-    else if (gapDownRate >= 0.5) dangerIndex += 3;
-
-    // G. VWAP偏离 (权重 7%) - 偏离越大越危险
-    const absVwapDev = Math.abs(vwapDeviation);
-    if (absVwapDev >= 2) dangerIndex += 7;
-    else if (absVwapDev >= 1.5) dangerIndex += 5;
-    else if (absVwapDev >= 1) dangerIndex += 3;
+    // D. 信号分数 (权重 8%)
+    if (absScore >= 60) dangerIndex += 8;
+    else if (absScore >= 40) dangerIndex += 6;
+    else if (absScore >= 25) dangerIndex += 5;
+    else if (absScore >= 15) dangerIndex += 3;
     else dangerIndex += 1;
 
-    // H. 企稳折扣 - 已企稳则降低危险指数
+    // E. 多波下跌 (权重 8%)
+    if (waveCount >= 3) dangerIndex += 8;
+    else if (waveCount >= 2) dangerIndex += 6;
+    else dangerIndex += 2;
+
+    // F. 跳空低开 (权重 7%)
+    if (gapDownRate >= 2) dangerIndex += 7;
+    else if (gapDownRate >= 1) dangerIndex += 5;
+    else if (gapDownRate >= 0.5) dangerIndex += 3;
+
+    // G. VWAP偏离 (权重 5%) - 偏离越大越危险
+    const absVwapDev = Math.abs(vwapDeviation);
+    if (absVwapDev >= 2) dangerIndex += 5;
+    else if (absVwapDev >= 1.5) dangerIndex += 4;
+    else if (absVwapDev >= 1) dangerIndex += 2;
+    else dangerIndex += 1;
+
+    // H. 下跌类型叠加加成 (权重 7%) - 多种下跌类型共存更危险
+    if (typeCount >= 3) dangerIndex += 7;
+    else if (typeCount >= 2) dangerIndex += 4;
+    else dangerIndex += 1;
+
+    // I. 阴跌加成 — 阴跌意味着趋势性下跌，比单次脉冲更危险
+    if (hasSlowDecline) dangerIndex += 5;
+
+    // J. 企稳折扣 - 已企稳则降低危险指数（最多打4折，比之前更激进）
     const stabilityDiscount = stabilityIndex / 100; // 0~1
-    dangerIndex = Math.round(dangerIndex * (1 - stabilityDiscount * 0.5)); // 最多打5折
+    dangerIndex = Math.round(dangerIndex * (1 - stabilityDiscount * 0.6)); // 最多打4折
 
     dangerIndex = Math.max(0, Math.min(100, dangerIndex));
 

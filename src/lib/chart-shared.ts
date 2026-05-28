@@ -35,7 +35,7 @@ export interface MergedSignal {
 
 export interface PulseVolumeMarker {
   time: string;
-  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise";
+  type: "pulse" | "volume_surge" | "progressive_vol" | "pulse_decline" | "volume_decline" | "early_vol_drop" | "wash_trade" | "vol_rise" | "shrink_rise" | "slow_decline";
   score: number;
   label: string;
   detail: string;
@@ -872,22 +872,29 @@ export function detectPulseVolumeMarkers(
     }
   }
 
-  // ── Pulse Decline Detection (脉冲下跌) ──
+  // ── Pulse Decline Detection (脉冲下跌) v2 ──
+  // 优化：多窗口扫描(3/5/8分钟) + 反弹减分(已反弹=危险降低) + 精确量比(跌时vs涨时)
   {
-    let maxDropRate = 0;
-    let dropStartIdx = 0;
-    let dropEndIdx = 0;
-    const windowSize = 5;
+    // ── 多窗口扫描：捕捉不同速度的脉冲下跌 ──
+    const pulseWindows = [3, 5, 8];
+    let bestPulseDrop = 0;
+    let bestPulseStartIdx = 0;
+    let bestPulseEndIdx = 0;
+    let bestPulseWinSize = 5;
 
-    for (let i = 0; i <= session.length - windowSize; i++) {
-      const startPrice = session[i].price;
-      const endPrice = session[i + windowSize - 1].price;
-      if (startPrice <= 0) continue;
-      const dropRate = ((startPrice - endPrice) / startPrice) * 100; // positive = price dropped
-      if (dropRate > maxDropRate) {
-        maxDropRate = dropRate;
-        dropStartIdx = i;
-        dropEndIdx = i + windowSize - 1;
+    for (const winSize of pulseWindows) {
+      if (session.length < winSize) continue;
+      for (let i = 0; i <= session.length - winSize; i++) {
+        const startPrice = session[i].price;
+        const endPrice = session[i + winSize - 1].price;
+        if (startPrice <= 0) continue;
+        const dropRate = ((startPrice - endPrice) / startPrice) * 100;
+        if (dropRate > bestPulseDrop) {
+          bestPulseDrop = dropRate;
+          bestPulseStartIdx = i;
+          bestPulseEndIdx = i + winSize - 1;
+          bestPulseWinSize = winSize;
+        }
       }
     }
 
@@ -895,7 +902,7 @@ export function detectPulseVolumeMarkers(
     const sessionLow = Math.min(...session.map(t => t.price));
     const openToLowRate = openPrice > 0 ? ((openPrice - sessionLow) / openPrice) * 100 : 0;
 
-    // Find trough for rebound detection
+    // Find trough
     let troughIdx = 0;
     let troughPrice = Infinity;
     for (let i = 0; i < session.length; i++) {
@@ -907,41 +914,62 @@ export function detectPulseVolumeMarkers(
     const lastPrice = session[session.length - 1].price;
     const reboundRate = troughPrice > 0 ? ((lastPrice - troughPrice) / troughPrice) * 100 : 0;
 
-    const avgVol = session.reduce((sum, t) => sum + t.volume, 0) / session.length;
-    const troughVol = session[troughIdx]?.volume || 0;
-    const volRatio = avgVol > 0 ? troughVol / avgVol : 1;
+    // ── 精确量比：下跌时段均量 vs 上涨时段均量 ──
+    const downMins = session.filter((t, i) => i > 0 && t.price < session[i - 1].price);
+    const upMins = session.filter((t, i) => i > 0 && t.price >= session[i - 1].price);
+    const downAvgVol = downMins.length > 0 ? downMins.reduce((s, t) => s + t.volume, 0) / downMins.length : 0;
+    const upAvgVol = upMins.length > 0 ? upMins.reduce((s, t) => s + t.volume, 0) / upMins.length : 0;
+    const sessionAvgVol = session.reduce((sum, t) => sum + t.volume, 0) / session.length;
+    // 量比 = 下跌均量 / 上涨均量，若上涨均量为0则用全日均量
+    const declineVolRatio = upAvgVol > 0 ? downAvgVol / upAvgVol : (sessionAvgVol > 0 ? downAvgVol / sessionAvgVol : 1);
 
     const gapDownRate = openPrice > 0 && prevClose > 0 ? ((prevClose - openPrice) / prevClose) * 100 : 0;
 
-    let declineScore = 0;
-    if (maxDropRate >= 3) declineScore += 35;
-    else if (maxDropRate >= 2) declineScore += 25;
-    else if (maxDropRate >= 1.5) declineScore += 20;
-    else if (maxDropRate >= 1) declineScore += 12;
-    else if (maxDropRate >= 0.5) declineScore += 5;
+    // ── 脉冲速度分类 ──
+    // 3分钟窗口 = 极速脉冲, 5分钟 = 标准脉冲, 8分钟 = 延伸脉冲
+    const isFastPulse = bestPulseWinSize <= 3 && bestPulseDrop >= 1;
+    const isExtendedPulse = bestPulseWinSize >= 8 && bestPulseDrop >= 0.8;
 
+    let declineScore = 0;
+
+    // A. 最大跌幅 (核心)
+    if (bestPulseDrop >= 3) declineScore += 35;
+    else if (bestPulseDrop >= 2) declineScore += 25;
+    else if (bestPulseDrop >= 1.5) declineScore += 20;
+    else if (bestPulseDrop >= 1) declineScore += 12;
+    else if (bestPulseDrop >= 0.5) declineScore += 5;
+
+    // B. 开盘到低点跌幅
     if (openToLowRate >= 3) declineScore += 25;
     else if (openToLowRate >= 2) declineScore += 18;
     else if (openToLowRate >= 1.5) declineScore += 12;
     else if (openToLowRate >= 1) declineScore += 8;
     else if (openToLowRate >= 0.5) declineScore += 3;
 
-    if (reboundRate >= 0.5 && reboundRate <= 5 && troughIdx < session.length - 2) declineScore += 15;
-    else if (reboundRate > 0 && troughIdx < session.length / 2) declineScore += 8;
+    // C. 速度加成：极速脉冲更危险
+    if (isFastPulse) declineScore += 8;
+    else if (isExtendedPulse) declineScore += 3;
 
-    if (volRatio >= 2) declineScore += 10;
-    else if (volRatio >= 1.5) declineScore += 6;
-    else if (volRatio >= 1.2) declineScore += 3;
+    // D. 精确量比（下跌均量 vs 上涨均量）
+    if (declineVolRatio >= 3) declineScore += 12;
+    else if (declineVolRatio >= 2) declineScore += 10;
+    else if (declineVolRatio >= 1.5) declineScore += 7;
+    else if (declineVolRatio >= 1.2) declineScore += 3;
 
+    // E. 跳空低开
     if (gapDownRate >= 1) declineScore += 10;
     else if (gapDownRate >= 0.5) declineScore += 5;
     else if (gapDownRate > 0) declineScore += 2;
 
-    declineScore = Math.min(declineScore, 100);
+    // F. 反弹减分：已反弹 = 危险降低（核心修正）
+    // 反弹越多，后续继续下跌的风险越小
+    if (reboundRate >= 2) declineScore -= 12;
+    else if (reboundRate >= 1) declineScore -= 8;
+    else if (reboundRate >= 0.5) declineScore -= 4;
+
+    declineScore = Math.max(0, Math.min(declineScore, 100));
 
     // ── 早盘整体趋势校验 ──
-    // 如果股票从开盘到当前是上涨的，说明只是上涨途中的回调而非真正的脉冲下跌。
-    // 解决"哈药股份早盘在涨但被误判为脉冲下跌"的问题。
     const lastSessionPrice = session[session.length - 1]?.price || 0;
     const netChangeFromOpen = openPrice > 0
       ? ((lastSessionPrice - openPrice) / openPrice) * 100
@@ -950,28 +978,26 @@ export function detectPulseVolumeMarkers(
       ? ((lastSessionPrice - prevClose) / prevClose) * 100
       : 0;
     if (netChangeFromOpen > 0.5) {
-      // 从开盘到当前上涨超过0.5% → 极不可能是脉冲下跌，重置到极低分
       declineScore = Math.min(declineScore, 3);
     } else if (netChangeFromOpen > 0) {
-      // 从开盘到当前微涨(0~0.5%) → 大幅降分(70%折扣)
       declineScore = Math.round(declineScore * 0.3);
     } else if (netChangeFromPrevClose > 0.3) {
-      // 相对昨收上涨 → 中度降分(50%折扣)
       declineScore = Math.round(declineScore * 0.5);
     }
 
     if (declineScore >= 10) {
-      const negativeScore = -declineScore; // 下跌得分为负
+      const negativeScore = -declineScore;
       const troughTime = session[troughIdx].time;
       const details: string[] = [];
-      if (maxDropRate >= 1) details.push(`${session[dropStartIdx].time}-${session[dropEndIdx].time}急跌${maxDropRate.toFixed(1)}%`);
-      if (openToLowRate >= 1) details.push(`开盘急跌${openToLowRate.toFixed(1)}%`);
+      const speedLabel = isFastPulse ? "极速" : isExtendedPulse ? "延伸" : "";
+      if (bestPulseDrop >= 1) details.push(`${session[bestPulseStartIdx].time}-${session[bestPulseEndIdx].time}${speedLabel}急跌${bestPulseDrop.toFixed(1)}%`);
+      if (openToLowRate >= 1) details.push(`开盘跌${openToLowRate.toFixed(1)}%`);
       if (gapDownRate >= 0.5) details.push(`跳空低开${gapDownRate.toFixed(1)}%`);
       if (reboundRate >= 0.3 && troughIdx < session.length - 2) details.push(`探底回升${reboundRate.toFixed(1)}%`);
-      if (volRatio >= 1.5) details.push(`放量砸盘${volRatio.toFixed(1)}x`);
+      if (declineVolRatio >= 1.5) details.push(`跌时量${declineVolRatio.toFixed(1)}x涨时`);
 
-      // 计算脉冲下跌窗口成交金额 (dropStartIdx ~ dropEndIdx)
-      const pulseDeclineAmount = session.slice(dropStartIdx, dropEndIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
+      // 计算脉冲下跌窗口成交金额
+      const pulseDeclineAmount = session.slice(bestPulseStartIdx, bestPulseEndIdx + 1).reduce((sum, t) => sum + t.price * t.volume * 100, 0);
 
       markers.push({
         time: troughTime,
@@ -1280,7 +1306,7 @@ export function detectPulseVolumeMarkers(
                 score: negativeScore,
                 label: `${periodLabel}${strengthLabel} ${negativeScore}分${warningIcon}`,
                 detail: details.length > 0 ? details.join("，") : "放量下跌",
-                amount: subInc[markIdx] ? subInc[markIdx].price * subInc[markIdx].vol * 100 : 0,
+                amount: subSession.reduce((sum, t) => sum + t.price * t.volume * 100, 0),
               },
             });
           }
@@ -1453,6 +1479,126 @@ export function detectPulseVolumeMarkers(
           amount,
         });
       }
+    }
+  }
+
+  // ── Slow Decline Detection (阴跌) ──
+  // 检测慢速持续下跌模式：价格持续走低但单分钟跌幅不大，量能温和
+  // 与脉冲下跌(急跌)和放量下跌(大成交量)不同，阴跌的特征是：
+  //   1. 下跌分钟占比极高(>70%)但单分钟跌幅小
+  //   2. 反弹微弱，每次反弹高度不超过前一波下跌的30%
+  //   3. 量能不突增但下跌方向一致
+  // 阴跌往往比急跌更危险：不易察觉、持股者不舍得止损、越套越深
+  {
+    // 构建局部increments（不依赖外部变量）
+    const slowInc: { time: string; price: number; vol: number; priceChange: number }[] = [];
+    for (let i = 0; i < session.length; i++) {
+      const prevPrice = i > 0 ? session[i - 1].price : prevClose;
+      const priceChange = prevPrice > 0 ? ((session[i].price - prevPrice) / prevPrice) * 100 : 0;
+      slowInc.push({ time: session[i].time, price: session[i].price, vol: session[i].volume, priceChange });
+    }
+    const slowWindows = [15, 20, 30, 45];
+    let bestSlowScore = 0;
+    let bestSlowMarker: PulseVolumeMarker | null = null;
+
+    for (const winSize of slowWindows) {
+      if (session.length < winSize) continue;
+      for (let start = 0; start <= session.length - winSize; start++) {
+        const subSession = session.slice(start, start + winSize);
+        const subInc = slowInc.slice(start, start + winSize);
+
+        // 总跌幅
+        const startP = subSession[0].price;
+        const endP = subSession[subSession.length - 1].price;
+        const totalDrop = startP > 0 ? ((startP - endP) / startP) * 100 : 0;
+
+        // 下跌分钟占比
+        const downMins = subInc.filter(t => t.priceChange < 0).length;
+        const downRatio = subInc.length > 0 ? downMins / subInc.length : 0;
+
+        // 最大单分钟反弹幅度（阴跌中反弹应很微弱）
+        let maxRebound = 0;
+        for (const t of subInc) {
+          if (t.priceChange > 0 && t.priceChange > maxRebound) maxRebound = t.priceChange;
+        }
+
+        // 最大单分钟跌幅（阴跌中单分钟跌幅不大）
+        let maxSingleDrop = 0;
+        for (const t of subInc) {
+          if (t.priceChange < 0 && Math.abs(t.priceChange) > maxSingleDrop) maxSingleDrop = Math.abs(t.priceChange);
+        }
+
+        // 下跌均量 vs 上涨均量
+        const subDownMins = subInc.filter(t => t.priceChange < 0);
+        const subUpMins = subInc.filter(t => t.priceChange >= 0);
+        const subDownAvgVol = subDownMins.length > 0 ? subDownMins.reduce((s, t) => s + t.vol, 0) / subDownMins.length : 0;
+        const subUpAvgVol = subUpMins.length > 0 ? subUpMins.reduce((s, t) => s + t.vol, 0) / subUpMins.length : 0;
+        const subVolRatio = subUpAvgVol > 0 ? subDownAvgVol / subUpAvgVol : 1;
+
+        // 只有持续下跌、单分钟跌幅不大、反弹微弱才算阴跌
+        if (totalDrop < 0.5 || downRatio < 0.6 || maxSingleDrop > 1.5) continue;
+
+        let slowScore = 0;
+
+        // A. 下跌持续性 (核心)
+        if (downRatio >= 0.85) slowScore += 25;
+        else if (downRatio >= 0.75) slowScore += 20;
+        else if (downRatio >= 0.65) slowScore += 14;
+        else if (downRatio >= 0.55) slowScore += 8;
+
+        // B. 总跌幅
+        if (totalDrop >= 3) slowScore += 20;
+        else if (totalDrop >= 2) slowScore += 15;
+        else if (totalDrop >= 1.5) slowScore += 12;
+        else if (totalDrop >= 1) slowScore += 8;
+        else if (totalDrop >= 0.5) slowScore += 4;
+
+        // C. 反弹微弱度（反弹越小越像阴跌）
+        if (maxRebound < 0.2) slowScore += 15;
+        else if (maxRebound < 0.3) slowScore += 12;
+        else if (maxRebound < 0.5) slowScore += 8;
+        else if (maxRebound < 0.8) slowScore += 4;
+
+        // D. 下跌方向量能优势
+        if (subVolRatio >= 2) slowScore += 15;
+        else if (subVolRatio >= 1.5) slowScore += 10;
+        else if (subVolRatio >= 1.2) slowScore += 6;
+        else if (subVolRatio >= 1) slowScore += 2;
+
+        // E. 窗口越长越有意义的阴跌
+        if (winSize >= 30 && totalDrop >= 1) slowScore += 10;
+        else if (winSize >= 20 && totalDrop >= 0.8) slowScore += 6;
+        else if (winSize >= 15 && totalDrop >= 0.5) slowScore += 3;
+
+        // F. 单分钟跌幅越小越像阴跌（与脉冲下跌区分）
+        if (maxSingleDrop < 0.5 && totalDrop >= 1) slowScore += 10;
+        else if (maxSingleDrop < 0.8 && totalDrop >= 0.8) slowScore += 5;
+
+        slowScore = Math.min(slowScore, 100);
+
+        if (slowScore > bestSlowScore && slowScore >= 10) {
+          bestSlowScore = slowScore;
+          const markTime = subSession[Math.floor(subSession.length / 2)].time;
+          const details: string[] = [];
+          details.push(`${downRatio >= 0.75 ? "持续" : "多数"}分钟下跌${(downRatio * 100).toFixed(0)}%`);
+          if (totalDrop >= 0.5) details.push(`累计跌${totalDrop.toFixed(1)}%`);
+          if (maxRebound < 0.3) details.push(`反弹极弱`);
+          if (subVolRatio >= 1.2) details.push(`跌时量${subVolRatio.toFixed(1)}x`);
+
+          bestSlowMarker = {
+            time: markTime,
+            type: "slow_decline",
+            score: -slowScore,
+            label: slowScore >= 40 ? `阴跌 ${-slowScore}分` : `轻微阴跌 ${-slowScore}分`,
+            detail: details.join("，"),
+            amount: subSession.reduce((sum, t) => sum + t.price * t.volume * 100, 0),
+          };
+        }
+      }
+    }
+
+    if (bestSlowMarker) {
+      markers.push(bestSlowMarker);
     }
   }
 
