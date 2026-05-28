@@ -350,7 +350,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             const yUp = toY(d.totalUp);
             const yDown = toY(d.totalDown);
             const isLast = i === data.length - 1;
-            const linesClose = Math.abs(yUp - yDown) < 20;
+            const linesClose = Math.abs(yUp - yDown) < 30;
 
             return (
               <g key={`pt-${i}`}>
@@ -359,16 +359,16 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
                 <circle cx={x} cy={yDown} r={isLast ? 3 : 1.8} fill={DOWN_COLOR} />
                 {isLast && <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />}
 
-                {/* Up pill */}
-                <rect x={x - 18} y={yUp - (linesClose ? 19 : 15) - 11}
+                {/* Up pill — always above the up line */}
+                <rect x={x - 18} y={yUp - 24}
                   width={36} height={13} rx={3} fill={UP_COLOR} opacity={0.92} />
-                <text x={x} y={yUp - (linesClose ? 19 : 15) - 4.5}
+                <text x={x} y={yUp - 17.5}
                   textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                {/* Down pill */}
-                <rect x={x - 18} y={yDown + (linesClose ? 7 : 7)}
+                {/* Down pill — always below the down line */}
+                <rect x={x - 18} y={yDown + 12}
                   width={36} height={13} rx={3} fill={DOWN_COLOR} opacity={0.92} />
-                <text x={x} y={yDown + (linesClose ? 7 : 7) + 6.5}
+                <text x={x} y={yDown + 18.5}
                   textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
               </g>
