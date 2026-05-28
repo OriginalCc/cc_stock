@@ -350,25 +350,50 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             const yUp = toY(d.totalUp);
             const yDown = toY(d.totalDown);
             const isLast = i === data.length - 1;
-
-            // Dynamic label offsets to ensure minimum gap between pills
-            // Up pill bottom = yUp - upOff + 13 (pill height)
-            // Down pill top = yDown + downOff
-            // Required: (yDown + downOff) - (yUp - upOff + 13) >= minGap
-            const minGap = 6; // minimum px between pills
-            const baseUpOff = 22; // base offset above up-line
-            const baseDownOff = 10; // base offset below down-line
             const pillH = 13;
 
-            // Current gap without adjustment
-            const currentGap = (yDown + baseDownOff) - (yUp - baseUpOff + pillH);
-            let upOff = baseUpOff;
-            let downOff = baseDownOff;
+            // Determine which line is visually on top (lower y = higher on screen)
+            const upIsOnTop = yUp <= yDown;
+            const yTop = upIsOnTop ? yUp : yDown;   // visually upper line
+            const yBot = upIsOnTop ? yDown : yUp;    // visually lower line
+
+            // Strategy: top line's label goes UP, bottom line's label goes DOWN
+            // This ensures labels always spread outward, never toward each other
+            const baseUpOff = 22; // top label offset above top-line
+            const baseDownOff = 10; // bottom label offset below bottom-line
+            const minGap = 6;
+
+            // Check gap: bottom of top pill vs top of bottom pill
+            const topPillBottom = yTop - baseUpOff + pillH;
+            const botPillTop = yBot + baseDownOff;
+            const currentGap = botPillTop - topPillBottom;
+
+            let topOff = baseUpOff;
+            let botOff = baseDownOff;
             if (currentGap < minGap) {
-              // Need to push apart: distribute extra space to both sides
               const extra = (minGap - currentGap) / 2 + 1;
-              upOff += extra;
-              downOff += extra;
+              topOff += extra;
+              botOff += extra;
+            }
+
+            // Compute actual pill positions based on which line is on top
+            // upPill = pill for up-count, downPill = pill for down-count
+            let upPillY: number, downPillY: number;
+            let upDashY1: number, upDashY2: number;
+            let downDashY1: number, downDashY2: number;
+
+            if (upIsOnTop) {
+              // Normal: up-line on top → up pill above, down pill below
+              upPillY = yUp - topOff;
+              downPillY = yDown + botOff;
+              upDashY1 = yUp; upDashY2 = upPillY + pillH;
+              downDashY1 = yDown; downDashY2 = downPillY;
+            } else {
+              // Inverted: down-line on top → down pill above, up pill below
+              downPillY = yDown - topOff;
+              upPillY = yUp + botOff;
+              downDashY1 = yDown; downDashY2 = downPillY + pillH;
+              upDashY1 = yUp; upDashY2 = upPillY;
             }
 
             return (
@@ -378,23 +403,22 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
                 <circle cx={x} cy={yDown} r={isLast ? 3 : 1.8} fill={DOWN_COLOR} />
                 {isLast && <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />}
 
-                {/* Dashed connector: up-line → up pill */}
-                <line x1={x} y1={yUp} x2={x} y2={yUp - upOff + pillH}
+                {/* Dashed connectors */}
+                <line x1={x} y1={upDashY1} x2={x} y2={upDashY2}
                   stroke={UP_COLOR} strokeWidth={0.6} strokeDasharray="2,2" opacity={0.5} />
-                {/* Dashed connector: down-line → down pill */}
-                <line x1={x} y1={yDown} x2={x} y2={yDown + downOff}
+                <line x1={x} y1={downDashY1} x2={x} y2={downDashY2}
                   stroke={DOWN_COLOR} strokeWidth={0.6} strokeDasharray="2,2" opacity={0.5} />
 
-                {/* Up pill — above the up line */}
-                <rect x={x - 18} y={yUp - upOff}
+                {/* Up pill */}
+                <rect x={x - 18} y={upPillY}
                   width={36} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
-                <text x={x} y={yUp - upOff + pillH / 2}
+                <text x={x} y={upPillY + pillH / 2}
                   textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                {/* Down pill — below the down line */}
-                <rect x={x - 18} y={yDown + downOff}
+                {/* Down pill */}
+                <rect x={x - 18} y={downPillY}
                   width={36} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
-                <text x={x} y={yDown + downOff + pillH / 2}
+                <text x={x} y={downPillY + pillH / 2}
                   textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
               </g>
