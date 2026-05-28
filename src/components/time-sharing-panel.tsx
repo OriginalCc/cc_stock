@@ -2622,13 +2622,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         // 三涨：大盘↑+板块↑+个股↑
         if (isTripleUp) {
           return (
-            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">✅</span>
-              <span className="text-xs font-bold text-green-600 dark:text-green-400">
+            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
+              <span className="text-red-500 text-xs">✅</span>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
                 三涨！深证↑+板块↑+个股↑ 90-100%仓
               </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T/反T(先卖再买)均可</span>
-              <span className="text-[10px] text-green-500/70">最安全，积极做T</span>
+              <span className="text-[10px] text-red-400 font-bold">| 正T/反T(先卖再买)均可</span>
+              <span className="text-[10px] text-red-500/70">最安全，积极做T</span>
             </div>
           );
         }
@@ -2636,13 +2636,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         const isDualDown = (hasMktInfo ? mktDown : true) && hasSectorInfo && sectorDown && stockDown;
         if (isDualDown && !isTripleDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">⛔</span>
-              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">⛔</span>
+              <span className="text-xs font-bold text-green-600 dark:text-green-400">
                 {hasMktInfo ? '深证↓+' : ''}板块↓+个股↓ = 双跌！≤ 1/3仓
               </span>
               <span className="text-[10px] text-orange-400 font-bold">| 反T(先卖再买)冲高卖</span>
-              <span className="text-[10px] text-red-500/70">保留2/3后备资金</span>
+              <span className="text-[10px] text-green-500/70">保留2/3后备资金</span>
             </div>
           );
         }
@@ -2714,13 +2714,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         // No sector info - show simpler banner based on stock direction + market
         if (!hasSectorInfo && hasMktInfo && mktDown && stockDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/5 border-b border-red-500/10 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">🔻</span>
-              <span className="text-xs font-medium text-red-600/80 dark:text-red-400/80">
+            <div className="px-3 py-1.5 bg-green-500/5 border-b border-green-500/10 flex items-center justify-center gap-2">
+              <span className="text-green-500 text-xs">🔻</span>
+              <span className="text-xs font-medium text-green-600/80 dark:text-green-400/80">
                 深证↓+个股↓，大盘弱势注意控仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)</span>
-              {onRetrySector && <button onClick={onRetrySector} disabled={sectorLoading} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20 transition-colors disabled:opacity-50" title="板块数据未加载，点击重新请求">{sectorLoading ? <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}<span>加载板块</span></button>}
+              <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)</span>
+              {onRetrySector && <button onClick={onRetrySector} disabled={sectorLoading} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-green-500/10 border-green-500/20 text-green-500 hover:bg-green-500/20 transition-colors disabled:opacity-50" title="板块数据未加载，点击重新请求">{sectorLoading ? <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}<span>加载板块</span></button>}
             </div>
           );
         }

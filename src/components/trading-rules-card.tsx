@@ -143,13 +143,13 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1.5">
             <p className="text-foreground font-medium mb-1.5">以深证成指为大盘方向，按三维度共振数定仓位等级：</p>
             <div className="space-y-1">
-              <div className="flex items-center gap-2 p-2 rounded-md border border-red-500/30 bg-red-500/10">
-                <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-red-500/20 text-red-600 border border-red-500/30 shrink-0">≤1/4</span>
+              <div className="flex items-center gap-2 p-2 rounded-md border border-green-500/30 bg-green-500/10">
+                <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-green-500/20 text-green-600 border border-green-500/30 shrink-0">≤1/4</span>
                 <div className="flex-1">
-                  <span className="text-red-600 dark:text-red-400 font-bold text-xs">🚫 一级·极度危险</span>
-                  <span className="text-red-500/70 text-[10px] ml-1">深证↓+板块↓+个股↓（三跌）</span>
+                  <span className="text-green-600 dark:text-green-400 font-bold text-xs">🚫 一级·极度危险</span>
+                  <span className="text-green-500/70 text-[10px] ml-1">深证↓+板块↓+个股↓（三跌）</span>
                 </div>
-                <span className="text-[10px] text-red-500/60 shrink-0">25%</span>
+                <span className="text-[10px] text-green-500/60 shrink-0">25%</span>
               </div>
               <div className="flex items-center gap-2 p-2 rounded-md border border-orange-500/25 bg-orange-500/8">
                 <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/25 shrink-0">≤1/3</span>
@@ -175,13 +175,13 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                 </div>
                 <span className="text-[10px] text-blue-500/60 shrink-0">70-80%</span>
               </div>
-              <div className="flex items-center gap-2 p-2 rounded-md border border-green-500/25 bg-green-500/8">
-                <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-green-500/15 text-green-600 border border-green-500/25 shrink-0">95%</span>
+              <div className="flex items-center gap-2 p-2 rounded-md border border-red-500/25 bg-red-500/8">
+                <span className="inline-flex items-center justify-center w-8 h-7 rounded text-[10px] font-bold bg-red-500/15 text-red-600 border border-red-500/25 shrink-0">95%</span>
                 <div className="flex-1">
-                  <span className="text-green-600 dark:text-green-400 font-bold text-xs">✅ 五级·最安全</span>
-                  <span className="text-green-500/70 text-[10px] ml-1">深证↑+板块↑+个股↑（三涨）</span>
+                  <span className="text-red-600 dark:text-red-400 font-bold text-xs">✅ 五级·最安全</span>
+                  <span className="text-red-500/70 text-[10px] ml-1">深证↑+板块↑+个股↑（三涨）</span>
                 </div>
-                <span className="text-[10px] text-green-500/60 shrink-0">90-100%</span>
+                <span className="text-[10px] text-red-500/60 shrink-0">90-100%</span>
               </div>
             </div>
             <div className="mt-1.5 p-1.5 rounded border border-orange-500/10 bg-orange-500/5">
@@ -797,8 +797,8 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
             <p className="text-foreground font-medium">大盘方向是仓位"调节器"，在阶梯基础上微调：</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div className="p-2 rounded border border-red-500/15 bg-red-500/5">
-                <p className="text-red-600 dark:text-red-400 font-medium text-[11px] mb-1">🔻 深证下跌：全面收紧</p>
+              <div className="p-2 rounded border border-green-500/15 bg-green-500/5">
+                <p className="text-green-600 dark:text-green-400 font-medium text-[11px] mb-1">🔻 深证下跌：全面收紧</p>
                 <div className="space-y-0.5 text-[11px]">
                   <p>• 三跌场景 → 降至1/4（最低级）</p>
                   <p>• 双跌场景 → 不超1/3</p>
@@ -806,8 +806,8 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                   <p>• 暴跌(&gt;2%) → 空仓，不参与</p>
                 </div>
               </div>
-              <div className="p-2 rounded border border-green-500/15 bg-green-500/5">
-                <p className="text-green-600 dark:text-green-400 font-medium text-[11px] mb-1">🔺 深证上涨：适度放宽</p>
+              <div className="p-2 rounded border border-red-500/15 bg-red-500/5">
+                <p className="text-red-600 dark:text-red-400 font-medium text-[11px] mb-1">🔺 深证上涨：适度放宽</p>
                 <div className="space-y-0.5 text-[11px]">
                   <p>• 三涨场景 → 可达90-100%</p>
                   <p>• 双涨场景 → 上限提升至70-80%</p>
@@ -841,13 +841,13 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-border/30 bg-red-500/10">
+                <tr className="border-b border-border/30 bg-green-500/10">
                   <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 跌</span></td>
                   <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 跌</span></td>
                   <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 跌</span></td>
-                  <td className="py-1.5 px-2"><span className="text-red-500 font-bold">≤1/4</span></td>
-                  <td className="py-1.5 px-2"><span className="text-red-500 font-medium">反T(先卖再买)/空仓</span></td>
-                  <td className="py-1.5 px-2"><span className="text-red-600 dark:text-red-400 font-medium">三跌！最危险</span></td>
+                  <td className="py-1.5 px-2"><span className="text-green-500 font-bold">≤1/4</span></td>
+                  <td className="py-1.5 px-2"><span className="text-green-500 font-medium">反T(先卖再买)/空仓</span></td>
+                  <td className="py-1.5 px-2"><span className="text-green-600 dark:text-green-400 font-medium">三跌！最危险</span></td>
                 </tr>
                 <tr className="border-b border-border/30 bg-red-500/5">
                   <td className="py-1.5 px-2"><span className="text-green-500 font-medium">↓ 跌</span></td>
@@ -897,13 +897,13 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
                   <td className="py-1.5 px-2"><span className="text-green-600 font-medium">正T低吸</span></td>
                   <td className="py-1.5 px-2">大盘+板块支撑</td>
                 </tr>
-                <tr className="border-b border-border/30 bg-green-500/8">
+                <tr className="border-b border-border/30 bg-red-500/8">
                   <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                   <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
                   <td className="py-1.5 px-2"><span className="text-red-500 font-medium">↑ 涨</span></td>
-                  <td className="py-1.5 px-2 font-bold text-green-600">90-100%</td>
-                  <td className="py-1.5 px-2"><span className="text-green-600 font-medium">正T/反T(先卖再买)均可</span></td>
-                  <td className="py-1.5 px-2"><span className="text-green-600 dark:text-green-400 font-medium">三涨！最安全</span></td>
+                  <td className="py-1.5 px-2 font-bold text-red-600">90-100%</td>
+                  <td className="py-1.5 px-2"><span className="text-red-600 font-medium">正T/反T(先卖再买)均可</span></td>
+                  <td className="py-1.5 px-2"><span className="text-red-600 dark:text-red-400 font-medium">三涨！最安全</span></td>
                 </tr>
                 <tr>
                   <td className="py-1.5 px-2"><span className="text-gray-400">— 盘</span></td>
@@ -1033,19 +1033,19 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
             <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十一、实战案例</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
-            <div className="p-2 rounded-md border border-red-500/10 bg-red-500/5">
-              <p className="text-red-600 dark:text-red-400 font-medium mb-1">场景1（三跌）：深证跌1.8% + 半导体跌1.5% + 个股跌2.3%</p>
+            <div className="p-2 rounded-md border border-green-500/10 bg-green-500/5">
+              <p className="text-green-600 dark:text-green-400 font-medium mb-1">场景1（三跌）：深证跌1.8% + 半导体跌1.5% + 个股跌2.3%</p>
               <div className="space-y-0.5">
-                <p>→ <span className="text-red-500 font-bold">一级·≤1/4仓</span>，策略：<span className="text-red-500 font-medium">反T(先卖再买)冲高卖</span>，1万资金最多用2500</p>
+                <p>→ <span className="text-green-500 font-bold">一级·≤1/4仓</span>，策略：<span className="text-green-500 font-medium">反T(先卖再买)冲高卖</span>，1万资金最多用2500</p>
                 <p>• 买入2.5万，跌3%亏750元（总0.75%）→ 可控</p>
                 <p>• 满仓1万，跌3%亏300元（总3%）→ 不可接受</p>
                 <p>• 若个股冲高翻红，反T(先卖再买)卖出后不买回</p>
               </div>
             </div>
-            <div className="p-2 rounded-md border border-green-500/10 bg-green-500/5">
-              <p className="text-green-600 dark:text-green-400 font-medium mb-1">场景2（三涨）：深证涨1.2% + 半导体涨0.8% + 个股涨1.5%</p>
+            <div className="p-2 rounded-md border border-red-500/10 bg-red-500/5">
+              <p className="text-red-600 dark:text-red-400 font-medium mb-1">场景2（三涨）：深证涨1.2% + 半导体涨0.8% + 个股涨1.5%</p>
               <div className="space-y-0.5">
-                <p>→ <span className="text-green-500 font-bold">五级·90-100%仓</span>，策略：<span className="text-green-500 font-medium">正T/反T(先卖再买)均可</span>，1万资金可用9000-10000</p>
+                <p>→ <span className="text-red-500 font-bold">五级·90-100%仓</span>，策略：<span className="text-red-500 font-medium">正T/反T(先卖再买)均可</span>，1万资金可用9000-10000</p>
                 <p>• 正T：回调时买入8万，反弹1.5%赚1200元</p>
                 <p>• 反T(先卖再买)：冲高卖出8万，回落买回赚差价</p>
                 <p>• 但大盘突然翻绿 → 立即降仓至1/3以下</p>
