@@ -2,6 +2,7 @@
 
 import React, { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { ALL_TRADE_TIMES } from "@/lib/trading-times";
 
 interface BreadthHistoryPoint {
   time: string;
@@ -29,6 +30,14 @@ interface MarketBreadthChartProps {
 const UP_COLOR = "#dc2626";
 const DOWN_COLOR = "#059669";
 
+// ── Key time labels (same as TimeSharingPanel) ──
+const KEY_TIMES = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
+
+// ── Pre-compute ALL_TRADE_TIMES index lookup ──
+const TIME_INDEX_MAP = new Map<string, number>();
+ALL_TRADE_TIMES.forEach((t, i) => TIME_INDEX_MAP.set(t, i));
+const TOTAL_SLOTS = ALL_TRADE_TIMES.length; // 242
+
 function formatNowTime(): string {
   const now = new Date();
   const h = (now.getUTCHours() + 8) % 24;
@@ -36,17 +45,39 @@ function formatNowTime(): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** Catmull-Rom smooth curve through points */
-function smoothCurvePath(values: number[], toX: (i: number) => number, toY: (v: number) => number): string {
-  if (values.length < 2) return "";
-  const points = values.map((v, i) => ({ x: toX(i), y: toY(v) }));
-  if (points.length === 2) return `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)} L${points[1].x.toFixed(1)},${points[1].y.toFixed(1)}`;
+/** Find the nearest ALL_TRADE_TIMES index for a given "HH:MM" time string */
+function timeToSlotIdx(time: string): number {
+  // Direct lookup first (fast path)
+  const direct = TIME_INDEX_MAP.get(time);
+  if (direct !== undefined) return direct;
+  // Fallback: find nearest by parsing minutes
+  const [hh, mm] = time.split(":").map(Number);
+  const totalMin = hh * 60 + mm;
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < ALL_TRADE_TIMES.length; i++) {
+    const [th, tm] = ALL_TRADE_TIMES[i].split(":").map(Number);
+    const dist = Math.abs(th * 60 + tm - totalMin);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+/** Catmull-Rom smooth curve through points, using absolute X positions */
+function smoothCurvePath(xs: number[], values: number[], toY: (v: number) => number): string {
+  const n = xs.length;
+  if (n < 2) return "";
+  const points = xs.map((x, i) => ({ x, y: toY(values[i]) }));
+  if (n === 2) return `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)} L${points[1].x.toFixed(1)},${points[1].y.toFixed(1)}`;
   let path = `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
-  for (let i = 0; i < points.length - 1; i++) {
+  for (let i = 0; i < n - 1; i++) {
     const p0 = points[Math.max(0, i - 1)];
     const p1 = points[i];
     const p2 = points[i + 1];
-    const p3 = points[Math.min(points.length - 1, i + 2)];
+    const p3 = points[Math.min(n - 1, i + 2)];
     const cp1x = p1.x + (p2.x - p0.x) / 6;
     const cp1y = p1.y + (p2.y - p0.y) / 6;
     const cp2x = p2.x - (p3.x - p1.x) / 6;
@@ -58,8 +89,8 @@ function smoothCurvePath(values: number[], toX: (i: number) => number, toY: (v: 
 
 /** Build between-lines area fill for one side (up>down or down>up) */
 function buildBetweenArea(
-  data: BreadthHistoryPoint[],
-  toX: (i: number) => number,
+  data: { totalUp: number; totalDown: number }[],
+  xs: number[],
   toY: (v: number) => number,
   mode: "upDominant" | "downDominant",
 ): string {
@@ -78,31 +109,28 @@ function buildBetweenArea(
     const target = isTarget(i);
     if (target) {
       if (!inRegion && i > 0) {
-        // Crossing in: interpolate
         const t = Math.abs(getTopVal(i - 1) - getBotVal(i - 1)) /
           (Math.abs(getTopVal(i) - getBotVal(i)) + Math.abs(getTopVal(i - 1) - getBotVal(i - 1))) || 0.5;
-        const cx = toX(i - 1) + t * (toX(i) - toX(i - 1));
+        const cx = xs[i - 1] + t * (xs[i] - xs[i - 1]);
         const cy = toY(getTopVal(i - 1)) + t * (toY(getTopVal(i)) - toY(getTopVal(i - 1)));
         pathPts.push(`L${cx.toFixed(1)},${cy.toFixed(1)}`);
         inRegion = true;
       }
       if (!inRegion) { inRegion = true; }
-      pathPts.push(`${pathPts.length === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(getTopVal(i)).toFixed(1)}`);
+      pathPts.push(`${pathPts.length === 0 ? "M" : "L"}${xs[i].toFixed(1)},${toY(getTopVal(i)).toFixed(1)}`);
     } else {
       if (inRegion) {
-        // Crossing out: interpolate on top line
         if (i > 0) {
           const t = Math.abs(getTopVal(i - 1) - getBotVal(i - 1)) /
             (Math.abs(getTopVal(i) - getBotVal(i)) + Math.abs(getTopVal(i - 1) - getBotVal(i - 1))) || 0.5;
-          const cx = toX(i - 1) + t * (toX(i) - toX(i - 1));
+          const cx = xs[i - 1] + t * (xs[i] - xs[i - 1]);
           const cy = toY(getTopVal(i - 1)) + t * (toY(getTopVal(i)) - toY(getTopVal(i - 1)));
           pathPts.push(`L${cx.toFixed(1)},${cy.toFixed(1)}`);
         }
-        // Close: go backward along bottom line
         const closePts: string[] = [];
         for (let j = i - 1; j >= 0; j--) {
           if (j < i - 1 && !isTarget(j)) break;
-          closePts.push(`L${toX(j).toFixed(1)},${toY(getBotVal(j)).toFixed(1)}`);
+          closePts.push(`L${xs[j].toFixed(1)},${toY(getBotVal(j)).toFixed(1)}`);
         }
         if (closePts.length > 0) segments.push(pathPts.join(" ") + " " + closePts.join(" ") + " Z");
         pathPts = [];
@@ -114,7 +142,7 @@ function buildBetweenArea(
     const closePts: string[] = [];
     for (let j = n - 1; j >= 0; j--) {
       if (!isTarget(j)) break;
-      closePts.push(`L${toX(j).toFixed(1)},${toY(getBotVal(j)).toFixed(1)}`);
+      closePts.push(`L${xs[j].toFixed(1)},${toY(getBotVal(j)).toFixed(1)}`);
     }
     if (closePts.length > 0) segments.push(pathPts.join(" ") + " " + closePts.join(" ") + " Z");
   }
@@ -135,14 +163,36 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     return history;
   }, [history, currentUp, currentDown, currentFlat]);
 
-  // ── All chart computations in a single useMemo (before early returns) ──
+  // ── All chart computations in a single useMemo ──
   const chart = useMemo(() => {
     if (data.length < 2) return null;
 
-    const w = 640, h = 280;
-    const px = 46, pr = 0, pt = 20, pb = 34;
+    // ── Align with TimeSharingPanel's coordinate system ──
+    // TimeSharingPanel uses:
+    //   margin: { left: 2, right: 82 }
+    //   YAxis width: 55 (left), 1 (right)
+    //   Effective left offset: 2 + 55 = 57px
+    //   Effective right offset: 82 + 1 = 83px
+    //   XAxis domain: [0, 241] mapped to ALL_TRADE_TIMES
+    //
+    // We use the same left/right offsets so the chart areas align perfectly.
+    const w = 640, h = 220;
+    const px = 57, pr = 83, pt = 20, pb = 28;
     const chartW = w - px - pr;
     const chartH = h - pt - pb;
+
+    // ── Map each data point to its ALL_TRADE_TIMES slot index ──
+    // This ensures the X position matches the TimeSharingPanel's time axis
+    const slotIndices = data.map(d => timeToSlotIdx(d.time));
+    const idxMin = 0;
+    const idxMax = TOTAL_SLOTS - 1; // 241
+
+    // X mapping: slot index → pixel position (same proportional space as TimeSharingPanel)
+    const slotToX = (slotIdx: number) => px + ((slotIdx - idxMin) / (idxMax - idxMin)) * chartW;
+    const toX = (i: number) => slotToX(slotIndices[i]);
+
+    // Pre-compute absolute X positions for all data points
+    const xs = data.map((_, i) => toX(i));
 
     const allValues = data.flatMap(d => [d.totalUp, d.totalDown]);
     const yMax = Math.max(...allValues, 100);
@@ -152,33 +202,37 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     const yBottom = -yPad;
     const yRange = yTop - yBottom;
 
-    const toX = (i: number) => px + (i / (data.length - 1)) * chartW;
     const toY = (v: number) => pt + (1 - (v - yBottom) / yRange) * chartH;
 
-    const upSmooth = smoothCurvePath(data.map(d => d.totalUp), toX, toY);
-    const downSmooth = smoothCurvePath(data.map(d => d.totalDown), toX, toY);
-    const betweenRed = buildBetweenArea(data, toX, toY, "upDominant");
-    const betweenGreen = buildBetweenArea(data, toX, toY, "downDominant");
+    const upSmooth = smoothCurvePath(xs, data.map(d => d.totalUp), toY);
+    const downSmooth = smoothCurvePath(xs, data.map(d => d.totalDown), toY);
+    const betweenRed = buildBetweenArea(data, xs, toY, "upDominant");
+    const betweenGreen = buildBetweenArea(data, xs, toY, "downDominant");
 
-    // X ticks
-    const tickInterval = Math.max(1, Math.floor(data.length / 6));
-    const xTicks: { x: number; label: string }[] = [];
-    for (let i = 0; i < data.length; i++) {
-      if (i % tickInterval === 0 || i === data.length - 1) xTicks.push({ x: toX(i), label: data[i].time });
-    }
+    // X ticks: use KEY_TIMES aligned with TimeSharingPanel
+    const xTicks = KEY_TIMES
+      .map(t => {
+        const slotIdx = TIME_INDEX_MAP.get(t);
+        if (slotIdx === undefined) return null;
+        return { x: slotToX(slotIdx), label: t };
+      })
+      .filter(Boolean) as { x: number; label: string }[];
 
     // Y ticks
     const yStep = Math.ceil(yNiceMax / 4 / 500) * 500 || 500;
     const yTicks: { y: number; label: string }[] = [];
     for (let v = 0; v <= yNiceMax; v += yStep) yTicks.push({ y: toY(v), label: v === 0 ? "0" : `${v}` });
 
+    // Label interval for data point labels (show fewer labels to avoid clutter)
     const labelInterval = data.length <= 6 ? 1 : Math.max(1, Math.floor(data.length / 6));
 
     return {
       w, h, px, pr, pt, pb, chartW, chartH,
-      toX, toY, upSmooth, downSmooth,
+      toX, toY, xs, slotToX,
+      upSmooth, downSmooth,
       betweenRed, betweenGreen,
       xTicks, yTicks, labelInterval,
+      lastX: xs[xs.length - 1],
     };
   }, [data]);
 
@@ -270,10 +324,10 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
   // ── Multi-point chart ──
   const { w, h, px: cPx, pt: cPt, pb: cPb, chartW: cW,
-    toX, toY, upSmooth, downSmooth,
+    toX, toY, xs, slotToX,
+    upSmooth, downSmooth,
     betweenRed, betweenGreen,
-    xTicks, yTicks, labelInterval } = chart;
-  const lastX = toX(data.length - 1);
+    xTicks, yTicks, labelInterval, lastX } = chart;
 
   return (
     <Card className={`border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
@@ -285,9 +339,9 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         {/* Sub info row (沪深差) */}
         {subInfoRow}
 
-        {/* SVG Chart */}
+        {/* SVG Chart — aligned with TimeSharingPanel's coordinate system */}
         <div className="mt-2">
-        <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 280 }}>
+        <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" preserveAspectRatio="xMinYMid meet">
           <defs>
             <linearGradient id="betweenRed" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={UP_COLOR} stopOpacity="0.28" />
@@ -311,11 +365,17 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             </filter>
           </defs>
 
-          {/* Background grid */}
+          {/* Background grid — horizontal lines at Y tick positions */}
           {yTicks.map((t, i) => (
             <line key={`yg-${i}`} x1={cPx} y1={t.y} x2={cPx + cW} y2={t.y}
               stroke="currentColor" className="text-border" strokeWidth={0.3}
               strokeDasharray={t.label === "0" ? "none" : "3,4"} />
+          ))}
+
+          {/* Vertical grid at key times (same as TimeSharingPanel) */}
+          {xTicks.map((t, i) => (
+            <line key={`xg-${i}`} x1={t.x} y1={cPt} x2={t.x} y2={h - cPb}
+              stroke="currentColor" className="text-border" strokeWidth={0.3} strokeDasharray="3,4" />
           ))}
 
           {/* Between-lines area fills */}
@@ -346,7 +406,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             return labeledIndices;
           })().map((i) => {
             const d = data[i];
-            const x = toX(i);
+            const x = xs[i];
             const yUp = toY(d.totalUp);
             const yDown = toY(d.totalDown);
             const isLast = i === data.length - 1;
@@ -354,16 +414,13 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
             // Determine which line is visually on top (lower y = higher on screen)
             const upIsOnTop = yUp <= yDown;
-            const yTop = upIsOnTop ? yUp : yDown;   // visually upper line
-            const yBot = upIsOnTop ? yDown : yUp;    // visually lower line
+            const yTop = upIsOnTop ? yUp : yDown;
+            const yBot = upIsOnTop ? yDown : yUp;
 
-            // Strategy: top line's label goes UP, bottom line's label goes DOWN
-            // This ensures labels always spread outward, never toward each other
-            const baseUpOff = 22; // top label offset above top-line
-            const baseDownOff = 10; // bottom label offset below bottom-line
+            const baseUpOff = 22;
+            const baseDownOff = 10;
             const minGap = 6;
 
-            // Check gap: bottom of top pill vs top of bottom pill
             const topPillBottom = yTop - baseUpOff + pillH;
             const botPillTop = yBot + baseDownOff;
             const currentGap = botPillTop - topPillBottom;
@@ -376,20 +433,16 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
               botOff += extra;
             }
 
-            // Compute actual pill positions based on which line is on top
-            // upPill = pill for up-count, downPill = pill for down-count
             let upPillY: number, downPillY: number;
             let upDashY1: number, upDashY2: number;
             let downDashY1: number, downDashY2: number;
 
             if (upIsOnTop) {
-              // Normal: up-line on top → up pill above, down pill below
               upPillY = yUp - topOff;
               downPillY = yDown + botOff;
               upDashY1 = yUp; upDashY2 = upPillY + pillH;
               downDashY1 = yDown; downDashY2 = downPillY;
             } else {
-              // Inverted: down-line on top → down pill above, up pill below
               downPillY = yDown - topOff;
               upPillY = yUp + botOff;
               downDashY1 = yDown; downDashY2 = downPillY + pillH;
@@ -403,19 +456,16 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
                 <circle cx={x} cy={yDown} r={isLast ? 3 : 1.8} fill={DOWN_COLOR} />
                 {isLast && <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />}
 
-                {/* Dashed connectors */}
                 <line x1={x} y1={upDashY1} x2={x} y2={upDashY2}
                   stroke={UP_COLOR} strokeWidth={0.6} strokeDasharray="2,2" opacity={0.5} />
                 <line x1={x} y1={downDashY1} x2={x} y2={downDashY2}
                   stroke={DOWN_COLOR} strokeWidth={0.6} strokeDasharray="2,2" opacity={0.5} />
 
-                {/* Up pill */}
                 <rect x={x - 18} y={upPillY}
                   width={36} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
                 <text x={x} y={upPillY + pillH / 2}
                   textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                {/* Down pill */}
                 <rect x={x - 18} y={downPillY}
                   width={36} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
                 <text x={x} y={downPillY + pillH / 2}
@@ -444,13 +494,13 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             </text>
           ))}
 
-          {/* X-axis with tick marks */}
+          {/* X-axis with tick marks (same key times as TimeSharingPanel) */}
           {xTicks.map((t, i) => (
             <g key={`xl-${i}`}>
               <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 4}
                 stroke="currentColor" className="text-foreground/30" strokeWidth={0.6} />
               <text x={t.x} y={h - 7} textAnchor="middle"
-                fontSize={10} fontFamily="monospace" fontWeight={700} fill="currentColor" className="text-foreground/80">
+                fontSize={9} fontFamily="monospace" fontWeight={700} fill="currentColor" className="text-foreground/80">
                 {t.label}
               </text>
             </g>
