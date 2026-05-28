@@ -335,7 +335,7 @@ export function MarketSentiment({
         <div className="flex items-center gap-3">
           {/* Gauge — larger & more dramatic */}
           <div className="shrink-0">
-            <svg width="180" height="100" viewBox="0 0 180 100" className="w-[160px]">
+            <svg width="180" height="120" viewBox="0 0 180 120" className="w-[160px]">
               <defs>
                 {/* Outer glow for the active arc */}
                 <filter id="gaugeGlow" x="-30%" y="-30%" width="160%" height="160%">
@@ -411,13 +411,13 @@ export function MarketSentiment({
               <circle cx={gaugeCx} cy={gaugeCy} r={3} fill={color} style={{ animation: "sentimentPulse 2s ease-in-out infinite" }} />
 
               {/* Score text — big, bold & glowing */}
-              <text x={gaugeCx} y={gaugeCy + 24} textAnchor="middle" fontSize={30} fontWeight={900} fontFamily="monospace" fill={color} filter="url(#scoreGlow)">
+              <text x={gaugeCx} y={gaugeCy + 22} textAnchor="middle" fontSize={28} fontWeight={900} fontFamily="monospace" fill={color} filter="url(#scoreGlow)">
                 {score}
               </text>
               {/* Level label — pill background */}
-              <rect x={gaugeCx - 34} y={gaugeCy + 30} width={68} height={20} rx={6} fill={color} opacity={0.22} />
-              <rect x={gaugeCx - 34} y={gaugeCy + 30} width={68} height={20} rx={6} fill="none" stroke={color} strokeWidth={1} opacity={0.3} />
-              <text x={gaugeCx} y={gaugeCy + 44} textAnchor="middle" fontSize={13} fontWeight={800} fill={color}>
+              <rect x={gaugeCx - 32} y={gaugeCy + 28} width={64} height={18} rx={5} fill={color} opacity={0.22} />
+              <rect x={gaugeCx - 32} y={gaugeCy + 28} width={64} height={18} rx={5} fill="none" stroke={color} strokeWidth={1} opacity={0.3} />
+              <text x={gaugeCx} y={gaugeCy + 41} textAnchor="middle" fontSize={12} fontWeight={800} fill={color}>
                 {level}
               </text>
 
