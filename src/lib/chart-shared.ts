@@ -1179,6 +1179,30 @@ export function detectPulseVolumeMarkers(
           }
           // If both conditions pass, no penalty applied
 
+          // ── 早盘整体趋势校验 ──
+          // 如果窗口在早盘(9:30~10:00)，但该时段整体价格是上涨的，
+          // 说明只是上涨途中的回调而非真正的放量下跌，大幅降分。
+          // 解决"哈药股份早盘在涨但被误判为放量下跌"的问题。
+          const period = getTimePeriod(start);
+          if (period === "early") {
+            const earlySessionStart = session[0]?.price || 0;
+            const earlySessionEnd = session[Math.min(29, session.length - 1)]?.price || 0;
+            const earlyNetChange = earlySessionStart > 0
+              ? ((earlySessionEnd - earlySessionStart) / earlySessionStart) * 100
+              : 0;
+            if (earlyNetChange > 0.5) {
+              // 早盘整体上涨超过0.5% → 几乎不可能是放量下跌，重置到极低分
+              score = Math.min(score, 3);
+            } else if (earlyNetChange > 0) {
+              // 早盘整体微涨(0~0.5%) → 大幅降分(70%折扣)
+              score = Math.round(score * 0.3);
+            } else if (earlyNetChange > -0.3) {
+              // 早盘几乎平盘(-0.3%~0%) → 适度降分(50%折扣)
+              score = Math.round(score * 0.5);
+            }
+            // 早盘下跌超过0.3% → 不降分，保留原始分数
+          }
+
           score = Math.min(score, 100);
 
           // [FIX] Lowered threshold from 10 to 8 to catch more borderline cases
@@ -1200,7 +1224,6 @@ export function detectPulseVolumeMarkers(
             if (dropRate >= 1) details.push(`砸盘${dropRate.toFixed(1)}%`);
 
             // 时段标注
-            const period = getTimePeriod(start);
             const periodLabel = period === "early" ? "早盘" : period === "late" ? "尾盘" : "";
             const strengthLabel = score >= 50 ? "强放量下跌" : score >= 30 ? "放量下跌" : "放量下跌";
             const warningIcon = score >= 50 ? "⚠" : score >= 30 ? "⚠" : "";

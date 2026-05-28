@@ -1755,6 +1755,35 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     return intradayIntentCache.compute(fp, () => analyzeIntradayIntent(data, prevClose));
   }, [data, prevClose]);
 
+  // ── 早盘放量下跌禁买检测 ──
+  // 算法层已对早盘上涨的窗口大幅降分，这里做二次校验确保不会误判
+  const earlyVolDeclineBan = useMemo(() => {
+    if (!pvMarkers || pvMarkers.length === 0) return false;
+    // 检测10点前(9:30-10:00)是否存在放量下跌标记
+    const earlyVolDecline = pvMarkers.find(m => {
+      if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
+      const mins = pvParseTime(m.time);
+      return mins >= 570 && mins < 600;
+    });
+    if (!earlyVolDecline) return false;
+    // 二次校验：早盘整体趋势必须是下跌的
+    // 如果早盘(9:30~10:00)期间股票是上涨的，说明只是上涨中的回调，不应触发禁买
+    const earlyData = data.filter(d => {
+      const mins = pvParseTime(d.time);
+      return mins >= 570 && mins < 600;
+    });
+    if (earlyData.length >= 2) {
+      const earlyStartPrice = earlyData[0].price;
+      const earlyEndPrice = earlyData[earlyData.length - 1].price;
+      const earlyNetChange = earlyStartPrice > 0
+        ? ((earlyEndPrice - earlyStartPrice) / earlyStartPrice) * 100
+        : 0;
+      // 早盘整体上涨超过0.3% → 不是真正的放量下跌，不触发禁买
+      if (earlyNetChange > 0.3) return false;
+    }
+    return true;
+  }, [pvMarkers, data]);
+
   // ── Memoize tooltip components (stable references to avoid re-renders) ──
   const timelineTooltipEl = useMemo(() => <TimelineTooltip />, []);
   const volumeTooltipEl = useMemo(() => <TimelineVolumeTooltip />, []);
@@ -1969,14 +1998,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           </span>
         )}
         {/* 早盘放量下跌禁买警告 */}
-        {(() => {
-          if (!pvMarkers || pvMarkers.length === 0) return null;
-          const earlyVolDecline = pvMarkers.find(m => {
-            if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
-            const mins = pvParseTime(m.time);
-            return mins >= 570 && mins < 600;
-          });
-          if (!earlyVolDecline) return null;
+        {earlyVolDeclineBan && (() => {
           const now = new Date();
           const curMins = now.getHours() * 60 + now.getMinutes();
           if (curMins >= 600) return null; // 已过10点不再显示
@@ -2211,15 +2233,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       </div>
 
       {/* ─── Early Volume Decline Ban Banner ─── */}
-      {(() => {
-        if (!pvMarkers || pvMarkers.length === 0) return null;
-        // 检测10点前(9:30-10:00)是否存在放量下跌标记
-        const earlyVolDecline = pvMarkers.find(m => {
-          if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
-          const mins = pvParseTime(m.time);
-          return mins >= 570 && mins < 600; // 9:30 ~ 10:00
-        });
-        if (!earlyVolDecline) return null;
+      {earlyVolDeclineBan && (() => {
         // 当前时间是否还在10点前
         const now = new Date();
         const curMins = now.getHours() * 60 + now.getMinutes();
@@ -2564,14 +2578,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               return null;
             })()}
             {/* ── 早盘放量下跌禁买区 (9:30~10:00) ── */}
-            {(() => {
-              if (!pvMarkers || pvMarkers.length === 0) return null;
-              const earlyVolDecline = pvMarkers.find(m => {
-                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
-                const mins = pvParseTime(m.time);
-                return mins >= 570 && mins < 600;
-              });
-              if (!earlyVolDecline) return null;
+            {earlyVolDeclineBan && (() => {
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
               return (<>
@@ -2580,13 +2587,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             })()}
             {/* ── 早盘放量下跌禁买蒙版 ── */}
             <Customized component={(props: any) => {
-              if (!pvMarkers || pvMarkers.length === 0) return null;
-              const earlyVolDecline = pvMarkers.find((m: PulseVolumeMarker) => {
-                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
-                const mins = pvParseTime(m.time);
-                return mins >= 570 && mins < 600;
-              });
-              if (!earlyVolDecline) return null;
+              if (!earlyVolDeclineBan) return null;
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
               const { xAxisMap, offset } = props;
@@ -2874,14 +2875,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="vol-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
             {/* ── 早盘放量下跌禁买蒙版 (成交量图) ── */}
-            {(() => {
-              if (!pvMarkers || pvMarkers.length === 0) return null;
-              const earlyVolDecline = pvMarkers.find(m => {
-                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
-                const mins = pvParseTime(m.time);
-                return mins >= 570 && mins < 600;
-              });
-              if (!earlyVolDecline) return null;
+            {earlyVolDeclineBan && (() => {
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
               return (<>
@@ -2889,13 +2883,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               </>);
             })()}
             <Customized component={(props: any) => {
-              if (!pvMarkers || pvMarkers.length === 0) return null;
-              const earlyVolDecline = pvMarkers.find((m: PulseVolumeMarker) => {
-                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
-                const mins = pvParseTime(m.time);
-                return mins >= 570 && mins < 600;
-              });
-              if (!earlyVolDecline) return null;
+              if (!earlyVolDeclineBan) return null;
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
               const { xAxisMap, offset } = props;
@@ -3004,14 +2992,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {/* Lunch break vertical divider */}
             {!isZoomed && <ReferenceLine yAxisId="macd-right" x={Math.floor(zoomData.length / 2)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />}
             {/* ── 早盘放量下跌禁买蒙版 (MACD图) ── */}
-            {(() => {
-              if (!pvMarkers || pvMarkers.length === 0) return null;
-              const earlyVolDecline = pvMarkers.find(m => {
-                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
-                const mins = pvParseTime(m.time);
-                return mins >= 570 && mins < 600;
-              });
-              if (!earlyVolDecline) return null;
+            {earlyVolDeclineBan && (() => {
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
               return (<>
@@ -3019,13 +3000,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               </>);
             })()}
             <Customized component={(props: any) => {
-              if (!pvMarkers || pvMarkers.length === 0) return null;
-              const earlyVolDecline = pvMarkers.find((m: PulseVolumeMarker) => {
-                if (m.type !== "volume_decline" && m.type !== "pulse_decline") return false;
-                const mins = pvParseTime(m.time);
-                return mins >= 570 && mins < 600;
-              });
-              if (!earlyVolDecline) return null;
+              if (!earlyVolDeclineBan) return null;
               const tenIdx = zoomData.findIndex(d => d.time === "10:00");
               if (tenIdx < 0) return null;
               const { xAxisMap, offset } = props;
