@@ -832,16 +832,6 @@ export default function StockTAssistant() {
                 szUp={szUp}
                 szDown={szDown}
               />
-              {/* 市场情绪指数 */}
-              <MarketSentiment
-                totalUp={totalUp}
-                totalDown={totalDown}
-                totalFlat={totalFlat}
-                limitUp={limitUp}
-                limitDown={limitDown}
-                breadthHistory={history || []}
-                indexRegimes={indexRegimes}
-              />
             </div>
           );
         })()}
@@ -880,6 +870,21 @@ export default function StockTAssistant() {
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
             <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />
+            {/* 市场情绪指数 — 放在深证成指分时图后面 */}
+            {marketBreadth && (() => {
+              const { totalUp, totalDown, totalFlat, limitUp, limitDown, history } = marketBreadth;
+              return (
+                <MarketSentiment
+                  totalUp={totalUp}
+                  totalDown={totalDown}
+                  totalFlat={totalFlat}
+                  limitUp={limitUp}
+                  limitDown={limitDown}
+                  breadthHistory={history || []}
+                  indexRegimes={indexRegimes}
+                />
+              );
+            })()}
           </div>
         ) : chartMode === "kline" && chartData.length > 0 ? (
           <KLineChartPanel allChartData={allChartData} klineVisibleBars={klineVisibleBars} setKlineVisibleBars={setKlineVisibleBars} klinePanOffset={klinePanOffset} setKlinePanOffset={setKlinePanOffset} interval={interval} />
