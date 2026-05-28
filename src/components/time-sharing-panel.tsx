@@ -1800,8 +1800,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             // 一级：三跌 → ≤1/4仓，反T(先卖再买)/空仓
             posLabel = '1/4仓';
             tDir = '反T';
-            posColor = 'text-red-700 dark:text-red-300';
-            posBg = 'bg-red-500/20 border-red-500/40';
+            posColor = 'text-green-600 dark:text-green-400';
+            posBg = 'bg-green-500/15 border-green-500/35';
           } else if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockUp) {
             // 二级：大盘↓+板块↓+个股↑ → ≤1/3仓，反T(先卖再买)冲高卖
             posLabel = '1/3仓';
@@ -2212,13 +2212,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
 
         if (isTripleDown) {
           return (
-            <div className="px-3 py-1.5 bg-red-500/15 border-b border-red-500/25 flex items-center justify-center gap-2">
+            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
               <span className="text-red-500 text-xs">🚫</span>
-              <span className="text-xs font-bold text-red-700 dark:text-red-300">
+              <span className="text-xs font-bold text-green-600 dark:text-green-400">
                 三跌！深证↓+板块↓+个股↓ ≤ 1/4仓
               </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)/空仓</span>
-              <span className="text-[10px] text-red-500/70">极度危险，保留3/4后备</span>
+              <span className="text-[10px] text-green-500 font-bold">| 反T(先卖再买)/空仓</span>
+              <span className="text-[10px] text-green-500/70">极度危险，保留3/4后备</span>
             </div>
           );
         }
