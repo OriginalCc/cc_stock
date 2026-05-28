@@ -2006,25 +2006,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             </>
           );
         })()}
-        {/* Market Index Regime Badge - click to cycle 深/沪/创 */}
-        {szIndexRegime && (() => {
-          const cfg = REGIME_CONFIG[szIndexRegime.regime] || REGIME_CONFIG["震荡市"];
-          const idxInfo = indexConfig?.[activeIndexKey || "sz"];
-          const shortLabel = idxInfo?.shortLabel || "深";
-          const fullLabel = idxInfo?.label || "深证成指";
-          return (
-            <span
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold cursor-pointer select-none hover:opacity-80 active:scale-95 transition-all ${cfg.bg} ${cfg.text}`}
-              title={`${fullLabel}: ${szIndexRegime.description}\n点击切换指数`}
-              onClick={onCycleIndex}
-            >
-              <span className="opacity-80">{shortLabel}</span>
-              <span>{cfg.icon}</span>
-              <span>{szIndexRegime.regime}</span>
-              <span className="opacity-60">{szIndexRegime.confidence}%</span>
-            </span>
-          );
-        })()}
         {/* Sector Regime Badge - shows industry sector trend */}
         {sectorInfo && (() => {
           const shortName = sectorInfo.name.length > 4 ? sectorInfo.name.slice(0, 4) : sectorInfo.name;
@@ -2074,6 +2055,25 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             )}
           </button>
         )}
+        {/* Market Index Regime Badge - click to cycle 深/沪/创 */}
+        {szIndexRegime && (() => {
+          const cfg = REGIME_CONFIG[szIndexRegime.regime] || REGIME_CONFIG["震荡市"];
+          const idxInfo = indexConfig?.[activeIndexKey || "sz"];
+          const shortLabel = idxInfo?.shortLabel || "深";
+          const fullLabel = idxInfo?.label || "深证成指";
+          return (
+            <span
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold cursor-pointer select-none hover:opacity-80 active:scale-95 transition-all ${cfg.bg} ${cfg.text}`}
+              title={`${fullLabel}: ${szIndexRegime.description}\n点击切换指数`}
+              onClick={onCycleIndex}
+            >
+              <span className="opacity-80">{shortLabel}</span>
+              <span>{cfg.icon}</span>
+              <span>{szIndexRegime.regime}</span>
+              <span className="opacity-60">{szIndexRegime.confidence}%</span>
+            </span>
+          );
+        })()}
         {lastSignal && (
           <Badge variant={lastSignal.type === "buy" ? "default" : lastSignal.type === "stoploss" ? "outline" : "destructive"} className="text-[10px] h-5">
             {lastSignal.type === "buy" ? "买入" : lastSignal.type === "stoploss" ? "止损" : "卖出"} · {lastSignal.reason}
@@ -2887,8 +2887,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         return (
           <div className="mt-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime)}{onCycleIndex && <span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={onCycleIndex} title="点击切换指数">切换</span>}</div>} />}
               {hasSectorData && <MiniTimelinePanel title={`${sectorInfo.name}板块`} data={sectorTimelineData.items} prevClose={sectorTimelineData.prevClose} badge={<div className="ml-auto">{regimeBadge(sectorRegime)}</div>} />}
+              {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime)}{onCycleIndex && <span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={onCycleIndex} title="点击切换指数">切换</span>}</div>} />}
             </div>
           </div>
         );
