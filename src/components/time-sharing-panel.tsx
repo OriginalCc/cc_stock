@@ -2945,13 +2945,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               if (w <= 0 || h <= 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               const tierLabel = { mild: "轻微", medium: "中等", strong: "强烈", extreme: "极端" }[ban.tier];
-              // 根据危险指数动态调整蒙版透明度
-              const bgOpacity = 0.02 + (ban.dangerIndex / 100) * 0.12;
+              // 根据危险指数动态调整蒙版透明度（加深版）
+              const bgOpacity = 0.06 + (ban.dangerIndex / 100) * 0.20;
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {
                 diagLines.push(
-                  <line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.18} />
+                  <line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.30} />
                 );
               }
               const extraInfo = ban.earlyLifted ? `${tierLabel}·提前解禁` : `${tierLabel}·危险${ban.dangerIndex}`;
@@ -2971,10 +2971,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                     </g>
                   </g>
                   {/* 边框 */}
-                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={0.8} strokeOpacity={0.25} />
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={1.0} strokeOpacity={0.45} />
                   {/* 禁买文字 */}
-                  <text x={x1 + w / 2} y={y1 + h / 2 - 8} textAnchor="middle" fontSize={13} fontWeight={800} fill={tierColor} fillOpacity={0.35} fontFamily="sans-serif">禁买区</text>
-                  <text x={x1 + w / 2} y={y1 + h / 2 + 10} textAnchor="middle" fontSize={10} fontWeight={600} fill={tierColor} fillOpacity={0.28} fontFamily="sans-serif">{ban.banEndTimeStr}前禁止买入 · {extraInfo}</text>
+                  <text x={x1 + w / 2} y={y1 + h / 2 - 8} textAnchor="middle" fontSize={13} fontWeight={800} fill={tierColor} fillOpacity={0.60} fontFamily="sans-serif">禁买区</text>
+                  <text x={x1 + w / 2} y={y1 + h / 2 + 10} textAnchor="middle" fontSize={10} fontWeight={600} fill={tierColor} fillOpacity={0.50} fontFamily="sans-serif">{ban.banEndTimeStr}前禁止买入 · {extraInfo}</text>
                 </g>
               );
             }} />
@@ -3246,18 +3246,18 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
-              const bgOpacity = 0.02 + (ban.dangerIndex / 100) * 0.12;
+              const bgOpacity = 0.06 + (ban.dangerIndex / 100) * 0.20;
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {
-                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.18} />);
+                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.30} />);
               }
               return (
                 <g>
                   <defs><clipPath id="ban-clip-vol"><rect x={x1} y={y1} width={w} height={h} /></clipPath></defs>
                   <rect x={x1} y={y1} width={w} height={h} fill={tierColor} fillOpacity={bgOpacity} />
                   <g clipPath="url(#ban-clip-vol)"><g transform={`translate(${x1},${y1})`}>{diagLines}</g></g>
-                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={0.8} strokeOpacity={0.25} />
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={1.0} strokeOpacity={0.45} />
                 </g>
               );
             }} />
@@ -3368,18 +3368,18 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               const h = y2 - y1;
               if (w <= 0 || h <= 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
-              const bgOpacity = 0.02 + (ban.dangerIndex / 100) * 0.12;
+              const bgOpacity = 0.06 + (ban.dangerIndex / 100) * 0.20;
               const diagLines: React.ReactNode[] = [];
               const gap = 14;
               for (let i = -h; i < w + h; i += gap) {
-                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.18} />);
+                diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.30} />);
               }
               return (
                 <g>
                   <defs><clipPath id="ban-clip-macd"><rect x={x1} y={y1} width={w} height={h} /></clipPath></defs>
                   <rect x={x1} y={y1} width={w} height={h} fill={tierColor} fillOpacity={bgOpacity} />
                   <g clipPath="url(#ban-clip-macd)"><g transform={`translate(${x1},${y1})`}>{diagLines}</g></g>
-                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={0.8} strokeOpacity={0.25} />
+                  <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={1.0} strokeOpacity={0.45} />
                 </g>
               );
             }} />
