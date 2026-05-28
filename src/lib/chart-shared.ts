@@ -939,6 +939,27 @@ export function detectPulseVolumeMarkers(
 
     declineScore = Math.min(declineScore, 100);
 
+    // ── 早盘整体趋势校验 ──
+    // 如果股票从开盘到当前是上涨的，说明只是上涨途中的回调而非真正的脉冲下跌。
+    // 解决"哈药股份早盘在涨但被误判为脉冲下跌"的问题。
+    const lastSessionPrice = session[session.length - 1]?.price || 0;
+    const netChangeFromOpen = openPrice > 0
+      ? ((lastSessionPrice - openPrice) / openPrice) * 100
+      : 0;
+    const netChangeFromPrevClose = prevClose > 0
+      ? ((lastSessionPrice - prevClose) / prevClose) * 100
+      : 0;
+    if (netChangeFromOpen > 0.5) {
+      // 从开盘到当前上涨超过0.5% → 极不可能是脉冲下跌，重置到极低分
+      declineScore = Math.min(declineScore, 3);
+    } else if (netChangeFromOpen > 0) {
+      // 从开盘到当前微涨(0~0.5%) → 大幅降分(70%折扣)
+      declineScore = Math.round(declineScore * 0.3);
+    } else if (netChangeFromPrevClose > 0.3) {
+      // 相对昨收上涨 → 中度降分(50%折扣)
+      declineScore = Math.round(declineScore * 0.5);
+    }
+
     if (declineScore >= 10) {
       const negativeScore = -declineScore; // 下跌得分为负
       const troughTime = session[troughIdx].time;
@@ -1190,17 +1211,37 @@ export function detectPulseVolumeMarkers(
             const earlyNetChange = earlySessionStart > 0
               ? ((earlySessionEnd - earlySessionStart) / earlySessionStart) * 100
               : 0;
-            if (earlyNetChange > 0.5) {
-              // 早盘整体上涨超过0.5% → 几乎不可能是放量下跌，重置到极低分
+            // 同时检查相对昨收的涨跌
+            const changeFromPrevClose = prevClose > 0 && earlySessionEnd > 0
+              ? ((earlySessionEnd - prevClose) / prevClose) * 100
+              : 0;
+            if (earlyNetChange > 0.5 || changeFromPrevClose > 0.5) {
+              // 早盘整体上涨超过0.5% 或 相对昨收上涨超过0.5% → 重置到极低分
               score = Math.min(score, 3);
-            } else if (earlyNetChange > 0) {
-              // 早盘整体微涨(0~0.5%) → 大幅降分(70%折扣)
+            } else if (earlyNetChange > 0 || changeFromPrevClose > 0) {
+              // 早盘整体微涨 或 相对昨收微涨 → 大幅降分(70%折扣)
               score = Math.round(score * 0.3);
             } else if (earlyNetChange > -0.3) {
               // 早盘几乎平盘(-0.3%~0%) → 适度降分(50%折扣)
               score = Math.round(score * 0.5);
             }
             // 早盘下跌超过0.3% → 不降分，保留原始分数
+          }
+          // ── 盘中/尾盘趋势校验 ──
+          // 即使不在早盘，如果当前价格相对昨收是上涨的，
+          // 也不太可能是真正的放量下跌，适度降分。
+          else {
+            const currentPrice = session[session.length - 1]?.price || 0;
+            const changeFromPrevCloseNow = prevClose > 0 && currentPrice > 0
+              ? ((currentPrice - prevClose) / prevClose) * 100
+              : 0;
+            if (changeFromPrevCloseNow > 1) {
+              // 当前相对昨收上涨超过1% → 适度降分(40%折扣)
+              score = Math.round(score * 0.6);
+            } else if (changeFromPrevCloseNow > 0.5) {
+              // 当前相对昨收上涨0.5~1% → 轻度降分(70%折扣)
+              score = Math.round(score * 0.8);
+            }
           }
 
           score = Math.min(score, 100);
@@ -1266,7 +1307,9 @@ export function detectPulseVolumeMarkers(
         const decliningVolRatio = avgRisingVol > 0 ? avgDecliningVol / avgRisingVol : 0;
 
         // Only trigger if all three conditions are met
-        if (overallPriceDrop > 0.5 && downMinRatio >= 0.6 && decliningVolRatio > 1.0) {
+        // AND stock is actually below prevClose (not just below open)
+        const belowPrevClose = prevClose > 0 && lastPrice < prevClose;
+        if (overallPriceDrop > 0.5 && downMinRatio >= 0.6 && decliningVolRatio > 1.0 && belowPrevClose) {
           // Check if there's already a volume_decline marker overlapping with this
           const existingVDMarkers = candidateMarkers.filter(c => c.period === "mid" || c.period === "early");
           const alreadyHasVD = existingVDMarkers.length > 0;

@@ -53,6 +53,7 @@ import {
   type WatchlistItem,
   isTradingHours,
   useAutoSaveScreener,
+  useWatchlistInit,
 } from "@/lib/screener-shared";
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
@@ -884,7 +885,8 @@ export const LimitUpAnalysis = React.memo(function LimitUpAnalysis({ onSelectSto
   // ── Auto-refresh state ───────────────────────────────
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
-  // Load watchlist on mount
+  // Load watchlist on mount (init from DB first)
+  useWatchlistInit();
   useEffect(() => {
     setWatchlist(loadWatchlist());
   }, []);

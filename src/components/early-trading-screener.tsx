@@ -53,6 +53,7 @@ import {
   fetchMiniTimeline,
   type MiniTimelineResult,
   WATCHLIST_CHANGED_EVENT,
+  useWatchlistInit,
 } from "@/lib/screener-shared";
 import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
@@ -302,6 +303,9 @@ export const EarlyTradingScreener = React.memo(function EarlyTradingScreener({ o
     const timer = setInterval(() => setCurrentTime(new Date()), 5000);
     return () => clearInterval(timer);
   }, []);
+
+  // ── Init watchlist from DB on mount ──
+  useWatchlistInit();
 
   // ── Load watchlist on mount ──
   useEffect(() => {

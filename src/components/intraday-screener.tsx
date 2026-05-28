@@ -75,6 +75,7 @@ import {
   fetchMiniTimeline,
   type MiniTimelineResult,
   isTradingHours,
+  useWatchlistInit,
 } from "@/lib/screener-shared";
 import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
@@ -322,7 +323,8 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
     }
   }, [filters]);
 
-  // Watchlist: load on mount + listen for changes
+  // Watchlist: init from DB on mount + listen for changes
+  useWatchlistInit();
   useEffect(() => {
     setWatchlist(loadWatchlist());
     const handler = () => setWatchlist(loadWatchlist());

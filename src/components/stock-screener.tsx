@@ -61,7 +61,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoSaveScreener, computeScreenerStats, isTradingHours } from "@/lib/screener-shared";
+import { formatMarketCap, formatAmount, loadWatchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, type WatchlistItem, useAutoSaveScreener, computeScreenerStats, isTradingHours, useWatchlistInit } from "@/lib/screener-shared";
 import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
 // ── Types ──────────────────────────────────────────────
@@ -586,7 +586,8 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
     setCustomPresets(loadCustomPresets());
   }, []);
 
-  // Load watchlist on mount
+  // Load watchlist on mount (init from DB first)
+  useWatchlistInit();
   useEffect(() => {
     setWatchlist(loadWatchlist());
   }, []);

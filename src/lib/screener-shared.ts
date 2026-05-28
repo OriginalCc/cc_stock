@@ -2,7 +2,7 @@
  * Shared utilities for all screener components (4 screeners)
  *
  * Contains:
- * 1. Watchlist/Favorites System (localStorage-based)
+ * 1. Watchlist/Favorites System (localStorage + Database dual persistence)
  * 2. Auto-Refresh System (trading hours detection + React hook)
  * 3. Screener Stats Utility (score distribution, formatMarketCap, formatAmount)
  * 4. Mini Timeline Fetcher (for preview charts)
@@ -12,7 +12,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { cachedFetch } from "@/lib/client-cache";
 
 // ═══════════════════════════════════════════════════════════
-// 1. Watchlist / Favorites System
+// 1. Watchlist / Favorites System (localStorage + Database dual persistence)
 // ═══════════════════════════════════════════════════════════
 
 export const SCREENER_WATCHLIST_KEY = "screener-watchlist";
@@ -29,11 +29,37 @@ export interface WatchlistItem {
   changePercent?: number;
 }
 
+// ── In-memory cache for fast sync access ──
+let _watchlistCache: WatchlistItem[] | null = null;
+
 /**
- * Load watchlist from localStorage.
+ * Load watchlist from database (primary) with localStorage fallback.
  * Returns empty array on SSR or if storage is unavailable.
  */
-export function loadWatchlist(): WatchlistItem[] {
+export async function loadWatchlistFromDB(): Promise<WatchlistItem[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/stock/watchlist");
+    if (res.ok) {
+      const data = await res.json();
+      const items: WatchlistItem[] = data.items ?? [];
+      _watchlistCache = items;
+      // Also sync to localStorage as backup
+      try {
+        localStorage.setItem(SCREENER_WATCHLIST_KEY, JSON.stringify(items));
+      } catch {}
+      return items;
+    }
+  } catch {
+    // Fallback to localStorage
+  }
+  return loadWatchlistFromLS();
+}
+
+/**
+ * Load watchlist from localStorage only (synchronous, internal).
+ */
+function loadWatchlistFromLS(): WatchlistItem[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(SCREENER_WATCHLIST_KEY);
@@ -47,10 +73,21 @@ export function loadWatchlist(): WatchlistItem[] {
 }
 
 /**
- * Save watchlist to localStorage and dispatch a custom event.
+ * Load watchlist from cache/localStorage (synchronous).
+ * Use loadWatchlistFromDB() for accurate data from server.
+ */
+export function loadWatchlist(): WatchlistItem[] {
+  if (_watchlistCache) return _watchlistCache;
+  return loadWatchlistFromLS();
+}
+
+/**
+ * Save watchlist to localStorage + dispatch event (immediate),
+ * and async sync to database.
  */
 export function saveWatchlist(items: WatchlistItem[]): void {
   if (typeof window === "undefined") return;
+  _watchlistCache = items;
   try {
     localStorage.setItem(SCREENER_WATCHLIST_KEY, JSON.stringify(items));
     // Dispatch custom event so other components/tabs can react
@@ -64,6 +101,7 @@ export function saveWatchlist(items: WatchlistItem[]): void {
 
 /**
  * Add a stock to the watchlist. If it already exists, update its price/changePercent.
+ * Syncs to both localStorage and database.
  * Returns the updated list.
  */
 export function addToWatchlist(
@@ -97,16 +135,25 @@ export function addToWatchlist(
   }
 
   saveWatchlist(items);
+
+  // Async sync to database (non-blocking)
+  syncAddToDB(symbol, name, source, price, changePercent);
+
   return items;
 }
 
 /**
  * Remove a stock from the watchlist by symbol.
+ * Syncs to both localStorage and database.
  * Returns the updated list.
  */
 export function removeFromWatchlist(symbol: string): WatchlistItem[] {
   const items = loadWatchlist().filter((i) => i.symbol !== symbol);
   saveWatchlist(items);
+
+  // Async sync to database (non-blocking)
+  syncRemoveFromDB(symbol);
+
   return items;
 }
 
@@ -115,6 +162,54 @@ export function removeFromWatchlist(symbol: string): WatchlistItem[] {
  */
 export function isInWatchlist(symbol: string): boolean {
   return loadWatchlist().some((i) => i.symbol === symbol);
+}
+
+// ── Database sync helpers (non-blocking) ──
+
+async function syncAddToDB(
+  symbol: string,
+  name: string,
+  source: string,
+  price?: number,
+  changePercent?: number,
+): Promise<void> {
+  try {
+    await fetch("/api/stock/watchlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol, name, source, price, changePercent }),
+    });
+  } catch {
+    // Silently fail - localStorage is the fallback
+  }
+}
+
+async function syncRemoveFromDB(symbol: string): Promise<void> {
+  try {
+    await fetch("/api/stock/watchlist", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol }),
+    });
+  } catch {
+    // Silently fail - localStorage is the fallback
+  }
+}
+
+/**
+ * React hook: Initialize watchlist from database on mount.
+ * Should be called once in each screener component to ensure
+ * favorites persist across page reloads.
+ */
+export function useWatchlistInit(): void {
+  useEffect(() => {
+    loadWatchlistFromDB().then((items) => {
+      _watchlistCache = items;
+      window.dispatchEvent(
+        new CustomEvent(WATCHLIST_CHANGED_EVENT, { detail: { items } })
+      );
+    });
+  }, []);
 }
 
 // ═══════════════════════════════════════════════════════════

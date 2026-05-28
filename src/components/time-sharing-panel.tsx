@@ -1766,8 +1766,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       return mins >= 570 && mins < 600;
     });
     if (!earlyVolDecline) return false;
-    // 二次校验：早盘整体趋势必须是下跌的
-    // 如果早盘(9:30~10:00)期间股票是上涨的，说明只是上涨中的回调，不应触发禁买
+    // 二次校验：如果早盘整体趋势是上涨的，不应触发禁买
     const earlyData = data.filter(d => {
       const mins = pvParseTime(d.time);
       return mins >= 570 && mins < 600;
@@ -1778,11 +1777,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       const earlyNetChange = earlyStartPrice > 0
         ? ((earlyEndPrice - earlyStartPrice) / earlyStartPrice) * 100
         : 0;
-      // 早盘整体上涨超过0.3% → 不是真正的放量下跌，不触发禁买
-      if (earlyNetChange > 0.3) return false;
+      // 早盘整体上涨 → 不是真正的放量下跌，不触发禁买
+      if (earlyNetChange > 0) return false;
+      // 相对昨收上涨 → 也不是真正的放量下跌
+      if (prevClose > 0 && earlyEndPrice > prevClose) return false;
     }
     return true;
-  }, [pvMarkers, data]);
+  }, [pvMarkers, data, prevClose]);
 
   // ── Memoize tooltip components (stable references to avoid re-renders) ──
   const timelineTooltipEl = useMemo(() => <TimelineTooltip />, []);

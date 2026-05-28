@@ -1052,3 +1052,44 @@ Stage Summary:
 - 关键bug修复：slotVal计算格式错误（分钟 vs HHMM），导致交易时段内永远不记录
 - 同槽位数据现在每次请求都会更新，确保历史数据始终是最新的
 - 已有3个数据点正常记录，图表应该能正常显示曲线
+
+---
+Task ID: 10
+Agent: main
+Task: 修复收藏功能丢失 + 优化放量下跌检测算法
+
+Work Log:
+- 发现收藏只存储在 localStorage，没有任何数据库持久化，导致刷新/重新进入后丢失
+- 在 Prisma schema 中新增 WatchlistItem 模型（symbol, name, source, price, changePercent, addedAt）
+- 运行 db:push 同步数据库
+- 创建 API 路由 /api/stock/watchlist（GET/POST/DELETE）
+  - GET: 获取所有收藏（按 addedAt 降序）
+  - POST: upsert 收藏项（如果已存在则更新）
+  - DELETE: 删除收藏项（by symbol）
+- 修改 screener-shared.ts 收藏系统：
+  - 新增 _watchlistCache 内存缓存，加速同步读取
+  - 新增 loadWatchlistFromDB() 异步函数，从数据库加载收藏列表
+  - addToWatchlist/removeFromWatchlist 同时写入 localStorage + 异步同步到数据库
+  - 新增 useWatchlistInit() hook，组件 mount 时从数据库初始化收藏
+- 更新5个 screener 组件导入并使用 useWatchlistInit：
+  - intraday-screener.tsx
+  - early-trading-screener.tsx
+  - low-open-screener.tsx
+  - stock-screener.tsx
+  - limit-up-analysis.tsx
+- 优化 volume_decline 检测算法：
+  - 加强早盘趋势校验：同时检查相对开盘价和相对昨收价的涨跌
+  - 新增盘中/尾盘趋势校验：如果当前价格相对昨收上涨，适度降分
+- 优化 pulse_decline 检测算法：
+  - 新增整体趋势校验：如果股票从开盘到当前是上涨的，大幅降分
+  - 三级降分：上涨>0.5%→极低分(≤3)，微涨(0~0.5%)→70%折扣，相对昨收上涨>0.3%→50%折扣
+- 优化 earlyVolDeclineBan 二次校验：
+  - 阈值从0.3%降为0%（任何早盘上涨都不触发禁买）
+  - 新增相对昨收价校验（早于10点价格>昨收→不触发禁买）
+- Lint通过，API测试通过
+
+Stage Summary:
+- 收藏功能从纯 localStorage 升级为 localStorage + 数据库双持久化
+- 收藏状态在页面刷新/重新进入后不会丢失
+- 放量下跌检测算法三重防误判：算法层（chart-shared.ts）+ UI层（earlyVolDeclineBan）+ 新增prevClose校验
+- pulse_decline 新增整体趋势校验，上涨股票不再被误判为脉冲下跌

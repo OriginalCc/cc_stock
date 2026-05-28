@@ -29,7 +29,7 @@ import {
 import {
   formatMarketCap, formatAmount, loadWatchlist, addToWatchlist,
   removeFromWatchlist, isInWatchlist, isTradingHours,
-  useAutoSaveScreener,
+  useAutoSaveScreener, useWatchlistInit,
 } from "@/lib/screener-shared";
 import { fetchWithSWR, getCachedData, isCacheFresh } from "@/lib/client-cache";
 
@@ -313,7 +313,8 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
 
   // Auto-refresh state (disabled – 1 hour cache, manual refresh only)
 
-  // Load watchlist on mount
+  // Load watchlist on mount (init from DB first)
+  useWatchlistInit();
   useEffect(() => { setWatchlist(loadWatchlist()); }, []);
   useEffect(() => {
     const handler = () => setWatchlist(loadWatchlist());
