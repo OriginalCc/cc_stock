@@ -488,12 +488,12 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
                 <rect x={x - 16} y={upPillY}
                   width={32} height={pillH} rx={2.5} fill={UP_COLOR} opacity={0.88} />
                 <text x={x} y={upPillY + pillH / 2}
-                  textAnchor="middle" fontSize={8} fontFamily="monospace" fontWeight={700}
+                  textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={700}
                   fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
                 <rect x={x - 16} y={downPillY}
                   width={32} height={pillH} rx={2.5} fill={DOWN_COLOR} opacity={0.88} />
                 <text x={x} y={downPillY + pillH / 2}
-                  textAnchor="middle" fontSize={8} fontFamily="monospace" fontWeight={700}
+                  textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={700}
                   fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
               </g>
             );
@@ -513,7 +513,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {/* Y-axis labels */}
           {yTicks.map((t, i) => (
             <text key={`yl-${i}`} x={cPx - 5} y={t.y} textAnchor="end" dominantBaseline="middle"
-              fontSize={6.5} fontFamily="monospace" fill="currentColor" className="text-muted-foreground/70">
+              fontSize={7.5} fontFamily="monospace" fill="currentColor" className="text-muted-foreground/70">
               {t.label}
             </text>
           ))}
@@ -524,7 +524,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
               <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 3}
                 stroke="currentColor" className="text-foreground/30" strokeWidth={0.4} />
               <text x={t.x} y={h - 7} textAnchor="middle"
-                fontSize={7.5} fontFamily="monospace" fontWeight={600} fill="currentColor" className="text-foreground/80">
+                fontSize={8.5} fontFamily="monospace" fontWeight={600} fill="currentColor" className="text-foreground/80">
                 {t.label}
               </text>
             </g>
