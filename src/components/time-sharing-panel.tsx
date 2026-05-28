@@ -2035,7 +2035,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     banEndTime = Math.min(630, Math.max(580, banEndTime));
     const banH = Math.floor(banEndTime / 60);
     const banM = banEndTime % 60;
-    banEndTimeStr = `${banH}:${banM.toString().padStart(2, '0')}`;
+    banEndTimeStr = `${banH.toString().padStart(2, '0')}:${banM.toString().padStart(2, '0')}`;
 
     return {
       tier, banEndTime, banEndTimeStr, declineScore: absScore, dropRate,
