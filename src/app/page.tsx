@@ -36,6 +36,8 @@ const PositionSignalCard = dynamic(() => import("@/components/position-signal-ca
 const PasswordManageDialog = dynamic(() => import("@/components/password-manage-dialog").then(m => ({ default: m.PasswordManageDialog })), { ssr: false });
 const MarketBreadthChart = dynamic(() => import("@/components/market-breadth-chart").then(m => ({ default: m.MarketBreadthChart })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨跌家数图...</span></div> });
 const MarketSentiment = dynamic(() => import("@/components/market-sentiment").then(m => ({ default: m.MarketSentiment })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载市场情绪...</span></div> });
+const MarketChangeDistribution = dynamic(() => import("@/components/market-change-distribution").then(m => ({ default: m.MarketChangeDistribution })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨跌幅分布...</span></div> });
+const MarketLimitStats = dynamic(() => import("@/components/market-limit-stats").then(m => ({ default: m.MarketLimitStats })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨跌停详情...</span></div> });
 import { PasswordGate } from "@/components/password-gate";
 import { LazyMount } from "@/components/lazy-mount";
 import { calculateMACD } from "@/lib/indicators";
@@ -71,6 +73,8 @@ export default function StockTAssistant() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [autoExpanded, setAutoExpanded] = useState<boolean>(false);
   const [marketBreadth, setMarketBreadth] = useState<{ totalUp: number; totalDown: number; totalFlat: number; shUp: number; shDown: number; szUp: number; szDown: number; limitUp: number; limitDown: number; history: { time: string; totalUp: number; totalDown: number; totalFlat: number; limitUp: number; limitDown: number }[] } | null>(null);
+  const [marketDistribution, setMarketDistribution] = useState<{ buckets: { label: string; count: number; color: string; min?: number; max?: number }[]; total: number; median: number; avgChange: number; limitUpSealed: number; limitUpBroken: number; limitDownSealed: number; limitDownBroken: number } | null>(null);
+  const [marketLimitStats, setMarketLimitStats] = useState<any>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Auto-show opening reminder badge in first 3 minutes of market open ──
@@ -220,16 +224,42 @@ export default function StockTAssistant() {
       } catch { /* ignore */ }
     };
 
+    const fetchDistribution = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch("/api/stock/market-breadth-distribution", { signal: AbortSignal.timeout(10000) });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.error && !cancelled) {
+          setMarketDistribution(data);
+        }
+      } catch { /* ignore */ }
+    };
+
+    const fetchLimitStats = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch("/api/stock/market-breadth-stats", { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setMarketLimitStats(data);
+        }
+      } catch { /* ignore */ }
+    };
+
     const isTradingHours = () => {
       const now = new Date(); const h = (now.getUTCHours() + 8) % 24; const m = now.getUTCMinutes();
       const t = h * 100 + m; const day = now.getUTCDay();
       return day >= 1 && day <= 5 && ((t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505));
     };
 
+    const fetchAll = () => { fetchBreadth(); fetchDistribution(); fetchLimitStats(); };
+
     // Initial fetch with delay to avoid competing with stock data
-    setTimeout(fetchBreadth, 2000);
+    setTimeout(fetchAll, 2500);
     if (isTradingHours()) {
-      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchBreadth(); }, 30000);
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAll(); }, 30000);
     }
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, [pageMode]);
@@ -865,6 +895,24 @@ export default function StockTAssistant() {
                     szUp={szUp}
                     szDown={szDown}
                   />
+                  {/* 涨跌幅分布 + 涨跌停详情 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {marketDistribution && (
+                      <MarketChangeDistribution
+                        buckets={marketDistribution.buckets}
+                        total={marketDistribution.total}
+                        median={marketDistribution.median}
+                        avgChange={marketDistribution.avgChange}
+                        limitUpSealed={marketDistribution.limitUpSealed}
+                        limitUpBroken={marketDistribution.limitUpBroken}
+                        limitDownSealed={marketDistribution.limitDownSealed}
+                        limitDownBroken={marketDistribution.limitDownBroken}
+                      />
+                    )}
+                    {marketLimitStats && marketLimitStats.limitUp.total + marketLimitStats.limitDown.total > 0 && (
+                      <MarketLimitStats stats={marketLimitStats} />
+                    )}
+                  </div>
                   <MarketSentiment
                     totalUp={totalUp}
                     totalDown={totalDown}

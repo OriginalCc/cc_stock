@@ -266,10 +266,46 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
   const ratio = lastPt ? ((lastPt.totalUp / total) * 100).toFixed(1) : "50.0";
   const isBullish = currentUp > currentDown;
 
+  // ── Velocity & Acceleration (from breadth history) ──
+  const velocity = useMemo(() => {
+    if (data.length < 2) return { value: 0, label: "--", color: "#eab308" };
+    const last2 = data.slice(-2);
+    const v = last2[1].totalUp - last2[1].totalDown - (last2[0].totalUp - last2[0].totalDown);
+    if (v > 20) return { value: v, label: `+${v}/周期`, color: UP_COLOR };
+    if (v > 5) return { value: v, label: `+${v}/周期`, color: "#f87171" };
+    if (v > -5) return { value: v, label: `${v >= 0 ? '+' : ''}${v}/周期`, color: "#eab308" };
+    if (v > -20) return { value: v, label: `${v}/周期`, color: "#34d399" };
+    return { value: v, label: `${v}/周期`, color: DOWN_COLOR };
+  }, [data]);
+
+  const acceleration = useMemo(() => {
+    if (data.length < 3) return { value: 0, label: "--", color: "#eab308" };
+    const diffs = data.map(d => d.totalUp - d.totalDown);
+    const v1 = diffs[diffs.length - 1] - diffs[diffs.length - 2];
+    const v2 = diffs[diffs.length - 2] - diffs[diffs.length - 3];
+    const a = v1 - v2;
+    if (a > 15) return { value: a, label: `加速↑`, color: UP_COLOR };
+    if (a > 3) return { value: a, label: `微加速↑`, color: "#f87171" };
+    if (a > -3) return { value: a, label: `匀速`, color: "#eab308" };
+    if (a > -15) return { value: a, label: `微减速↓`, color: "#34d399" };
+    return { value: a, label: `减速↓`, color: DOWN_COLOR };
+  }, [data]);
+
+  // ── A/D Line (cumulative up-down difference) ──
+  const adLine = useMemo(() => {
+    if (data.length < 2) return null;
+    let cumSum = 0;
+    return data.map(d => {
+      cumSum += (d.totalUp - d.totalDown);
+      return cumSum;
+    });
+  }, [data]);
+
   // ── Summary stats row (shared across all states) ──
   const hasSecondaryRow = (limitUp > 0 || limitDown > 0) || (shUp > 0 || szUp > 0);
+  const hasTertiaryRow = data.length >= 3; // velocity/acceleration
   const summaryRow = (
-    <div className={`flex flex-col ${hasSecondaryRow ? 'gap-1' : ''}`}>
+    <div className={`flex flex-col ${hasTertiaryRow ? 'gap-1' : hasSecondaryRow ? 'gap-1' : ''}`}>
       {/* Row 1: 涨/跌/平 — main numbers, larger font */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1">
@@ -308,6 +344,27 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
               <span className="tabular-nums">深 {szUp}:{szDown}</span>
               <span className="text-muted-foreground/30">|</span>
               <span className="font-medium tabular-nums" style={{ color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>差 {diff >= 0 ? "+" : ""}{diff}</span>
+            </div>
+          )}
+        </div>
+      )}
+      {/* Row 3: Velocity + Acceleration + A/D line value */}
+      {hasTertiaryRow && (
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-muted-foreground">速度</span>
+            <span className="text-[9px] font-bold tabular-nums" style={{ color: velocity.color }}>{velocity.label}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-muted-foreground">动能</span>
+            <span className="text-[9px] font-bold tabular-nums" style={{ color: acceleration.color }}>{acceleration.label}</span>
+          </div>
+          {adLine && adLine.length > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-muted-foreground">A/D线</span>
+              <span className="text-[9px] font-bold tabular-nums" style={{ color: adLine[adLine.length - 1] >= 0 ? UP_COLOR : DOWN_COLOR }}>
+                {adLine[adLine.length - 1] >= 0 ? "+" : ""}{adLine[adLine.length - 1]}
+              </span>
             </div>
           )}
         </div>

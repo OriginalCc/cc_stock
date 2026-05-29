@@ -1129,3 +1129,129 @@ Stage Summary:
 - 禁买时间从4个固定节点变为基于危险指数的动态计算
 - 企稳显著时可提前解禁，避免过度限制
 - UI展示更丰富的多维指标（危险指数、速度、波数、提前解禁标记）
+
+---
+Task ID: 2
+Agent: main
+Task: 创建增强涨跌停统计API路由 (market-breadth-stats)
+
+Work Log:
+- 读取 worklog.md 和现有 market-breadth/route.ts 了解缓存模式
+- 创建 /src/app/api/stock/market-breadth-stats/route.ts
+  - 导出 dynamic = "force-dynamic"
+  - 从东方财富获取涨停池 (getTopicZTPool) 和跌停池 (getTopicDTPool)，并行请求
+  - 计算涨停统计：total/sealed/broken/sealRate/avgSealStrength/连板统计/封板资金Top5/时段统计
+  - 计算跌停统计：total/sealed/broken/sealRate/开板次数Top5
+  - 计算涨跌对比：limitUpVsDown比/netExtreme净极端
+  - 辅助函数：getTodayDateStr(中国时区YYYYMMDD)/formatFirstSealTime/classifyTimeSlot
+  - 30秒TTL内存缓存，错误时返回过期缓存或空结构
+  - 空池优雅处理：所有数值为0，数组为空
+- Lint 通过
+- API 测试通过（返回有效JSON结构）
+
+Stage Summary:
+- 新增 API 路由 /api/stock/market-breadth-stats
+- 完整实现 BreadthStatsResponse 接口的所有字段
+- 并行获取涨停/跌停池数据，30秒缓存TTL
+- 优雅处理空池、网络错误等边界情况
+
+---
+Task ID: 1
+Agent: main
+Task: Create API route for market breadth distribution data
+
+Work Log:
+- Created directory `/src/app/api/stock/market-breadth-distribution/`
+- Created route file with `export const dynamic = "force-dynamic"` and 30s in-memory cache (CACHE_TTL = 30_000)
+- Implemented `fetchAllStocks()`: paginates East Money clist API (pz=6000 per page), fetching all A-share stocks across 4 markets (深圳A股, 深圳创业板, 上海A股, 上海科创板)
+- Implemented bucket classification with 12 ranges: 涨停, +7~10%, +5~7%, +3~5%, +1~3%, 0~+1%, -1~0, -3~-1, -5~-3, -7~-5, -10~-7, 跌停
+- Implemented ChiNext (300/301) and STAR (688/689) 20% limit detection: `getLimitThreshold()` returns 19.9/-19.9 for these stocks vs 9.9/-9.9 for main board
+- Implemented `fetchLimitUpPool()` and `fetchLimitDownPool()`: fetch from East Money ZTPool/DTPool APIs for sealed limit counts
+- Calculated `limitUpBroken = totalLimitUp - limitUpSealed` and `limitDownBroken = totalLimitDown - limitDownSealed`
+- Calculated `median` and `avgChange` from all stock change percentages
+- Parallel fetching with `Promise.all([fetchAllStocks(), fetchLimitUpPool(), fetchLimitDownPool()])`
+- Error handling: stale cache fallback on fetch failure, 500 error if no cache available
+- Lint passed, API tested successfully (returns valid DistributionResponse JSON)
+
+Stage Summary:
+- New API route: `/api/stock/market-breadth-distribution`
+- Fetches all A-share stocks and buckets by change % into 12 ranges
+- Supports 20% limit for ChiNext/STAR stocks
+- Includes limit-up/down sealed/broken counts from ZTPool/DTPool APIs
+- Response includes: buckets, total, median, avgChange, limitUpSealed, limitUpBroken, limitDownSealed, limitDownBroken, timestamp
+- 30s server-side cache with stale-while-error fallback
+
+---
+Task ID: 4
+Agent: main
+Task: 创建涨跌停详情统计组件 (MarketLimitStats)
+
+Work Log:
+- 创建 `/src/components/market-limit-stats.tsx` 组件，实现涨跌停详情统计展示
+- 定义 `MarketLimitStatsProps` 接口，包含 limitUp/limitDown/contrast 三大块数据
+- 实现 MetricPill 子组件：核心指标徽章（总数/封板/开板/封板率），带自定义背景色
+- 实现 BoardPill 子组件：连板统计药丸，颜色强度与数量成比例
+- 实现 TimeDistributionBar 子组件：时段分布水平堆叠条（早盘/午前/午后/尾盘），渐变透明度
+- 实现 StockItem 子组件：紧凑型股票列表项，1行1股
+- 涨停区域（左侧，红色调）：核心指标 + 连板统计 + 时段分布 + 封板资金TOP5
+- 跌停区域（右侧，绿色调）：核心指标 + 开板最多TOP5
+- 对比指标行：涨停/跌停比(X:1) + 净极端(涨停-跌停) + 迷你比例条
+- 空状态：总数均为0时显示"暂无涨跌停数据"
+- A股色彩规范：红=涨(#dc2626)、绿=跌(#059669)
+- 响应式布局：桌面两列、移动端堆叠（grid-cols-1 md:grid-cols-2）
+- 紧凑设计：字号9-11px、紧凑padding（p-2）、无冗余垂直空间
+- 卡片风格与 market-breadth-chart.tsx 一致：bg-card rounded-lg border border-border
+- Lint 通过，无错误
+
+Stage Summary:
+- 新增 MarketLimitStats 组件，named export
+- 涨停侧5个区块：核心指标/连板统计/时段分布/封板资金TOP5/封板强度
+- 跌停侧2个区块：核心指标/开板最多TOP5
+- 底部对比指标行：涨停/跌停比 + 净极端 + 迷你比例条
+- 完整空状态处理
+
+---
+Task ID: 3
+Agent: market-change-distribution
+Task: Create MarketChangeDistribution component for A-share market change % distribution histogram
+
+Work Log:
+- Created `/src/components/market-change-distribution.tsx` with "use client" directive
+- Defined `MarketChangeDistributionProps` interface with buckets, total, median, avgChange, limitUpSealed/Broken, limitDownSealed/Broken
+- Implemented horizontal histogram: 12 bars arranged vertically with label on left, proportional-width bar in middle, count on right
+- Bar colors use provided bucket colors directly; up-side buckets red gradient, down-side buckets green gradient
+- Each bar has subtle gradient overlay for depth (top highlight → transparent → bottom shadow)
+- Statistics row at top: 中位数, 均值 (red if positive, green if negative), 涨停封板 (X封/X开), 跌停封板 (X封/X开)
+- 0% boundary separator: horizontal dashed line between up-side and down-side bucket groups with "0%" label
+- Card wrapper uses same style as market-breadth-chart.tsx: bullish=red tint, bearish=green tint based on median
+- Compact font sizes: title 11px, stats 10px, labels 9px, counts 10px
+- Responsive: flex-wrap on stats row, proper overflow handling
+- Used useMemo for maxCount and downStartIndex computations
+- A-share color convention: 涨=红(#dc2626), 跌=绿(#059669)
+- Lint passed with no errors
+
+Stage Summary:
+- New component: `src/components/market-change-distribution.tsx` (named export `MarketChangeDistribution`)
+- Horizontal histogram with 12 buckets, proportional bar widths, gradient overlays
+- Statistics header with median, average, limit-up/down sealed/broken counts
+- 0% boundary dashed line separator between up and down sections
+- Card styling matches market-breadth-chart.tsx (bullish/bearish tinting)
+- Pure React + Tailwind CSS, no chart library dependency
+---
+Task ID: 5
+Agent: main
+Task: 丰富市场涨跌家数功能
+
+Work Log:
+- Created `/api/stock/market-breadth-distribution` API: fetches all A-share stocks and buckets them by change % into 12 ranges (涨停 → +7~10% → ... → -10~-7% → 跌停), with 20% limit support for ChiNext/STAR stocks, plus limit seal/broken counts
+- Created `/api/stock/market-breadth-stats` API: detailed limit-up/down statistics including seal rate, consecutive board stats, time distribution, top 5 seal amounts, contrast metrics
+- Created `MarketChangeDistribution` component: horizontal histogram of change % distribution with statistics row, 0% boundary separator
+- Created `MarketLimitStats` component: two-column layout with 涨停/跌停 sections showing core metrics, consecutive board pills, time distribution bar, top 5 stock lists
+- Enhanced `MarketBreadthChart` component: added velocity, acceleration, and A/D line indicators in summary row
+- Updated `page.tsx`: added dynamic imports for new components, state management, parallel data fetching in breadth useEffect, rendering in grid layout
+
+Stage Summary:
+- 4 new files: market-breadth-distribution API, market-breadth-stats API, market-change-distribution component, market-limit-stats component
+- 2 enhanced files: market-breadth-chart (velocity/acceleration/A/D line), page.tsx (integration)
+- Lint passes, dev server running, APIs tested successfully
+- Non-trading hours show limited data; full distribution available during trading hours
