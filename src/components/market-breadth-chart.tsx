@@ -267,36 +267,49 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
   const isBullish = currentUp > currentDown;
 
   // ── Summary stats row (shared across all states) ──
+  const hasSecondaryRow = (limitUp > 0 || limitDown > 0) || (shUp > 0 || szUp > 0);
   const summaryRow = (
-    <div className="flex items-center gap-2 flex-wrap">
-      <div className="flex items-center gap-0.5">
-        <span className="inline-block w-1 h-1 rounded-full" style={{ backgroundColor: UP_COLOR }} />
-        <span className="font-bold tabular-nums text-[10px]" style={{ color: UP_COLOR }}>{currentUp}</span>
-        <span className="text-[8px] text-muted-foreground">涨</span>
-      </div>
-      <div className="flex items-center gap-0.5">
-        <span className="inline-block w-1 h-1 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
-        <span className="font-bold tabular-nums text-[10px]" style={{ color: DOWN_COLOR }}>{currentDown}</span>
-        <span className="text-[8px] text-muted-foreground">跌</span>
-      </div>
-      <div className="flex items-center gap-0.5">
-        <span className="inline-block w-1 h-1 rounded-full bg-muted-foreground/50" />
-        <span className="text-muted-foreground font-bold tabular-nums text-[10px]">{currentFlat}</span>
-        <span className="text-[8px] text-muted-foreground">平</span>
-      </div>
-      {(limitUp > 0 || limitDown > 0) && (
-        <div className="flex items-center gap-1.5 ml-0.5 pl-1.5 border-l border-border">
-          {limitUp > 0 && <span className="text-[8px] text-red-500 font-medium">涨停{limitUp}</span>}
-          {limitDown > 0 && <span className="text-[8px] text-green-500 font-medium">跌停{limitDown}</span>}
+    <div className={`flex flex-col ${hasSecondaryRow ? 'gap-1' : ''}`}>
+      {/* Row 1: 涨/跌/平 — main numbers, larger font */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: UP_COLOR }} />
+          <span className="font-bold tabular-nums text-[11px]" style={{ color: UP_COLOR }}>{currentUp}</span>
+          <span className="text-[9px] text-muted-foreground">涨</span>
         </div>
-      )}
-      {(shUp > 0 || szUp > 0) && (
-        <div className="flex items-center gap-1 text-[8px] text-muted-foreground ml-0.5 pl-1.5 border-l border-border">
-          <span>沪{shUp}:{shDown}</span>
-          <span className="text-muted-foreground/30">|</span>
-          <span>深{szUp}:{szDown}</span>
-          <span className="text-muted-foreground/30">|</span>
-          <span style={{ color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>差{diff >= 0 ? "+" : ""}{diff}</span>
+        <div className="flex items-center gap-1">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
+          <span className="font-bold tabular-nums text-[11px]" style={{ color: DOWN_COLOR }}>{currentDown}</span>
+          <span className="text-[9px] text-muted-foreground">跌</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+          <span className="text-muted-foreground font-bold tabular-nums text-[11px]">{currentFlat}</span>
+          <span className="text-[9px] text-muted-foreground">平</span>
+        </div>
+      </div>
+      {/* Row 2: 涨停/跌停 + 沪/深/差 — secondary info */}
+      {hasSecondaryRow && (
+        <div className="flex items-center gap-2">
+          {(limitUp > 0 || limitDown > 0) && (
+            <div className="flex items-center gap-2">
+              {limitUp > 0 && (
+                <span className="text-[10px] text-red-500 font-medium tabular-nums">涨停 {limitUp}</span>
+              )}
+              {limitDown > 0 && (
+                <span className="text-[10px] text-green-500 font-medium tabular-nums">跌停 {limitDown}</span>
+              )}
+            </div>
+          )}
+          {(shUp > 0 || szUp > 0) && (
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground pl-2 border-l border-border">
+              <span className="tabular-nums">沪 {shUp}:{shDown}</span>
+              <span className="text-muted-foreground/30">|</span>
+              <span className="tabular-nums">深 {szUp}:{szDown}</span>
+              <span className="text-muted-foreground/30">|</span>
+              <span className="font-medium tabular-nums" style={{ color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>差 {diff >= 0 ? "+" : ""}{diff}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -411,21 +424,35 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {/* Down line with glow */}
           <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />
 
-          {/* Pre-compute label visibility: skip if same values as previous labeled point */}
+          {/* Pre-compute label visibility: anti-overlap algorithm */}
           {(() => {
+            // Pill half-width is 16px, so two pills need ≥36px between their centers
+            const MIN_LABEL_GAP_PX = 36;
+            const lastIdx = data.length - 1;
             const labeledIndices: number[] = [];
-            let lastLabeledUp = -1, lastLabeledDown = -1;
+            let lastLabeledX = -Infinity;
+
             for (let i = 0; i < data.length; i++) {
-              const isLast = i === data.length - 1;
+              const isLast = i === lastIdx;
               const isFirst = i === 0;
               const isInterval = i % labelInterval === 0;
-              if (isFirst || isLast || isInterval) {
-                if (isFirst || isLast || data[i].totalUp !== lastLabeledUp || data[i].totalDown !== lastLabeledDown) {
-                  labeledIndices.push(i);
-                  lastLabeledUp = data[i].totalUp;
-                  lastLabeledDown = data[i].totalDown;
+              if (!isFirst && !isLast && !isInterval) continue;
+
+              const x = xs[i];
+              // Check horizontal overlap with previous label
+              if (x - lastLabeledX < MIN_LABEL_GAP_PX) {
+                // Too close; skip unless this is the last point
+                if (isLast) {
+                  // Remove the previous label to make room for the last
+                  if (labeledIndices.length > 0 && xs[labeledIndices[labeledIndices.length - 1]] + MIN_LABEL_GAP_PX > x) {
+                    labeledIndices.pop();
+                  }
+                } else {
+                  continue;
                 }
               }
+              labeledIndices.push(i);
+              lastLabeledX = x;
             }
             return labeledIndices;
           })().map((i) => {
