@@ -201,12 +201,12 @@ export function MarketChangeDistribution({
                     )}
                   </div>
 
-                  {/* Count */}
+                  {/* Count + percentage */}
                   <span
-                    className="text-[10px] font-bold tabular-nums w-7 text-right shrink-0"
-                    style={{ color: bucket.color }}
+                    className="text-[10px] font-bold tabular-nums text-right shrink-0"
+                    style={{ color: bucket.color, minWidth: "42px" }}
                   >
-                    {bucket.count}
+                    {bucket.count}<span className="font-normal opacity-60 ml-0.5">{total > 0 ? ((bucket.count / total) * 100).toFixed(1) : "0.0"}%</span>
                   </span>
                 </div>
               </React.Fragment>
