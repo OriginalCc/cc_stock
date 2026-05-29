@@ -38,6 +38,7 @@ const MarketBreadthChart = dynamic(() => import("@/components/market-breadth-cha
 const MarketSentiment = dynamic(() => import("@/components/market-sentiment").then(m => ({ default: m.MarketSentiment })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载市场情绪...</span></div> });
 const MarketChangeDistribution = dynamic(() => import("@/components/market-change-distribution").then(m => ({ default: m.MarketChangeDistribution })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨跌幅分布...</span></div> });
 const MarketLimitStats = dynamic(() => import("@/components/market-limit-stats").then(m => ({ default: m.MarketLimitStats })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨跌停详情...</span></div> });
+const SectorTopBottomCard = dynamic(() => import("@/components/sector-top-bottom-card").then(m => ({ default: m.SectorTopBottomCard })), { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载板块排行...</span></div> });
 import { PasswordGate } from "@/components/password-gate";
 import { LazyMount } from "@/components/lazy-mount";
 import { calculateMACD } from "@/lib/indicators";
@@ -895,8 +896,8 @@ export default function StockTAssistant() {
                     szUp={szUp}
                     szDown={szDown}
                   />
-                  {/* 涨跌幅分布 + 涨跌停详情 */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {/* 涨跌幅分布 + 板块排行 + 涨跌停详情 */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     {marketDistribution && (
                       <MarketChangeDistribution
                         buckets={marketDistribution.buckets}
@@ -909,6 +910,7 @@ export default function StockTAssistant() {
                         limitDownBroken={marketDistribution.limitDownBroken}
                       />
                     )}
+                    <SectorTopBottomCard />
                     {marketLimitStats && marketLimitStats.limitUp.total + marketLimitStats.limitDown.total > 0 && (
                       <MarketLimitStats stats={marketLimitStats} />
                     )}

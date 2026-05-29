@@ -1255,3 +1255,31 @@ Stage Summary:
 - 2 enhanced files: market-breadth-chart (velocity/acceleration/A/D line), page.tsx (integration)
 - Lint passes, dev server running, APIs tested successfully
 - Non-trading hours show limited data; full distribution available during trading hours
+
+---
+Task ID: 11
+Agent: main
+Task: 涨跌幅分布右侧新增板块涨跌排行卡片（涨幅前五+跌幅前五）
+
+Work Log:
+- 分析现有代码结构：涨跌幅分布(MarketChangeDistribution)与涨跌停详情(MarketLimitStats)在2列grid中
+- 创建 API 端点 `/api/stock/sector-top-bottom/route.ts`：
+  - 从东方财富获取行业板块(m:90+t:2)和概念板块(m:90+t:3)数据
+  - 返回涨幅前5和跌幅前5，含主力净流入、涨跌家数、领涨股信息
+  - 使用HTTPS+Referer头解决服务端fetch问题
+  - 30秒缓存TTL，支持stale cache降级
+- 创建组件 `src/components/sector-top-bottom-card.tsx`：
+  - 行业/概念板块Tab切换
+  - 左右两列：涨幅前5(红色) + 跌幅前5(绿色)
+  - 排名徽章(1-3名强调色)、板块名称、涨跌幅、主力净流入
+  - 自动30秒轮询刷新，加载状态和错误处理
+- 更新 page.tsx：
+  - 添加 SectorTopBottomCard 动态导入
+  - 将涨跌幅分布+涨跌停详情的2列grid改为3列grid，中间插入板块排行卡片
+- Lint通过，API测试通过（行业+概念板块数据均正常返回）
+
+Stage Summary:
+- 新增板块涨跌排行卡片，显示行业/概念板块涨幅前5和跌幅前5
+- 布局从2列改为3列：涨跌幅分布 | 板块排行 | 涨跌停详情
+- API端点 `/api/stock/sector-top-bottom` 轻量级，30秒缓存
+- 组件自动轮询刷新，支持Tab切换行业/概念板块
