@@ -896,8 +896,8 @@ export default function StockTAssistant() {
                     szUp={szUp}
                     szDown={szDown}
                   />
-                  {/* 涨跌幅分布 + 板块排行 + 涨跌停详情 */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {/* 涨跌幅分布 + 板块排行 各占50% */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {marketDistribution && (
                       <MarketChangeDistribution
                         buckets={marketDistribution.buckets}
@@ -911,10 +911,11 @@ export default function StockTAssistant() {
                       />
                     )}
                     <SectorTopBottomCard />
-                    {marketLimitStats && marketLimitStats.limitUp.total + marketLimitStats.limitDown.total > 0 && (
-                      <MarketLimitStats stats={marketLimitStats} />
-                    )}
                   </div>
+                  {/* 涨跌停详情 */}
+                  {marketLimitStats && marketLimitStats.limitUp.total + marketLimitStats.limitDown.total > 0 && (
+                    <MarketLimitStats stats={marketLimitStats} />
+                  )}
                   <MarketSentiment
                     totalUp={totalUp}
                     totalDown={totalDown}
