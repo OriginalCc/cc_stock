@@ -56,6 +56,22 @@ const overlayCache = new FingerprintCache<{
   pvPlacedLabels: PlacedLabel[];
 }>();
 
+const banCache = new FingerprintCache<{
+  tier: "mild" | "medium" | "strong" | "extreme";
+  banEndTime: number;
+  banEndTimeStr: string;
+  declineScore: number;
+  dropRate: number;
+  volRatio: number;
+  speedIndex: number;
+  stabilityIndex: number;
+  waveCount: number;
+  vwapDeviation: number;
+  gapDownRate: number;
+  dangerIndex: number;
+  earlyLifted: boolean;
+} | null>();
+
 // Dynamic import for MiniTimelinePanel (code-split for faster page load)
 const MiniTimelinePanel = dynamic(() => import("@/components/mini-timeline-panel").then(m => ({ default: m.MiniTimelinePanel })), { ssr: false });
 
@@ -200,9 +216,14 @@ function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; 
   }
   if (markers.length === 0) return [];
 
+  // Build a Map for O(1) lookup instead of O(n) find per marker
+  const timeMap = new Map<string, any>();
+  for (const p of priceLineData) {
+    if (p?.payload?.time) timeMap.set(p.payload.time, p);
+  }
   const result: { x: number; y: number; marker: PulseVolumeMarker }[] = [];
   for (const marker of markers) {
-    const matchPoint = priceLineData.find((p: any) => p?.payload?.time === marker.time);
+    const matchPoint = timeMap.get(marker.time);
     if (!matchPoint) continue;
     result.push({ x: matchPoint.x, y: matchPoint.y, marker });
   }
@@ -1487,6 +1508,15 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       setCrosshairIdx(idx);
     }
   }, []);
+  // Stable chart mouse handlers (prevent recharts from re-rendering on new function refs)
+  const handleChartMouseMove = useCallback((state: any) => {
+    if (state?.activeTooltipIndex != null) {
+      setCrosshairIdxThrottled(state.activeTooltipIndex);
+    }
+  }, [setCrosshairIdxThrottled]);
+  const handleChartMouseLeave = useCallback(() => {
+    setCrosshairIdxThrottled(null);
+  }, [setCrosshairIdxThrottled]);
 
   // ── Drag-to-pan & scroll-to-pan state ──
   const dragRef = useRef<{ startX: number; startPanOffset: number; isDragging: boolean }>({ startX: 0, startPanOffset: 0, isDragging: false });
@@ -1654,9 +1684,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       const baseEndIdx = lastDataIdx;
       const endIdx = Math.min(baseEndIdx, Math.max(visibleMinutes - 1, baseEndIdx - panOffset));
       const startIdx = Math.max(0, endIdx - visibleMinutes + 1);
-      // Performance: mutate idx in-place instead of creating new objects via spread
-      zd = fullDayData.slice(startIdx, endIdx + 1);
-      for (let i = 0; i < zd.length; i++) { (zd[i] as any).idx = i; }
+      // Create new objects with idx to avoid mutating shared fullDayData references
+      zd = fullDayData.slice(startIdx, endIdx + 1).map((d, i) => ({ ...d, idx: i }));
       xd = [0, zd.length - 1];
 
       const tickInterval = zd.length <= 60 ? 10 : zd.length <= 120 ? 20 : 30;
@@ -1787,6 +1816,9 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     dangerIndex: number;      // 综合危险指数 0-100
     earlyLifted: boolean;     // 是否因企稳提前解禁
   } | null => {
+    // Fingerprint cache to skip heavy 300+ line computation when data hasn't changed
+    const fp = `${pvMarkers?.length}:${pvMarkers?.filter(m => m.type === "volume_decline" || m.type === "pulse_decline" || m.type === "early_vol_drop" || m.type === "slow_decline").map(m => `${m.time}:${m.type}`).join(',')}:${data.length}:${data.slice(-3).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',')}:${prevClose}`;
+    return banCache.compute(fp, () => {
     if (!pvMarkers || pvMarkers.length === 0) return null;
 
     // ── 1. 收集早盘下跌标记（扩展：含缩量下跌和阴跌） ──
@@ -2090,7 +2122,120 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       volRatio, speedIndex, stabilityIndex, waveCount, vwapDeviation,
       gapDownRate, dangerIndex, earlyLifted,
     };
+    }); // banCache.compute
   }, [pvMarkers, data, prevClose]);
+
+  // ── Memoize position rule computation (was inline IIFE) ──
+  const positionRule = useMemo(() => {
+    const stockPct = lastItem.changePercent;
+    const sectorDown = sectorRegime?.regime === '下跌趋势' || sectorRegime?.regime === '横盘末期';
+    const stockDown = stockPct < 0;
+    const sectorUp = sectorRegime?.regime === '上升通道';
+    const stockUp = stockPct >= 0;
+    const hasSectorInfo = !!sectorRegime;
+    const mktDown = szIndexRegime?.regime === '下跌趋势' || szIndexRegime?.regime === '横盘末期';
+    const mktUp = szIndexRegime?.regime === '上升通道';
+    const hasMktInfo = !!szIndexRegime;
+
+    let posLabel = '';
+    let posColor = '';
+    let posBg = '';
+    let tDir = '';
+
+    if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown) {
+      posLabel = '1/4仓'; tDir = '反T'; posColor = 'text-green-600 dark:text-green-400'; posBg = 'bg-green-500/15 border-green-500/35';
+    } else if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockUp) {
+      posLabel = '1/3仓'; tDir = '反T'; posColor = 'text-red-600 dark:text-red-400'; posBg = 'bg-red-500/15 border-red-500/30';
+    } else if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockDown) {
+      posLabel = '20%仓'; tDir = '正T'; posColor = 'text-amber-600 dark:text-amber-400'; posBg = 'bg-amber-500/15 border-amber-500/30';
+    } else if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
+      posLabel = '25%仓'; tDir = '反T'; posColor = 'text-yellow-600 dark:text-yellow-400'; posBg = 'bg-yellow-500/15 border-yellow-500/30';
+    } else if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockDown) {
+      posLabel = '1/3仓'; tDir = '正T'; posColor = 'text-orange-600 dark:text-orange-400'; posBg = 'bg-orange-500/15 border-orange-500/30';
+    } else if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockUp) {
+      posLabel = '30%仓'; tDir = '反T'; posColor = 'text-yellow-600 dark:text-yellow-400'; posBg = 'bg-yellow-500/15 border-yellow-500/30';
+    } else if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockDown) {
+      posLabel = '30%仓'; tDir = '正T'; posColor = 'text-blue-600 dark:text-blue-400'; posBg = 'bg-blue-500/15 border-blue-500/30';
+    } else if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp) {
+      posLabel = '满仓'; tDir = '正反T'; posColor = 'text-red-600 dark:text-red-400'; posBg = 'bg-red-500/15 border-red-500/30';
+    } else if (!hasMktInfo && hasSectorInfo && sectorDown && stockDown) {
+      posLabel = '1/3仓'; tDir = '反T'; posColor = 'text-green-600 dark:text-green-400'; posBg = 'bg-green-500/15 border-green-500/30';
+    } else if (!hasMktInfo && hasSectorInfo && sectorDown && stockUp) {
+      posLabel = '25%仓'; tDir = '反T'; posColor = 'text-amber-600 dark:text-amber-400'; posBg = 'bg-amber-500/15 border-amber-500/30';
+    } else if (!hasMktInfo && hasSectorInfo && sectorUp && stockUp) {
+      posLabel = '75%仓'; tDir = '正T'; posColor = 'text-red-600 dark:text-red-400'; posBg = 'bg-red-500/15 border-red-500/30';
+    } else if (!hasMktInfo && hasSectorInfo && sectorUp && stockDown) {
+      posLabel = '25%仓'; tDir = '正T'; posColor = 'text-yellow-600 dark:text-yellow-400'; posBg = 'bg-yellow-500/15 border-yellow-500/30';
+    } else if (!hasSectorInfo && stockDown) {
+      posLabel = '轻仓'; tDir = '观望'; posColor = 'text-amber-600 dark:text-amber-400'; posBg = 'bg-amber-500/10 border-amber-500/25';
+    } else if (!hasSectorInfo && stockUp) {
+      posLabel = '可参与'; tDir = '正T'; posColor = 'text-red-600 dark:text-red-400'; posBg = 'bg-red-500/10 border-red-500/25';
+    } else {
+      posLabel = '轻仓'; tDir = '观望'; posColor = 'text-gray-500 dark:text-gray-400'; posBg = 'bg-gray-500/10 border-gray-500/25';
+    }
+
+    const mktDir = hasMktInfo ? (mktDown ? '↓' : mktUp ? '↑' : '—') : '…';
+    const secDir = hasSectorInfo ? (sectorDown ? '↓' : sectorUp ? '↑' : '—') : '…';
+    const stkDir = stockDown ? '↓' : '↑';
+
+    return { posLabel, posColor, posBg, tDir, mktDir, secDir, stkDir, hasMktInfo, mktDown, mktUp, hasSectorInfo, sectorDown, sectorUp, stockDown, stockUp };
+  }, [lastItem, sectorRegime, szIndexRegime]);
+
+  // ── Memoize position banner (was inline IIFE) ──
+  const positionBanner = useMemo(() => {
+    const { hasMktInfo, mktDown, mktUp, hasSectorInfo, sectorDown, sectorUp, stockDown, stockUp } = positionRule;
+    const isTripleDown = hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown;
+    const isTripleUp = hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp;
+    const isDualDown = (hasMktInfo ? mktDown : true) && hasSectorInfo && sectorDown && stockDown;
+
+    if (isTripleDown) {
+      return { type: '3down' as const };
+    }
+    if (isTripleUp) {
+      return { type: '3up' as const };
+    }
+    if (isDualDown && !isTripleDown) {
+      return { type: '2down' as const, hasMktInfo };
+    }
+    if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
+      return { type: 'mkt_down_sector_stock_up' as const };
+    }
+    if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockDown) {
+      return { type: 'mkt_up_sector_stock_down' as const };
+    }
+    if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockDown) {
+      return { type: 'mkt_up_sector_up_stock_down' as const };
+    }
+    if (hasSectorInfo && sectorDown && stockUp) {
+      return { type: 'sector_down_stock_up' as const };
+    }
+    if (hasSectorInfo && sectorUp && stockDown) {
+      return { type: 'sector_up_stock_down' as const, hasMktInfo, mktUp };
+    }
+    if (!hasSectorInfo && hasMktInfo && mktDown && stockDown) {
+      return { type: 'no_sector_mkt_stock_down' as const };
+    }
+    if (!hasSectorInfo && stockDown) {
+      return { type: 'no_sector_stock_down' as const };
+    }
+    return null;
+  }, [positionRule]);
+
+  // ── Memoize time window (was inline IIFE) ──
+  const timeWindowDisplay = useMemo(() => {
+    const lastTime = data[data.length - 1]?.time;
+    if (!lastTime) return null;
+    const tw = getTimeWindow(lastTime);
+    const twColor = tw === "开盘观察" || tw === "尾盘不操作" ? "text-muted-foreground" :
+                    tw.includes("卖出") ? "text-green-500" : "text-red-500";
+    return { text: tw, color: twColor };
+  }, [data]);
+
+  // ── Memoize ban mask index (computed once, used 6 times across 3 panels) ──
+  const banMaskIdx = useMemo(() => {
+    if (!earlyVolDeclineBan) return -1;
+    return zoomData.findIndex(d => d.time === earlyVolDeclineBan.banEndTimeStr);
+  }, [earlyVolDeclineBan, zoomData]);
 
   // ── Memoize tooltip components (stable references to avoid re-renders) ──
   const timelineTooltipEl = useMemo(() => <TimelineTooltip />, []);
@@ -2116,114 +2261,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         </span>
         {/* Position Rule Badge - 5-tier ladder + T-direction hint */}
         {(() => {
-          const stockPct = lastItem.changePercent;
-          const sectorDown = sectorRegime?.regime === '下跌趋势' || sectorRegime?.regime === '横盘末期';
-          const stockDown = stockPct < 0;
-          const sectorUp = sectorRegime?.regime === '上升通道';
-          const stockUp = stockPct >= 0;
-          const hasSectorInfo = !!sectorRegime;
-
-          // 大盘方向（深证成指为主）
-          const mktDown = szIndexRegime?.regime === '下跌趋势' || szIndexRegime?.regime === '横盘末期';
-          const mktUp = szIndexRegime?.regime === '上升通道';
-          const hasMktInfo = !!szIndexRegime;
-
-          let posLabel = '';
-          let posColor = '';
-          let posBg = '';
-          let tDir = ''; // T-strategy hint: 正T / 反T / 空仓
-
-          // ── 5-tier position ladder + T-direction ──
-          if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown) {
-            // 一级：三跌 → ≤1/4仓，反T(先卖再买)/空仓
-            posLabel = '1/4仓';
-            tDir = '反T';
-            posColor = 'text-green-600 dark:text-green-400';
-            posBg = 'bg-green-500/15 border-green-500/35';
-          } else if (hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockUp) {
-            // 二级：大盘↓+板块↓+个股↑ → ≤1/3仓，反T(先卖再买)冲高卖
-            posLabel = '1/3仓';
-            tDir = '反T';
-            posColor = 'text-red-600 dark:text-red-400';
-            posBg = 'bg-red-500/15 border-red-500/30';
-          } else if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockDown) {
-            // 三级：大盘↓+板块↑+个股↓ → 15-20%，轻仓正T
-            posLabel = '20%仓';
-            tDir = '正T';
-            posColor = 'text-amber-600 dark:text-amber-400';
-            posBg = 'bg-amber-500/15 border-amber-500/30';
-          } else if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
-            // 三级：大盘↓+板块↑+个股↑ → 20-30%，反T(先卖再买)
-            posLabel = '25%仓';
-            tDir = '反T';
-            posColor = 'text-yellow-600 dark:text-yellow-400';
-            posBg = 'bg-yellow-500/15 border-yellow-500/30';
-          } else if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockDown) {
-            // 二级：大盘↑+板块↓+个股↓ → ≤1/3，正T低吸
-            posLabel = '1/3仓';
-            tDir = '正T';
-            posColor = 'text-orange-600 dark:text-orange-400';
-            posBg = 'bg-orange-500/15 border-orange-500/30';
-          } else if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockUp) {
-            // 三级：大盘↑+板块↓+个股↑ → 25-30%，反T(先卖再买)冲高卖
-            posLabel = '30%仓';
-            tDir = '反T';
-            posColor = 'text-yellow-600 dark:text-yellow-400';
-            posBg = 'bg-yellow-500/15 border-yellow-500/30';
-          } else if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockDown) {
-            // 四级：大盘↑+板块↑+个股↓ → 25-30%，正T低吸
-            posLabel = '30%仓';
-            tDir = '正T';
-            posColor = 'text-blue-600 dark:text-blue-400';
-            posBg = 'bg-blue-500/15 border-blue-500/30';
-          } else if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp) {
-            // 五级：三涨 → 90-100%，正T/反T(先卖再买)均可
-            posLabel = '满仓';
-            tDir = '正反T';
-            posColor = 'text-green-600 dark:text-green-400';
-            posBg = 'bg-green-500/15 border-green-500/30';
-          } else if (!hasMktInfo && hasSectorInfo && sectorDown && stockDown) {
-            // 二级回退：双跌 → ≤1/3
-            posLabel = '1/3仓';
-            tDir = '反T';
-            posColor = 'text-red-600 dark:text-red-400';
-            posBg = 'bg-red-500/15 border-red-500/30';
-          } else if (!hasMktInfo && hasSectorInfo && sectorDown && stockUp) {
-            posLabel = '25%仓';
-            tDir = '反T';
-            posColor = 'text-amber-600 dark:text-amber-400';
-            posBg = 'bg-amber-500/15 border-amber-500/30';
-          } else if (!hasMktInfo && hasSectorInfo && sectorUp && stockUp) {
-            posLabel = '75%仓';
-            tDir = '正T';
-            posColor = 'text-green-600 dark:text-green-400';
-            posBg = 'bg-green-500/15 border-green-500/30';
-          } else if (!hasMktInfo && hasSectorInfo && sectorUp && stockDown) {
-            posLabel = '25%仓';
-            tDir = '正T';
-            posColor = 'text-yellow-600 dark:text-yellow-400';
-            posBg = 'bg-yellow-500/15 border-yellow-500/30';
-          } else if (!hasSectorInfo && stockDown) {
-            posLabel = '轻仓';
-            tDir = '观望';
-            posColor = 'text-amber-600 dark:text-amber-400';
-            posBg = 'bg-amber-500/10 border-amber-500/25';
-          } else if (!hasSectorInfo && stockUp) {
-            posLabel = '可参与';
-            tDir = '正T';
-            posColor = 'text-green-600 dark:text-green-400';
-            posBg = 'bg-green-500/10 border-green-500/25';
-          } else {
-            posLabel = '轻仓';
-            tDir = '观望';
-            posColor = 'text-gray-500 dark:text-gray-400';
-            posBg = 'bg-gray-500/10 border-gray-500/25';
-          }
-
-          const mktDir = hasMktInfo ? (mktDown ? '↓' : mktUp ? '↑' : '—') : '…';
-          const secDir = hasSectorInfo ? (sectorDown ? '↓' : sectorUp ? '↑' : '—') : '…';
-          const stkDir = stockDown ? '↓' : '↑';
-
+          const { posLabel, posColor, posBg, tDir, mktDir, secDir, stkDir } = positionRule;
           return (
             <span
               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-bold ${posBg} ${posColor}`}
@@ -2431,20 +2469,11 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           </Badge>
         )}
         {/* Time Window Indicator */}
-        {(() => {
-          const lastTime = data[data.length - 1]?.time;
-          if (lastTime) {
-            const tw = getTimeWindow(lastTime);
-            const twColor = tw === "开盘观察" || tw === "尾盘不操作" ? "text-muted-foreground" :
-                            tw.includes("卖出") ? "text-green-500" : "text-red-500";
-            return (
-              <span className={`text-[10px] ${twColor}`}>
-                {tw}
-              </span>
-            );
-          }
-          return null;
-        })()}
+        {timeWindowDisplay && (
+          <span className={`text-[10px] ${timeWindowDisplay.color}`}>
+            {timeWindowDisplay.text}
+          </span>
+        )}
         {/* Crosshair data display */}
         {crosshairItem?.hasData && (() => {
           const pct = crosshairItem.changePercent;
@@ -2589,154 +2618,105 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       })()}
 
       {/* ─── Position Rule Banner on Chart (5-tier + T-direction) ─── */}
-      {(() => {
-        const lastPoint = data[data.length - 1];
-        const stockPct = lastPoint?.changePercent ?? 0;
-        const sectorDown = sectorRegime?.regime === '下跌趋势' || sectorRegime?.regime === '横盘末期';
-        const stockDown = stockPct < 0;
-        const sectorUp = sectorRegime?.regime === '上升通道';
-        const stockUp = stockPct >= 0;
-        const hasSectorInfo = !!sectorRegime;
-
-        // 大盘方向（深证成指为主）
-        const mktDown = szIndexRegime?.regime === '下跌趋势' || szIndexRegime?.regime === '横盘末期';
-        const mktUp = szIndexRegime?.regime === '上升通道';
-        const hasMktInfo = !!szIndexRegime;
-
-        // 三维场景判断
-        const isTripleDown = hasMktInfo && mktDown && hasSectorInfo && sectorDown && stockDown;
-        const isTripleUp = hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockUp;
-
-        if (isTripleDown) {
-          return (
-            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">🚫</span>
-              <span className="text-xs font-bold text-green-600 dark:text-green-400">
-                三跌！深证↓+板块↓+个股↓ ≤ 1/4仓
-              </span>
-              <span className="text-[10px] text-green-500 font-bold">| 反T(先卖再买)/空仓</span>
-              <span className="text-[10px] text-green-500/70">极度危险，保留3/4后备</span>
-            </div>
-          );
-        }
-        // 三涨：大盘↑+板块↑+个股↑
-        if (isTripleUp) {
-          return (
-            <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
-              <span className="text-red-500 text-xs">✅</span>
-              <span className="text-xs font-bold text-red-600 dark:text-red-400">
-                三涨！深证↑+板块↑+个股↑ 90-100%仓
-              </span>
-              <span className="text-[10px] text-red-400 font-bold">| 正T/反T(先卖再买)均可</span>
-              <span className="text-[10px] text-red-500/70">最安全，积极做T</span>
-            </div>
-          );
-        }
-        // 大盘↓+板块↓+个股↓ (无大盘数据时降级为双跌)
-        const isDualDown = (hasMktInfo ? mktDown : true) && hasSectorInfo && sectorDown && stockDown;
-        if (isDualDown && !isTripleDown) {
-          return (
-            <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">⛔</span>
-              <span className="text-xs font-bold text-green-600 dark:text-green-400">
-                {hasMktInfo ? '深证↓+' : ''}板块↓+个股↓ = 双跌！≤ 1/3仓
-              </span>
-              <span className="text-[10px] text-orange-400 font-bold">| 反T(先卖再买)冲高卖</span>
-              <span className="text-[10px] text-green-500/70">保留2/3后备资金</span>
-            </div>
-          );
-        }
-        // 大盘↓+板块↑+个股↑ (逆势板块+个股)
-        if (hasMktInfo && mktDown && hasSectorInfo && sectorUp && stockUp) {
-          return (
-            <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
-              <span className="text-yellow-500 text-xs">🔸</span>
-              <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
-                深证↓ 但板块↑+个股↑ 20-30%仓
-              </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)冲高卖</span>
-              <span className="text-[10px] text-yellow-500/70">大盘压制，适度参与</span>
-            </div>
-          );
-        }
-        // 大盘↑+板块↓+个股↓ (大盘好但板块和个股差)
-        if (hasMktInfo && mktUp && hasSectorInfo && sectorDown && stockDown) {
-          return (
-            <div className="px-3 py-1.5 bg-orange-500/8 border-b border-orange-500/15 flex items-center justify-center gap-2">
-              <span className="text-orange-500 text-xs">⚠️</span>
-              <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
-                深证↑ 但板块↓+个股↓ ≤ 1/3仓
-              </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T低吸</span>
-              <span className="text-[10px] text-orange-500/70">大盘支撑但板块弱势</span>
-            </div>
-          );
-        }
-        // 大盘↑+板块↑+个股↓ (回调低吸)
-        if (hasMktInfo && mktUp && hasSectorInfo && sectorUp && stockDown) {
-          return (
-            <div className="px-3 py-1.5 bg-blue-500/8 border-b border-blue-500/15 flex items-center justify-center gap-2">
-              <span className="text-blue-500 text-xs">🔹</span>
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                深证↑+板块↑+个股↓ 25-30%仓
-              </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T低吸良机</span>
-              <span className="text-[10px] text-blue-500/70">大盘+板块支撑</span>
-            </div>
-          );
-        }
-        // 板块↓+个股↑ (无大盘数据或大盘震荡)
-        if (hasSectorInfo && sectorDown && stockUp) {
-          return (
-            <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-center gap-2">
-              <span className="text-amber-500 text-xs">⚠️</span>
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                板块↓+个股↑ 20-30%仓
-              </span>
-              <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)冲高卖</span>
-              <span className="text-[10px] text-amber-500/70">逆板块走强需谨慎</span>
-            </div>
-          );
-        }
-        // 板块↑+个股↓ (回调低吸)
-        if (hasSectorInfo && sectorUp && stockDown) {
-          return (
-            <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
-              <span className="text-yellow-500 text-xs">🔻</span>
-              <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
-                板块↑+个股↓ {hasMktInfo && mktUp ? '25-30%' : '20-30%'}仓
-              </span>
-              <span className="text-[10px] text-green-400 font-bold">| 正T低吸</span>
-              <span className="text-[10px] text-yellow-500/70">回调可低吸</span>
-            </div>
-          );
-        }
-        // No sector info - show simpler banner based on stock direction + market
-        if (!hasSectorInfo && hasMktInfo && mktDown && stockDown) {
-          return (
-            <div className="px-3 py-1.5 bg-green-500/5 border-b border-green-500/10 flex items-center justify-center gap-2">
-              <span className="text-green-500 text-xs">🔻</span>
-              <span className="text-xs font-medium text-green-600/80 dark:text-green-400/80">
-                深证↓+个股↓，大盘弱势注意控仓
-              </span>
-              <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)</span>
-              {onRetrySector && <button onClick={onRetrySector} disabled={sectorLoading} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-green-500/10 border-green-500/20 text-green-500 hover:bg-green-500/20 transition-colors disabled:opacity-50" title="板块数据未加载，点击重新请求">{sectorLoading ? <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}<span>加载板块</span></button>}
-            </div>
-          );
-        }
-        if (!hasSectorInfo && stockDown) {
-          return (
-            <div className="px-3 py-1.5 bg-amber-500/5 border-b border-amber-500/10 flex items-center justify-center gap-2">
-              <span className="text-amber-500 text-xs">🔻</span>
-              <span className="text-xs font-medium text-amber-600/80 dark:text-amber-400/80">
-                个股下跌，注意控制仓位
-              </span>
-              {onRetrySector && <button onClick={onRetrySector} disabled={sectorLoading} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-amber-500/10 border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors disabled:opacity-50" title="板块数据未加载，点击重新请求">{sectorLoading ? <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}<span>加载板块</span></button>}
-            </div>
-          );
-        }
-        return null;
-      })()}
+      {positionBanner?.type === '3down' && (
+        <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
+          <span className="text-red-500 text-xs">🚫</span>
+          <span className="text-xs font-bold text-green-600 dark:text-green-400">
+            三跌！深证↓+板块↓+个股↓ ≤ 1/4仓
+          </span>
+          <span className="text-[10px] text-green-500 font-bold">| 反T(先卖再买)/空仓</span>
+          <span className="text-[10px] text-green-500/70">极度危险，保留3/4后备</span>
+        </div>
+      )}
+      {positionBanner?.type === '3up' && (
+        <div className="px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 flex items-center justify-center gap-2">
+          <span className="text-red-500 text-xs">✅</span>
+          <span className="text-xs font-bold text-red-600 dark:text-red-400">
+            三涨！深证↑+板块↑+个股↑ 90-100%仓
+          </span>
+          <span className="text-[10px] text-red-400 font-bold">| 正T/反T(先卖再买)均可</span>
+          <span className="text-[10px] text-red-500/70">最安全，积极做T</span>
+        </div>
+      )}
+      {positionBanner?.type === '2down' && (
+        <div className="px-3 py-1.5 bg-green-500/10 border-b border-green-500/20 flex items-center justify-center gap-2">
+          <span className="text-green-500 text-xs">⛔</span>
+          <span className="text-xs font-bold text-green-600 dark:text-green-400">
+            {positionBanner.hasMktInfo ? '深证↓+' : ''}板块↓+个股↓ = 双跌！≤ 1/3仓
+          </span>
+          <span className="text-[10px] text-orange-400 font-bold">| 反T(先卖再买)冲高卖</span>
+          <span className="text-[10px] text-green-500/70">保留2/3后备资金</span>
+        </div>
+      )}
+      {positionBanner?.type === 'mkt_down_sector_stock_up' && (
+        <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
+          <span className="text-yellow-500 text-xs">🔸</span>
+          <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
+            深证↓ 但板块↑+个股↑ 20-30%仓
+          </span>
+          <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)冲高卖</span>
+          <span className="text-[10px] text-yellow-500/70">大盘压制，适度参与</span>
+        </div>
+      )}
+      {positionBanner?.type === 'mkt_up_sector_stock_down' && (
+        <div className="px-3 py-1.5 bg-orange-500/8 border-b border-orange-500/15 flex items-center justify-center gap-2">
+          <span className="text-orange-500 text-xs">⚠️</span>
+          <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
+            深证↑ 但板块↓+个股↓ ≤ 1/3仓
+          </span>
+          <span className="text-[10px] text-green-400 font-bold">| 正T低吸</span>
+          <span className="text-[10px] text-orange-500/70">大盘支撑但板块弱势</span>
+        </div>
+      )}
+      {positionBanner?.type === 'mkt_up_sector_up_stock_down' && (
+        <div className="px-3 py-1.5 bg-blue-500/8 border-b border-blue-500/15 flex items-center justify-center gap-2">
+          <span className="text-blue-500 text-xs">🔹</span>
+          <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
+            深证↑+板块↑+个股↓ 25-30%仓
+          </span>
+          <span className="text-[10px] text-green-400 font-bold">| 正T低吸良机</span>
+          <span className="text-[10px] text-blue-500/70">大盘+板块支撑</span>
+        </div>
+      )}
+      {positionBanner?.type === 'sector_down_stock_up' && (
+        <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-center gap-2">
+          <span className="text-amber-500 text-xs">⚠️</span>
+          <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+            板块↓+个股↑ 20-30%仓
+          </span>
+          <span className="text-[10px] text-red-400 font-bold">| 反T(先卖再买)冲高卖</span>
+          <span className="text-[10px] text-amber-500/70">逆板块走强需谨慎</span>
+        </div>
+      )}
+      {positionBanner?.type === 'sector_up_stock_down' && (
+        <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center justify-center gap-2">
+          <span className="text-yellow-500 text-xs">🔻</span>
+          <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">
+            板块↑+个股↓ {positionBanner.hasMktInfo && positionBanner.mktUp ? '25-30%' : '20-30%'}仓
+          </span>
+          <span className="text-[10px] text-green-400 font-bold">| 正T低吸</span>
+          <span className="text-[10px] text-yellow-500/70">回调可低吸</span>
+        </div>
+      )}
+      {positionBanner?.type === 'no_sector_mkt_stock_down' && (
+        <div className="px-3 py-1.5 bg-green-500/5 border-b border-green-500/10 flex items-center justify-center gap-2">
+          <span className="text-green-500 text-xs">🔻</span>
+          <span className="text-xs font-medium text-green-600/80 dark:text-green-400/80">
+            深证↓+个股↓，大盘弱势注意控仓
+          </span>
+          <span className="text-[10px] text-green-400 font-bold">| 反T(先卖再买)</span>
+          {onRetrySector && <button onClick={onRetrySector} disabled={sectorLoading} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-green-500/10 border-green-500/20 text-green-500 hover:bg-green-500/20 transition-colors disabled:opacity-50" title="板块数据未加载，点击重新请求">{sectorLoading ? <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}<span>加载板块</span></button>}
+        </div>
+      )}
+      {positionBanner?.type === 'no_sector_stock_down' && (
+        <div className="px-3 py-1.5 bg-amber-500/5 border-b border-amber-500/10 flex items-center justify-center gap-2">
+          <span className="text-amber-500 text-xs">🔻</span>
+          <span className="text-xs font-medium text-amber-600/80 dark:text-amber-400/80">
+            个股下跌，注意控制仓位
+          </span>
+          {onRetrySector && <button onClick={onRetrySector} disabled={sectorLoading} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-amber-500/10 border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors disabled:opacity-50" title="板块数据未加载，点击重新请求">{sectorLoading ? <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}<span>加载板块</span></button>}
+        </div>
+      )}
 
       {/* ─── Panel 1: Price Chart ─── */}
       <div className="relative">
@@ -2744,12 +2724,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           <ComposedChart
             data={zoomData}
             margin={{ top: 36, right: 82, left: 2, bottom: 0 }}
-            onMouseMove={(state: any) => {
-              if (state?.activeTooltipIndex != null) {
-                setCrosshairIdxThrottled(state.activeTooltipIndex);
-              }
-            }}
-            onMouseLeave={() => setCrosshairIdxThrottled(null)}
+            onMouseMove={handleChartMouseMove}
+            onMouseLeave={handleChartMouseLeave}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -2918,7 +2894,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {/* ── 早盘放量下跌禁买区（智能动态分级 v2） ── */}
             {earlyVolDeclineBan && (() => {
               const ban = earlyVolDeclineBan;
-              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              const banIdx = banMaskIdx;
               if (banIdx < 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
@@ -2929,7 +2905,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <Customized component={(props: any) => {
               if (!earlyVolDeclineBan) return null;
               const ban = earlyVolDeclineBan;
-              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              const banIdx = banMaskIdx;
               if (banIdx < 0) return null;
               const { xAxisMap, offset } = props;
               if (!xAxisMap || !offset) return null;
@@ -3188,12 +3164,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           <ComposedChart
             data={zoomData}
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
-            onMouseMove={(state: any) => {
-              if (state?.activeTooltipIndex != null) {
-                setCrosshairIdxThrottled(state.activeTooltipIndex);
-              }
-            }}
-            onMouseLeave={() => setCrosshairIdxThrottled(null)}
+            onMouseMove={handleChartMouseMove}
+            onMouseLeave={handleChartMouseLeave}
           >
             <XAxis dataKey="idx" type="number" domain={xDomain} tick={false} tickLine={false} axisLine={false} />
             {/* Hidden left YAxis to align with price chart */}
@@ -3221,7 +3193,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {/* ── 早盘放量下跌禁买蒙版 (成交量图，智能动态分级 v2) ── */}
             {earlyVolDeclineBan && (() => {
               const ban = earlyVolDeclineBan;
-              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              const banIdx = banMaskIdx;
               if (banIdx < 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
@@ -3231,7 +3203,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <Customized component={(props: any) => {
               if (!earlyVolDeclineBan) return null;
               const ban = earlyVolDeclineBan;
-              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              const banIdx = banMaskIdx;
               if (banIdx < 0) return null;
               const { xAxisMap, offset } = props;
               if (!xAxisMap || !offset) return null;
@@ -3296,12 +3268,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           <ComposedChart
             data={zoomData}
             margin={{ top: 0, right: 9, left: 2, bottom: 0 }}
-            onMouseMove={(state: any) => {
-              if (state?.activeTooltipIndex != null) {
-                setCrosshairIdxThrottled(state.activeTooltipIndex);
-              }
-            }}
-            onMouseLeave={() => setCrosshairIdxThrottled(null)}
+            onMouseMove={handleChartMouseMove}
+            onMouseLeave={handleChartMouseLeave}
           >
             <XAxis
               dataKey="idx"
@@ -3343,7 +3311,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {/* ── 早盘放量下跌禁买蒙版 (MACD图，智能动态分级 v2) ── */}
             {earlyVolDeclineBan && (() => {
               const ban = earlyVolDeclineBan;
-              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              const banIdx = banMaskIdx;
               if (banIdx < 0) return null;
               const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
               return (<>
@@ -3353,7 +3321,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <Customized component={(props: any) => {
               if (!earlyVolDeclineBan) return null;
               const ban = earlyVolDeclineBan;
-              const banIdx = zoomData.findIndex(d => d.time === ban.banEndTimeStr);
+              const banIdx = banMaskIdx;
               if (banIdx < 0) return null;
               const { xAxisMap, offset } = props;
               if (!xAxisMap || !offset) return null;
