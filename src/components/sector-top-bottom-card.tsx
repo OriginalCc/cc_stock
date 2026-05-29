@@ -20,12 +20,12 @@ interface SectorTopBottomData {
   success: boolean;
   timestamp: string;
   industry: {
-    top5: SectorRankItem[];
-    bottom5: SectorRankItem[];
+    top10: SectorRankItem[];
+    bottom10: SectorRankItem[];
   };
   concept: {
-    top5: SectorRankItem[];
-    bottom5: SectorRankItem[];
+    top10: SectorRankItem[];
+    bottom10: SectorRankItem[];
   };
 }
 
@@ -140,31 +140,31 @@ export function SectorTopBottomCard() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
-            {/* 涨幅前五 */}
+            {/* 涨幅前十 */}
             <div>
               <div className="flex items-center gap-0.5 mb-1">
                 <TrendingUp className="w-3 h-3" style={{ color: UP_COLOR }} />
                 <span className="text-[10px] font-bold" style={{ color: UP_COLOR }}>
-                  涨幅前5
+                  涨幅前10
                 </span>
               </div>
-              <div className="space-y-0.5">
-                {currentData.top5.map((sector, i) => (
+              <div className="space-y-0">
+                {currentData.top10.map((sector, i) => (
                   <SectorRow key={`top-${sector.code}-${i}`} sector={sector} rank={i + 1} isUp />
                 ))}
               </div>
             </div>
 
-            {/* 跌幅前五 */}
+            {/* 跌幅前十 */}
             <div>
               <div className="flex items-center gap-0.5 mb-1">
                 <TrendingDown className="w-3 h-3" style={{ color: DOWN_COLOR }} />
                 <span className="text-[10px] font-bold" style={{ color: DOWN_COLOR }}>
-                  跌幅前5
+                  跌幅前10
                 </span>
               </div>
-              <div className="space-y-0.5">
-                {currentData.bottom5.map((sector, i) => (
+              <div className="space-y-0">
+                {currentData.bottom10.map((sector, i) => (
                   <SectorRow key={`bottom-${sector.code}-${i}`} sector={sector} rank={i + 1} isUp={false} />
                 ))}
               </div>

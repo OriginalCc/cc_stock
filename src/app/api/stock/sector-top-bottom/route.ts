@@ -26,12 +26,12 @@ interface SectorTopBottomResponse {
   success: boolean;
   timestamp: string;
   industry: {
-    top5: SectorRankItem[];
-    bottom5: SectorRankItem[];
+    top10: SectorRankItem[];
+    bottom10: SectorRankItem[];
   };
   concept: {
-    top5: SectorRankItem[];
-    bottom5: SectorRankItem[];
+    top10: SectorRankItem[];
+    bottom10: SectorRankItem[];
   };
 }
 
@@ -48,7 +48,7 @@ const FETCH_HEADERS = {
  * Fetch top N gainers (po=1, desc) and top N losers (po=0, asc) for a sector type.
  * This avoids needing to paginate through all sectors — just grab top/bottom 5 directly.
  */
-async function fetchSectorTopBottom(fs: string, n: number = 5): Promise<{ topN: any[]; bottomN: any[] }> {
+async function fetchSectorTopBottom(fs: string, n: number = 10): Promise<{ topN: any[]; bottomN: any[] }> {
   // po=1 sorts f3 descending (top gainers first)
   // po=0 sorts f3 ascending (top losers first)
   const [topRes, bottomRes] = await Promise.all([
@@ -108,20 +108,20 @@ export async function GET() {
     try {
       // Fetch industry + concept sectors top/bottom 5 in parallel (4 requests total)
       const [industryResult, conceptResult] = await Promise.all([
-        fetchSectorTopBottom("m:90+t:2", 5),
-        fetchSectorTopBottom("m:90+t:3", 5),
+        fetchSectorTopBottom("m:90+t:2", 10),
+        fetchSectorTopBottom("m:90+t:3", 10),
       ]);
 
-      const industryTop5 = industryResult.topN.map(parseSectorRankItem);
-      const industryBottom5 = industryResult.bottomN.map(parseSectorRankItem);
-      const conceptTop5 = conceptResult.topN.map(parseSectorRankItem);
-      const conceptBottom5 = conceptResult.bottomN.map(parseSectorRankItem);
+      const industryTop10 = industryResult.topN.map(parseSectorRankItem);
+      const industryBottom10 = industryResult.bottomN.map(parseSectorRankItem);
+      const conceptTop10 = conceptResult.topN.map(parseSectorRankItem);
+      const conceptBottom10 = conceptResult.bottomN.map(parseSectorRankItem);
 
       const result: SectorTopBottomResponse = {
         success: true,
         timestamp: new Date().toISOString(),
-        industry: { top5: industryTop5, bottom5: industryBottom5 },
-        concept: { top5: conceptTop5, bottom5: conceptBottom5 },
+        industry: { top10: industryTop10, bottom10: industryBottom10 },
+        concept: { top10: conceptTop10, bottom10: conceptBottom10 },
       };
 
       cached = { data: result, ts: Date.now() };
