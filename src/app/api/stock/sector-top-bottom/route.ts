@@ -39,33 +39,44 @@ interface SectorTopBottomResponse {
 
 const EM_BASE = "https://push2delay.eastmoney.com";
 const SECTOR_FIELDS = "f2,f3,f12,f14,f62,f104,f105,f128,f140,f141";
+const FETCH_HEADERS = {
+  "Referer": "https://quote.eastmoney.com/",
+  "User-Agent": "Mozilla/5.0",
+};
 
-async function fetchSectors(fs: string, pageSize: number = 100): Promise<any[]> {
-  const url = `${EM_BASE}/api/qt/clist/get?pn=1&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=${fs}&fields=${SECTOR_FIELDS}`;
-  try {
-    const resp = await fetch(url, {
+/**
+ * Fetch top N gainers (po=1, desc) and top N losers (po=0, asc) for a sector type.
+ * This avoids needing to paginate through all sectors — just grab top/bottom 5 directly.
+ */
+async function fetchSectorTopBottom(fs: string, n: number = 5): Promise<{ topN: any[]; bottomN: any[] }> {
+  // po=1 sorts f3 descending (top gainers first)
+  // po=0 sorts f3 ascending (top losers first)
+  const [topRes, bottomRes] = await Promise.all([
+    fetch(`${EM_BASE}/api/qt/clist/get?pn=1&pz=${n}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=${fs}&fields=${SECTOR_FIELDS}`, {
       next: { revalidate: 0 },
       signal: AbortSignal.timeout(10000),
-      headers: {
-        "Referer": "https://quote.eastmoney.com/",
-        "User-Agent": "Mozilla/5.0",
-      },
-    });
-    if (!resp.ok) {
-      console.error(`fetchSectors ${fs} returned status ${resp.status}`);
+      headers: FETCH_HEADERS,
+    }),
+    fetch(`${EM_BASE}/api/qt/clist/get?pn=1&pz=${n}&po=0&np=1&fltt=2&invt=2&fid=f3&fs=${fs}&fields=${SECTOR_FIELDS}`, {
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(10000),
+      headers: FETCH_HEADERS,
+    }),
+  ]);
+
+  const parseDiff = async (res: Response): Promise<any[]> => {
+    if (!res.ok) return [];
+    try {
+      const data = await res.json();
+      const diff = data?.data?.diff;
+      return Array.isArray(diff) ? diff : [];
+    } catch {
       return [];
     }
-    const data = await resp.json();
-    const diff = data?.data?.diff;
-    if (!Array.isArray(diff)) {
-      console.error(`fetchSectors ${fs} no diff array, response keys:`, Object.keys(data || {}));
-      return [];
-    }
-    return diff;
-  } catch (e) {
-    console.error(`fetchSectors ${fs} error:`, e);
-    return [];
-  }
+  };
+
+  const [topDiff, bottomDiff] = await Promise.all([parseDiff(topRes), parseDiff(bottomRes)]);
+  return { topN: topDiff, bottomN: bottomDiff };
 }
 
 // ── Parse ──
@@ -88,9 +99,6 @@ function parseSectorRankItem(item: any): SectorRankItem {
 let cached: { data: SectorTopBottomResponse; ts: number } | null = null;
 const CACHE_TTL = 30_000; // 30s during trading
 
-// In-memory flag to prevent stale empty data from being cached permanently
-let lastFetchHadIndustry = false;
-
 // ── Route Handler ──
 
 export async function GET() {
@@ -98,50 +106,25 @@ export async function GET() {
 
   if (needsFetch) {
     try {
-      // Fetch industry + concept sectors in parallel
-      // po=1 sorts by f3 (changePercent) descending — top gainers first
-      const [industryRaw, conceptRaw] = await Promise.all([
-        fetchSectors("m:90+t:2", 100),
-        fetchSectors("m:90+t:3", 100),
+      // Fetch industry + concept sectors top/bottom 5 in parallel (4 requests total)
+      const [industryResult, conceptResult] = await Promise.all([
+        fetchSectorTopBottom("m:90+t:2", 5),
+        fetchSectorTopBottom("m:90+t:3", 5),
       ]);
 
-      console.log(`sector-top-bottom: industry=${industryRaw.length}, concept=${conceptRaw.length}`);
+      const industryTop5 = industryResult.topN.map(parseSectorRankItem);
+      const industryBottom5 = industryResult.bottomN.map(parseSectorRankItem);
+      const conceptTop5 = conceptResult.topN.map(parseSectorRankItem);
+      const conceptBottom5 = conceptResult.bottomN.map(parseSectorRankItem);
 
-      const industrySectors = industryRaw.map(parseSectorRankItem);
-      const conceptSectors = conceptRaw.map(parseSectorRankItem);
+      const result: SectorTopBottomResponse = {
+        success: true,
+        timestamp: new Date().toISOString(),
+        industry: { top5: industryTop5, bottom5: industryBottom5 },
+        concept: { top5: conceptTop5, bottom5: conceptBottom5 },
+      };
 
-      // If industry data is empty but we had it before, use stale data
-      if (industrySectors.length === 0 && lastFetchHadIndustry && cached) {
-        // Keep stale industry data from cache
-        const staleIndustry = cached.data.industry;
-        const conceptTop5 = conceptSectors.slice(0, 5);
-        const conceptBottom5 = [...conceptSectors].reverse().slice(0, 5);
-
-        const result: SectorTopBottomResponse = {
-          success: true,
-          timestamp: new Date().toISOString(),
-          industry: staleIndustry,
-          concept: { top5: conceptTop5, bottom5: conceptBottom5 },
-        };
-        cached = { data: result, ts: Date.now() };
-      } else {
-        // Top 5 gainers (already sorted desc by changePercent from API)
-        // Bottom 5 losers (take last 5 from the desc-sorted array)
-        const industryTop5 = industrySectors.slice(0, 5);
-        const industryBottom5 = [...industrySectors].reverse().slice(0, 5);
-        const conceptTop5 = conceptSectors.slice(0, 5);
-        const conceptBottom5 = [...conceptSectors].reverse().slice(0, 5);
-
-        const result: SectorTopBottomResponse = {
-          success: true,
-          timestamp: new Date().toISOString(),
-          industry: { top5: industryTop5, bottom5: industryBottom5 },
-          concept: { top5: conceptTop5, bottom5: conceptBottom5 },
-        };
-
-        if (industrySectors.length > 0) lastFetchHadIndustry = true;
-        cached = { data: result, ts: Date.now() };
-      }
+      cached = { data: result, ts: Date.now() };
     } catch (err) {
       console.error("sector-top-bottom error:", err);
       if (cached) {
