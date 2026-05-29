@@ -139,58 +139,80 @@ interface StockItem {
   market: number;
 }
 
-async function fetchAllStocks(): Promise<StockItem[]> {
-  const allStocks: StockItem[] = [];
-  let page = 1;
-  const pageSize = 6000;
-  let totalStocks = Infinity;
+const API_PAGE_SIZE = 100; // East Money clist API max per page
+const BASE_URL = "https://push2.eastmoney.com/api/qt/clist/get";
+const BASE_PARAMS = "po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f12,f14,f13";
+const FETCH_HEADERS = {
+  "Referer": "https://quote.eastmoney.com/",
+  "User-Agent": "Mozilla/5.0",
+};
 
-  while (allStocks.length < totalStocks) {
-    const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f12,f14,f13`;
-
-    const res = await fetch(url, {
-      next: { revalidate: 0 },
-      signal: AbortSignal.timeout(10000),
-      headers: {
-        "Referer": "https://quote.eastmoney.com/",
-        "User-Agent": "Mozilla/5.0",
-      },
+function parseStockItems(diff: unknown[]): StockItem[] {
+  const result: StockItem[] = [];
+  for (const item of diff) {
+    const changePct = (item as Record<string, unknown>).f3;
+    const price = (item as Record<string, unknown>).f2;
+    const code = (item as Record<string, unknown>).f12;
+    const name = (item as Record<string, unknown>).f14;
+    const market = (item as Record<string, unknown>).f13;
+    if (changePct === "-" || price === "-" || !code) continue;
+    result.push({
+      code: String(code),
+      name: String(name),
+      price: Number(price),
+      changePct: Number(changePct),
+      market: Number(market),
     });
+  }
+  return result;
+}
 
-    if (!res.ok) throw new Error(`East Money clist API returned ${res.status}`);
+async function fetchAllStocks(): Promise<StockItem[]> {
+  // Step 1: Fetch page 1 to get total count
+  const url1 = `${BASE_URL}?pn=1&pz=${API_PAGE_SIZE}&${BASE_PARAMS}`;
+  const res1 = await fetch(url1, {
+    next: { revalidate: 0 },
+    signal: AbortSignal.timeout(10000),
+    headers: FETCH_HEADERS,
+  });
+  if (!res1.ok) throw new Error(`East Money clist API returned ${res1.status}`);
+  const json1 = await res1.json();
+  const diff1 = json1?.data?.diff;
+  if (!Array.isArray(diff1)) throw new Error("Invalid clist response format");
 
-    const json = await res.json();
-    const diff = json?.data?.diff;
-    if (!Array.isArray(diff)) throw new Error("Invalid clist response format");
+  const totalStocks: number = json1?.data?.total ?? 0;
+  const allStocks = parseStockItems(diff1);
 
-    // Get total count on first page
-    if (page === 1) {
-      totalStocks = json?.data?.total ?? 0;
+  if (totalStocks <= API_PAGE_SIZE) return allStocks;
+
+  // Step 2: Calculate remaining pages and fetch them in parallel batches
+  const totalPages = Math.ceil(totalStocks / API_PAGE_SIZE);
+  const BATCH_SIZE = 10; // parallel requests per batch
+
+  for (let batchStart = 2; batchStart <= totalPages; batchStart += BATCH_SIZE) {
+    const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, totalPages);
+    const pagePromises = [];
+
+    for (let p = batchStart; p <= batchEnd; p++) {
+      const url = `${BASE_URL}?pn=${p}&pz=${API_PAGE_SIZE}&${BASE_PARAMS}`;
+      pagePromises.push(
+        fetch(url, {
+          next: { revalidate: 0 },
+          signal: AbortSignal.timeout(10000),
+          headers: FETCH_HEADERS,
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      );
     }
 
-    for (const item of diff) {
-      const changePct = item.f3;
-      const price = item.f2;
-      const code = item.f12;
-      const name = item.f14;
-      const market = item.f13;
-
-      // Skip invalid entries (price = "-" or changePct = "-")
-      if (changePct === "-" || price === "-" || !code) continue;
-
-      allStocks.push({
-        code: String(code),
-        name: String(name),
-        price: Number(price),
-        changePct: Number(changePct),
-        market: Number(market),
-      });
+    const results = await Promise.all(pagePromises);
+    for (const json of results) {
+      const diff = json?.data?.diff;
+      if (Array.isArray(diff)) {
+        allStocks.push(...parseStockItems(diff));
+      }
     }
-
-    // If this page returned fewer than pageSize, we've got all stocks
-    if (diff.length < pageSize) break;
-
-    page++;
   }
 
   return allStocks;
