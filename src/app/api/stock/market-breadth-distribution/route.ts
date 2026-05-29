@@ -40,16 +40,16 @@ interface BucketDef {
 }
 
 const BUCKET_DEFS: BucketDef[] = [
-  { label: "涨停", min: 9.9, color: "#dc2626" },
-  { label: "+7~10%", min: 7, max: 9.9, color: "#ef4444" },
-  { label: "+5~7%", min: 5, max: 7, color: "#f87171" },
-  { label: "+3~5%", min: 3, max: 5, color: "#fca5a5" },
-  { label: "+1~3%", min: 1, max: 3, color: "#fecaca" },
-  { label: "0~+1%", min: 0, max: 1, color: "#fee2e2" },
-  { label: "-1~0", min: -1, max: 0, color: "#d1fae5" },
-  { label: "-3~-1", min: -3, max: -1, color: "#a7f3d0" },
-  { label: "-5~-3", min: -5, max: -3, color: "#6ee7b7" },
-  { label: "-7~-5", min: -7, max: -5, color: "#34d399" },
+  { label: "涨停", min: 9.9, color: "#b91c1c" },
+  { label: "+7~10%", min: 7, max: 9.9, color: "#dc2626" },
+  { label: "+5~7%", min: 5, max: 7, color: "#ef4444" },
+  { label: "+3~5%", min: 3, max: 5, color: "#f87171" },
+  { label: "+1~3%", min: 1, max: 3, color: "#f09090" },
+  { label: "0~+1%", min: 0, max: 1, color: "#e0a0a0" },
+  { label: "-1~0", min: -1, max: 0, color: "#7eb89a" },
+  { label: "-3~-1", min: -3, max: -1, color: "#5aaa80" },
+  { label: "-5~-3", min: -5, max: -3, color: "#3d9d6c" },
+  { label: "-7~-5", min: -7, max: -5, color: "#2d8a5e" },
   { label: "-10~-7", min: -9.9, max: -7, color: "#059669" },
   { label: "跌停", max: -9.9, color: "#047857" },
 ];
