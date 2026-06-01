@@ -969,8 +969,8 @@ export default function StockTAssistant() {
         </>
         )}
 
-        {/* Trading Rules Reference — only in timeline mode with data */}
-        {chartMode === "timeline" && liveTimeline.length > 0 && (
+        {/* Trading Rules Reference — only on t-assistant timeline page */}
+        {pageMode === "t-assistant" && chartMode === "timeline" && liveTimeline.length > 0 && (
         <div className="mb-4">
           <TradingRulesCard autoExpanded={autoExpanded} pvMarkers={pvMarkers} />
         </div>
