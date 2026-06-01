@@ -969,8 +969,8 @@ export default function StockTAssistant() {
         </>
         )}
 
-        {/* Trading Rules Reference — hidden in 5d-timeline mode */}
-        {chartMode !== "5d-timeline" && (
+        {/* Trading Rules Reference — only in timeline mode with data */}
+        {chartMode === "timeline" && liveTimeline.length > 0 && (
         <div className="mb-4">
           <TradingRulesCard autoExpanded={autoExpanded} pvMarkers={pvMarkers} />
         </div>
