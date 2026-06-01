@@ -1283,3 +1283,46 @@ Stage Summary:
 - 布局从2列改为3列：涨跌幅分布 | 板块排行 | 涨跌停详情
 - API端点 `/api/stock/sector-top-bottom` 轻量级，30秒缓存
 - 组件自动轮询刷新，支持Tab切换行业/概念板块
+
+---
+Task ID: 1
+Agent: main
+Task: 更新宝塔部署指南组件，让部署说明更详细完善
+
+Work Log:
+- 读取当前 baota-deploy-guide.tsx 和 BAOTA_DEPLOY.md 参考文档
+- 全面重写 baota-deploy-guide.tsx，大幅增强部署说明的详细程度
+- 打包上传 Tab 更新：
+  - Step 1 (PM2安装): 增加操作路径说明（软件商店→搜索→安装）、安装时间（1-3分钟）、PM2自带Node.js 18+强调、搜不到时npm安装备选方案
+  - Step 2 (打包): 增加前置说明（本机操作、非服务器）、Node.js 18+和bun环境要求、文件大小5-15MB、没有bun时npm install -g bun
+  - Step 3 (上传): 增加上传时间说明（1-3分钟）、解压后目录路径、超时用SFTP备选
+  - Step 4 (一键安装): 大幅扩展——打开终端说明、脚本7步操作详情、构建时间2-5分钟、成功提示、自定义密码、3种常见失败原因及解决方案（node找不到/OOM/网络超时）
+  - Step 5 (配置访问): 两种方式详细扩展——域名绑定（添加站点配置表+反向代理配置表+SSL申请步骤+强制HTTPS）、直接IP访问（宝塔防火墙+云服务商安全组强调）
+- Git克隆 Tab 同步增强：
+  - Step 1: Git也从软件商店安装说明
+  - Step 2: 终端执行说明、仓库地址替换提示
+  - Step 3: 与打包上传Step 4完全一致的一键安装详细说明
+  - Step 4: 配置访问与打包上传Step 5一致
+- Docker Tab 同步增强：
+  - Step 1: Docker管理器安装说明（3-5分钟）
+  - Step 3: docker-compose.yml密码配置说明、查看日志和容器状态命令
+- 新增 ConfigTable 辅助组件：统一配置参数表格展示
+- 提取 installStepContent 和 accessStepContent 为共享变量，避免3个Tab重复代码
+- 进阶配置 Accordion 增强：
+  - 域名+HTTPS: 增加反向代理配置参数表格、SSL申请失败3种解决方案
+  - 常用管理命令: 增加pm2 monit实时监控、pm2 describe详细信息、Docker完整7条命令、宝塔PM2管理器操作说明
+  - 更新部署: 新增AccordionItem——打包上传/Git/Docker三种更新方式 + Ctrl+Shift+R强制刷新提示
+  - 数据库备份: 增加自动备份详细配置（计划任务→Shell脚本→每天03:00）、完整备份脚本（30天自动清理）、恢复数据库步骤
+  - 密码管理: 增加界面修改密码步骤、忘记密码重置方法（sed修改.env + 删除DB记录）、重新运行安装脚本修改密码
+  - 常见问题: 从4项扩展为7项——node找不到、构建OOM（含swap命令）、端口占用（含更换端口方案）、Nginx 502（含排查步骤）、更新后页面没变化、SSL申请失败、云服务商安全组配置（含端口表格）
+- 新增图标导入: RefreshCw、Clock、AlertTriangle、FileText、Lock
+- 移除未使用图标: FileText、Clock（检查确认后移除）
+- Lint 通过，无错误
+
+Stage Summary:
+- 宝塔部署指南组件全面升级，从简单步骤说明变为详细操作手册级别
+- 打包上传Tab 5个步骤全部大幅扩展，每个步骤都有前置条件、详细操作、注意事项
+- 一键安装步骤和配置访问步骤提取为共享内容，3个Tab复用避免代码重复
+- 进阶配置从5个AccordionItem扩展为6个（新增更新部署），内容全面增强
+- 常见问题从4项扩展为7项，覆盖更多实际部署场景
+- 新增ConfigTable辅助组件，统一配置参数的表格展示格式
