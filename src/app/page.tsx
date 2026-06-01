@@ -194,7 +194,7 @@ export default function StockTAssistant() {
       return day >= 1 && day <= 5 && ((t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505));
     };
     if (isTradingHours()) {
-      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 30000);
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 15000);
     }
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
@@ -256,7 +256,7 @@ export default function StockTAssistant() {
       setTimeout(fetchAll, 1000);
     }
     if (isTradingHours()) {
-      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAll(); }, 30000);
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAll(); }, 15000);
     }
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, [pageMode]);
@@ -378,11 +378,11 @@ export default function StockTAssistant() {
 
     // Initial fetch — delayed 2s to avoid competing with main stock timeline data
     setTimeout(() => { if (!cancelled) fetchSectorData(); }, 2000);
-    // Periodic refresh every 30s — no fail counter, always retry
+    // Periodic refresh every 15s — no fail counter, always retry
     const refreshInterval = setInterval(() => {
       retryCount = 0; // Reset retry counter on periodic refresh
       if (!cancelled) fetchSectorData();
-    }, 30000);
+    }, 15000);
     return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
   }, [symbol, isAShareStock]);
 
