@@ -30,7 +30,7 @@ const UP_COLOR = "#dc2626";
 const DOWN_COLOR = "#059669";
 
 // ── Key time labels (same as TimeSharingPanel) ──
-const KEY_TIMES = ["09:30", "10:00", "10:30", "11:00", "13:00", "13:30", "14:00", "14:30", "15:00"];
+const KEY_TIMES = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
 
 // ── Pre-compute ALL_TRADE_TIMES index lookup ──
 const TIME_INDEX_MAP = new Map<string, number>();
@@ -603,16 +603,29 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           ))}
 
           {/* X-axis with tick marks (same key times as TimeSharingPanel) */}
-          {xTicks.map((t, i) => (
-            <g key={`xl-${i}`}>
-              <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 3}
-                stroke="currentColor" className="text-foreground/30" strokeWidth={0.4} />
-              <text x={t.x} y={h - 7} textAnchor="middle"
-                fontSize={8.5} fontFamily="monospace" fontWeight={600} fill="currentColor" className="text-foreground/80">
-                {t.label}
-              </text>
-            </g>
-          ))}
+          {/* Anti-overlap: skip labels that are too close together (< 28px) */}
+          {(() => {
+            const MIN_GAP = 28;
+            const visible: typeof xTicks = [];
+            for (const t of xTicks) {
+              if (visible.length > 0 && t.x - visible[visible.length - 1].x < MIN_GAP) {
+                // Replace previous with this one (prefer 13:00 over 11:30)
+                visible[visible.length - 1] = t;
+              } else {
+                visible.push(t);
+              }
+            }
+            return visible.map((t, i) => (
+              <g key={`xl-${i}`}>
+                <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 3}
+                  stroke="currentColor" className="text-foreground/30" strokeWidth={0.4} />
+                <text x={t.x} y={h - 7} textAnchor="middle"
+                  fontSize={8.5} fontFamily="monospace" fontWeight={600} fill="currentColor" className="text-foreground/80">
+                  {t.label}
+                </text>
+              </g>
+            ));
+          })()}
 
           {/* Axes */}
           <line x1={cPx} y1={cPt} x2={cPx} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.3} />
