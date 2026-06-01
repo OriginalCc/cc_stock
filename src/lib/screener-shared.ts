@@ -551,12 +551,18 @@ export async function fetchMiniTimeline(
 // 5. Screener Auto-Save to History
 // ═══════════════════════════════════════════════════════════
 
-/** Auto-save interval: save every 30 minutes during trading hours */
-const AUTO_SAVE_INTERVAL = 30 * 60 * 1000; // 30 minutes
+/** Auto-save interval: save every 5 minutes (regardless of trading hours) */
+const AUTO_SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+/** Debounce delay before saving after results change */
+const SAVE_DEBOUNCE = 10_000; // 10 seconds
 
 /**
  * Save screener results to the database for historical verification.
  * Called automatically by each screener component at regular intervals.
+ *
+ * Uses upsert strategy: same date+time+sector combo will be updated,
+ * so frequent saves are cheap and don't create duplicates.
  *
  * @param stocks - Array of stock results from the screener
  * @param screenerType - Type of screener: "stock" | "intraday" | "early" | "low_open" | "limit_up"
@@ -624,8 +630,16 @@ export async function saveScreenerResults(
 }
 
 /**
- * React hook: auto-save screener results at regular intervals during trading hours.
- * Each screener component should call this with its current results.
+ * React hook: auto-save screener results reliably to database.
+ *
+ * Save triggers:
+ * 1. Initial save: 3 seconds after results first appear
+ * 2. Debounced save: 10 seconds after results change significantly
+ * 3. Periodic save: every 5 minutes (regardless of trading hours)
+ * 4. Save on page visibility change (tab switch / minimize)
+ * 5. Save on beforeunload (page close / refresh)
+ *
+ * Uses upsert strategy so frequent saves don't create duplicate records.
  *
  * @param stocks - Current screener results
  * @param screenerType - Type of screener
@@ -641,35 +655,127 @@ export function useAutoSaveScreener(
   enabled: boolean = true,
 ): void {
   const lastSaveRef = useRef<number>(0);
+  const stocksRef = useRef(stocks);
+  const screenerTypeRef = useRef(screenerType);
+  const sectorNameRef = useRef(sectorName);
+  const filtersRef = useRef(filters);
+  const enabledRef = useRef(enabled);
 
+  // Keep refs up to date
+  useEffect(() => { stocksRef.current = stocks; }, [stocks]);
+  useEffect(() => { screenerTypeRef.current = screenerType; }, [screenerType]);
+  useEffect(() => { sectorNameRef.current = sectorName; }, [sectorName]);
+  useEffect(() => { filtersRef.current = filters; }, [filters]);
+  useEffect(() => { enabledRef.current = enabled; }, [enabled]);
+
+  // Core save function (reads from refs to always get latest values)
+  const doSave = useCallback(() => {
+    if (!enabledRef.current || !stocksRef.current || stocksRef.current.length === 0) return;
+    const now = Date.now();
+    // Throttle: don't save more than once per 30 seconds
+    if (now - lastSaveRef.current < 30_000) return;
+    lastSaveRef.current = now;
+    saveScreenerResults(stocksRef.current, screenerTypeRef.current, sectorNameRef.current, filtersRef.current);
+  }, []);
+
+  // Main effect: initial save + debounced save + periodic save
   useEffect(() => {
     if (!enabled || !stocks || stocks.length === 0) return;
 
-    const checkAndSave = () => {
-      if (!isTradingHours()) return;
-      const now = Date.now();
-      if (now - lastSaveRef.current < AUTO_SAVE_INTERVAL) return;
-      lastSaveRef.current = now;
-      saveScreenerResults(stocks, screenerType, sectorName, filters);
-    };
+    // Compute a fingerprint to detect meaningful changes in stock list
+    const fingerprint = stocks.map(s => s.symbol).join(",");
 
-    // Initial save with a short delay (don't block initial render)
+    // 1. Initial save after 3 seconds (fast, non-blocking)
     const initialTimer = setTimeout(() => {
-      if (stocks && stocks.length > 0) {
+      if (stocksRef.current && stocksRef.current.length > 0) {
         const now = Date.now();
-        if (now - lastSaveRef.current >= AUTO_SAVE_INTERVAL) {
+        if (now - lastSaveRef.current >= 30_000) {
           lastSaveRef.current = now;
-          saveScreenerResults(stocks, screenerType, sectorName, filters);
+          saveScreenerResults(stocksRef.current, screenerTypeRef.current, sectorNameRef.current, filtersRef.current);
         }
       }
-    }, 5000);
+    }, 3000);
 
-    // Check every 60 seconds
-    const checkTimer = setInterval(checkAndSave, 60_000);
+    // 2. Debounced save: save 10 seconds after results change
+    const debounceTimer = setTimeout(() => {
+      doSave();
+    }, SAVE_DEBOUNCE);
+
+    // 3. Periodic save: every 5 minutes regardless of trading hours
+    const periodicTimer = setInterval(() => {
+      doSave();
+    }, AUTO_SAVE_INTERVAL);
 
     return () => {
       clearTimeout(initialTimer);
-      clearInterval(checkTimer);
+      clearTimeout(debounceTimer);
+      clearInterval(periodicTimer);
     };
-  }, [stocks, screenerType, sectorName, enabled]);
+  }, [enabled, stocks?.map(s => s.symbol).join(","), screenerType, sectorName, doSave]);
+
+  // Save on page visibility change (tab switch / minimize / back)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        // Page is being hidden — save immediately
+        if (stocksRef.current && stocksRef.current.length > 0 && enabledRef.current) {
+          const now = Date.now();
+          // Allow saving even if less than 30s since last save (page may be closing)
+          lastSaveRef.current = now;
+          saveScreenerResults(stocksRef.current, screenerTypeRef.current, sectorNameRef.current, filtersRef.current);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // Save on beforeunload (page close / refresh)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (stocksRef.current && stocksRef.current.length > 0 && enabledRef.current) {
+        // Use sendBeacon for reliable delivery during page unload
+        const now = new Date();
+        const chinaTime = new Date(now.getTime() + (8 * 60 + now.getTimezoneOffset()) * 60000);
+        const recordDate = chinaTime.toISOString().split("T")[0];
+        const h = chinaTime.getHours();
+        const m = chinaTime.getMinutes();
+        const recordTime = m >= 30 ? `${String(h).padStart(2, "0")}:30` : `${String(h).padStart(2, "0")}:00`;
+
+        const stocksToSave = stocksRef.current.map((s) => ({
+          symbol: s.symbol,
+          name: s.name,
+          price: s.price ?? 0,
+          changePercent: s.changePercent ?? 0,
+          compositeScore: s.compositeScore,
+          evaluation: s.evaluation,
+          pulseScore: s.pulseScore,
+          volumeSurgeScore: s.volumeSurgeScore,
+          reliabilityScore: s.reliabilityScore,
+        }));
+
+        try {
+          const payload = JSON.stringify({
+            action: "save",
+            records: [{
+              recordDate,
+              recordTime,
+              screenerType: screenerTypeRef.current,
+              sectorName: sectorNameRef.current,
+              stockCount: stocksToSave.length,
+              stocksJson: JSON.stringify(stocksToSave),
+              filtersJson: JSON.stringify(filtersRef.current),
+            }],
+          });
+          // Use Blob with correct content-type so server can parse JSON
+          const blob = new Blob([payload], { type: "application/json" });
+          navigator.sendBeacon("/api/stock/screener-history", blob);
+        } catch {}
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 }
