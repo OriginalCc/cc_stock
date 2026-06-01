@@ -58,7 +58,7 @@ function getActiveRules(markers: PulseVolumeMarker[]): Set<RuleKey> {
   return active;
 }
 
-export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesCardProps) {
+export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesCardProps) {
   // null = no manual override; true/false = user explicitly toggled
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
 
@@ -1074,4 +1074,4 @@ export function TradingRulesCard({ autoExpanded, pvMarkers = [] }: TradingRulesC
       </CardContent>}
     </Card>
   );
-}
+});

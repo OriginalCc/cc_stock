@@ -184,16 +184,8 @@ export default function StockTAssistant() {
 
     // Defer index fetch to avoid competing with stock timeline for connection pool
     // Index data is less critical than stock data for initial paint
-    const startDelay = typeof requestIdleCallback === 'function' ? 0 : 1500;
-    const idleFetch = () => {
-      if (cancelled) return;
-      fetchAllIndices();
-    };
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(idleFetch, { timeout: 2000 });
-    } else {
-      setTimeout(idleFetch, startDelay);
-    }
+    const startDelay = 3000; // Fixed 3s delay to ensure main stock data loads first
+    setTimeout(idleFetch, startDelay);
 
     // Refresh every 30s during trading hours
     const isTradingHours = () => {
@@ -257,8 +249,12 @@ export default function StockTAssistant() {
 
     const fetchAll = () => { fetchBreadth(); fetchDistribution(); fetchLimitStats(); };
 
-    // Initial fetch with delay to avoid competing with stock data
-    setTimeout(fetchAll, 2500);
+    // Initial fetch using requestIdleCallback to avoid competing with stock data
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => { if (!cancelled) fetchAll(); }, { timeout: 1000 });
+    } else {
+      setTimeout(fetchAll, 1000);
+    }
     if (isTradingHours()) {
       intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAll(); }, 30000);
     }
@@ -380,8 +376,8 @@ export default function StockTAssistant() {
       fetchSectorData();
     };
 
-    // Initial fetch
-    fetchSectorData();
+    // Initial fetch — delayed 2s to avoid competing with main stock timeline data
+    setTimeout(() => { if (!cancelled) fetchSectorData(); }, 2000);
     // Periodic refresh every 30s — no fail counter, always retry
     const refreshInterval = setInterval(() => {
       retryCount = 0; // Reset retry counter on periodic refresh
@@ -653,6 +649,9 @@ export default function StockTAssistant() {
   }, [liveTimeline, timelinePrevClose, isTimelineActive]);
   // NOTE: Removed useDeferredValue for pvMarkers — same reason as signals above.
   const latestTimelineSignal = useMemo(() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { if (timelineSignals[i]) return timelineSignals[i]; } return null; }, [timelineSignals]);
+
+  // ── Recent signals for SignalSummaryPanel (memoized to avoid .slice() creating new array each render) ──
+  const recentSignals = useMemo(() => timelineSignals.slice(-60), [timelineSignals]);
 
   // ── Signal counts ──
   const signalCounts = useMemo(() => {
@@ -950,7 +949,7 @@ export default function StockTAssistant() {
         {/* T-Trading Signals Summary — hidden in 5d-timeline mode */}
         {chartMode !== "5d-timeline" && (chartData.length > 0 || (chartMode === "timeline" && liveTimeline.length > 0)) && (
           <LazyMount height={120}>
-            <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={timelineSignals.slice(-60)} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={pvMarkers} />
+            <SignalSummaryPanel chartMode={chartMode} chartData={chartData} liveTimeline={liveTimeline} timeline={timeline} timelineSignals={recentSignals} latestTimelineSignal={latestTimelineSignal} latestSignal={latestSignal} signalCounts={signalCounts} pvMarkers={pvMarkers} />
           </LazyMount>
         )}
 

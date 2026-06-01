@@ -80,12 +80,12 @@ const DEFAULT_SYMBOL = "600519";
 const DEFAULT_CHART_MODE: ChartMode = "timeline";
 
 // ── Cache TTL constants ──
-const QUOTE_CACHE_TTL = 1000; // 1s for quote data
-const TIMELINE_CACHE_TTL = 1000; // 1s for timeline data
+const QUOTE_CACHE_TTL = 2000; // 2s for quote data
+const TIMELINE_CACHE_TTL = 2000; // 2s for timeline data
 const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
 
 // ── Auto-refresh interval ──
-const TIMELINE_REFRESH_INTERVAL = 1500; // 1.5s for timeline/quote auto-refresh during trading hours
+const TIMELINE_REFRESH_INTERVAL = 3000; // 3s for timeline/quote auto-refresh during trading hours
 
 // ── Helper: Try to read cached timeline+quote data for a symbol ──
 function tryGetCachedTimelineQuote(sym: string): { items: TimelineItem[]; prevClose: number; quote?: StockQuote } | null {

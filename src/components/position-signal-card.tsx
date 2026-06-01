@@ -199,7 +199,7 @@ function directionColor(dir: Direction): string {
 
 // ── Component ──
 
-export function PositionSignalCard({
+export const PositionSignalCard = React.memo(function PositionSignalCard({
   indexRegime,
   sectorRegime,
   stockChangePercent,
@@ -293,4 +293,4 @@ export function PositionSignalCard({
       </CardContent>
     </Card>
   );
-}
+});
