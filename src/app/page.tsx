@@ -185,7 +185,7 @@ export default function StockTAssistant() {
     // Defer index fetch to avoid competing with stock timeline for connection pool
     // Index data is less critical than stock data for initial paint
     const startDelay = 3000; // Fixed 3s delay to ensure main stock data loads first
-    setTimeout(idleFetch, startDelay);
+    setTimeout(() => fetchAllIndices(), startDelay);
 
     // Refresh every 30s during trading hours
     const isTradingHours = () => {
