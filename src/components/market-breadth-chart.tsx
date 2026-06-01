@@ -30,7 +30,7 @@ const UP_COLOR = "#dc2626";
 const DOWN_COLOR = "#059669";
 
 // ── Key time labels (same as TimeSharingPanel) ──
-const KEY_TIMES = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
+const KEY_TIMES = ["09:30", "10:00", "10:30", "11:00", "13:00", "13:30", "14:00", "14:30", "15:00"];
 
 // ── Pre-compute ALL_TRADE_TIMES index lookup ──
 const TIME_INDEX_MAP = new Map<string, number>();
