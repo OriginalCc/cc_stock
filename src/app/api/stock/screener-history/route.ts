@@ -395,8 +395,8 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    // Delete all records older than 60 days
-    const cutoff = getDateNDaysAgo(60);
+    // Delete all records older than 5 trading days (~7 calendar days to account for weekends)
+    const cutoff = getDateNDaysAgo(7);
     const result = await db.screenerHistoryRecord.deleteMany({
       where: { recordDate: { lt: cutoff } },
     });
