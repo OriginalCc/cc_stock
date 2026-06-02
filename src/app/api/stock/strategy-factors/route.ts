@@ -140,7 +140,7 @@ const DEFAULT_FACTOR_SEEDS = [
   // v4.3 new factor
   { name: "高开卖出", category: "GAP_UP", signalType: "sell", description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）", params: JSON.stringify({ gapUpPct: 0 }), enabled: true, priority: 23, strength: "strong", tMode: "正T", timeWindow: "sell_window" },
   // v4.5 new factor
-  { name: "放量下跌买点", category: "VOLUME_DECLINE_BUY", signalType: "buy", description: "放量下跌后的买点：①MACD绿柱近期曾达峰值②成交量缩量(<50%均量)③当前价格挨着最低价(1%内)（v4.7）", params: JSON.stringify({ macdPeakLookback: 20, volDryUpRatio: 0.5, priceNearLowPct: 1.0 }), enabled: true, priority: 24, strength: "strong", tMode: "正T", timeWindow: "buy_window" },
+  { name: "放量下跌买点", category: "VOLUME_DECLINE_BUY", signalType: "buy", description: "放量下跌后的买点(v5.0)：A)跌势衰竭-MACD绿柱大幅衰减/转正+缩量+近低 B)二次探底-MACD缩短+极缩量+近低", params: JSON.stringify({ typeALookback: 80, decayThreshold: 50, volDryUpRatio: 0.5, priceNearLowPct: 1.5, typeBShrinkPct: 70, typeBVolRatio: 0.4 }), enabled: true, priority: 24, strength: "strong", tMode: "正T", timeWindow: "buy_window" },
 ];
 
 // ── 初始化默认数据 ──────────────────────────────────────
@@ -174,7 +174,7 @@ async function seedDefaultData() {
     { name: "突破均价线", category: "VWAP", signalType: "buy", description: "价格从均线下方突破到均线上方，多方力量增强", params: JSON.stringify({}), enabled: true, priority: 0, strength: "medium" },
     { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: JSON.stringify({ minProgressiveLen: 3, strongProgressiveLen: 6 }), enabled: true, priority: 8, strength: "medium" },
     { name: "高开卖出", category: "GAP_UP", signalType: "sell", description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）", params: JSON.stringify({ gapUpPct: 0 }), enabled: true, priority: 23, strength: "strong" },
-    { name: "放量下跌买点", category: "VOLUME_DECLINE_BUY", signalType: "buy", description: "放量下跌后的买点：①MACD绿柱近期曾达峰值②成交量缩量(<50%均量)③当前价格挨着最低价(1%内)（v4.7）", params: JSON.stringify({ macdPeakLookback: 20, volDryUpRatio: 0.5, priceNearLowPct: 1.0 }), enabled: true, priority: 24, strength: "strong" },
+    { name: "放量下跌买点", category: "VOLUME_DECLINE_BUY", signalType: "buy", description: "放量下跌后的买点(v5.0)：A)跌势衰竭-MACD绿柱大幅衰减/转正+缩量+近低 B)二次探底-MACD缩短+极缩量+近低", params: JSON.stringify({ typeALookback: 80, decayThreshold: 50, volDryUpRatio: 0.5, priceNearLowPct: 1.5, typeBShrinkPct: 70, typeBVolRatio: 0.4 }), enabled: true, priority: 24, strength: "strong" },
   ];
 
   for (const factor of defaultFactors) {
