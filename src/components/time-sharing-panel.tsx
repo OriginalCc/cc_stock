@@ -788,8 +788,8 @@ function computeTimelineSignalElements(
     const m = merged[idx];
     const isBuy = m.direction === "up";
     const isGapUpSell = m.reasons.includes("高开卖出");
-    const isVolDeclineBuy = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点");
-    const isBigLabel = isGapUpSell || isVolDeclineBuy; // 重要信号使用大标签
+    const isKeyBuySignal = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
+    const isBigLabel = isGapUpSell || isKeyBuySignal; // 重要信号使用大标签
 
     let labelText: string;
     const fmtCustom = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -812,8 +812,8 @@ function computeTimelineSignalElements(
     const labelW = textWidth + padX * 2;
     const labelH = isBigLabel ? 18 : 14;
 
-    const markerOffset = isVolDeclineBuy ? 34 : 30; // v5.3: 放量下跌买点三角更大，标签需要更远
-    const labelGap = isVolDeclineBuy ? 8 : 14; // v5.3: 放量下跌买点标签gap更紧凑
+    const markerOffset = isKeyBuySignal ? 34 : 30; // v5.3: 核心买点三角更大，标签需要更远
+    const labelGap = isKeyBuySignal ? 8 : 14; // v5.3: 核心买点标签gap更紧凑
     let labelY: number;
     if (isBuy) {
       labelY = m.y + markerOffset + labelGap;
@@ -972,16 +972,16 @@ function computeTimelineSignalElements(
 
     if (m.strength === "strong") {
       const isGapUpSellSignal = m.reasons.includes("高开卖出");
-      const isVolDeclineBuySignal = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点");
-      const isBigMarker = isGapUpSellSignal || isVolDeclineBuySignal;
+      const isKeyBuySignalR = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
+      const isBigMarker = isGapUpSellSignal || isKeyBuySignalR;
       const markerSize = isBigMarker ? 9 : 6;
       const badgeCx = m.x + markerSize + 4;
       const badgeCy = isBuy ? m.y - markerSize * 0.3 : m.y + markerSize * 0.3;
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
 
-      // v5.3: 放量下跌买点使用优化渲染 — 醒目的V底三角+脉冲圆点+发光效果
-      if (isVolDeclineBuySignal && isBuy) {
+      // v5.3: 核心买点使用优化渲染 — 醒目的V底三角+脉冲圆点+发光效果
+      if (isKeyBuySignalR && isBuy) {
         const dotR = 4;
         const triOffset = 18;
         const glowR = 10;
