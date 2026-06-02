@@ -2539,6 +2539,70 @@ export function generateTimelineSignals(
     }
   }
 
+  // ── 41. 放量下跌买点 → 买入(正T) ── (v4.5新增)
+  // 放量下跌后的买点：MACD为负且量柱接近峰值 + 成交量缩量到地量 + 当前价格挨着最低价
+  // 三条件同时满足 → 强买入信号
+  if (isFactorEnabled("放量下跌买点", factorOverrides) && regimeAdj.allowBuy) {
+    for (let i = 10; i < timeline.length; i++) {
+      if (signals[i]) continue;
+
+      const cur = timeline[i];
+      const prev = timeline[i - 1];
+      const macd41 = macdByTime.get(cur.time);
+      const prevMacd41 = macdByTime.get(prev.time);
+      if (!macd41 || !prevMacd41) continue;
+
+      const timeWindow41 = getTimeWindow(cur.time);
+      if (!isBuyWindow(timeWindow41)) continue;
+
+      // 条件1: MACD为负（DIF < 0 或 DEA < 0），并且MACD量柱接近峰值
+      // "接近峰值"定义：当前MACD柱的绝对值 >= 近20根内MACD柱绝对值最大值的80%
+      const macdNegative = macd41.macd < 0; // MACD柱为负（绿柱）
+      if (!macdNegative) continue;
+
+      // 找近20根内MACD柱绝对值的最大值（负柱的峰值）
+      const lookback41 = Math.min(i, 20);
+      let maxNegMacdAbs = 0;
+      for (let k = i - lookback41; k <= i; k++) {
+        const m41 = macdByTime.get(timeline[k].time);
+        if (m41 && m41.macd < 0) {
+          const absVal = Math.abs(m41.macd);
+          if (absVal > maxNegMacdAbs) maxNegMacdAbs = absVal;
+        }
+      }
+      // 当前柱的绝对值接近峰值（>= 80% of max）
+      const curMacdAbs = Math.abs(macd41.macd);
+      const macdNearPeak = maxNegMacdAbs > 0 && curMacdAbs >= maxNegMacdAbs * 0.8;
+
+      // 条件2: 成交量缩量到地量（< 30%均量）
+      const volDryUp = avgVol > 0 && cur.volume < avgVol * 0.3;
+
+      // 条件3: 当前价格挨着最低价（当前价 <= 近30根最低价 * 1.003）
+      const priceLookback = Math.min(i + 1, 30);
+      const minPrice = Math.min(...timeline.slice(i - priceLookback + 1, i + 1).map(d => d.price));
+      const nearLowest = cur.price <= minPrice * 1.003; // 距离最低价0.3%以内
+
+      // 三个条件同时满足
+      if (macdNearPeak && volDryUp && nearLowest) {
+        const macdPeakPct = maxNegMacdAbs > 0 ? (curMacdAbs / maxNegMacdAbs * 100).toFixed(0) : "0";
+        const volPctOfAvg = avgVol > 0 ? (cur.volume / avgVol * 100).toFixed(0) : "0";
+        const priceFromLow = ((cur.price - minPrice) / minPrice * 100).toFixed(2);
+
+        signals[i] = {
+          type: "buy",
+          reason: "放量下跌买点",
+          strength: "strong",
+          tMode: "正T",
+          timeWindow: timeWindow41,
+          factorId: "factor_41",
+          description: `MACD绿柱达峰值${macdPeakPct}%+地量${volPctOfAvg}%均量+价格距低点${priceFromLow}%，放量下跌后买点`,
+        };
+        lastSellPrice = null;
+        continue;
+      }
+    }
+  }
+
   // ── 因子39: 递增放量 → 买入信号 ──
   // 连续3+分钟成交量逐步放大，且价格同步上涨 → 主力资金持续流入信号
   // 递增根数越多、价格上涨幅度越大、量增速越快 → 信号越强

@@ -788,6 +788,8 @@ function computeTimelineSignalElements(
     const m = merged[idx];
     const isBuy = m.direction === "up";
     const isGapUpSell = m.reasons.includes("高开卖出");
+    const isVolDeclineBuy = m.reasons.includes("放量下跌买点");
+    const isBigLabel = isGapUpSell || isVolDeclineBuy; // 重要信号使用大标签
 
     let labelText: string;
     const fmtCustom = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -800,15 +802,15 @@ function computeTimelineSignalElements(
       labelText = fmtCustom(m.reasons[0]);
     }
 
-    // 高开卖出信号使用更大的字号和标签
-    const labelFontSize = isGapUpSell ? 11 : 8;
+    // 重要信号（高开卖出/放量下跌买点）使用更大的字号和标签
+    const labelFontSize = isBigLabel ? 11 : 8;
     let textWidth = 0;
     for (const ch of labelText) {
       textWidth += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
     }
-    const padX = isGapUpSell ? 6 : 4;
+    const padX = isBigLabel ? 6 : 4;
     const labelW = textWidth + padX * 2;
-    const labelH = isGapUpSell ? 18 : 14;
+    const labelH = isBigLabel ? 18 : 14;
 
     const markerOffset = 30;
     const labelGap = 14;
@@ -968,7 +970,9 @@ function computeTimelineSignalElements(
 
     if (m.strength === "strong") {
       const isGapUpSellSignal = m.reasons.includes("高开卖出");
-      const markerSize = isGapUpSellSignal ? 9 : 6;
+      const isVolDeclineBuySignal = m.reasons.includes("放量下跌买点");
+      const isBigMarker = isGapUpSellSignal || isVolDeclineBuySignal;
+      const markerSize = isBigMarker ? 9 : 6;
       const badgeCx = m.x + markerSize + 4;
       const badgeCy = isBuy ? m.y - markerSize * 0.3 : m.y + markerSize * 0.3;
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
@@ -1040,8 +1044,8 @@ function computeTimelineSignalElements(
                 textAnchor="middle"
                 dominantBaseline="middle"
                 fill="white"
-                fontSize={isGapUpSellSignal ? 11 : 8}
-                fontWeight={isGapUpSellSignal ? "800" : "600"}
+                fontSize={isBigMarker ? 11 : 8}
+                fontWeight={isBigMarker ? "800" : "600"}
               >
                 {plan.labelText}
               </text>

@@ -268,6 +268,11 @@ export const CONDITION_LIBRARY: CustomFactorCondition[] = [
   // ── 高开形态 ──
   { key: "gap_up_open", label: "高开", description: "开盘价高于昨收价，隔夜情绪偏多", category: "price" },
   { key: "gap_up_drop", label: "高开", description: "开盘价高于昨收价，隔夜情绪偏多，立即卖出做正T", category: "price" },
+
+  // ── 放量下跌买点形态 ──
+  { key: "macd_neg_near_peak", label: "MACD绿柱近峰值", description: "MACD柱为负（绿柱）且绝对值接近近期峰值，空头动能释放充分", category: "indicator" },
+  { key: "vol_dry_up_buy", label: "缩量到地量", description: "成交量降至均量30%以下，交投极度清淡，抛压衰竭", category: "volume" },
+  { key: "price_near_lowest", label: "价格挨着最低价", description: "当前价格接近近期最低价（0.3%以内），底部区域", category: "price" },
 ];
 
 export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [

@@ -1370,3 +1370,23 @@ Stage Summary:
 - isSellWindow/isBuyWindow 改为 return true，消除时间窗口限制
 - 高开回落卖出信号强度统一为 strong，确保图上清晰可见
 - 信号描述优化：更清晰的中文描述（高开X%后跌破开盘价，自动卖出）
+
+---
+Task ID: 1
+Agent: main
+Task: 实现放量下跌买点信号（MACD负+量柱近峰值、成交量缩量到地量、价格挨着最低价）
+
+Work Log:
+- 阅读 t-strategy.ts 信号生成逻辑（factor 1-40）和 chart-shared.ts 渲染逻辑
+- 在 t-strategy.ts 中添加 factor_41（放量下跌买点），三条件同时满足触发强买入信号
+- 条件1：MACD柱为负（绿柱）且绝对值>=近20根内负柱最大绝对值的80%（接近峰值）
+- 条件2：成交量<均量30%（地量）
+- 条件3：当前价格<=近30根最低价*1.003（挨着最低价）
+- 在 strategy-factors API 路由中注册放量下跌买点因子（priority 24, strong, 正T）
+- 在 time-sharing-panel.tsx 中为放量下跌买点添加大标签渲染（与高开卖出同样大小：三角9px/字号11px/字重800）
+- 在 chart-shared.ts 的 CONDITION_LIBRARY 中添加三个新条件键（macd_neg_near_peak/vol_dry_up_buy/price_near_lowest）
+
+Stage Summary:
+- 放量下跌买点信号(factor_41)已完整实现：信号生成+因子注册+图表渲染+条件库
+- 分时图上"放量下跌买点"标签与"高开卖出"同样醒目（大三角+大字）
+- 信号描述格式：MACD绿柱达峰值X%+地量Y%均量+价格距低点Z%，放量下跌后买点

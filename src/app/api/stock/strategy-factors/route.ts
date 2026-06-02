@@ -139,6 +139,8 @@ const DEFAULT_FACTOR_SEEDS = [
   { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: JSON.stringify({ minProgressiveLen: 3, strongProgressiveLen: 6 }), enabled: true, priority: 8, strength: "medium", tMode: "反T", timeWindow: "buy_window" },
   // v4.3 new factor
   { name: "高开卖出", category: "GAP_UP", signalType: "sell", description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）", params: JSON.stringify({ gapUpPct: 0 }), enabled: true, priority: 23, strength: "strong", tMode: "正T", timeWindow: "sell_window" },
+  // v4.5 new factor
+  { name: "放量下跌买点", category: "VOLUME_DECLINE_BUY", signalType: "buy", description: "放量下跌后的买点：①MACD绿柱接近峰值②成交量缩量到地量(<30%均量)③当前价格挨着最低价（v4.5）", params: JSON.stringify({ macdPeakRatio: 0.8, volDryUpRatio: 0.3, priceNearLowPct: 0.3 }), enabled: true, priority: 24, strength: "strong", tMode: "正T", timeWindow: "buy_window" },
 ];
 
 // ── 初始化默认数据 ──────────────────────────────────────
@@ -172,6 +174,7 @@ async function seedDefaultData() {
     { name: "突破均价线", category: "VWAP", signalType: "buy", description: "价格从均线下方突破到均线上方，多方力量增强", params: JSON.stringify({}), enabled: true, priority: 0, strength: "medium" },
     { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: JSON.stringify({ minProgressiveLen: 3, strongProgressiveLen: 6 }), enabled: true, priority: 8, strength: "medium" },
     { name: "高开卖出", category: "GAP_UP", signalType: "sell", description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）", params: JSON.stringify({ gapUpPct: 0 }), enabled: true, priority: 23, strength: "strong" },
+    { name: "放量下跌买点", category: "VOLUME_DECLINE_BUY", signalType: "buy", description: "放量下跌后的买点：①MACD绿柱接近峰值②成交量缩量到地量(<30%均量)③当前价格挨着最低价（v4.5）", params: JSON.stringify({ macdPeakRatio: 0.8, volDryUpRatio: 0.3, priceNearLowPct: 0.3 }), enabled: true, priority: 24, strength: "strong" },
   ];
 
   for (const factor of defaultFactors) {
