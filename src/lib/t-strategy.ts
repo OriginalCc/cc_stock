@@ -1274,6 +1274,34 @@ function evaluateCondition(
       return openPriceParam > prevClose;
     }
 
+    // ── 放量下跌买点形态 ──
+    case "macd_neg_near_peak": {
+      // MACD绿柱近峰值：MACD柱为负且绝对值接近近期峰值
+      const macdNP = macdByTime.get(cur.time);
+      if (!macdNP || macdNP.macd >= 0) return false;
+      const lbNP = Math.min(i, 30);
+      let maxAbsNP = 0;
+      let peakDistNP = lbNP;
+      for (let k = i - lbNP; k <= i; k++) {
+        const mNP = macdByTime.get(timeline[k].time);
+        if (mNP && mNP.macd < 0) {
+          const absNP = Math.abs(mNP.macd);
+          if (absNP > maxAbsNP) { maxAbsNP = absNP; peakDistNP = i - k; }
+        }
+      }
+      return maxAbsNP > 0 && Math.abs(macdNP.macd) >= maxAbsNP * 0.6 && peakDistNP <= 10;
+    }
+    case "vol_dry_up_buy": {
+      // 缩量到地量：成交量降至均量50%以下
+      return avgVol > 0 && cur.volume < avgVol * 0.5;
+    }
+    case "price_near_lowest": {
+      // 价格挨着最低价：当前价接近近期最低价（0.5%以内）
+      const lbPL = Math.min(i + 1, 60);
+      const minPL = Math.min(...timeline.slice(i - lbPL + 1, i + 1).map(d => d.price));
+      return cur.price <= minPL * 1.005;
+    }
+
     default:
       return false;
   }
@@ -2539,9 +2567,12 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── 41. 放量下跌买点 → 买入(正T) ── (v4.5新增)
-  // 放量下跌后的买点：MACD为负且量柱接近峰值 + 成交量缩量到地量 + 当前价格挨着最低价
-  // 三条件同时满足 → 强买入信号
+  // ── 41. 放量下跌买点 → 买入(正T) ── (v4.5新增, v4.6优化)
+  // 放量下跌后的买点：先确认存在放量下跌 → 再检测三个条件
+  // ① MACD为负且MACD量柱近期曾达峰值（近10根内出现峰值，当前柱>=60%峰值）
+  // ② 成交量缩量到地量（< 50%均量，放量下跌后缩量更实际）
+  // ③ 当前价格挨着最低价（距近60根最低价0.5%以内）
+  // 前置条件：近60根内存在放量下跌（某根成交量>2倍均量且价格下跌）
   if (isFactorEnabled("放量下跌买点", factorOverrides) && regimeAdj.allowBuy) {
     for (let i = 10; i < timeline.length; i++) {
       if (signals[i]) continue;
@@ -2555,32 +2586,52 @@ export function generateTimelineSignals(
       const timeWindow41 = getTimeWindow(cur.time);
       if (!isBuyWindow(timeWindow41)) continue;
 
-      // 条件1: MACD为负（DIF < 0 或 DEA < 0），并且MACD量柱接近峰值
-      // "接近峰值"定义：当前MACD柱的绝对值 >= 近20根内MACD柱绝对值最大值的80%
-      const macdNegative = macd41.macd < 0; // MACD柱为负（绿柱）
+      // 前置条件：近60根内存在放量下跌（成交量>2倍均量且该根价格下跌）
+      const priorLookback = Math.min(i, 60);
+      let hasVolumeDecline = false;
+      for (let k = i - priorLookback; k < i; k++) {
+        const bar = timeline[k];
+        const prevBar = k > 0 ? timeline[k - 1] : null;
+        const priceDown = prevBar ? bar.price < prevBar.price : bar.changePercent < 0;
+        if (bar.volume > avgVol * 2 && priceDown) {
+          hasVolumeDecline = true;
+          break;
+        }
+      }
+      if (!hasVolumeDecline) continue;
+
+      // 条件1: MACD柱为负（绿柱），并且MACD量柱近期曾达峰值
+      // 优化：不要求当前柱就在峰值，而是近10根内出现过峰值，当前柱>=60%峰值即可
+      // 因为放量下跌后缩量时，MACD柱往往已从峰值开始缩短
+      const macdNegative = macd41.macd < 0;
       if (!macdNegative) continue;
 
-      // 找近20根内MACD柱绝对值的最大值（负柱的峰值）
-      const lookback41 = Math.min(i, 20);
+      // 找近30根内MACD柱绝对值的最大值（负柱的峰值）
+      const lookback41 = Math.min(i, 30);
       let maxNegMacdAbs = 0;
+      let peakBarDist = lookback41; // 峰值距离当前多少根
       for (let k = i - lookback41; k <= i; k++) {
         const m41 = macdByTime.get(timeline[k].time);
         if (m41 && m41.macd < 0) {
           const absVal = Math.abs(m41.macd);
-          if (absVal > maxNegMacdAbs) maxNegMacdAbs = absVal;
+          if (absVal > maxNegMacdAbs) {
+            maxNegMacdAbs = absVal;
+            peakBarDist = i - k;
+          }
         }
       }
-      // 当前柱的绝对值接近峰值（>= 80% of max）
+      // 当前柱的绝对值接近峰值（>= 60% of max），且峰值在近10根内出现
       const curMacdAbs = Math.abs(macd41.macd);
-      const macdNearPeak = maxNegMacdAbs > 0 && curMacdAbs >= maxNegMacdAbs * 0.8;
+      const macdNearPeak = maxNegMacdAbs > 0 && curMacdAbs >= maxNegMacdAbs * 0.6 && peakBarDist <= 10;
 
-      // 条件2: 成交量缩量到地量（< 30%均量）
-      const volDryUp = avgVol > 0 && cur.volume < avgVol * 0.3;
+      // 条件2: 成交量缩量到地量（< 50%均量）
+      // 放量下跌后均量被拉高，30%太严格，放宽到50%
+      const volDryUp = avgVol > 0 && cur.volume < avgVol * 0.5;
 
-      // 条件3: 当前价格挨着最低价（当前价 <= 近30根最低价 * 1.003）
-      const priceLookback = Math.min(i + 1, 30);
+      // 条件3: 当前价格挨着最低价（距近60根最低价0.5%以内）
+      const priceLookback = Math.min(i + 1, 60);
       const minPrice = Math.min(...timeline.slice(i - priceLookback + 1, i + 1).map(d => d.price));
-      const nearLowest = cur.price <= minPrice * 1.003; // 距离最低价0.3%以内
+      const nearLowest = cur.price <= minPrice * 1.005; // 距离最低价0.5%以内
 
       // 三个条件同时满足
       if (macdNearPeak && volDryUp && nearLowest) {
@@ -2595,7 +2646,7 @@ export function generateTimelineSignals(
           tMode: "正T",
           timeWindow: timeWindow41,
           factorId: "factor_41",
-          description: `MACD绿柱达峰值${macdPeakPct}%+地量${volPctOfAvg}%均量+价格距低点${priceFromLow}%，放量下跌后买点`,
+          description: `MACD绿柱${macdPeakPct}%峰值+地量${volPctOfAvg}%均量+价格距低点${priceFromLow}%，放量下跌后买点`,
         };
         lastSellPrice = null;
         continue;
