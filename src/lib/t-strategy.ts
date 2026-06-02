@@ -470,9 +470,9 @@ export function getRegimeAdjustment(regime: MarketRegime): {
     case "上升通道":
       return { allowSell: true, allowBuy: true, tPositionScale: 0.5, signalStrengthBoost: -1, description: "谨慎做T，只做正T，T仓降至20%，买回要快" };
     case "下跌趋势":
-      return { allowSell: true, allowBuy: false, tPositionScale: 0.3, signalStrengthBoost: -1, description: "不建议做T，仅正T卖出，T仓降至10-15%" };
+      return { allowSell: true, allowBuy: true, tPositionScale: 0.3, signalStrengthBoost: -1, description: "谨慎做T，买入信号降级，T仓降至10-15%" };
     case "横盘末期":
-      return { allowSell: false, allowBuy: false, tPositionScale: 0.5, signalStrengthBoost: -2, description: "减少做T频率，等待方向明确" };
+      return { allowSell: true, allowBuy: true, tPositionScale: 0.5, signalStrengthBoost: -1, description: "减少做T频率，信号降级，等待方向明确" };
   }
 }
 
