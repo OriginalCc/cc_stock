@@ -1633,6 +1633,43 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         if (s && data[i]) signalByTime.set(data[i].time, s);
       });
 
+      // ── Filter buy signals in early decline ban zone ──
+      // If pvMarkers indicate early volume decline, calculate a simple ban cutoff
+      // and remove buy signals before that time. This keeps the logic close to
+      // the data layer so all downstream code (zoomData, chart) uses filtered data.
+      if (pvMarkers && pvMarkers.length > 0 && data.length > 0) {
+        const earlyDeclines = pvMarkers.filter(m =>
+          (m.type === "volume_decline" || m.type === "pulse_decline"
+            || m.type === "early_vol_drop" || m.type === "slow_decline")
+          && pvParseTime(m.time) >= 570 && pvParseTime(m.time) <= 630
+        );
+        if (earlyDeclines.length > 0) {
+          // Check if early session overall declined
+          const earlyData = data.filter(d => {
+            const mins = pvParseTime(d.time);
+            return mins >= 570 && mins < 630;
+          });
+          if (earlyData.length >= 5) {
+            const openPrice = earlyData[0].price;
+            const lastEarlyPrice = earlyData[earlyData.length - 1].price;
+            const earlyNetChange = openPrice > 0 ? ((lastEarlyPrice - openPrice) / openPrice) * 100 : 0;
+            // Only filter if early session actually declined
+            if (earlyNetChange <= 0 && !(prevClose > 0 && lastEarlyPrice > prevClose)) {
+              // Calculate a simple ban end time (9:45 to 10:30 based on decline count)
+              const banEndTime = Math.min(630, 585 + earlyDeclines.length * 5);
+              // Remove buy signals before ban end time
+              const keysToRemove: string[] = [];
+              signalByTime.forEach((sig, time) => {
+                if (sig.type === "buy" && pvParseTime(time) < banEndTime) {
+                  keysToRemove.push(time);
+                }
+              });
+              keysToRemove.forEach(k => signalByTime.delete(k));
+            }
+          }
+        }
+      }
+
       // Build MACD map by time
       const macdByTime = new Map<string, { dif: number; dea: number; macd: number }>();
       for (const m of macdData) {
