@@ -1269,9 +1269,9 @@ function evaluateCondition(
       return openPriceParam > prevClose;
     }
     case "gap_up_drop": {
-      // 高开后回落：开盘价高于昨收价，且当前价格跌破开盘价0.01元
+      // 高开后回落：开盘价高于昨收价，且当前价格跌破开盘价
       if (openPriceParam === undefined || prevClose <= 0) return false;
-      return openPriceParam > prevClose && cur.price <= openPriceParam - 0.01;
+      return openPriceParam > prevClose && cur.price < openPriceParam;
     }
 
     default:
@@ -1473,16 +1473,13 @@ export function generateTimelineSignals(
       continue;
     }
 
-    // ── 40. 高开回落卖出 → 卖出(正T) ── (v4.0新增, v4.1修复openPrice传递)
-    // 早盘所有高开的股票，价格从开盘价下跌0.01元即触发卖出信号
-    // 高开意味着隔夜情绪偏多，但开盘后回落说明多头力量不足，应及时高抛
-    // 关键修复：chart-shared.ts的generateTimelineSignals缺少sectorRegime参数，
-    // 导致page.tsx传入的sectorRegime被错误接收为openPrice，真正的openPrice被丢弃
+    // ── 40. 高开回落卖出 → 卖出(正T) ── (v4.2)
+    // 只要是高开的股票（开盘价>昨收价），价格跌破开盘价立马显示卖出信号
+    // 高开意味着隔夜情绪偏多，但开盘后回落说明多头力量不足，应立即高抛
     if (isFactorEnabled("高开回落卖出", factorOverrides) && openPrice !== undefined && typeof openPrice === 'number' && !isNaN(openPrice) && openPrice > 0 && openPrice > prevClose && isSellWindow(timeWindow) && regimeAdj.allowSell) {
-      // 高开：开盘价 > 昨收价
       const gapUpPct = ((openPrice - prevClose) / prevClose) * 100;
-      // 价格跌破开盘价0.01元即触发
-      if (cur.price <= openPrice - 0.01) {
+      // 价格跌破开盘价即触发（不设0.01缓冲，下跌就卖）
+      if (cur.price < openPrice) {
         // 只在第一次跌破时触发（检查之前没有同因子信号）
         let alreadyFired = false;
         for (let k = 0; k < i; k++) {
@@ -1493,19 +1490,16 @@ export function generateTimelineSignals(
         }
         if (!alreadyFired) {
           const dropFromOpen = ((openPrice - cur.price) / openPrice) * 100;
-          // 高开幅度越大，卖出信号越强
-          // 所有小幅高开也使用strong强度，确保信号在图上清晰可见
-          let strength: Strength = "strong";
 
           signals[i] = {
             type: "sell",
             reason: "高开回落卖出",
-            strength,
+            strength: "strong",
             tMode: "正T",
             timeWindow,
             spreadPct: dropFromOpen,
             factorId: "factor_40",
-            description: `高开${gapUpPct.toFixed(2)}%后跌破开盘价(回落${dropFromOpen.toFixed(2)}%)，自动卖出`,
+            description: `高开${gapUpPct.toFixed(2)}%后跌破开盘价，立即卖出`,
           };
           lastSellPrice = cur.price;
           continue;
