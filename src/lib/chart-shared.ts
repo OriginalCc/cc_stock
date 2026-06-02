@@ -275,7 +275,7 @@ export const CONDITION_LIBRARY: CustomFactorCondition[] = [
   { key: "price_near_lowest", label: "价格在底部区域", description: "当前价格接近近80根最低价（2.5%以内），底部区域定位（贴底1%内更佳）", category: "price" },
 
   // ── 次低点缩量买点形态 (v6.0核心买点，80%权重) ──
-  { key: "second_low_point", label: "第二个次低点", description: "价格先形成第一个低点L1，反弹后回落形成第二个次低点L2（L2≈L1±1.5%），底部确认", category: "price" },
+  { key: "second_low_point", label: "第二个次低点", description: "价格先形成第一个低点L1，反弹后回落形成第二个次低点L2（L2≈L1±1.5%且接近日内最低价≤1%），底部确认", category: "price" },
   { key: "vol_shrink_at_second_low", label: "次低点缩量", description: "第二个次低点处成交量萎缩（<70%均量或比L1处低30%+），抛压衰竭标志", category: "volume" },
 ];
 
@@ -347,12 +347,12 @@ export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
   {
     id: "factor_43",
     name: "次低点缩量买入",
-    description: "第二个次低点+缩量=主力买点(80%权重)。股价下跌形成第一个低点L1，反弹后回落形成第二个次低点L2，L2处成交量萎缩，抛压衰竭，高概率买入机会。",
+    description: "第二个次低点+缩量=主力买点(80%权重)。股价下跌形成第一个低点L1，反弹后回落形成第二个次低点L2（L2需接近日内最低价≤1%），L2处成交量萎缩，抛压衰竭，高概率买入机会。",
     signalType: "buy",
     tMode: "正T",
     strength: "strong",
     conditions: [
-      { key: "second_low_point", label: "第二个次低点", description: "价格先形成L1低点，反弹后回落形成L2次低点(L2≈L1±1.5%)", category: "price" },
+      { key: "second_low_point", label: "第二个次低点", description: "价格先形成L1低点，反弹后回落形成L2次低点(L2≈L1±1.5%且接近日内最低价≤1%)", category: "price" },
       { key: "vol_shrink_at_second_low", label: "次低点缩量", description: "L2处成交量萎缩(<70%均量或比L1处低30%+)", category: "volume" },
     ],
     enabled: true,

@@ -1598,8 +1598,9 @@ export function generateTimelineSignals(
     // 检测条件：
     //   1) 回看60根内找到两个局部低点(L1, L2)，L2在L1之后
     //   2) L2不低于L1太多（≤1.5%），即"次低点"而非"新低"
-    //   3) L2处成交量缩量（<70%均量，或比L1处成交量低30%+）
-    //   4) 当前价格在L2附近企稳或开始反弹（确认次低点形成）
+    //   3) L2必须接近当日最低点（距日内最低≤1.0%），确保买在底部区域
+    //   4) L2处成交量缩量（<70%均量，或比L1处成交量低30%+）
+    //   5) 当前价格在L2附近企稳或开始反弹（确认次低点形成）
     //
     if (!isInNoBuyZone && isFactorEnabled("次低点缩量买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 20) {
       // ── Step 1: 在回看窗口内找局部低点 ──
@@ -1655,6 +1656,14 @@ export function generateTimelineSignals(
             // L2不能太高（比L1高>3%也不算次低点了）
             if (l2VsL1Pct > 3.0) continue;
 
+            // ── Step 2.5: L2必须接近当日最低点 ──
+            // "次低点"含义：接近当日最低价的第二个低点，确保买在底部区域
+            // 计算截至当前位置的日内最低价
+            const intradayLow = Math.min(...timeline.slice(0, i + 1).map(d => d.price));
+            const l2VsIntradayLowPct = intradayLow > 0 ? ((l2.price - intradayLow) / intradayLow) * 100 : 0;
+            // L2距日内最低不超过1.0%（即L2在最低点附近）
+            if (l2VsIntradayLowPct > 1.0) continue;
+
             // ── Step 3: 缩量确认 ──
             // 方式A: L2处成交量 < 70%均量
             const volRatioL2 = avgVol > 0 ? l2.volume / avgVol : 1;
@@ -1702,6 +1711,10 @@ export function generateTimelineSignals(
               ? `次低点+${l2VsL1Pct.toFixed(1)}%`
               : `次低点${l2VsL1Pct.toFixed(1)}%`;
 
+            const lowProximityDesc = l2VsIntradayLowPct <= 0.3
+              ? "贴底"
+              : `距最低${l2VsIntradayLowPct.toFixed(1)}%`;
+
             signals[signalIdx] = {
               type: "buy",
               reason: "次低点缩量买入",
@@ -1709,7 +1722,7 @@ export function generateTimelineSignals(
               tMode: "正T",
               timeWindow,
               factorId: "factor_43",
-              description: `${l2Label}+${shrinkDesc}+回弹${priceVsL2.toFixed(1)}%`,
+              description: `${l2Label}+${shrinkDesc}+${lowProximityDesc}+回弹${priceVsL2.toFixed(1)}%`,
             };
             lastSellPrice = null;
             foundSecondLow = true;
