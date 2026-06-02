@@ -1693,3 +1693,25 @@ Stage Summary:
 - Factor 41 (放量下跌买点) loosened: threshold 5→4, buy limit 2→4, new prerequisite path D
 - Rendering updated in time-sharing-panel.tsx
 - Lint passes, dev server running on port 3000
+
+---
+Task ID: 1
+Agent: main
+Task: 修改买点判断因素，让"第二个次低点+缩量"为主要买点(80%权重)
+
+Work Log:
+- 在 t-strategy.ts 中新增核心买点规则"次低点缩量买入"(factor_43, rule 0.5)，放在主循环最前面（止损之后）
+- 检测算法：回看60根找局部低点→找L1/L2组合(L2≈L1±1.5%)→缩量确认(<70%均量或比L1低30%+)→当前价确认在L2附近或反弹→生成strong买点
+- 信号位置回溯到L2最低点(3根以内)
+- 所有其他买入信号(MACD金叉/均价支撑/量缩价稳/放量拉升/急跌反弹/双底买点等23个)的strength统一降级为"weak"，占20%权重
+- 添加共振升级保护：非核心买入信号不做strength升级
+- 添加关键价位升级保护：只有"次低点缩量买入"可以升级
+- 在 chart-shared.ts CONDITION_LIBRARY 中新增 second_low_point 和 vol_shrink_at_second_low 两个条件
+- 在 BUILT_IN_CUSTOM_FACTORS 中新增 factor_43 定义
+- Lint通过，dev server正常运行
+
+Stage Summary:
+- 核心买点"次低点缩量买入"占80%权重(strength:strong)
+- 其他23个买入信号降级为weak(20%权重)
+- 检测逻辑：找两个局部低点L1/L2，L2≈L1±1.5%，L2处缩量，当前价确认企稳/反弹
+- UI中新增factor_43因子定义

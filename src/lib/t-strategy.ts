@@ -1534,20 +1534,146 @@ export function generateTimelineSignals(
       continue;
     }
 
+    // ── 0.5 次低点缩量买入 → 买入(正T) ── (v6.0 核心买点，占80%权重)
+    //
+    // 核心逻辑：第二个次低点+缩量 = 主力买点
+    //   在日内分时走势中，股价经过一波下跌形成第一个低点(L1)，
+    //   然后反弹，再回落形成第二个次低点(L2)。如果L2处成交量明显
+    //   萎缩（比L1处低或低于均量），说明抛压衰竭，是高概率买入机会。
+    //
+    // 检测条件：
+    //   1) 回看60根内找到两个局部低点(L1, L2)，L2在L1之后
+    //   2) L2不低于L1太多（≤1.5%），即"次低点"而非"新低"
+    //   3) L2处成交量缩量（<70%均量，或比L1处成交量低30%+）
+    //   4) 当前价格在L2附近企稳或开始反弹（确认次低点形成）
+    //
+    if (isFactorEnabled("次低点缩量买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 20) {
+      // ── Step 1: 在回看窗口内找局部低点 ──
+      const lookback = Math.min(i + 1, 60);
+      const recentSlice = timeline.slice(i - lookback + 1, i + 1);
+
+      // 找所有局部低点：price < 前后2根价格
+      interface LocalLow { idx: number; globalIdx: number; price: number; volume: number; }
+      const localLows: LocalLow[] = [];
+
+      for (let k = 2; k < recentSlice.length - 1; k++) {
+        const p = recentSlice[k].price;
+        const prevP = recentSlice[k - 1].price;
+        const nextP = recentSlice[k + 1].price;
+        const ppP = k >= 2 ? recentSlice[k - 2].price : prevP;
+        const nnP = k + 2 < recentSlice.length ? recentSlice[k + 2].price : nextP;
+        // 局部最低：比前后各1-2根都低
+        if (p <= prevP && p <= nextP && p <= ppP && p <= nnP) {
+          localLows.push({
+            idx: k,
+            globalIdx: i - lookback + 1 + k,
+            price: p,
+            volume: recentSlice[k].volume,
+          });
+        }
+      }
+
+      // ── Step 2: 寻找"第二个次低点"组合 ──
+      // 需要至少2个低点，L1在前，L2在后，L2≈L1（次低点）
+      let foundSecondLow = false;
+      if (localLows.length >= 2) {
+        // 从后往前找最近的低点作为L2候选
+        for (let li = localLows.length - 1; li >= 1 && !foundSecondLow; li--) {
+          const l2 = localLows[li]; // 第二个低点（更近的）
+          // 在L2之前找L1（至少间隔5根，确保中间有反弹）
+          for (let lj = li - 1; lj >= 0 && !foundSecondLow; lj--) {
+            const l1 = localLows[lj]; // 第一个低点（更早的）
+
+            // L1和L2之间至少间隔5根（确保中间有反弹）
+            if (l2.globalIdx - l1.globalIdx < 5) continue;
+
+            // L1和L2之间必须有反弹（中间价格高于L1和L2）
+            const betweenSlice = timeline.slice(l1.globalIdx + 1, l2.globalIdx);
+            if (betweenSlice.length < 3) continue;
+            const betweenMax = Math.max(...betweenSlice.map(d => d.price));
+            const bouncePct = l1.price > 0 ? ((betweenMax - l1.price) / l1.price) * 100 : 0;
+            if (bouncePct < 0.3) continue; // 中间反弹不到0.3%，不够明显
+
+            // L2是"次低点"：L2不低于L1太多（≤1.5%），即底部抬高或接近
+            const l2VsL1Pct = l1.price > 0 ? ((l2.price - l1.price) / l1.price) * 100 : 0;
+            if (l2VsL1Pct < -1.5) continue; // L2比L1低太多，不是次低点而是新低
+
+            // L2不能太高（比L1高>3%也不算次低点了）
+            if (l2VsL1Pct > 3.0) continue;
+
+            // ── Step 3: 缩量确认 ──
+            // 方式A: L2处成交量 < 70%均量
+            const volRatioL2 = avgVol > 0 ? l2.volume / avgVol : 1;
+            const isVolShrinkVsAvg = volRatioL2 < 0.7;
+            // 方式B: L2处成交量比L1处低30%+
+            const volRatioL2VsL1 = l1.volume > 0 ? l2.volume / l1.volume : 1;
+            const isVolShrinkVsL1 = volRatioL2VsL1 < 0.7;
+            // 方式C: 近3根成交量持续递减
+            let isVolDecreasing = false;
+            if (i >= 2) {
+              isVolDecreasing = cur.volume < prev.volume && prev.volume < prev2.volume;
+            }
+
+            const isShrinking = isVolShrinkVsAvg || isVolShrinkVsL1 || isVolDecreasing;
+            if (!isShrinking) continue;
+
+            // ── Step 4: 当前价格确认次低点 ──
+            // 当前价格应该在L2附近或开始反弹（确认次低点形成）
+            const priceVsL2 = l2.price > 0 ? ((cur.price - l2.price) / l2.price) * 100 : 0;
+            // 当前价格在L2上方0-2%区间（企稳或微反弹）
+            const isNearL2 = priceVsL2 >= -0.3 && priceVsL2 <= 2.5;
+
+            // 或者当前价格正在从L2反弹
+            const isBouncingFromL2 = cur.price > prev.price && prev.price <= l2.price * 1.005;
+
+            if (!isNearL2 && !isBouncingFromL2) continue;
+
+            // 当前价不能离L2太远（反弹超过3%说明已经远离底部）
+            if (priceVsL2 > 3.0) continue;
+
+            // ── 条件全部满足，生成买点 ──
+            // 信号位置回溯到L2最低点（如果在3根以内）
+            let signalIdx = i;
+            if (l2.globalIdx < i && l2.globalIdx >= i - 3 && !signals[l2.globalIdx]) {
+              signalIdx = l2.globalIdx;
+            }
+
+            const shrinkDesc = isVolShrinkVsAvg
+              ? `缩量${(volRatioL2 * 100).toFixed(0)}%均量`
+              : isVolShrinkVsL1
+                ? `量缩${((1 - volRatioL2VsL1) * 100).toFixed(0)}%较前低`
+                : "量递减3根";
+
+            const l2Label = l2VsL1Pct >= 0
+              ? `次低点+${l2VsL1Pct.toFixed(1)}%`
+              : `次低点${l2VsL1Pct.toFixed(1)}%`;
+
+            signals[signalIdx] = {
+              type: "buy",
+              reason: "次低点缩量买入",
+              strength: "strong",
+              tMode: "正T",
+              timeWindow,
+              factorId: "factor_43",
+              description: `${l2Label}+${shrinkDesc}+回弹${priceVsL2.toFixed(1)}%`,
+            };
+            lastSellPrice = null;
+            foundSecondLow = true;
+            // 已生成核心买点，跳过当前i的其他信号
+          }
+        }
+      }
+      if (foundSecondLow) continue;
+    }
+
     // ── 1. MACD金叉 → 买入信号 ──
     if (isFactorEnabled("MACD金叉", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prevMacd.dif <= prevMacd.dea && macd.dif > macd.dea) {
-        // 根据市场环境调整强度
-        let strength: Strength = macd.macd > 0 ? "strong" : "medium";
-        if (regimeAdj.signalStrengthBoost < 0) {
-          if (strength === "strong") strength = "medium";
-          else if (strength === "medium") strength = "weak";
-        }
-
+        // 买入信号统一降级为weak（次低点缩量买入占80%权重）
         signals[i] = {
           type: "buy",
           reason: "MACD金叉",
-          strength,
+          strength: "weak",
           tMode: "反T",
           timeWindow,
           description: macd.macd > 0 ? "零轴上方金叉，强买入信号" : "零轴下方金叉",
@@ -1652,7 +1778,7 @@ export function generateTimelineSignals(
         signals[i] = {
           type: "buy",
           reason: "均线支撑买回",
-          strength: "strong",
+          strength: "weak",
           tMode: "正T",
           timeWindow,
           description: "价格回到均价线附近企稳，正T买回信号",
@@ -1670,7 +1796,7 @@ export function generateTimelineSignals(
         signals[i] = {
           type: "buy",
           reason: "昨收价支撑",
-          strength: "medium",
+          strength: "weak",
           tMode: "正T",
           timeWindow,
           description: "价格回到昨收盘价附近企稳，重要心理支撑位",
@@ -1688,7 +1814,7 @@ export function generateTimelineSignals(
         signals[i] = {
           type: "buy",
           reason: "量缩价稳",
-          strength: "medium",
+          strength: "weak",
           tMode: "正T",
           timeWindow,
           description: "下跌过程中成交量明显缩小，抛压衰竭标志",
@@ -1701,16 +1827,11 @@ export function generateTimelineSignals(
     // ── 9. 放量拉升 → 买入(反T) ──
     if (isFactorEnabled("放量拉升", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (cur.volume > avgVol * config.volumeMultiplier && cur.price > prev.price && cur.changePercent > 0) {
-        let strength: Strength = cur.volume > avgVol * config.volumeMultiplierStrong ? "strong" : "medium";
-        if (regimeAdj.signalStrengthBoost < 0) {
-          if (strength === "strong") strength = "medium";
-          else if (strength === "medium") strength = "weak";
-        }
-
+        // 买入信号统一降级为weak
         signals[i] = {
           type: "buy",
           reason: "放量拉升",
-          strength,
+          strength: "weak",
           tMode: "反T",
           timeWindow,
           description: "成交量显著放大且价格上涨，主力资金入场",
@@ -1745,12 +1866,11 @@ export function generateTimelineSignals(
     // ── 11. 急跌反弹 → 买入(反T) ──
     if (isFactorEnabled("急跌反弹", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prev2.price > prev.price && prev.price < cur.price && prev.changePercent < config.momentumDropThreshold && cur.price > prev.price) {
-        let strength: Strength = prev.changePercent < config.momentumDropStrong ? "strong" : "weak";
-
+        // 买入信号统一降级为weak
         signals[i] = {
           type: "buy",
           reason: "急跌反弹",
-          strength,
+          strength: "weak",
           tMode: "反T",
           timeWindow,
           description: prev.changePercent < config.momentumDropStrong ? "深度急跌后V型反转" : "小幅急跌后反弹",
@@ -1781,16 +1901,11 @@ export function generateTimelineSignals(
     // ── 13. 突破均价线(方向向上) → 买入 ── (保留原版逻辑但加时间窗口)
     if (isFactorEnabled("突破均价线", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prev.price < prev.avgPrice && cur.price > cur.avgPrice) {
-        let strength: Strength = cur.changePercent > 1 ? "strong" : "medium";
-        if (regimeAdj.signalStrengthBoost < 0) {
-          if (strength === "strong") strength = "medium";
-          else if (strength === "medium") strength = "weak";
-        }
-
+        // 买入信号统一降级为weak
         signals[i] = {
           type: "buy",
           reason: "突破均价线",
-          strength,
+          strength: "weak",
           tMode: "反T",
           timeWindow,
           description: "价格从均线下方突破到均线上方",
@@ -1803,16 +1918,11 @@ export function generateTimelineSignals(
     // ── 14. MACD柱由负转正 → 买入 ── (v3.1新增)
     if (isFactorEnabled("MACD柱转正", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prevMacd.macd < 0 && macd.macd > 0 && macd.macd > prevMacd.macd) {
-        let strength: Strength = macd.dif > 0 ? "strong" : "medium";
-        if (regimeAdj.signalStrengthBoost < 0) {
-          if (strength === "strong") strength = "medium";
-          else if (strength === "medium") strength = "weak";
-        }
-
+        // 买入信号统一降级为weak
         signals[i] = {
           type: "buy",
           reason: "MACD柱转正",
-          strength,
+          strength: "weak",
           tMode: "反T",
           timeWindow,
           description: macd.dif > 0 ? "零轴上方MACD柱由负转正，多头加速" : "MACD柱由负转正，短期偏多",
@@ -1851,17 +1961,11 @@ export function generateTimelineSignals(
       if (!isNaN(curRSI) && !isNaN(prevRSI)) {
         // RSI从超卖区(低于30)回升
         if (prevRSI < config.rsiOversold && curRSI >= config.rsiOversold && curRSI > prevRSI) {
-          let strength: Strength = prevRSI < 20 ? "strong" : "medium";
-          if (regimeAdj.signalStrengthBoost < 0) {
-            if (strength === "strong") strength = "medium";
-            else if (strength === "medium") strength = "weak";
-          }
-
-
+          // 买入信号统一降级为weak
           signals[i] = {
             type: "buy",
             reason: "RSI超卖买回",
-            strength,
+            strength: "weak",
             tMode: "反T",
             timeWindow,
             description: prevRSI < 20
@@ -1911,18 +2015,11 @@ export function generateTimelineSignals(
       if (boll && !isNaN(boll.lower) && prevBoll && !isNaN(prevBoll.lower)) {
         // 前一根触及或跌破下轨，当前从下轨反弹
         if (prev.price <= prevBoll.lower && cur.price > boll.lower && cur.price > prev.price) {
-          let strength: Strength = prev.price < prevBoll.lower * 0.998 ? "strong" : "medium";
-          if (regimeAdj.signalStrengthBoost < 0) {
-            if (strength === "strong") strength = "medium";
-            else if (strength === "medium") strength = "weak";
-          }
-
-
-
+          // 买入信号统一降级为weak
           signals[i] = {
             type: "buy",
             reason: "布林下轨反弹",
-            strength,
+            strength: "weak",
             tMode: "反T",
             timeWindow,
             description: "价格触及布林下轨后反弹，超卖支撑确认",
@@ -1982,7 +2079,7 @@ export function generateTimelineSignals(
           signals[i] = {
             type: "buy",
             reason: "连续缩量",
-            strength: "medium",
+            strength: "weak",
             tMode: "正T",
             timeWindow,
             description: `连续${config.consecutiveShrinkBars}根成交量递减且价格企稳，抛压衰竭标志`,
@@ -2020,18 +2117,11 @@ export function generateTimelineSignals(
     // ── 22. DIF零轴上穿 → 买入(反T) ── (v3.2新增)
     if (isFactorEnabled("DIF零轴上穿", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prevMacd.dif < 0 && macd.dif >= 0) {
-        let strength: Strength = macd.macd > 0 ? "strong" : "medium";
-        if (regimeAdj.signalStrengthBoost < 0) {
-          if (strength === "strong") strength = "medium";
-          else if (strength === "medium") strength = "weak";
-        }
-
-
-
+        // 买入信号统一降级为weak
         signals[i] = {
           type: "buy",
           reason: "DIF零轴上穿",
-          strength,
+          strength: "weak",
           tMode: "反T",
           timeWindow,
           description: macd.macd > 0
@@ -2133,18 +2223,11 @@ export function generateTimelineSignals(
       // 当前价格仍低于均价，但正在向上回归
       if (cur.price < cur.avgPrice && deviationBelow >= config.avgPriceDeviationReturn
           && cur.price > prev.price && prev.price <= prev.avgPrice) {
-        let strength: Strength = deviationBelow >= 2.5 ? "strong" : "medium";
-        if (regimeAdj.signalStrengthBoost < 0) {
-          if (strength === "strong") strength = "medium";
-          else if (strength === "medium") strength = "weak";
-        }
-
-
-
+        // 买入信号统一降级为weak
         signals[i] = {
           type: "buy",
           reason: "均价乖离回归",
-          strength,
+          strength: "weak",
           tMode: "正T",
           timeWindow,
           spreadPct: deviationBelow,
@@ -2221,18 +2304,11 @@ export function generateTimelineSignals(
         }
         // 找到了双底，且当前价格在最低点上方（反弹确认）
         if (leftBottomIdx >= 0 && cur.price > minPrice * 1.001 && cur.price > prev.price) {
-          let strength: Strength = cur.price > minPrice * 1.005 ? "strong" : "medium";
-          if (regimeAdj.signalStrengthBoost < 0) {
-            if (strength === "strong") strength = "medium";
-            else if (strength === "medium") strength = "weak";
-          }
-
-
-
+          // 买入信号统一降级为weak
           signals[i] = {
             type: "buy",
             reason: "双底买回",
-            strength,
+            strength: "weak",
             tMode: "正T",
             timeWindow,
             description: `W底形态确认，两个低点相差<${config.doubleBottomTolerance}%，反弹买回`,
@@ -2253,18 +2329,11 @@ export function generateTimelineSignals(
       if (curMinutes >= 840 && curMinutes <= 865) {
         // 当前分钟急跌
         if (cur.changePercent <= config.lateDropThreshold && cur.price < prev.price) {
-          let strength: Strength = cur.changePercent <= -1.0 ? "strong" : "medium";
-          if (regimeAdj.signalStrengthBoost < 0) {
-            if (strength === "strong") strength = "medium";
-            else if (strength === "medium") strength = "weak";
-          }
-
-
-
+          // 买入信号统一降级为weak
           signals[i] = {
             type: "buy",
             reason: "尾盘急跌",
-            strength,
+            strength: "weak",
             tMode: "反T",
             timeWindow,
             description: cur.changePercent <= -1.0
@@ -2346,7 +2415,7 @@ export function generateTimelineSignals(
         signals[i] = {
           type: "buy",
           reason: "脉冲缩量企稳",
-          strength: "strong",
+          strength: "weak",
           tMode: "正T",
           timeWindow,
           description: `脉冲下跌${dropPct.toFixed(1)}%后缩量企稳，VWAP走平，强买回信号`,
@@ -2426,7 +2495,7 @@ export function generateTimelineSignals(
         signals[i] = {
           type: "buy",
           reason: "缩量横盘突破",
-          strength: "strong",
+          strength: "weak",
           tMode: "反T",
           timeWindow,
           description: `缩量横盘${rangePct.toFixed(2)}%后向上突破，强买入信号`,
@@ -2450,7 +2519,7 @@ export function generateTimelineSignals(
         signals[i] = {
           type: "buy",
           reason: "放量突破均线",
-          strength: "strong",
+          strength: "weak",
           tMode: "反T",
           timeWindow,
           description: `成交量放大${(cur.volume / avgVol).toFixed(1)}倍突破均价线，强买入信号`,
@@ -2468,18 +2537,12 @@ export function generateTimelineSignals(
       if (curKDJ && !isNaN(curKDJ.k) && !isNaN(curKDJ.d) && prevKDJ && !isNaN(prevKDJ.k) && !isNaN(prevKDJ.d)) {
         // K线从下方穿越D线 = 金叉
         if (prevKDJ.k <= prevKDJ.d && curKDJ.k > curKDJ.d) {
-          // J值在超卖区(低于20)时金叉更可靠 → strong，否则 medium
+          // 买入信号统一降级为weak
           const isOversold = curKDJ.j < config.kdjOversold;
-          let strength: Strength = isOversold ? "strong" : "medium";
-          if (regimeAdj.signalStrengthBoost < 0) {
-            if (strength === "strong") strength = "medium";
-            else if (strength === "medium") strength = "weak";
-          }
-
           signals[i] = {
             type: "buy",
             reason: "KDJ金叉买入",
-            strength,
+            strength: "weak",
             tMode: "反T",
             timeWindow,
             description: isOversold
@@ -2532,16 +2595,11 @@ export function generateTimelineSignals(
       if (curKDJ37 && !isNaN(curKDJ37.j) && prevKDJ37 && !isNaN(prevKDJ37.j)) {
         // J值低于极端低值阈值 且 开始拐头向上
         if (curKDJ37.j < config.jExtremeLow && curKDJ37.j > prevKDJ37.j) {
-          let strength: Strength = curKDJ37.j < -20 ? "strong" : "medium";
-          if (regimeAdj.signalStrengthBoost < 0) {
-            if (strength === "strong") strength = "medium";
-            else if (strength === "medium") strength = "weak";
-          }
-
+          // 买入信号统一降级为weak
           signals[i] = {
             type: "buy",
             reason: "J线超卖反弹",
-            strength,
+            strength: "weak",
             tMode: "反T",
             timeWindow,
             description: `J值=${curKDJ37.j.toFixed(1)}极度超卖后拐头向上(${prevKDJ37.j.toFixed(1)}→${curKDJ37.j.toFixed(1)})，反弹信号`,
@@ -2847,14 +2905,13 @@ export function generateTimelineSignals(
           descParts.push("V底");
         }
 
-        // 信号强度：高分=强，中分=中
-        const isStrong = totalScore >= 9 || (totalScore >= 7 && condNearLow1 && (condMacd || macdTurnedPositive));
+        // 买入信号统一降级为weak（次低点缩量买入占80%权重）
 
         // 写入信号（可能回溯到V底最低点）
         signals[signalIdx] = {
           type: "buy",
           reason: "放量下跌买点",
-          strength: isStrong ? "strong" : "medium",
+          strength: "weak",
           tMode: "正T",
           timeWindow: getTimeWindow(timeline[signalIdx].time),
           factorId: "factor_41",
@@ -2936,12 +2993,12 @@ export function generateTimelineSignals(
       if (priceFromLow42 > 3.0) continue;
 
       // 通过所有三个条件 → 生成买点
-      const isExtreme = volRatio42 < 0.3 && priceFromLow42 <= 1.0; // 极缩量+极贴底
+      // 买入信号统一降级为weak（次低点缩量买入占80%权重）
 
       signals[i] = {
         type: "buy",
         reason: "缩量底部买点",
-        strength: isExtreme ? "strong" : "medium",
+        strength: "weak",
         tMode: "正T",
         timeWindow,
         factorId: "factor_42",
@@ -2999,23 +3056,9 @@ export function generateTimelineSignals(
           }
           const avgStepGrowthRate = stepCount > 0 ? (totalStepGrowth / stepCount) * 100 : 0;
 
-          // Determine signal strength
-          let strength: Strength;
-          if (progLen >= 6 && priceRise >= 1.5 && volGrowth >= 100) {
-            strength = "strong";
-          } else if (progLen >= 4 && priceRise >= 0.5) {
-            strength = "medium";
-          } else if (progLen >= 3 && priceRise > 0) {
-            strength = "weak";
-          } else {
-            continue; // Not strong enough
-          }
-
-          // Adjust by regime
-          if (regimeAdj.signalStrengthBoost < 0) {
-            if (strength === "strong") strength = "medium";
-            else if (strength === "medium") strength = "weak";
-          }
+          // 买入信号统一降级为weak（次低点缩量买入占80%权重）
+          // 只保留最小触发条件：3分钟递增+价格上涨
+          if (progLen < 3 || priceRise <= 0) continue;
 
           const detailParts: string[] = [];
           detailParts.push(`${progLen}分钟递增`);
@@ -3026,7 +3069,7 @@ export function generateTimelineSignals(
           signals[i] = {
             type: "buy",
             reason: "递增放量",
-            strength,
+            strength: "weak",
             tMode: "反T",
             timeWindow,
             description: detailParts.join("，") + "，主力资金持续流入",
@@ -3146,7 +3189,18 @@ export function generateTimelineSignals(
     }
 
     // Upgrade strength based on confluence count
-    if (confluenceCount >= 3 && curSig.strength !== "strong") {
+    // 注意：买入信号统一为weak，不做共振升级（次低点缩量买入占80%权重）
+    if (curSig.type === "buy" && curSig.reason !== "次低点缩量买入") {
+      // 非核心买入信号保持weak，仅在描述中标注共振
+      if (confluenceCount >= 2) {
+        signals[i] = {
+          ...curSig,
+          description: curSig.description
+            ? `${curSig.description} 【${confluenceCount}因子共振】`
+            : `${confluenceCount}个因子共振确认`,
+        };
+      }
+    } else if (confluenceCount >= 3 && curSig.strength !== "strong") {
       signals[i] = {
         ...curSig,
         strength: "strong",
@@ -3212,7 +3266,8 @@ export function generateTimelineSignals(
             break;
           }
           // 买入信号在支撑位附近更可靠
-          if (curSig.type === "buy" && level.type === "support") {
+          // 注意：非核心买入信号保持weak，不做关键价位升级（次低点缩量买入占80%权重）
+          if (curSig.type === "buy" && level.type === "support" && curSig.reason === "次低点缩量买入") {
             if (curSig.strength === "weak") {
               signals[i] = {
                 ...curSig,
@@ -3553,13 +3608,13 @@ export const STRATEGY_OVERVIEW = {
     { regime: "横盘末期" as const, suitability: "等待方向选择", strategy: "减少做T频率，等待方向明确", expectedReturn: "暂停操作" },
   ],
   factorSummary: [
-    { id: 31, name: "脉冲缩量企稳", type: "buy" as const, tMode: "正T" as const, strength: "strong" as const, version: "v3.7", description: "脉冲下跌后卖出量能萎缩+VWAP走平 → 强买回信号" },
+    { id: 31, name: "脉冲缩量企稳", type: "buy" as const, tMode: "正T" as const, strength: "weak" as const, version: "v3.7", description: "脉冲下跌后卖出量能萎缩+VWAP走平 → 买回信号(weak)" },
     { id: 32, name: "脉冲拉升缩量滞涨", type: "sell" as const, tMode: "正T" as const, strength: "strong" as const, version: "v3.7", description: "脉冲拉升后买入量能萎缩+VWAP走平 → 强卖出信号" },
-    { id: 33, name: "缩量横盘突破", type: "buy" as const, tMode: "反T" as const, strength: "strong" as const, version: "v3.7", description: "缩量窄幅盘整后价格向上突破 → 强买信号" },
-    { id: 34, name: "放量突破均线", type: "buy" as const, tMode: "反T" as const, strength: "strong" as const, version: "v3.7", description: "成交量放大+价格从均线下方突破到上方 → 强买信号" },
-    { id: 35, name: "KDJ金叉买入", type: "buy" as const, tMode: "反T" as const, strength: "strong" as const, version: "v3.9", description: "K线上穿D线(金叉)，J<20超卖区更可靠 → 买入信号" },
+    { id: 33, name: "缩量横盘突破", type: "buy" as const, tMode: "反T" as const, strength: "weak" as const, version: "v3.7", description: "缩量窄幅盘整后价格向上突破 → 买信号(weak)" },
+    { id: 34, name: "放量突破均线", type: "buy" as const, tMode: "反T" as const, strength: "weak" as const, version: "v3.7", description: "成交量放大+价格从均线下方突破到上方 → 买信号(weak)" },
+    { id: 35, name: "KDJ金叉买入", type: "buy" as const, tMode: "反T" as const, strength: "weak" as const, version: "v3.9", description: "K线上穿D线(金叉)，J<20超卖区更可靠 → 买入信号(weak)" },
     { id: 36, name: "KDJ死叉卖出", type: "sell" as const, tMode: "正T" as const, strength: "strong" as const, version: "v3.9", description: "K线下穿D线(死叉)，J>80超买区更可靠 → 卖出信号" },
-    { id: 37, name: "J线超卖反弹", type: "buy" as const, tMode: "反T" as const, strength: "medium" as const, version: "v3.9", description: "J值低于0后拐头向上 → 极端超卖反弹信号" },
+    { id: 37, name: "J线超卖反弹", type: "buy" as const, tMode: "反T" as const, strength: "weak" as const, version: "v3.9", description: "J值低于0后拐头向上 → 极端超卖反弹信号(weak)" },
     { id: 38, name: "J线超买回落", type: "sell" as const, tMode: "正T" as const, strength: "medium" as const, version: "v3.9", description: "J值高于100后拐头向下 → 极端超买回落信号" },
   ],
 };
