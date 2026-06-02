@@ -787,6 +787,7 @@ function computeTimelineSignalElements(
   for (const idx of strongIndices) {
     const m = merged[idx];
     const isBuy = m.direction === "up";
+    const isGapUpSell = m.reasons.includes("高开卖出");
 
     let labelText: string;
     const fmtCustom = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -799,14 +800,15 @@ function computeTimelineSignalElements(
       labelText = fmtCustom(m.reasons[0]);
     }
 
-    const labelFontSize = 8;
+    // 高开卖出信号使用更大的字号和标签
+    const labelFontSize = isGapUpSell ? 11 : 8;
     let textWidth = 0;
     for (const ch of labelText) {
       textWidth += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
     }
-    const padX = 4;
+    const padX = isGapUpSell ? 6 : 4;
     const labelW = textWidth + padX * 2;
-    const labelH = 14;
+    const labelH = isGapUpSell ? 18 : 14;
 
     const markerOffset = 30;
     const labelGap = 14;
@@ -965,7 +967,8 @@ function computeTimelineSignalElements(
     }
 
     if (m.strength === "strong") {
-      const markerSize = 6;
+      const isGapUpSellSignal = m.reasons.includes("高开卖出");
+      const markerSize = isGapUpSellSignal ? 9 : 6;
       const badgeCx = m.x + markerSize + 4;
       const badgeCy = isBuy ? m.y - markerSize * 0.3 : m.y + markerSize * 0.3;
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
@@ -1037,8 +1040,8 @@ function computeTimelineSignalElements(
                 textAnchor="middle"
                 dominantBaseline="middle"
                 fill="white"
-                fontSize={8}
-                fontWeight="600"
+                fontSize={isGapUpSellSignal ? 11 : 8}
+                fontWeight={isGapUpSellSignal ? "800" : "600"}
               >
                 {plan.labelText}
               </text>
