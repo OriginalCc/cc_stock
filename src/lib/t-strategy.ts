@@ -2641,6 +2641,7 @@ export function generateTimelineSignals(
 
     if (hasSignificantVolDeclineGlobal) {
       let lastBuyIdx = -20; // cooldown
+      let volDeclineBuyCount = 0; // 只显示前2个买点，后续不再标记
 
       for (let i = 10; i < timeline.length; i++) {
         const cur = timeline[i];
@@ -2811,6 +2812,8 @@ export function generateTimelineSignals(
         };
         lastBuyIdx = i; // cooldown从确认点计算，不是回溯点
         lastSellPrice = null;
+        volDeclineBuyCount++;
+        if (volDeclineBuyCount >= 2) break; // 只显示前2个买点
       }
     }
     } // end of 跌停板过滤 else
