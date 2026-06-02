@@ -345,14 +345,12 @@ export async function GET() {
           ],
         },
         {
-          id: 25, name: "高开回落卖出", type: "sell", priority: 25,
-          description: "早盘高开股票，价格跌破开盘价0.01元即触发卖出信号（v4.0新增）",
-          condition: "open > prevClose && price <= open - 0.01",
+          id: 25, name: "高开卖出", type: "sell", priority: 25,
+          description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）",
+          condition: "open > prevClose",
           category: "GAP_UP", tMode: "正T", timeWindow: "sell_window",
           strengthRules: [
-            { condition: "高开≥3%后回落", strength: "strong" },
-            { condition: "高开≥1%后回落", strength: "medium" },
-            { condition: "小幅高开后回落", strength: "medium" },
+            { condition: "高开即卖出", strength: "strong" },
           ],
         },
       ],
@@ -634,7 +632,7 @@ export async function POST(request: NextRequest) {
             // v3.10 新增因子
             { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: "{\"minProgressiveLen\":3,\"strongProgressiveLen\":6}", enabled: true, priority: 8, strength: "medium", tMode: "反T", timeWindow: "buy_window" },
             // v4.0 新增因子
-            { name: "高开回落卖出", category: "GAP_UP", signalType: "sell", description: "早盘高开股票，价格跌破开盘价0.01元即触发卖出信号。高开幅度越大信号越强（v4.0新增）", params: "{\"triggerDrop\":0.01,\"strongGapUpPct\":3,\"mediumGapUpPct\":1}", enabled: true, priority: 23, strength: "strong", tMode: "正T", timeWindow: "sell_window" },
+            { name: "高开卖出", category: "GAP_UP", signalType: "sell", description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）", params: "{\"gapUpPct\":0}", enabled: true, priority: 23, strength: "strong", tMode: "正T", timeWindow: "sell_window" },
           ],
         });
       }

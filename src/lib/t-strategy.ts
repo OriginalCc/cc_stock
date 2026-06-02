@@ -1269,9 +1269,9 @@ function evaluateCondition(
       return openPriceParam > prevClose;
     }
     case "gap_up_drop": {
-      // 高开后回落：开盘价高于昨收价，且当前价格跌破开盘价
+      // 高开：开盘价高于昨收价（已改为高开即提示卖出）
       if (openPriceParam === undefined || prevClose <= 0) return false;
-      return openPriceParam > prevClose && cur.price < openPriceParam;
+      return openPriceParam > prevClose;
     }
 
     default:
@@ -1298,7 +1298,7 @@ function evaluateCondition(
  * - 因子37: J线超卖反弹 — J值低于0后拐头向上 → 买入(反T)
  * - 因子38: J线超买回落 — J值高于100后拐头向下 → 卖出(正T)
  * - 因子39: 递增放量 — 连续3+分钟成交量递增+价格同步上涨 → 买入(反T)
- * - 因子40: 高开回落卖出 — 早盘高开股票，价格跌破开盘价0.01元 → 卖出(正T)
+ * - 因子40: 高开卖出 — 只要高开（开盘价>昨收价），立即显示卖出信号 → 卖出(正T)
  * 
  * v3.6 改进（胜率增强系统）：
  * - 信号共振确认：2+个不同因子在3分钟内同方向触发，自动提升信号强度
@@ -1473,37 +1473,32 @@ export function generateTimelineSignals(
       continue;
     }
 
-    // ── 40. 高开回落卖出 → 卖出(正T) ── (v4.2)
-    // 只要是高开的股票（开盘价>昨收价），价格跌破开盘价立马显示卖出信号
-    // 高开意味着隔夜情绪偏多，但开盘后回落说明多头力量不足，应立即高抛
-    if (isFactorEnabled("高开回落卖出", factorOverrides) && openPrice !== undefined && typeof openPrice === 'number' && !isNaN(openPrice) && openPrice > 0 && openPrice > prevClose && isSellWindow(timeWindow) && regimeAdj.allowSell) {
+    // ── 40. 高开卖出 → 卖出(正T) ── (v4.3)
+    // 只要是高开的股票（开盘价>昨收价），直接在分时图第一个点显示卖出信号
+    // 高开意味着隔夜情绪偏多，开盘即卖出做正T
+    if (isFactorEnabled("高开卖出", factorOverrides) && openPrice !== undefined && typeof openPrice === 'number' && !isNaN(openPrice) && openPrice > 0 && openPrice > prevClose && isSellWindow(timeWindow) && regimeAdj.allowSell) {
       const gapUpPct = ((openPrice - prevClose) / prevClose) * 100;
-      // 价格跌破开盘价即触发（不设0.01缓冲，下跌就卖）
-      if (cur.price < openPrice) {
-        // 只在第一次跌破时触发（检查之前没有同因子信号）
-        let alreadyFired = false;
-        for (let k = 0; k < i; k++) {
-          if (signals[k] && signals[k]!.reason === "高开回落卖出") {
-            alreadyFired = true;
-            break;
-          }
+      // 只在第一个分时点触发（i===2是循环起始点）
+      let alreadyFired = false;
+      for (let k = 0; k < i; k++) {
+        if (signals[k] && signals[k]!.reason === "高开卖出") {
+          alreadyFired = true;
+          break;
         }
-        if (!alreadyFired) {
-          const dropFromOpen = ((openPrice - cur.price) / openPrice) * 100;
-
-          signals[i] = {
-            type: "sell",
-            reason: "高开回落卖出",
-            strength: "strong",
-            tMode: "正T",
-            timeWindow,
-            spreadPct: dropFromOpen,
-            factorId: "factor_40",
-            description: `高开${gapUpPct.toFixed(2)}%后跌破开盘价，立即卖出`,
-          };
-          lastSellPrice = cur.price;
-          continue;
-        }
+      }
+      if (!alreadyFired) {
+        signals[i] = {
+          type: "sell",
+          reason: "高开卖出",
+          strength: "strong",
+          tMode: "正T",
+          timeWindow,
+          spreadPct: gapUpPct,
+          factorId: "factor_40",
+          description: `高开${gapUpPct.toFixed(2)}%，立即卖出做正T`,
+        };
+        lastSellPrice = cur.price;
+        continue;
       }
     }
 

@@ -137,8 +137,8 @@ const DEFAULT_FACTOR_SEEDS = [
   { name: "均价拐头", category: "VWAP", signalType: "sell", description: "MACD柱状线收敛：均价线从持续上升转为开始下降，趋势转折信号", params: JSON.stringify({ avgPriceTurnLookback: 5 }), enabled: true, priority: -7, strength: "medium", tMode: "正T", timeWindow: "sell_window" },
   // v3.10 new factor
   { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: JSON.stringify({ minProgressiveLen: 3, strongProgressiveLen: 6 }), enabled: true, priority: 8, strength: "medium", tMode: "反T", timeWindow: "buy_window" },
-  // v4.0 new factor
-  { name: "高开回落卖出", category: "GAP_UP", signalType: "sell", description: "早盘高开股票，价格跌破开盘价0.01元即触发卖出信号。高开幅度越大信号越强", params: JSON.stringify({ triggerDrop: 0.01, strongGapUpPct: 3, mediumGapUpPct: 1 }), enabled: true, priority: 23, strength: "strong", tMode: "正T", timeWindow: "sell_window" },
+  // v4.3 new factor
+  { name: "高开卖出", category: "GAP_UP", signalType: "sell", description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）", params: JSON.stringify({ gapUpPct: 0 }), enabled: true, priority: 23, strength: "strong", tMode: "正T", timeWindow: "sell_window" },
 ];
 
 // ── 初始化默认数据 ──────────────────────────────────────
@@ -171,7 +171,7 @@ async function seedDefaultData() {
     { name: "冲高回落", category: "MOMENTUM", signalType: "sell", description: "前一根K线冲高后当前K线回落，冲高回落信号", params: JSON.stringify({ surgeThreshold: 0.3, strongThreshold: 0.8 }), enabled: true, priority: 0, strength: "weak" },
     { name: "突破均价线", category: "VWAP", signalType: "buy", description: "价格从均线下方突破到均线上方，多方力量增强", params: JSON.stringify({}), enabled: true, priority: 0, strength: "medium" },
     { name: "递增放量", category: "VOLUME_PATTERN", signalType: "buy", description: "连续3+分钟成交量逐步放大且价格同步上涨，主力资金持续流入信号（v3.10新增）", params: JSON.stringify({ minProgressiveLen: 3, strongProgressiveLen: 6 }), enabled: true, priority: 8, strength: "medium" },
-    { name: "高开回落卖出", category: "GAP_UP", signalType: "sell", description: "早盘高开股票，价格跌破开盘价0.01元即触发卖出信号。高开幅度越大信号越强（v4.0新增）", params: JSON.stringify({ triggerDrop: 0.01, strongGapUpPct: 3, mediumGapUpPct: 1 }), enabled: true, priority: 23, strength: "strong" },
+    { name: "高开卖出", category: "GAP_UP", signalType: "sell", description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）", params: JSON.stringify({ gapUpPct: 0 }), enabled: true, priority: 23, strength: "strong" },
   ];
 
   for (const factor of defaultFactors) {

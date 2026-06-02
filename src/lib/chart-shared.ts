@@ -267,7 +267,7 @@ export const CONDITION_LIBRARY: CustomFactorCondition[] = [
 
   // ── 高开形态 ──
   { key: "gap_up_open", label: "高开", description: "开盘价高于昨收价，隔夜情绪偏多", category: "price" },
-  { key: "gap_up_drop", label: "高开回落", description: "高开后价格跌破开盘价0.01元，多头力量不足", category: "price" },
+  { key: "gap_up_drop", label: "高开", description: "开盘价高于昨收价，隔夜情绪偏多，立即卖出做正T", category: "price" },
 ];
 
 export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
