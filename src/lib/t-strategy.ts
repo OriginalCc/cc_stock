@@ -1509,29 +1509,51 @@ export function generateTimelineSignals(
   // 当个股处于明确下跌状态时，禁止显示任何买点信号，避免"接飞刀"
   // 判定条件（同时满足才进入禁买区）：
   //   1) 当前价格低于均价线（VWAP）— 价格被压制
-  //   2) 均价线在下行（近5根VWAP斜率为负）— 趋势未止
-  //   3) 近10根内价格持续走低（最高价在5根以前）— 仍在下跌中
-  //   特例：如果近5根内出现明显反弹（从最低点反弹>0.8%），解除禁买
+  //   2) 均价线在下行（近5根有3根以上下降）— 趋势未止
+  //   3) 近20根内从高点回落>1%且高点在前半段 — 仍在下跌中
+  //   4) 当前价低于均价线0.3%以上 — 不是刚贴着均线
+  //   5) 近30根内无"有效反弹"（未站上VWAP且无2.5%+反弹）— 跌势持续
   const checkIsInNoBuyZone = (idx: number): boolean => {
     const c = timeline[idx];
     // 条件1：价格低于均价线
     if (c.price >= c.avgPrice) return false;
-    // 条件2：均价线在下行
+    // 条件2：均价线在下行（近5根有3根以上下降）
     if (idx < 5) return false;
     const recent5Avg = timeline.slice(idx - 4, idx + 1).map(d => d.avgPrice);
-    const avgDeclining = recent5Avg[4] < recent5Avg[3] && recent5Avg[3] < recent5Avg[2];
-    if (!avgDeclining) return false;
-    // 条件3：近10根内价格在走低
-    const recent10 = timeline.slice(Math.max(0, idx - 9), idx + 1);
-    const highFirst5 = Math.max(...recent10.slice(0, 5).map(d => d.price));
-    const lowLast5 = Math.min(...recent10.slice(5).map(d => d.price));
-    const stillDropping = lowLast5 < highFirst5 * 0.998; // 后半段有更低点
-    if (!stillDropping) return false;
-    // 特例检查：近5根内是否已有明显反弹（从最低点反弹>0.8%）
-    const recent5Prices = timeline.slice(Math.max(0, idx - 4), idx + 1).map(d => d.price);
-    const recent5Low = Math.min(...recent5Prices);
-    const bouncePct = recent5Low > 0 ? ((c.price - recent5Low) / recent5Low) * 100 : 0;
-    if (bouncePct > 0.8) return false; // 已有反弹，解除禁买
+    let avgDeclineCount = 0;
+    for (let k = 1; k < recent5Avg.length; k++) {
+      if (recent5Avg[k] < recent5Avg[k - 1]) avgDeclineCount++;
+    }
+    if (avgDeclineCount < 3) return false; // 5根内有3根下降=趋势下行
+    // 条件3：近20根内价格整体走低（从高点回落明显）
+    const lookback20 = Math.min(idx + 1, 20);
+    const recent20 = timeline.slice(idx - lookback20 + 1, idx + 1);
+    const high20 = Math.max(...recent20.map(d => d.price));
+    const low20 = Math.min(...recent20.map(d => d.price));
+    const highIdx20 = recent20.findIndex(d => d.price === high20);
+    // 高点在前半段，且当前价离高点跌幅>1%
+    if (highIdx20 >= recent20.length / 2) return false; // 高点在后半段，可能是反弹中
+    const dropFromHigh = high20 > 0 ? ((high20 - c.price) / high20) * 100 : 0;
+    if (dropFromHigh < 1.0) return false; // 跌幅不够，不算下跌区
+    // 条件4：当前价仍在均线下方0.3%以上（不是刚好贴着均线）
+    const belowVWAPPct = c.avgPrice > 0 ? ((c.avgPrice - c.price) / c.avgPrice) * 100 : 0;
+    if (belowVWAPPct < 0.3) return false; // 只比均线低0.3%以内，可能在试图突破
+    // 条件5：近30根内没有出现"有效反弹"（价格站上VWAP或从低点反弹>2.5%）
+    // "有效反弹"定义：价格突破均价线，或者从局部低点反弹超过2.5%
+    if (idx >= 10) {
+      const lookback30 = Math.min(idx + 1, 30);
+      const recent30 = timeline.slice(idx - lookback30 + 1, idx + 1);
+      // 检查是否有哪根K线价格站在均价线上方
+      const hasCrossedVWAP = recent30.some(d => d.price > d.avgPrice * 1.002);
+      if (hasCrossedVWAP) return false; // 近30根内有突破均价线的，跌势可能已止
+      // 检查是否有从低点反弹超过2.5%的
+      const prices30 = recent30.map(d => d.price);
+      for (let k = 5; k < prices30.length; k++) {
+        const low5 = Math.min(...prices30.slice(k - 5, k));
+        const bouncePct30 = low5 > 0 ? ((prices30[k] - low5) / low5) * 100 : 0;
+        if (bouncePct30 > 2.5) return false; // 出现过2.5%以上的反弹，跌势可能暂止
+      }
+    }
     return true;
   };
 
