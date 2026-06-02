@@ -1464,3 +1464,28 @@ Stage Summary:
 - 放宽MACD回看窗口从30根到80根，更准确判断衰减程度
 - 放宽价格距离从1%到1.5%（Type A），1%（Type B）
 - 修复了evaluateCondition中的MACD条件，与v5.0主逻辑对齐
+---
+Task ID: 1
+Agent: main
+Task: Fix 放量下跌买点 signals not showing on time-sharing chart for 603355
+
+Work Log:
+- Analyzed 603355 real timeline data via API (122 bars, prevClose=27.17, open=27.29 high-open)
+- Traced signal generation pipeline: API data → MACD calculation → generateTimelineSignals → chart rendering
+- Diagnosed root cause: previous v5.0 "collect→merge→write" pattern caused candidates to land on sell-signal indices, getting blocked
+- Only 1 放量下跌买点 signal was produced (at idx 75/10:45) despite many valid candidates
+- Rewrote factor 41 from v5.0 to v5.1 with direct-write pattern and cooldown mechanism
+- Key changes:
+  1. Replaced "collect→merge→write" with "direct scan→immediate write" pattern
+  2. Added 15-bar cooldown instead of 10-bar merge window
+  3. Relaxed conditions: vol threshold 50%→70%, near-low 1.5%→2%, MACD decay 50%→60%
+  4. Changed from strict 3-condition AND to 2-of-3 flexible matching
+  5. Lowered vol-decline prerequisite: 2x avg→1.5x avg, 0.3% drop→0.2% drop
+- Updated evaluateCondition() for macd_neg_near_peak, vol_dry_up_buy, price_near_lowest
+- Updated CONDITION_LIBRARY descriptions in chart-shared.ts
+- Bumped SIGNAL_ENGINE_VERSION to v5.1 to invalidate cache
+
+Stage Summary:
+- 放量下跌买点 signals increased from 1 to 7 for 603355
+- Key buy points now at: 09:47, 10:02, 10:17, 10:32, 10:47, 11:02, 11:17
+- Modified files: t-strategy.ts, chart-shared.ts, page.tsx

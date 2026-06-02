@@ -1275,7 +1275,7 @@ function evaluateCondition(
 
     // ── 放量下跌买点形态 (v5.0更新) ──
     case "macd_neg_near_peak": {
-      // MACD绿柱曾达峰值：近80根内出现过负柱峰值，当前MACD大幅衰减或已转正
+      // MACD绿柱衰减/转正：近80根内出现过负柱峰值，当前MACD衰减至60%以下或已转正
       const macdNP = macdByTime.get(cur.time);
       if (!macdNP) return false;
       // 找近80根内MACD绿柱峰值
@@ -1290,20 +1290,20 @@ function evaluateCondition(
         }
       }
       if (maxAbsNP <= 0) return false;
-      // 当前MACD大幅衰减（<50%峰值）或已转正
+      // 当前MACD衰减（<60%峰值）或已转正
       const curAbsNP = Math.abs(macdNP.macd);
       const decayPctNP = (curAbsNP / maxAbsNP) * 100;
-      return macdNP.macd > 0 || (macdNP.macd < 0 && decayPctNP < 50);
+      return macdNP.macd > 0 || (macdNP.macd < 0 && decayPctNP < 60);
     }
     case "vol_dry_up_buy": {
-      // 缩量到地量：成交量降至均量50%以下
-      return avgVol > 0 && cur.volume < avgVol * 0.5;
+      // 缩量：成交量降至均量70%以下
+      return avgVol > 0 && cur.volume < avgVol * 0.7;
     }
     case "price_near_lowest": {
-      // 价格挨着最低价：当前价接近近80根最低价（1.5%以内）
+      // 价格在底部区域：当前价接近近80根最低价（2%以内）
       const lbPL = Math.min(i + 1, 80);
       const minPL = Math.min(...timeline.slice(i - lbPL + 1, i + 1).map(d => d.price));
-      return cur.price <= minPL * 1.015;
+      return cur.price <= minPL * 1.02;
     }
 
     default:
@@ -2571,202 +2571,114 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.0 基于莱克电气实盘数据自学习重写)
+  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.1 重写：直接写入模式，解决被sell信号阻塞的问题)
   //
-  // 核心发现（来自603355莱克电气实盘分析）：
-  //   放量下跌后有两个最佳买点时机：
-  //   A) 跌势衰竭：MACD从深绿回归零轴附近+量缩到地量+价格在底部 → 第一波杀跌结束
-  //   B) 二次探底：价格再次回落到低点+MACD出现小绿峰后缩短+量更小 → 双底确认
+  // v5.1 核心改进：
+  //   不再使用"先收集候选→合并→写入"模式，因为合并后候选可能恰好落在sell信号的位置被跳过
+  //   改为直接遍历timeline，满足条件直接写入，每15根只写一次（cooldown机制）
+  //   同时放宽缩量条件（50%→70%），让更多买点被标记
   //
-  // v5.0 新标准（分阶段检测）：
-  //   前置条件：近80根内存在显著放量下跌（量>2倍均量+价跌>0.3%），且出现日内低点
-  //   买点类型A（跌势衰竭）：
-  //     ① MACD绿柱曾出现大峰值(近80根内最大绝对值>0)，当前已大幅衰减(当前abs<50%峰值)
-  //        或者MACD已从负转正(金叉确认)
-  //     ② 成交量缩量(< 50%均量)
-  //     ③ 当前价格在近80根最低价1.5%以内
-  //   买点类型B（二次探底）：
-  //     ① MACD当前为负，近30根内出现过绿柱峰值
-  //     ② MACD绿柱已从近期峰值缩短(当前abs<70%近30根峰值)
-  //     ③ 成交量极度萎缩(< 40%均量)
-  //     ④ 当前价格在近80根最低价1%以内
+  // 前置条件：近80根内存在显著放量下跌（量>1.5倍均量+价跌>0.2%）
+  // 买点条件（三条件满足任意两项即可）：
+  //   ① MACD曾经深绿现在衰减或转正（近80根内有绿柱峰值，当前abs<60%峰值 或 已转正）
+  //   ② 成交量缩量（< 70%均量）
+  //   ③ 价格在底部区域（近80根最低价2%以内）
   //
-  // 信号合并：每10根只保留一个最强买点，避免信号扎堆
+  // cooldown: 每15根只标记一个买点，避免信号扎堆
   if (isFactorEnabled("放量下跌买点", factorOverrides) && regimeAdj.allowBuy) {
-    // 第一步：收集所有候选买点
-    const buyCandidates: { idx: number; score: number; type: 'A' | 'B'; desc: string }[] = [];
-
-    // 先找全局MACD绿柱峰值（80根范围），用于判断是否"大幅衰减"
-    const globalLookback = Math.min(timeline.length, 80);
-    let globalMaxNegMacdAbs = 0;
-    let globalPeakIdx = -1;
-    for (let k = timeline.length - globalLookback; k < timeline.length; k++) {
-      if (k < 0) continue;
-      const m = macdByTime.get(timeline[k].time);
-      if (m && m.macd < 0) {
-        const absVal = Math.abs(m.macd);
-        if (absVal > globalMaxNegMacdAbs) {
-          globalMaxNegMacdAbs = absVal;
-          globalPeakIdx = k;
-        }
+    // 判断是否存在放量下跌的前置条件（只需计算一次）
+    let hasSignificantVolDeclineGlobal = false;
+    for (let k = 1; k < timeline.length; k++) {
+      const bar = timeline[k];
+      const prevBar = timeline[k - 1];
+      const priceDown = bar.price < prevBar.price;
+      const priceDropPct = prevBar.price > 0
+        ? ((prevBar.price - bar.price) / prevBar.price) * 100
+        : 0;
+      if (bar.volume > avgVol * 1.5 && priceDown && priceDropPct > 0.2) {
+        hasSignificantVolDeclineGlobal = true;
+        break;
       }
     }
 
-    for (let i = 10; i < timeline.length; i++) {
-      const cur = timeline[i];
-      const macd41 = macdByTime.get(cur.time);
-      if (!macd41) continue;
+    if (hasSignificantVolDeclineGlobal) {
+      let lastBuyIdx = -20; // cooldown: 上一次写入买点的索引
 
-      const timeWindow41 = getTimeWindow(cur.time);
-      if (!isBuyWindow(timeWindow41)) continue;
+      for (let i = 10; i < timeline.length; i++) {
+        const cur = timeline[i];
+        const macd41 = macdByTime.get(cur.time);
+        if (!macd41) continue;
 
-      // 前置条件：近80根内存在显著放量下跌
-      const priorLookback = Math.min(i, 80);
-      let hasSignificantVolDecline = false;
-      let volDeclineCount = 0;
-      for (let k = i - priorLookback; k < i; k++) {
-        const bar = timeline[k];
-        const prevBar = k > 0 ? timeline[k - 1] : null;
-        const priceDown = prevBar ? bar.price < prevBar.price : bar.changePercent < 0;
-        const priceDropPct = prevBar && prevBar.price > 0
-          ? ((prevBar.price - bar.price) / prevBar.price) * 100
-          : Math.abs(bar.changePercent);
-        if (bar.volume > avgVol * 2 && priceDown && priceDropPct > 0.3) {
-          volDeclineCount++;
-          if (volDeclineCount >= 1) { hasSignificantVolDecline = true; break; }
-        }
-      }
-      if (!hasSignificantVolDecline) continue;
+        // 检查cooldown
+        if (i - lastBuyIdx < 15) continue;
 
-      // 近80根最低价
-      const priceLookback = Math.min(i + 1, 80);
-      const minPrice80 = Math.min(...timeline.slice(i - priceLookback + 1, i + 1).map(d => d.price));
-      const priceFromLow80 = minPrice80 > 0 ? ((cur.price - minPrice80) / minPrice80) * 100 : 999;
-      const nearLow80 = priceFromLow80 <= 1.5; // 1.5%以内
+        // 如果该位置已有非买入信号，跳过
+        if (signals[i] && signals[i].type !== "buy") continue;
 
-      // 近80根内MACD绿柱峰值
-      const macdLookback80 = Math.min(i + 1, 80);
-      let localMaxNegMacdAbs80 = 0;
-      for (let k = i - macdLookback80 + 1; k <= i; k++) {
-        if (k < 0) continue;
-        const m = macdByTime.get(timeline[k].time);
-        if (m && m.macd < 0) {
-          const absVal = Math.abs(m.macd);
-          if (absVal > localMaxNegMacdAbs80) localMaxNegMacdAbs80 = absVal;
-        }
-      }
+        // 近80根最低价
+        const priceLookback = Math.min(i + 1, 80);
+        const minPrice80 = Math.min(...timeline.slice(i - priceLookback + 1, i + 1).map(d => d.price));
+        const priceFromLow80 = minPrice80 > 0 ? ((cur.price - minPrice80) / minPrice80) * 100 : 999;
 
-      // ── 类型A: 跌势衰竭买点 ──
-      // MACD绿柱曾出现大峰值，当前已大幅衰减或转正
-      if (localMaxNegMacdAbs80 > 0 && nearLow80) {
-        const curMacdAbs = Math.abs(macd41.macd);
-        const macdDecayPct = localMaxNegMacdAbs80 > 0 ? (curMacdAbs / localMaxNegMacdAbs80) * 100 : 0;
-        const macdTurnedPositive = macd41.macd > 0;
-        const macdGreatlyDecayed = macd41.macd < 0 && macdDecayPct < 50; // 衰减到50%以下
-        const volDryUp = avgVol > 0 && cur.volume < avgVol * 0.5;
-
-        if ((macdGreatlyDecayed || macdTurnedPositive) && volDryUp) {
-          // 计算得分（越高越优先）
-          let score = 0;
-          score += Math.max(0, 50 - macdDecayPct) * 2; // MACD衰减越彻底得分越高
-          score += nearLow80 ? 20 : 0; // 在底部区域
-          const volPct = avgVol > 0 ? (cur.volume / avgVol) * 100 : 100;
-          score += Math.max(0, 50 - volPct); // 量越缩得分越高
-          if (priceFromLow80 <= 0.5) score += 15; // 极近低点加成
-
-          const volPctStr = avgVol > 0 ? (cur.volume / avgVol * 100).toFixed(0) : "?";
-          const decayStr = macdTurnedPositive ? "转正" : `衰减至${macdDecayPct.toFixed(0)}%`;
-          buyCandidates.push({
-            idx: i,
-            score,
-            type: 'A',
-            desc: `跌势衰竭:MACD${decayStr}+缩量${volPctStr}%+距低${priceFromLow80.toFixed(1)}%`,
-          });
-          continue; // 类型A优先，不再检查类型B
-        }
-      }
-
-      // ── 类型B: 二次探底买点 ──
-      // MACD仍为负但近期有峰值且正在缩短，量极度萎缩
-      if (macd41.macd < 0 && nearLow80) {
-        const lookback30 = Math.min(i, 30);
-        let maxNegMacdAbs30 = 0;
-        let peakBarDist30 = lookback30;
-        for (let k = i - lookback30; k <= i; k++) {
+        // 近80根内MACD绿柱峰值
+        const macdLookback80 = Math.min(i + 1, 80);
+        let localMaxNegMacdAbs80 = 0;
+        for (let k = i - macdLookback80 + 1; k <= i; k++) {
           if (k < 0) continue;
           const m = macdByTime.get(timeline[k].time);
           if (m && m.macd < 0) {
             const absVal = Math.abs(m.macd);
-            if (absVal > maxNegMacdAbs30) {
-              maxNegMacdAbs30 = absVal;
-              peakBarDist30 = i - k;
-            }
+            if (absVal > localMaxNegMacdAbs80) localMaxNegMacdAbs80 = absVal;
           }
         }
 
+        // 条件①：MACD衰减或转正
         const curMacdAbs = Math.abs(macd41.macd);
-        const shrinkPct = maxNegMacdAbs30 > 0 ? (curMacdAbs / maxNegMacdAbs30) * 100 : 0;
-        const macdShrinking = shrinkPct < 70 && maxNegMacdAbs30 > 0 && peakBarDist30 <= 15;
-        const volVeryDry = avgVol > 0 && cur.volume < avgVol * 0.4;
+        const macdDecayPct = localMaxNegMacdAbs80 > 0 ? (curMacdAbs / localMaxNegMacdAbs80) * 100 : 999;
+        const macdTurnedPositive = macd41.macd > 0;
+        const macdGreatlyDecayed = macd41.macd < 0 && macdDecayPct < 60;
+        const condMacd = (macdGreatlyDecayed || macdTurnedPositive) && localMaxNegMacdAbs80 > 0;
 
-        // 额外条件：近80根内确实有过放量下跌（已在前面检查）
-        if (macdShrinking && volVeryDry && priceFromLow80 <= 1.0) {
-          let score = 0;
-          score += Math.max(0, 70 - shrinkPct); // MACD缩短越多越好
-          score += peakBarDist30 <= 5 ? 15 : 5; // 峰值越近越新鲜
-          const volPct = avgVol > 0 ? (cur.volume / avgVol) * 100 : 100;
-          score += Math.max(0, 40 - volPct) * 1.5; // 极度缩量加分
-          if (priceFromLow80 <= 0.5) score += 20; // 极近低点
+        // 条件②：成交量缩量
+        const volRatio = avgVol > 0 ? cur.volume / avgVol : 1;
+        const condVolDry = volRatio < 0.7; // <70%均量
 
-          const volPctStr = avgVol > 0 ? (cur.volume / avgVol * 100).toFixed(0) : "?";
-          buyCandidates.push({
-            idx: i,
-            score,
-            type: 'B',
-            desc: `二次探底:MACD缩短至${shrinkPct.toFixed(0)}%峰+极缩量${volPctStr}%+距低${priceFromLow80.toFixed(1)}%`,
-          });
+        // 条件③：价格在底部区域
+        const condNearLow = priceFromLow80 <= 2.0; // 2%以内
+
+        // 三条件满足任意两项即触发买点
+        const condCount = (condMacd ? 1 : 0) + (condVolDry ? 1 : 0) + (condNearLow ? 1 : 0);
+        if (condCount < 2) continue;
+
+        // 至少需要价格在底部附近（条件③必选或条件②+①组合也可以）
+        // 但如果既不在底部又没缩量，只有MACD衰减不够，必须有价格或量的配合
+
+        // 计算信号描述
+        const descParts: string[] = [];
+        if (condMacd) {
+          const decayStr = macdTurnedPositive ? "MACD转正" : `MACD衰减至${macdDecayPct.toFixed(0)}%`;
+          descParts.push(decayStr);
         }
-      }
-    }
-
-    // 第二步：合并候选买点（每10根只保留得分最高的）
-    buyCandidates.sort((a, b) => a.idx - b.idx); // 按时间排序
-    const selectedCandidates: typeof buyCandidates = [];
-    for (const cand of buyCandidates) {
-      // 检查是否与已选候选太近（10根以内）
-      const tooClose = selectedCandidates.some(sel =>
-        Math.abs(sel.idx - cand.idx) <= 10
-      );
-      if (!tooClose) {
-        selectedCandidates.push(cand);
-      } else if (cand.score > (selectedCandidates.find(s => Math.abs(s.idx - cand.idx) <= 10)?.score ?? 0)) {
-        // 如果得分更高，替换已有的
-        const nearbyIdx = selectedCandidates.findIndex(s => Math.abs(s.idx - cand.idx) <= 10);
-        if (nearbyIdx >= 0 && cand.score > selectedCandidates[nearbyIdx].score) {
-          selectedCandidates[nearbyIdx] = cand;
+        if (condVolDry) {
+          descParts.push(`缩量${(volRatio * 100).toFixed(0)}%`);
         }
+        if (condNearLow) {
+          descParts.push(`距低${priceFromLow80.toFixed(1)}%`);
+        }
+
+        // 写入信号
+        signals[i] = {
+          type: "buy",
+          reason: "放量下跌买点",
+          strength: condCount >= 3 ? "strong" : "medium",
+          tMode: "正T",
+          timeWindow: getTimeWindow(cur.time),
+          factorId: "factor_41",
+          description: descParts.join("+"),
+        };
+        lastBuyIdx = i;
+        lastSellPrice = null;
       }
-    }
-
-    // 第三步：写入信号（放量下跌买点允许覆盖其他买入信号，因为它是用户特别要求的重要信号）
-    for (const cand of selectedCandidates) {
-      const i = cand.idx;
-      const existing = signals[i];
-      // 允许覆盖任何买入信号（放量下跌买点是高优先级信号）
-      if (existing && existing.type !== "buy") continue;
-      // 如果已有放量下跌买点，不再覆盖
-      if (existing && existing.reason === "放量下跌买点") continue;
-
-      signals[i] = {
-        type: "buy",
-        reason: "放量下跌买点",
-        strength: "strong",
-        tMode: "正T",
-        timeWindow: getTimeWindow(timeline[i].time),
-        factorId: "factor_41",
-        description: cand.desc,
-      };
-      lastSellPrice = null;
     }
   }
 
