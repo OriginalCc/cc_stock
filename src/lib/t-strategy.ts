@@ -1273,10 +1273,10 @@ function evaluateCondition(
       return openPriceParam > prevClose;
     }
 
-    // ── 放量下跌买点形态 (v5.3更新 - 放宽条件+V底检测) ──
+    // ── 放量下跌买点形态 (v5.5更新 - 进一步放宽条件) ──
     case "macd_neg_near_peak": {
-      // MACD绿柱衰减/转正：近80根内出现过负柱峰值，当前MACD衰减至70%以下或已转正
-      // v5.3: 从60%放宽到70%，减少漏判
+      // MACD绿柱衰减/转正：近80根内出现过负柱峰值，当前MACD衰减至80%以下或已转正
+      // v5.5: 从70%放宽到80%，减少漏判
       const macdNP = macdByTime.get(cur.time);
       if (!macdNP) return false;
       // 找近80根内MACD绿柱峰值
@@ -1291,15 +1291,16 @@ function evaluateCondition(
         }
       }
       if (maxAbsNP <= 0) return false;
-      // 当前MACD衰减（<70%峰值）或已转正（v5.3: 从60%放宽）
+      // 当前MACD衰减（<80%峰值）或已转正（v5.5: 从70%放宽）
       const curAbsNP = Math.abs(macdNP.macd);
       const decayPctNP = (curAbsNP / maxAbsNP) * 100;
-      const basicCond = macdNP.macd > 0 || (macdNP.macd < 0 && decayPctNP < 70);
-      // 如果MACD仍为负，要求连续缩短确认
+      const basicCond = macdNP.macd > 0 || (macdNP.macd < 0 && decayPctNP < 80);
+      // 如果MACD仍为负，要求连续缩短确认（v5.5: 放宽，不强制要求连续缩短，只要衰减即可）
       if (basicCond && macdNP.macd < 0 && i >= 2) {
         const prevMacdNP = macdByTime.get(timeline[i - 1]?.time);
         if (prevMacdNP && prevMacdNP.macd < 0) {
-          return Math.abs(macdNP.macd) < Math.abs(prevMacdNP.macd);
+          // v5.5: 即使当前柱比前一根略长，只要整体衰减到80%以下也可通过
+          return Math.abs(macdNP.macd) < Math.abs(prevMacdNP.macd) || decayPctNP < 70;
         }
       }
       return basicCond;
@@ -1309,10 +1310,10 @@ function evaluateCondition(
       return avgVol > 0 && cur.volume < avgVol * 0.8;
     }
     case "price_near_lowest": {
-      // 价格在底部区域：当前价接近近80根最低价（v5.3: 从1.5%放宽到2%）
+      // 价格在底部区域：当前价接近近80根最低价（v5.5: 从2%放宽到2.5%）
       const lbPL = Math.min(i + 1, 80);
       const minPL = Math.min(...timeline.slice(i - lbPL + 1, i + 1).map(d => d.price));
-      return cur.price <= minPL * 1.02;
+      return cur.price <= minPL * 1.025;
     }
 
     default:
@@ -2625,7 +2626,12 @@ export function generateTimelineSignals(
       // 跌停股不生成放量下跌买点
     } else {
     // 判断是否存在放量下跌的前置条件（只需计算一次）
+    // v5.5: 放宽前置条件 — 三条路径任一满足即可：
+    //   A) 单根放量下跌: 量>1.2倍均量 + 价跌>0.1%（原1.5x/0.2%过严，很多股票漏判）
+    //   B) 多根累积放量下跌: 近5根累积量>1.5倍均量×5 + 累积价跌>0.5%
+    //   C) 持续下跌趋势: 近80根内最高价到最低价跌幅>1.5%（即使没有明显放量，只要跌够了也可买回）
     let hasSignificantVolDeclineGlobal = false;
+    // 路径A: 单根放量下跌
     for (let k = 1; k < timeline.length; k++) {
       const bar = timeline[k];
       const prevBar = timeline[k - 1];
@@ -2633,9 +2639,35 @@ export function generateTimelineSignals(
       const priceDropPct = prevBar.price > 0
         ? ((prevBar.price - bar.price) / prevBar.price) * 100
         : 0;
-      if (bar.volume > avgVol * 1.5 && priceDown && priceDropPct > 0.2) {
+      if (bar.volume > avgVol * 1.2 && priceDown && priceDropPct > 0.1) {
         hasSignificantVolDeclineGlobal = true;
         break;
+      }
+    }
+    // 路径B: 多根累积放量下跌
+    if (!hasSignificantVolDeclineGlobal && timeline.length >= 5) {
+      for (let k = 5; k < timeline.length; k++) {
+        const slice5 = timeline.slice(k - 4, k + 1);
+        const totalVol5 = slice5.reduce((s, d) => s + d.volume, 0);
+        const priceChange5 = slice5[0].price > 0
+          ? ((slice5[0].price - slice5[slice5.length - 1].price) / slice5[0].price) * 100
+          : 0;
+        const allDown = slice5.every((d, idx) => idx === 0 || d.price <= slice5[idx - 1].price * 1.001);
+        if (totalVol5 > avgVol * 5 * 1.3 && priceChange5 > 0.5 && allDown) {
+          hasSignificantVolDeclineGlobal = true;
+          break;
+        }
+      }
+    }
+    // 路径C: 持续下跌趋势（从高点跌>1.5%）
+    if (!hasSignificantVolDeclineGlobal && timeline.length >= 20) {
+      const lookback = Math.min(timeline.length, 80);
+      const recentPrices = timeline.slice(-lookback);
+      const highestPrice = Math.max(...recentPrices.map(d => d.price));
+      const lowestPrice = Math.min(...recentPrices.map(d => d.price));
+      const dropPct = highestPrice > 0 ? ((highestPrice - lowestPrice) / highestPrice) * 100 : 0;
+      if (dropPct > 1.5) {
+        hasSignificantVolDeclineGlobal = true;
       }
     }
 
@@ -2686,12 +2718,13 @@ export function generateTimelineSignals(
           }
         }
 
-        // 条件①：MACD绿柱缩短或已转正（v5.3: 分两档打分）
+        // 条件①：MACD绿柱缩短或已转正（v5.5: 分三档打分，新增轻度衰减档）
         const curMacdAbs = Math.abs(macd41.macd);
         const macdDecayPct = localMaxNegMacdAbs80 > 0 ? (curMacdAbs / localMaxNegMacdAbs80) * 100 : 999;
         const macdTurnedPositive = macd41.macd > 0;
         const macdGreatlyDecayed = macd41.macd < 0 && macdDecayPct < 50;  // <50%衰减（3分）
         const macdModeratelyDecayed = macd41.macd < 0 && macdDecayPct < 70; // <70%衰减（2分）
+        const macdLightlyDecayed = macd41.macd < 0 && macdDecayPct < 80;  // <80%衰减（1分，v5.5新增）
         // 连续缩短确认
         let macdShrinking2Bars = false;
         if (macd41.macd < 0 && i >= 2) {
@@ -2700,8 +2733,8 @@ export function generateTimelineSignals(
             macdShrinking2Bars = Math.abs(macd41.macd) < Math.abs(prevMacd41.macd);
           }
         }
-        const condMacd = (macdGreatlyDecayed || macdModeratelyDecayed || macdTurnedPositive) && localMaxNegMacdAbs80 > 0;
-        const macdScore = macdTurnedPositive ? 3 : macdGreatlyDecayed ? 3 : macdModeratelyDecayed ? 2 : 0;
+        const condMacd = (macdGreatlyDecayed || macdModeratelyDecayed || macdLightlyDecayed || macdTurnedPositive) && localMaxNegMacdAbs80 > 0;
+        const macdScore = macdTurnedPositive ? 3 : macdGreatlyDecayed ? 3 : macdModeratelyDecayed ? 2 : macdLightlyDecayed ? 1 : 0;
 
         // 条件②：成交量缩量（v5.3: 三档打分）
         const volRatio = avgVol > 0 ? cur.volume / avgVol : 1;
@@ -2710,11 +2743,12 @@ export function generateTimelineSignals(
         const condVolDryLight = volRatio < 0.8;   // 轻缩<80%（1分）
         const volScore = condVolDryHeavy ? 3 : condVolDryMedium ? 2 : condVolDryLight ? 1 : 0;
 
-        // 条件③：价格在底部区域（v5.3: 三档打分）
+        // 条件③：价格在底部区域（v5.5: 四档打分，新增≤2.5%档）
         const condNearLow1 = priceFromLow80 <= 1.0;   // 1%以内（3分）— 极度贴近底部
         const condNearLow15 = priceFromLow80 <= 1.5;  // 1.5%以内（2分）— 底部区域
         const condNearLow2 = priceFromLow80 <= 2.0;   // 2%以内（1分）— 近底部
-        const nearLowScore = condNearLow1 ? 3 : condNearLow15 ? 2 : condNearLow2 ? 1 : 0;
+        const condNearLow25 = priceFromLow80 <= 2.5;  // 2.5%以内（1分，v5.5新增）— 底部外围
+        const nearLowScore = condNearLow1 ? 3 : condNearLow15 ? 2 : (condNearLow2 || condNearLow25) ? 1 : 0;
 
         // 条件④：底部反弹确认（2分）
         const bounceScore = hasBounceConfirmation ? 2 : 0;
@@ -2740,8 +2774,8 @@ export function generateTimelineSignals(
         // 总分
         const totalScore = macdScore + volScore + nearLowScore + bounceScore + vBottomScore;
 
-        // v5.3: 提高触发阈值到6分（降低误判率）
-        if (totalScore < 6) continue;
+        // v5.5: 触发阈值从6降到5分（原6分过严导致很多真实买点漏判）
+        if (totalScore < 5) continue;
 
         // 额外过滤：三连阴且无缩量 → 继续等（v5.3修改：三连阴但缩量可以标记）
         if (i >= 3 &&
