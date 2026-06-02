@@ -8,7 +8,7 @@ import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem
 // Use loading skeletons for critical chart components
 const StockScreener = dynamic(() => import("@/components/stock-screener").then(m => ({ default: m.StockScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载选股器...</span></div> });
 const IntradayScreener = dynamic(() => import("@/components/intraday-screener").then(m => ({ default: m.IntradayScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载分时选股...</span></div> });
-const LimitUpAnalysis = dynamic(() => import("@/components/limit-up-analysis").then(m => ({ default: m.LimitUpAnalysis })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨停分析...</span></div> });
+const LimitUpAnalysis = dynamic(() => import("@/components/limit-up-analysis").then(m => ({ default: m.LimitUpAnalysis })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨停回踩...</span></div> });
 const EarlyTradingScreener = dynamic(() => import("@/components/early-trading-screener").then(m => ({ default: m.EarlyTradingScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载早盘选股...</span></div> });
 const LowOpenScreener = dynamic(() => import("@/components/low-open-screener").then(m => ({ default: m.LowOpenScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载低开选股...</span></div> });
 const SectorRotationPanel = dynamic(() => import("@/components/sector-rotation-panel").then(m => ({ default: m.SectorRotationPanel })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载板块轮动...</span></div> });
@@ -737,7 +737,7 @@ export default function StockTAssistant() {
                     {mode === "sector-rotation" && <><Flame className="w-3 h-3" />轮动</>}
                     {mode === "early-screen" && <><Clock className="w-3 h-3" />早盘选股</>}
                     {mode === "low-open" && <><TrendingDown className="w-3 h-3" />低开</>}
-                    {mode === "limit-up" && <><TrendingUp className="w-3 h-3" />涨停</>}
+                    {mode === "limit-up" && <><TrendingUp className="w-3 h-3" />回踩</>}
                     {mode === "baota-deploy" && <><Server className="w-3 h-3" />部署</>}
                   </button>
                 ))}
