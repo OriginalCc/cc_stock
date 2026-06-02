@@ -1505,6 +1505,36 @@ export function generateTimelineSignals(
     return maxV;
   };
 
+  // ── 下跌禁买区检测辅助函数（v6.1） ──
+  // 当个股处于明确下跌状态时，禁止显示任何买点信号，避免"接飞刀"
+  // 判定条件（同时满足才进入禁买区）：
+  //   1) 当前价格低于均价线（VWAP）— 价格被压制
+  //   2) 均价线在下行（近5根VWAP斜率为负）— 趋势未止
+  //   3) 近10根内价格持续走低（最高价在5根以前）— 仍在下跌中
+  //   特例：如果近5根内出现明显反弹（从最低点反弹>0.8%），解除禁买
+  const checkIsInNoBuyZone = (idx: number): boolean => {
+    const c = timeline[idx];
+    // 条件1：价格低于均价线
+    if (c.price >= c.avgPrice) return false;
+    // 条件2：均价线在下行
+    if (idx < 5) return false;
+    const recent5Avg = timeline.slice(idx - 4, idx + 1).map(d => d.avgPrice);
+    const avgDeclining = recent5Avg[4] < recent5Avg[3] && recent5Avg[3] < recent5Avg[2];
+    if (!avgDeclining) return false;
+    // 条件3：近10根内价格在走低
+    const recent10 = timeline.slice(Math.max(0, idx - 9), idx + 1);
+    const highFirst5 = Math.max(...recent10.slice(0, 5).map(d => d.price));
+    const lowLast5 = Math.min(...recent10.slice(5).map(d => d.price));
+    const stillDropping = lowLast5 < highFirst5 * 0.998; // 后半段有更低点
+    if (!stillDropping) return false;
+    // 特例检查：近5根内是否已有明显反弹（从最低点反弹>0.8%）
+    const recent5Prices = timeline.slice(Math.max(0, idx - 4), idx + 1).map(d => d.price);
+    const recent5Low = Math.min(...recent5Prices);
+    const bouncePct = recent5Low > 0 ? ((c.price - recent5Low) / recent5Low) * 100 : 0;
+    if (bouncePct > 0.8) return false; // 已有反弹，解除禁买
+    return true;
+  };
+
   for (let i = 2; i < timeline.length; i++) {
     const cur = timeline[i];
     const prev = timeline[i - 1];
@@ -1517,6 +1547,8 @@ export function generateTimelineSignals(
 
     // 开盘观察期和尾盘不操作期：不产生任何信号
     if (!isTradingWindow(timeWindow)) continue;
+
+    const isInNoBuyZone = checkIsInNoBuyZone(i);
 
     // ── 止损信号检测（最高优先级，独立于主信号流） ──
     // 正T卖出后股价继续上涨超过1.5%，必须认亏买回
@@ -1547,7 +1579,7 @@ export function generateTimelineSignals(
     //   3) L2处成交量缩量（<70%均量，或比L1处成交量低30%+）
     //   4) 当前价格在L2附近企稳或开始反弹（确认次低点形成）
     //
-    if (isFactorEnabled("次低点缩量买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 20) {
+    if (!isInNoBuyZone && isFactorEnabled("次低点缩量买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 20) {
       // ── Step 1: 在回看窗口内找局部低点 ──
       const lookback = Math.min(i + 1, 60);
       const recentSlice = timeline.slice(i - lookback + 1, i + 1);
@@ -1667,7 +1699,7 @@ export function generateTimelineSignals(
     }
 
     // ── 1. MACD金叉 → 买入信号 ──
-    if (isFactorEnabled("MACD金叉", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("MACD金叉", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prevMacd.dif <= prevMacd.dea && macd.dif > macd.dea) {
         // 买入信号统一降级为weak（次低点缩量买入占80%权重）
         signals[i] = {
@@ -1772,7 +1804,7 @@ export function generateTimelineSignals(
     }
 
     // ── 6. 价格回到均价线附近 + 不破均线 → 买入 ── (PDF核心买回信号)
-    if (isFactorEnabled("均线支撑买回", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("均线支撑买回", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const vwapDeviation = Math.abs((cur.price - cur.avgPrice) / cur.avgPrice) * 100;
       if (vwapDeviation <= config.vwapDeviationBuy && prev.price < prev.avgPrice && cur.price >= cur.avgPrice) {
         signals[i] = {
@@ -1789,7 +1821,7 @@ export function generateTimelineSignals(
     }
 
     // ── 7. 前日收盘价支撑 → 买入 ── (PDF策略新增)
-    if (isFactorEnabled("昨收价支撑", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && prevClose > 0) {
+    if (!isInNoBuyZone && isFactorEnabled("昨收价支撑", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && prevClose > 0) {
       const nearPrevClose = Math.abs(cur.price - prevClose) / prevClose * 100 < 0.3;
       const bouncing = prev.price < prevClose && cur.price >= prevClose;
       if (nearPrevClose && bouncing) {
@@ -1807,7 +1839,7 @@ export function generateTimelineSignals(
     }
 
     // ── 8. 量缩价稳 → 买入 ── (PDF策略新增)
-    if (isFactorEnabled("量缩价稳", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("量缩价稳", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const volumeShrinking = cur.volume < avgVol * config.volumeShrinkRatio;
       const priceStable = i >= 3 && cur.price >= Math.min(...timeline.slice(i - 3, i).map(d => d.price));
       if (volumeShrinking && priceStable && cur.changePercent < 0) {
@@ -1825,7 +1857,7 @@ export function generateTimelineSignals(
     }
 
     // ── 9. 放量拉升 → 买入(反T) ──
-    if (isFactorEnabled("放量拉升", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("放量拉升", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (cur.volume > avgVol * config.volumeMultiplier && cur.price > prev.price && cur.changePercent > 0) {
         // 买入信号统一降级为weak
         signals[i] = {
@@ -1864,7 +1896,7 @@ export function generateTimelineSignals(
     }
 
     // ── 11. 急跌反弹 → 买入(反T) ──
-    if (isFactorEnabled("急跌反弹", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("急跌反弹", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prev2.price > prev.price && prev.price < cur.price && prev.changePercent < config.momentumDropThreshold && cur.price > prev.price) {
         // 买入信号统一降级为weak
         signals[i] = {
@@ -1899,7 +1931,7 @@ export function generateTimelineSignals(
     }
 
     // ── 13. 突破均价线(方向向上) → 买入 ── (保留原版逻辑但加时间窗口)
-    if (isFactorEnabled("突破均价线", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("突破均价线", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prev.price < prev.avgPrice && cur.price > cur.avgPrice) {
         // 买入信号统一降级为weak
         signals[i] = {
@@ -1916,7 +1948,7 @@ export function generateTimelineSignals(
     }
 
     // ── 14. MACD柱由负转正 → 买入 ── (v3.1新增)
-    if (isFactorEnabled("MACD柱转正", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("MACD柱转正", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prevMacd.macd < 0 && macd.macd > 0 && macd.macd > prevMacd.macd) {
         // 买入信号统一降级为weak
         signals[i] = {
@@ -1955,7 +1987,7 @@ export function generateTimelineSignals(
     }
 
     // ── 16. RSI超卖买回 → 买入(反T) ── (v3.2新增)
-    if (isFactorEnabled("RSI超卖买回", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("RSI超卖买回", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const curRSI = rsiValues[i];
       const prevRSI = i >= 1 ? rsiValues[i - 1] : NaN;
       if (!isNaN(curRSI) && !isNaN(prevRSI)) {
@@ -2009,7 +2041,7 @@ export function generateTimelineSignals(
     }
 
     // ── 18. 布林下轨反弹 → 买入(反T) ── (v3.2新增)
-    if (isFactorEnabled("布林下轨反弹", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("布林下轨反弹", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const boll = bollValues[i];
       const prevBoll = i >= 1 ? bollValues[i - 1] : null;
       if (boll && !isNaN(boll.lower) && prevBoll && !isNaN(prevBoll.lower)) {
@@ -2060,7 +2092,7 @@ export function generateTimelineSignals(
 
     // ── 20. 连续缩量 → 买入(正T) ── (v3.2新增)
     // 连续N根量递减+价格稳定 → 抛压衰竭
-    if (isFactorEnabled("连续缩量", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= config.consecutiveShrinkBars) {
+    if (!isInNoBuyZone && isFactorEnabled("连续缩量", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= config.consecutiveShrinkBars) {
       let allShrinking = true;
       for (let k = i - config.consecutiveShrinkBars + 1; k <= i; k++) {
         if (k < 1 || timeline[k].volume >= timeline[k - 1].volume) {
@@ -2115,7 +2147,7 @@ export function generateTimelineSignals(
     }
 
     // ── 22. DIF零轴上穿 → 买入(反T) ── (v3.2新增)
-    if (isFactorEnabled("DIF零轴上穿", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("DIF零轴上穿", factorOverrides) && macd && prevMacd && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prevMacd.dif < 0 && macd.dif >= 0) {
         // 买入信号统一降级为weak
         signals[i] = {
@@ -2218,7 +2250,7 @@ export function generateTimelineSignals(
 
     // ── 26. 均价乖离回归 → 买入(正T) ── (v3.3新增)
     // 价格之前在均线下方偏离较大，现在开始回归均线
-    if (isFactorEnabled("均价乖离回归", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("均价乖离回归", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const deviationBelow = ((cur.avgPrice - cur.price) / cur.avgPrice) * 100;
       // 当前价格仍低于均价，但正在向上回归
       if (cur.price < cur.avgPrice && deviationBelow >= config.avgPriceDeviationReturn
@@ -2279,7 +2311,7 @@ export function generateTimelineSignals(
 
     // ── 28. 双底买回 → 买入(正T/反T) ── (v3.3新增)
     // W底形态：回看周期内出现两个相近的低点，当前从第二个低点反弹
-    if (isFactorEnabled("双底买回", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= config.doubleBottomLookback) {
+    if (!isInNoBuyZone && isFactorEnabled("双底买回", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= config.doubleBottomLookback) {
       const lookStart = i - config.doubleBottomLookback;
       // 在回看区间找最低点
       let minIdx = lookStart;
@@ -2322,7 +2354,7 @@ export function generateTimelineSignals(
 
     // ── 29. 尾盘急跌 → 买入(反T低吸) ── (v3.3新增)
     // 14:00-14:25出现急跌（但不是尾盘最后5分钟），低吸机会
-    if (isFactorEnabled("尾盘急跌", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("尾盘急跌", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const [curH, curM] = cur.time.split(":").map(Number);
       const curMinutes = curH * 60 + curM;
       // 14:00-14:25区间（午后买回窗口的末段）
@@ -2386,7 +2418,7 @@ export function generateTimelineSignals(
 
     // ── 31. 脉冲缩量企稳 → 买入(正T) ── (v3.7新增)
     // 脉冲下跌后卖出量能萎缩+VWAP走平 → 强买信号
-    if (isFactorEnabled("脉冲缩量企稳", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 20) {
+    if (!isInNoBuyZone && isFactorEnabled("脉冲缩量企稳", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 20) {
       // Condition 1: Pulse drop has occurred in the recent lookback period
       const pulseLookback = Math.min(i + 1, config.pulseDropLookback);
       const recentHigh = Math.max(...timeline.slice(i - pulseLookback + 1, i + 1).map(d => d.price));
@@ -2468,7 +2500,7 @@ export function generateTimelineSignals(
 
     // ── 33. 缩量横盘突破 → 买入(反T) ── (v3.7新增)
     // 缩量窄幅盘整后价格向上突破 → 强买信号
-    if (isFactorEnabled("缩量横盘突破", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= config.consolidationLookback) {
+    if (!isInNoBuyZone && isFactorEnabled("缩量横盘突破", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= config.consolidationLookback) {
       const lookStart33 = i - config.consolidationLookback + 1;
 
       // Condition (a): Last 5 bars have volume < 60% of average
@@ -2507,7 +2539,7 @@ export function generateTimelineSignals(
 
     // ── 34. 放量突破均线 → 买入(反T) ── (v3.7新增)
     // 成交量放大+价格从均线下方突破到上方 → 强买信号
-    if (isFactorEnabled("放量突破均线", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("放量突破均线", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       // Condition (a): cur.volume > avgVol * 2
       const volumeSurge = cur.volume > avgVol * config.volumeBreakoutMultiplier;
       // Condition (b): prev.price < prev.avgPrice (was below VWAP)
@@ -2531,7 +2563,7 @@ export function generateTimelineSignals(
 
     // ── 35. KDJ金叉买入 → 买入(反T) ── (v3.9新增)
     // K线从下方穿越D线(KD金叉)，尤其在超卖区(J<20)更可靠
-    if (isFactorEnabled("KDJ金叉买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("KDJ金叉买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const curKDJ = kdjValues[i];
       const prevKDJ = i >= 1 ? kdjValues[i - 1] : null;
       if (curKDJ && !isNaN(curKDJ.k) && !isNaN(curKDJ.d) && prevKDJ && !isNaN(prevKDJ.k) && !isNaN(prevKDJ.d)) {
@@ -2589,7 +2621,7 @@ export function generateTimelineSignals(
 
     // ── 37. J线超卖反弹 → 买入(反T) ── (v3.9新增)
     // J值低于0(极端超卖)且开始拐头向上 → 反弹信号
-    if (isFactorEnabled("J线超卖反弹", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
+    if (!isInNoBuyZone && isFactorEnabled("J线超卖反弹", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const curKDJ37 = kdjValues[i];
       const prevKDJ37 = i >= 1 ? kdjValues[i - 1] : null;
       if (curKDJ37 && !isNaN(curKDJ37.j) && prevKDJ37 && !isNaN(prevKDJ37.j)) {
@@ -2753,6 +2785,9 @@ export function generateTimelineSignals(
         const cur = timeline[i];
         const macd41 = macdByTime.get(cur.time);
         if (!macd41) continue;
+
+        // 下跌禁买区检查
+        if (checkIsInNoBuyZone(i)) continue;
 
         // 检查cooldown（v5.3: 降到7根，捕获更多底部机会）
         if (i - lastBuyIdx < 7) continue;
@@ -2944,6 +2979,9 @@ export function generateTimelineSignals(
       if (signals[i] && signals[i].type !== "buy") continue;
       if (i - lastSimpleBuyIdx < 15) continue;
 
+      // 下跌禁买区检查
+      if (checkIsInNoBuyZone(i)) continue;
+
       const cur = timeline[i];
       const timeWindow = getTimeWindow(cur.time);
       if (!isBuyWindow(timeWindow)) continue;
@@ -3017,6 +3055,9 @@ export function generateTimelineSignals(
   if (isFactorEnabled("递增放量", factorOverrides) && regimeAdj.allowBuy) {
     for (let i = 4; i < timeline.length; i++) {
       if (signals[i]) continue;
+
+      // 下跌禁买区检查
+      if (checkIsInNoBuyZone(i)) continue;
 
       const cur = timeline[i];
       const timeWindow = getTimeWindow(cur.time);
