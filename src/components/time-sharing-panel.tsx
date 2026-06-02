@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import React, { useState, useRef, useMemo, useEffect, useCallback, useDeferredValue, useContext } from "react";
+import React, { useState, useRef, useMemo, useEffect, useCallback, useDeferredValue } from "react";
 import {
   ComposedChart,
   Bar,
@@ -648,7 +648,6 @@ function computeTimelineSignalElements(
   yAxisMap: any,
   expandedIds: Set<string>,
   toggleExpand: (id: string) => void,
-  earlyVolDeclineBan: { banEndTime: number; earlyLifted: boolean } | null,
 ): { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null {
   if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
 
@@ -675,14 +674,6 @@ function computeTimelineSignalElements(
   priceLineData.forEach((point: any, i: number) => {
     const signal = point?.payload?.tSignal as TSignal | undefined | null;
     if (!signal) return;
-    // ── 禁买区域过滤：买点信号在禁买时间范围内则不显示 ──
-    if (signal.type === "buy" && earlyVolDeclineBan && !earlyVolDeclineBan.earlyLifted) {
-      const timeStr = point?.payload?.time as string | undefined;
-      if (timeStr) {
-        const signalMins = pvParseTime(timeStr);
-        if (signalMins < earlyVolDeclineBan.banEndTime) return; // 禁买时间内，跳过买点
-      }
-    }
     allSignals.push({ x: point.x, y: point.y, signal, index: i });
   });
 
@@ -1219,7 +1210,6 @@ function buildOverlayFingerprint(
   xAxisMap: any,
   yAxisMap: any,
   expandedIds: Set<string>,
-  banInfo: { banEndTime: number; earlyLifted: boolean } | null,
 ): string {
   if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return "empty";
   let priceLineLen = 0;
@@ -1248,8 +1238,7 @@ function buildOverlayFingerprint(
   }
   // Include expanded IDs in fingerprint so toggleExpand triggers re-render
   const expandedKey = expandedIds.size > 0 ? Array.from(expandedIds).sort().join(",") : "";
-  const banKey = banInfo ? `ban${banInfo.banEndTime}${banInfo.earlyLifted ? 'L' : ''}` : "noban";
-  return `${priceLineLen}:${(lastX ?? 0).toFixed(1)}:${(lastY ?? 0).toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}:${banKey}`;
+  return `${priceLineLen}:${(lastX ?? 0).toFixed(1)}:${(lastY ?? 0).toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}`;
 }
 
 // ── Combined Chart Overlay Renderer ──────────────────────
@@ -1258,13 +1247,8 @@ function buildOverlayFingerprint(
 //   Layer 2 (middle): 选股标记 pulse/volume markers (ON TOP of factor signals)
 //   Layer 3 (top):    Expanded bubbles (interactive, must be on top for usability)
 
-// React Context to pass earlyVolDeclineBan into CombinedChartOverlay
-// (Recharts <Customized> doesn't support extra props)
-const BanInfoContext = React.createContext<{ banEndTime: number; earlyLifted: boolean } | null>(null);
-
 function CombinedChartOverlay(props: any) {
   const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
-  const banInfo = useContext(BanInfoContext);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggleExpand = useCallback((id: string) => {
@@ -1280,13 +1264,13 @@ function CombinedChartOverlay(props: any) {
   // recharts creates new formattedGraphicalItems on every render, even if the data
   // hasn't changed. The fingerprint is cheap to compute (one pass over points) and
   // lets us skip the heavy signal extraction + overlap resolution when data is the same.
-  const fp = buildOverlayFingerprint(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, banInfo);
+  const fp = buildOverlayFingerprint(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds);
 
   const { signalResult, pvPlacedLabels } = fp !== "empty"
     ? overlayCache.compute(fp, () => {
         // Compute signal elements (factor signals)
         const sr = computeTimelineSignalElements(
-          formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand, banInfo
+          formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand
         );
 
         // Compute PV marker points (screener markers)
@@ -1323,7 +1307,6 @@ function CombinedChartOverlay(props: any) {
 
 function TimelineSignalRenderer(props: any) {
   const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
-  const banInfo = useContext(BanInfoContext);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggleExpand = useCallback((id: string) => {
@@ -1335,7 +1318,7 @@ function TimelineSignalRenderer(props: any) {
     });
   }, []);
 
-  const result = computeTimelineSignalElements(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand, banInfo);
+  const result = computeTimelineSignalElements(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand);
   if (!result) return null;
 
   return (
@@ -1531,6 +1514,43 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       signals.forEach((s, i) => {
         if (s && data[i]) signalByTime.set(data[i].time, s);
       });
+
+      // ── Filter buy signals in early decline ban zone ──
+      // If pvMarkers indicate early volume decline, calculate a simple ban cutoff
+      // and remove buy signals before that time. This keeps the logic close to
+      // the data layer so all downstream code (zoomData, chart) uses filtered data.
+      if (pvMarkers && pvMarkers.length > 0 && data.length > 0) {
+        const earlyDeclines = pvMarkers.filter(m =>
+          (m.type === "volume_decline" || m.type === "pulse_decline"
+            || m.type === "early_vol_drop" || m.type === "slow_decline")
+          && pvParseTime(m.time) >= 570 && pvParseTime(m.time) <= 630
+        );
+        if (earlyDeclines.length > 0) {
+          // Check if early session overall declined
+          const earlyData = data.filter(d => {
+            const mins = pvParseTime(d.time);
+            return mins >= 570 && mins < 630;
+          });
+          if (earlyData.length >= 5) {
+            const openPrice = earlyData[0].price;
+            const lastEarlyPrice = earlyData[earlyData.length - 1].price;
+            const earlyNetChange = openPrice > 0 ? ((lastEarlyPrice - openPrice) / openPrice) * 100 : 0;
+            // Only filter if early session actually declined
+            if (earlyNetChange <= 0 && !(prevClose > 0 && lastEarlyPrice > prevClose)) {
+              // Calculate a simple ban end time (9:45 to 10:30 based on decline count)
+              const banEndTime = Math.min(630, 585 + earlyDeclines.length * 5);
+              // Remove buy signals before ban end time
+              const keysToRemove: string[] = [];
+              signalByTime.forEach((sig, time) => {
+                if (sig.type === "buy" && pvParseTime(time) < banEndTime) {
+                  keysToRemove.push(time);
+                }
+              });
+              keysToRemove.forEach(k => signalByTime.delete(k));
+            }
+          }
+        }
+      }
 
       // Build MACD map by time
       const macdByTime = new Map<string, { dif: number; dea: number; macd: number }>();
@@ -3162,9 +3182,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {deferredCrosshairIdx != null && crosshairItem?.hasData && (
               <ReferenceLine yAxisId="price" x={deferredCrosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
             )}
-            <BanInfoContext.Provider value={earlyVolDeclineBan ? { banEndTime: earlyVolDeclineBan.banEndTime, earlyLifted: earlyVolDeclineBan.earlyLifted } : null}>
-              <Customized component={CombinedChartOverlay} />
-            </BanInfoContext.Provider>
+            <Customized component={CombinedChartOverlay} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
