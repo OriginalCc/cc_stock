@@ -1598,7 +1598,7 @@ export function generateTimelineSignals(
     // 检测条件：
     //   1) 回看60根内找到两个局部低点(L1, L2)，L2在L1之后
     //   2) L2不低于L1太多（≤1.5%），即"次低点"而非"新低"
-    //   3) L2必须接近当日最低点（距日内最低≤1.0%），确保买在底部区域
+    //   3) L2必须接近当日最低点（距日内最低≤0.5%），确保买在底部区域
     //   4) L2处成交量缩量（<70%均量，或比L1处成交量低30%+）
     //   5) 当前价格在L2附近企稳或开始反弹（确认次低点形成）
     //
@@ -1661,8 +1661,8 @@ export function generateTimelineSignals(
             // 计算截至当前位置的日内最低价
             const intradayLow = Math.min(...timeline.slice(0, i + 1).map(d => d.price));
             const l2VsIntradayLowPct = intradayLow > 0 ? ((l2.price - intradayLow) / intradayLow) * 100 : 0;
-            // L2距日内最低不超过1.0%（即L2在最低点附近）
-            if (l2VsIntradayLowPct > 1.0) continue;
+            // L2距日内最低不超过0.5%（即L2紧贴最低点）
+            if (l2VsIntradayLowPct > 0.5) continue;
 
             // ── Step 3: 缩量确认 ──
             // 方式A: L2处成交量 < 70%均量
