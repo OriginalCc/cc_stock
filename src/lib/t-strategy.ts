@@ -1425,6 +1425,25 @@ export function generateTimelineSignals(
   // Track last sell price for stop-loss detection only
   let lastSellPrice: number | null = null;
 
+  // ── 40. 高开卖出 → 卖出(正T) ── (v4.4)
+  // 只要是高开的股票（开盘价>昨收价），直接在分时图第一个点显示卖出信号
+  // 必须放在循环外，否则因为循环从i=2开始，信号会延后到第3个点才显示
+  if (isFactorEnabled("高开卖出", factorOverrides) && openPrice !== undefined && typeof openPrice === 'number' && !isNaN(openPrice) && openPrice > 0 && openPrice > prevClose && timeline.length > 0) {
+    const gapUpPct = ((openPrice - prevClose) / prevClose) * 100;
+    const firstPoint = timeline[0];
+    signals[0] = {
+      type: "sell",
+      reason: "高开卖出",
+      strength: "strong",
+      tMode: "正T",
+      timeWindow: getTimeWindow(firstPoint.time),
+      spreadPct: gapUpPct,
+      factorId: "factor_40",
+      description: `高开${gapUpPct.toFixed(2)}%，立即卖出做正T`,
+    };
+    lastSellPrice = firstPoint.price;
+  }
+
   // Track recent prices for volume-price divergence detection
   const recentHighPrice = (endIdx: number, lookback: number = 10): number => {
     const start = Math.max(0, endIdx - lookback);
@@ -1471,35 +1490,6 @@ export function generateTimelineSignals(
       };
       lastSellPrice = null; // Reset after stop-loss
       continue;
-    }
-
-    // ── 40. 高开卖出 → 卖出(正T) ── (v4.3)
-    // 只要是高开的股票（开盘价>昨收价），直接在分时图第一个点显示卖出信号
-    // 高开意味着隔夜情绪偏多，开盘即卖出做正T
-    if (isFactorEnabled("高开卖出", factorOverrides) && openPrice !== undefined && typeof openPrice === 'number' && !isNaN(openPrice) && openPrice > 0 && openPrice > prevClose && isSellWindow(timeWindow) && regimeAdj.allowSell) {
-      const gapUpPct = ((openPrice - prevClose) / prevClose) * 100;
-      // 只在第一个分时点触发（i===2是循环起始点）
-      let alreadyFired = false;
-      for (let k = 0; k < i; k++) {
-        if (signals[k] && signals[k]!.reason === "高开卖出") {
-          alreadyFired = true;
-          break;
-        }
-      }
-      if (!alreadyFired) {
-        signals[i] = {
-          type: "sell",
-          reason: "高开卖出",
-          strength: "strong",
-          tMode: "正T",
-          timeWindow,
-          spreadPct: gapUpPct,
-          factorId: "factor_40",
-          description: `高开${gapUpPct.toFixed(2)}%，立即卖出做正T`,
-        };
-        lastSellPrice = cur.price;
-        continue;
-      }
     }
 
     // ── 1. MACD金叉 → 买入信号 ──
