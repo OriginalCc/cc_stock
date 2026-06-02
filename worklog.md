@@ -1654,3 +1654,42 @@ Work Log:
 Stage Summary:
 - 修复了买点信号生成逻辑，603355现在能正确显示放量下跌买点
 - 修改文件：src/lib/t-strategy.ts, src/app/page.tsx, src/lib/chart-shared.ts
+
+---
+Task ID: 1
+Agent: main
+Task: Fix buy signal not showing for 603355 (莱克电气) and other declining stocks
+
+Work Log:
+- Analyzed signal generation pipeline: generateTimelineSignals → generateOptimizedSignals → Factor 41 (放量下跌买点)
+- Confirmed cur.high bug no longer exists in codebase (was fixed in previous session)
+- Identified root cause: buy signal conditions too strict for slowly declining stocks
+- Factor 41 prerequisite (path C) required >1.5% drop, but many stocks drop less
+- Factor 41 scoring threshold was 5 points, requiring multiple conditions to align perfectly
+- Factor 41 buy count limited to only 2 signals per day
+- No simple buy signal that directly implements user's three criteria (MACD negative + volume dry + price near low)
+
+- **Fix 1: Added Factor 42 (缩量底部买点)** - New simplified buy signal with direct AND logic:
+  - Condition ①: MACD negative (DIF<0 or MACD histogram<0) + histogram near peak (decaying <85% or shortening)
+  - Condition ②: Volume shrunk to extreme (<60% of average)
+  - Condition ③: Price near session low (within 3% of 80-bar low)
+  - No scoring system, no bounce confirmation needed - pure 3-condition AND
+  - Strong signal when volume <30% AND price within 1% of low
+
+- **Fix 2: Loosened Factor 41** - Existing 放量下跌买点 made more lenient:
+  - Added path D prerequisite: any decline >0.8% triggers prerequisite (was 1.5%)
+  - Lowered scoring threshold from 5 to 4 points
+  - Increased buy count limit from 2 to 4
+
+- **Fix 3: Updated rendering** - time-sharing-panel.tsx now treats "缩量底部买点" same as "放量下跌买点":
+  - Priority signal rendering (V-bottom triangle + glow effect)
+  - Large marker size and label
+  - Rendered on top layer to avoid PV marker occlusion
+
+- **Fix 4: Cache invalidation** - Updated SIGNAL_ENGINE_VERSION from v5.5 to v5.6
+
+Stage Summary:
+- New Factor 42 (缩量底部买点) added to t-strategy.ts
+- Factor 41 (放量下跌买点) loosened: threshold 5→4, buy limit 2→4, new prerequisite path D
+- Rendering updated in time-sharing-panel.tsx
+- Lint passes, dev server running on port 3000

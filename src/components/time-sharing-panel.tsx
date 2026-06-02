@@ -788,7 +788,7 @@ function computeTimelineSignalElements(
     const m = merged[idx];
     const isBuy = m.direction === "up";
     const isGapUpSell = m.reasons.includes("高开卖出");
-    const isVolDeclineBuy = m.reasons.includes("放量下跌买点");
+    const isVolDeclineBuy = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点");
     const isBigLabel = isGapUpSell || isVolDeclineBuy; // 重要信号使用大标签
 
     let labelText: string;
@@ -972,7 +972,7 @@ function computeTimelineSignalElements(
 
     if (m.strength === "strong") {
       const isGapUpSellSignal = m.reasons.includes("高开卖出");
-      const isVolDeclineBuySignal = m.reasons.includes("放量下跌买点");
+      const isVolDeclineBuySignal = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点");
       const isBigMarker = isGapUpSellSignal || isVolDeclineBuySignal;
       const markerSize = isBigMarker ? 9 : 6;
       const badgeCx = m.x + markerSize + 4;

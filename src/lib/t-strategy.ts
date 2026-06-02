@@ -2581,7 +2581,12 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.3 优化买点精度)
+  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.6 优化买点精度)
+  //
+  // v5.6 改进：
+  //   - 触发阈值从5分降到4分，减少漏判
+  //   - 新增路径D：任何持续下跌>0.8%即可触发前置条件
+  //   - 买点数量从2个增加到4个
   //
   // v5.3 核心改进（基于100只下跌股票回测）：
   //   1. 【关键】增加跌停板过滤：跌幅≤-9.5%的股票跳过（跌停时成交量/价格失真）
@@ -2667,6 +2672,17 @@ export function generateTimelineSignals(
       const lowestPrice = Math.min(...recentPrices.map(d => d.price));
       const dropPct = highestPrice > 0 ? ((highestPrice - lowestPrice) / highestPrice) * 100 : 0;
       if (dropPct > 1.5) {
+        hasSignificantVolDeclineGlobal = true;
+      }
+    }
+    // 路径D: 任何持续下跌（从高点跌>0.8%即可，v5.6新增最宽松路径）
+    if (!hasSignificantVolDeclineGlobal && timeline.length >= 10) {
+      const lookback = Math.min(timeline.length, 40);
+      const recentPrices = timeline.slice(-lookback);
+      const highestPrice = Math.max(...recentPrices.map(d => d.price));
+      const lowestPrice = Math.min(...recentPrices.map(d => d.price));
+      const dropPct = highestPrice > 0 ? ((highestPrice - lowestPrice) / highestPrice) * 100 : 0;
+      if (dropPct > 0.8) {
         hasSignificantVolDeclineGlobal = true;
       }
     }
@@ -2774,8 +2790,8 @@ export function generateTimelineSignals(
         // 总分
         const totalScore = macdScore + volScore + nearLowScore + bounceScore + vBottomScore;
 
-        // v5.5: 触发阈值从6降到5分（原6分过严导致很多真实买点漏判）
-        if (totalScore < 5) continue;
+        // v5.6: 触发阈值从5降到4分（原5分仍过严，很多真实买点漏判）
+        if (totalScore < 4) continue;
 
         // 额外过滤：三连阴且无缩量 → 继续等（v5.3修改：三连阴但缩量可以标记）
         if (i >= 3 &&
@@ -2847,10 +2863,95 @@ export function generateTimelineSignals(
         lastBuyIdx = i; // cooldown从确认点计算，不是回溯点
         lastSellPrice = null;
         volDeclineBuyCount++;
-        if (volDeclineBuyCount >= 2) break; // 只显示前2个买点
+        if (volDeclineBuyCount >= 4) break; // 只显示前4个买点（v5.6: 从2放宽到4）
       }
     }
     } // end of 跌停板过滤 else
+  }
+
+  // ── 42. 缩量底部买点 → 买入(正T) ── (v5.6新增)
+  //
+  // 用户核心需求：三个条件同时满足即触发买点
+  //   ① MACD为负（空头市场）且量柱接近峰值（绿柱衰减<80%或已转正）
+  //   ② 成交量缩量到地量（<60%均量）
+  //   ③ 当前价格挨着最低价（近80根最低价3%以内）
+  //
+  // 这是最直接的底部信号，不需要反弹确认或V底形态，
+  // 适合在持续下跌中捕捉恐慌性底部
+  //
+  if (isFactorEnabled("缩量底部买点", factorOverrides) && regimeAdj.allowBuy) {
+    let lastSimpleBuyIdx = -15; // cooldown 15根
+    let simpleBuyCount = 0;
+
+    for (let i = 10; i < timeline.length; i++) {
+      if (signals[i] && signals[i].type !== "buy") continue;
+      if (i - lastSimpleBuyIdx < 15) continue;
+
+      const cur = timeline[i];
+      const timeWindow = getTimeWindow(cur.time);
+      if (!isBuyWindow(timeWindow)) continue;
+
+      const macd42 = macdByTime.get(cur.time);
+      if (!macd42) continue;
+
+      // 条件①：MACD为负（DIF<0 或 MACD柱<0）
+      const macdIsNegative = macd42.dif < 0 || macd42.macd < 0;
+      if (!macdIsNegative) continue;
+
+      // MACD绿柱接近峰值：近80根内MACD柱负峰值存在，当前已衰减至80%以下
+      const macdLb42 = Math.min(i + 1, 80);
+      let maxNegMacd42 = 0;
+      for (let k = i - macdLb42 + 1; k <= i; k++) {
+        if (k < 0) continue;
+        const m42 = macdByTime.get(timeline[k].time);
+        if (m42 && m42.macd < 0) {
+          const abs42 = Math.abs(m42.macd);
+          if (abs42 > maxNegMacd42) maxNegMacd42 = abs42;
+        }
+      }
+      // MACD柱衰减到80%以下或已转正
+      const macdDecayOk = maxNegMacd42 > 0 && (macd42.macd > 0 || (macd42.macd < 0 && Math.abs(macd42.macd) < maxNegMacd42 * 0.85));
+      if (!macdDecayOk && maxNegMacd42 > 0) {
+        // 即使未衰减，如果MACD柱在连续缩短也视为接近峰值
+        if (i >= 2 && macd42.macd < 0) {
+          const prevM42 = macdByTime.get(timeline[i - 1]?.time);
+          if (prevM42 && prevM42.macd < 0 && Math.abs(macd42.macd) < Math.abs(prevM42.macd)) {
+            // MACD柱在缩短，条件①通过
+          } else {
+            continue;
+          }
+        } else {
+          continue;
+        }
+      }
+
+      // 条件②：成交量缩量到地量（<60%均量）
+      const volRatio42 = avgVol > 0 ? cur.volume / avgVol : 1;
+      if (volRatio42 >= 0.6) continue;
+
+      // 条件③：当前价格挨着最低价（近80根最低价3%以内）
+      const priceLb42 = Math.min(i + 1, 80);
+      const minPrice42 = Math.min(...timeline.slice(i - priceLb42 + 1, i + 1).map(d => d.price));
+      const priceFromLow42 = minPrice42 > 0 ? ((cur.price - minPrice42) / minPrice42) * 100 : 999;
+      if (priceFromLow42 > 3.0) continue;
+
+      // 通过所有三个条件 → 生成买点
+      const isExtreme = volRatio42 < 0.3 && priceFromLow42 <= 1.0; // 极缩量+极贴底
+
+      signals[i] = {
+        type: "buy",
+        reason: "缩量底部买点",
+        strength: isExtreme ? "strong" : "medium",
+        tMode: "正T",
+        timeWindow,
+        factorId: "factor_42",
+        description: `MACD负${macd42.macd < 0 ? `柱${Math.abs(macd42.macd).toFixed(3)}` : "转正"}+缩量${(volRatio42 * 100).toFixed(0)}%+近低${priceFromLow42.toFixed(1)}%`,
+      };
+      lastSimpleBuyIdx = i;
+      lastSellPrice = null;
+      simpleBuyCount++;
+      if (simpleBuyCount >= 5) break; // 最多5个
+    }
   }
 
   // ── 因子39: 递增放量 → 买入信号 ──
