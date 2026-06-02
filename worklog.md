@@ -1326,3 +1326,47 @@ Stage Summary:
 - 进阶配置从5个AccordionItem扩展为6个（新增更新部署），内容全面增强
 - 常见问题从4项扩展为7项，覆盖更多实际部署场景
 - 新增ConfigTable辅助组件，统一配置参数的表格展示格式
+
+---
+Task ID: 1
+Agent: main
+Task: 添加高开回落卖出信号因子（因子40）
+
+Work Log:
+- 研究了现有信号检测架构：t-strategy.ts → chart-shared.ts → page.tsx
+- 在t-strategy.ts中添加了因子40"高开回落卖出"：当openPrice > prevClose且price <= openPrice - 0.01时触发卖出信号
+- 添加了openPrice参数到generateTimelineSignals函数签名
+- 在chart-shared.ts的wrapper中传递openPrice参数
+- 在page.tsx中将quote?.open传递给信号生成函数
+- 更新了fingerprint缓存key包含openPrice
+- 在evaluateCondition中添加了gap_up_open和gap_up_drop两个条件key
+- 在chart-shared.ts的CONDITION_LIBRARY中添加了高开/高开回落条件
+- 在strategy-factors/route.ts和strategy/route.ts中添加了高开回落卖出因子的DB seed数据
+- 信号只触发一次（检查已触发的同因子信号避免重复）
+- 信号强度根据高开幅度分级：高开≥3%为strong，≥1%为medium，其他为medium
+
+Stage Summary:
+- 新增因子40: 高开回落卖出 — 早盘高开股票跌破开盘价0.01元即触发卖出
+- 数据流: quote.open → page.tsx → chart-shared.ts → t-strategy.ts
+- 所有lint检查通过，无报错
+
+---
+Task ID: 2
+Agent: main
+Task: 修复分时图信号不显示 + 实现高开回落卖出信号
+
+Work Log:
+- 排查发现 chart-shared.ts 的 generateTimelineSignals 函数缺少 sectorRegime 参数
+- page.tsx 调用传入 8 个参数但函数只接收 7 个，导致 sectorRegime 被错误接收为 openPrice，真正的 quote?.open 被丢弃
+- 这就是"高开回落卖出"信号永远不触发的根本原因：openPrice 收到的是 RegimeDetail 对象而非数字
+- 修复 chart-shared.ts：添加 sectorRegime 参数，正确传递给引擎函数
+- 修复 t-strategy.ts：isSellWindow 和 isBuyWindow 注释说"所有交易时段均允许"但实现仍有白名单限制，改为 return true
+- 增强高开回落卖出信号：添加 openPrice 类型检查（typeof === 'number' && !isNaN && > 0），所有高开信号统一为 strong 强度
+- 为信号添加 factorId: "factor_40" 用于追踪
+- Lint 通过，dev server HTTP 200 正常
+
+Stage Summary:
+- **关键 BUG 修复**：chart-shared.ts 参数错位导致 openPrice 永远未传入，所有依赖开盘价的信号（高开回落卖出）无法触发
+- isSellWindow/isBuyWindow 改为 return true，消除时间窗口限制
+- 高开回落卖出信号强度统一为 strong，确保图上清晰可见
+- 信号描述优化：更清晰的中文描述（高开X%后跌破开盘价，自动卖出）

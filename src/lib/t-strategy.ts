@@ -250,16 +250,16 @@ export function getTimeWindow(timeStr: string): TimeWindow {
  * 判断当前时间窗口是否允许卖出信号
  */
 export function isSellWindow(timeWindow: TimeWindow): boolean {
-  // 所有交易时段均允许卖出信号（用户要求移除开盘观察和尾盘不操作的限制）
-  return timeWindow === "正T卖出窗口" || timeWindow === "午后卖出窗口" || timeWindow === "开盘观察" || timeWindow === "尾盘不操作";
+  // 所有交易时段均允许卖出信号
+  return true;
 }
 
 /**
  * 判断当前时间窗口是否允许买入信号
  */
 export function isBuyWindow(timeWindow: TimeWindow): boolean {
-  // 所有交易时段均允许买入信号（用户要求移除开盘观察和尾盘不操作的限制）
-  return timeWindow === "买回窗口" || timeWindow === "午后买回窗口" || timeWindow === "开盘观察" || timeWindow === "尾盘不操作";
+  // 所有交易时段均允许买入信号
+  return true;
 }
 
 /**
@@ -642,6 +642,7 @@ function evaluateCondition(
   rsiValues: number[],
   bollValues: { upper: number; middle: number; lower: number }[],
   kdjValuesParam?: { k: number; d: number; j: number }[],
+  openPriceParam?: number,
 ): boolean {
   if (i < 2) return false;
   const cur = timeline[i];
@@ -1262,6 +1263,17 @@ function evaluateCondition(
       return !isNaN(kdj20.k) && !isNaN(kdj20.d) && (kdj20.k < config.kdjOversold || kdj20.d < config.kdjOversold);
     }
 
+    case "gap_up_open": {
+      // 高开：开盘价高于昨收价
+      if (openPriceParam === undefined || prevClose <= 0) return false;
+      return openPriceParam > prevClose;
+    }
+    case "gap_up_drop": {
+      // 高开后回落：开盘价高于昨收价，且当前价格跌破开盘价0.01元
+      if (openPriceParam === undefined || prevClose <= 0) return false;
+      return openPriceParam > prevClose && cur.price <= openPriceParam - 0.01;
+    }
+
     default:
       return false;
   }
@@ -1286,6 +1298,7 @@ function evaluateCondition(
  * - 因子37: J线超卖反弹 — J值低于0后拐头向上 → 买入(反T)
  * - 因子38: J线超买回落 — J值高于100后拐头向下 → 卖出(正T)
  * - 因子39: 递增放量 — 连续3+分钟成交量递增+价格同步上涨 → 买入(反T)
+ * - 因子40: 高开回落卖出 — 早盘高开股票，价格跌破开盘价0.01元 → 卖出(正T)
  * 
  * v3.6 改进（胜率增强系统）：
  * - 信号共振确认：2+个不同因子在3分钟内同方向触发，自动提升信号强度
@@ -1316,6 +1329,7 @@ export function generateTimelineSignals(
   indexRegime?: RegimeDetail | null,
   customFactors?: CustomFactorDefinition[],
   sectorRegime?: RegimeDetail | null,
+  openPrice?: number,
 ): (TSignal | null)[] {
   const signals: (TSignal | null)[] = new Array(timeline.length).fill(null);
   if (timeline.length < 3) return signals;
@@ -1457,6 +1471,46 @@ export function generateTimelineSignals(
       };
       lastSellPrice = null; // Reset after stop-loss
       continue;
+    }
+
+    // ── 40. 高开回落卖出 → 卖出(正T) ── (v4.0新增, v4.1修复openPrice传递)
+    // 早盘所有高开的股票，价格从开盘价下跌0.01元即触发卖出信号
+    // 高开意味着隔夜情绪偏多，但开盘后回落说明多头力量不足，应及时高抛
+    // 关键修复：chart-shared.ts的generateTimelineSignals缺少sectorRegime参数，
+    // 导致page.tsx传入的sectorRegime被错误接收为openPrice，真正的openPrice被丢弃
+    if (isFactorEnabled("高开回落卖出", factorOverrides) && openPrice !== undefined && typeof openPrice === 'number' && !isNaN(openPrice) && openPrice > 0 && openPrice > prevClose && isSellWindow(timeWindow) && regimeAdj.allowSell) {
+      // 高开：开盘价 > 昨收价
+      const gapUpPct = ((openPrice - prevClose) / prevClose) * 100;
+      // 价格跌破开盘价0.01元即触发
+      if (cur.price <= openPrice - 0.01) {
+        // 只在第一次跌破时触发（检查之前没有同因子信号）
+        let alreadyFired = false;
+        for (let k = 0; k < i; k++) {
+          if (signals[k] && signals[k]!.reason === "高开回落卖出") {
+            alreadyFired = true;
+            break;
+          }
+        }
+        if (!alreadyFired) {
+          const dropFromOpen = ((openPrice - cur.price) / openPrice) * 100;
+          // 高开幅度越大，卖出信号越强
+          // 所有小幅高开也使用strong强度，确保信号在图上清晰可见
+          let strength: Strength = "strong";
+
+          signals[i] = {
+            type: "sell",
+            reason: "高开回落卖出",
+            strength,
+            tMode: "正T",
+            timeWindow,
+            spreadPct: dropFromOpen,
+            factorId: "factor_40",
+            description: `高开${gapUpPct.toFixed(2)}%后跌破开盘价(回落${dropFromOpen.toFixed(2)}%)，自动卖出`,
+          };
+          lastSellPrice = cur.price;
+          continue;
+        }
+      }
     }
 
     // ── 1. MACD金叉 → 买入信号 ──
@@ -2616,6 +2670,7 @@ export function generateTimelineSignals(
             condition.key,
             timeline, i, avgVol, prevClose, config,
             macdByTime, rsiValues, bollValues, kdjValues,
+            openPrice,
           );
           if (!met) {
             allConditionsMet = false;

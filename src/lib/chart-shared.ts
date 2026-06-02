@@ -264,6 +264,10 @@ export const CONDITION_LIBRARY: CustomFactorCondition[] = [
   // ── 综合形态 ──
   { key: "v_shape_bottom", label: "V型反转", description: "急跌后快速反弹，形成V型底部，强反转信号", category: "pattern" },
   { key: "inverted_v_top", label: "倒V型反转", description: "急涨后快速回落，形成倒V型顶部，强反转信号", category: "pattern" },
+
+  // ── 高开形态 ──
+  { key: "gap_up_open", label: "高开", description: "开盘价高于昨收价，隔夜情绪偏多", category: "price" },
+  { key: "gap_up_drop", label: "高开回落", description: "高开后价格跌破开盘价0.01元，多头力量不足", category: "price" },
 ];
 
 export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
@@ -439,6 +443,8 @@ export function generateTimelineSignals(
   factorOverrides?: FactorOverride[],
   indexRegime?: RegimeDetail | null,
   customFactors?: CustomFactorDefinition[],
+  sectorRegime?: RegimeDetail | null,
+  openPrice?: number,
 ): (TSignal | null)[] {
   const engineCustomFactors: EngineCustomFactorDefinition[] | undefined = customFactors?.map(f => ({
     id: f.id,
@@ -458,7 +464,7 @@ export function generateTimelineSignals(
     dataSource: f.dataSource as "分时线",
   }));
 
-  const optimizedSignals = generateOptimizedSignals(timeline, macdData, prevClose, undefined, factorOverrides, indexRegime, engineCustomFactors);
+  const optimizedSignals = generateOptimizedSignals(timeline, macdData, prevClose, undefined, factorOverrides, indexRegime, engineCustomFactors, sectorRegime, openPrice);
 
   return optimizedSignals.map(s => {
     if (!s) return null;

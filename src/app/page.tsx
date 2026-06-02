@@ -633,11 +633,11 @@ export default function StockTAssistant() {
     // Skip the heaviest computation (~7000 condition evaluations) when not in timeline mode
     if (!isTimelineActive) return [] as (TSignal | null)[];
     // Fingerprint: skip if inputs haven't changed
-    const fp = `${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}`;
+    const fp = `${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}:${quote?.open ?? 0}`;
     return signalFingerprintCache.compute(fp, () =>
-      generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime)
+      generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, quote?.open)
     );
-  }, [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, isTimelineActive]);
+  }, [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, isTimelineActive, quote?.open]);
   // NOTE: Removed useDeferredValue — it was causing labels to appear with visible delay.
   // The fingerprint caching above makes recomputation cheap when data hasn't changed,
   // so deferred rendering is no longer needed and directly using values is faster.
