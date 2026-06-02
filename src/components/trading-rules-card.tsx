@@ -788,11 +788,170 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
           </div>
         </div>
 
-        {/* ── 七、大盘影响说明 ── */}
+        {/* ── 七、放量下跌买点规矩 ── */}
+        <div className="p-3 rounded-lg border-2 border-green-500/40 bg-gradient-to-br from-green-500/5 via-emerald-500/3 to-transparent shadow-green-500/8 shadow-md">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Volume2 className="w-4 h-4 text-green-500" />
+            <span className="text-xs font-bold text-green-700 dark:text-green-300">七、放量下跌买点规矩（放量下跌后何时买回）</span>
+            <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-green-500/10 text-green-600 border-green-500/25 ml-1">v5.1</Badge>
+          </div>
+
+          <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
+
+            {/* 1. 核心逻辑 */}
+            <div className="p-2 rounded-md border border-green-500/25 bg-green-500/5">
+              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">📖 核心逻辑</p>
+              <p className="mb-1.5">放量下跌是<strong className="text-red-600 dark:text-red-400">危险信号</strong>，但放量下跌后<strong className="text-green-600 dark:text-green-400">缩量企稳</strong>则是做T买回的时机。关键是等待空头动能释放完毕、抛压衰竭后再入场。</p>
+              <p>分时图中，放量下跌买点标记为<strong className="text-green-600 dark:text-green-400">绿色三角▲</strong>，表示"空头动能释放，可以轻仓买回"。</p>
+            </div>
+
+            {/* 2. 前置条件 */}
+            <div className="p-2 rounded-md border border-emerald-500/20 bg-emerald-500/5">
+              <p className="text-emerald-600 dark:text-emerald-400 font-bold text-xs mb-1.5">✅ 前置条件（必须先满足）</p>
+              <p className="mb-1.5">近80根分钟线内，必须存在<strong className="text-foreground">显著放量下跌</strong>（成交量 &gt; 1.5倍均量，且价格下跌 &gt; 0.2%），否则不触发买点检测。</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-emerald-500/10 bg-emerald-500/5">
+                  <span className="text-emerald-500 shrink-0">📊</span>
+                  <div><span className="text-foreground font-medium">量能</span>：出现量 &gt; 1.5倍均量</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-emerald-500/10 bg-emerald-500/5">
+                  <span className="text-emerald-500 shrink-0">📉</span>
+                  <div><span className="text-foreground font-medium">跌幅</span>：价格下跌 &gt; 0.2%</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. 三大买点条件 */}
+            <div>
+              <p className="text-foreground font-bold text-xs mb-1.5">🎯 三大买点条件（满足任意两项即触发）</p>
+              <div className="grid grid-cols-1 gap-1.5">
+                <div className="p-2 rounded-md border border-blue-500/25 bg-blue-500/5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-600 border border-blue-500/25 shrink-0">①</span>
+                    <span className="text-blue-600 dark:text-blue-400 font-bold text-[11px]">MACD绿柱衰减或转正</span>
+                  </div>
+                  <div className="text-[10px] space-y-0.5 ml-7">
+                    <p><span className="text-foreground font-medium">含义</span>：近80根内MACD柱出现过绿柱峰值，当前绿柱已衰减至60%以下或已转红</p>
+                    <p><span className="text-foreground font-medium">解读</span>：空头动能正在释放，下跌力量减弱</p>
+                    <p><span className="text-blue-500/80">分时图特征：MACD绿柱从最长开始缩短，或由绿转红</span></p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-orange-500/25 bg-orange-500/5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/25 shrink-0">②</span>
+                    <span className="text-orange-600 dark:text-orange-400 font-bold text-[11px]">成交量缩量（抛压衰竭）</span>
+                  </div>
+                  <div className="text-[10px] space-y-0.5 ml-7">
+                    <p><span className="text-foreground font-medium">含义</span>：当前成交量 &lt; 70%均量，交投清淡</p>
+                    <p><span className="text-foreground font-medium">解读</span>：抛压基本释放完毕，卖方力量枯竭</p>
+                    <p><span className="text-orange-500/80">分时图特征：下方量柱明显缩小，远低于前面放量下跌时的量柱</span></p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-purple-500/25 bg-purple-500/5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold bg-purple-500/15 text-purple-600 border border-purple-500/25 shrink-0">③</span>
+                    <span className="text-purple-600 dark:text-purple-400 font-bold text-[11px]">价格在底部区域</span>
+                  </div>
+                  <div className="text-[10px] space-y-0.5 ml-7">
+                    <p><span className="text-foreground font-medium">含义</span>：当前价格接近近80根最低价（2%以内）</p>
+                    <p><span className="text-foreground font-medium">解读</span>：价格已跌到近期低位，下行空间有限</p>
+                    <p><span className="text-purple-500/80">分时图特征：白线在低位横盘或开始走平，离最低点很近</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. 条件组合表 */}
+            <div className="p-2 rounded-md border border-green-500/15 bg-green-500/5">
+              <p className="text-foreground font-bold text-[11px] mb-1.5">📋 条件组合与信号强度</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[10px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-green-500/15">
+                      <th className="text-left py-1 px-1.5 text-green-600 dark:text-green-400 font-semibold">条件组合</th>
+                      <th className="text-left py-1 px-1.5 text-green-600 dark:text-green-400 font-semibold">信号强度</th>
+                      <th className="text-left py-1 px-1.5 text-green-600 dark:text-green-400 font-semibold">可靠性</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-border/30 bg-green-500/8">
+                      <td className="py-1.5 px-1.5 font-medium">①+②+③ 全部满足</td>
+                      <td className="py-1.5 px-1.5"><span className="text-green-600 font-bold">强信号</span></td>
+                      <td className="py-1.5 px-1.5"><span className="text-green-500">最高·三重确认</span></td>
+                    </tr>
+                    <tr className="border-b border-border/30 bg-green-500/5">
+                      <td className="py-1.5 px-1.5 font-medium">①MACD衰减 + ②缩量</td>
+                      <td className="py-1.5 px-1.5"><span className="text-emerald-500 font-bold">中信号</span></td>
+                      <td className="py-1.5 px-1.5"><span className="text-emerald-500">较高·动能+抛压双确认</span></td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 px-1.5 font-medium">①MACD衰减 + ③底部</td>
+                      <td className="py-1.5 px-1.5"><span className="text-emerald-500 font-bold">中信号</span></td>
+                      <td className="py-1.5 px-1.5"><span className="text-emerald-500">较高·动能+价格双确认</span></td>
+                    </tr>
+                    <tr className="border-b border-border/30 bg-green-500/3">
+                      <td className="py-1.5 px-1.5 font-medium">②缩量 + ③底部</td>
+                      <td className="py-1.5 px-1.5"><span className="text-yellow-500 font-bold">中信号</span></td>
+                      <td className="py-1.5 px-1.5"><span className="text-yellow-500">中等·抛压+价格确认</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 5. 冷却机制 */}
+            <div className="p-2 rounded-md border border-amber-500/15 bg-amber-500/5">
+              <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">⏱️ 冷却机制</p>
+              <p>每15根分钟线只标记一个买点，避免信号扎堆。分时图上不会出现连续密集的买点标记，每个买点之间至少间隔15分钟。</p>
+            </div>
+
+            {/* 6. 操作纪律 */}
+            <div className="p-2 rounded-md border-2 border-green-500/30 bg-green-500/8">
+              <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">⚡ 买点操作纪律</p>
+              <div className="text-[11px] space-y-1">
+                <p>• <span className="text-foreground font-medium">买点≠全仓</span>：买点只是"可以考虑买回"的信号，仍需按仓位阶梯控制仓位</p>
+                <p>• <span className="text-foreground font-medium">强信号可正常仓位</span>：三条件全满足时，按仓位表正常操作</p>
+                <p>• <span className="text-foreground font-medium">中信号减半仓位</span>：只满足两条件时，按仓位表×50%执行</p>
+                <p>• <span className="text-foreground font-medium">三跌+放量下跌→不参与</span>：即使出现买点，三跌场景仍严禁正T买入</p>
+                <p>• <span className="text-foreground font-medium">买后必须设止损</span>：买入后若继续下跌2%，无条件止损</p>
+                <p>• <span className="text-foreground font-medium">午后买点更可靠</span>：午后缩量企稳比早盘更可信，早盘买点需更谨慎</p>
+              </div>
+            </div>
+
+            {/* 7. 买点图解 */}
+            <div className="p-2 rounded-md border border-green-500/15 bg-green-500/5">
+              <p className="text-foreground font-bold text-[11px] mb-1.5">🎨 分时图买点识别示意</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-green-500/10 bg-green-500/5">
+                  <span className="text-green-500 shrink-0">▲</span>
+                  <div><span className="text-foreground font-medium">绿色三角</span>：放量下跌买点标记，出现在分时线下方</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-green-500/10 bg-green-500/5">
+                  <span className="text-green-500 shrink-0">📉</span>
+                  <div><span className="text-foreground font-medium">MACD绿柱</span>：从最长开始缩短=衰减信号</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-green-500/10 bg-green-500/5">
+                  <span className="text-green-500 shrink-0">📊</span>
+                  <div><span className="text-foreground font-medium">量柱缩小</span>：放量→缩量，抛压衰竭</div>
+                </div>
+                <div className="flex items-start gap-1.5 p-1.5 rounded border border-green-500/10 bg-green-500/5">
+                  <span className="text-green-500 shrink-0">━</span>
+                  <div><span className="text-foreground font-medium">白线走平</span>：价格不再创新低=底部信号</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-1.5 rounded border border-green-500/10 bg-green-500/5">
+              <p className="text-green-600 dark:text-green-400 font-medium text-[10px]">💡 买点口诀：放量下跌莫慌张，等缩量、看MACD、看底价，三条件两项满足再入场，仓位纪律不能忘。</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 八、大盘影响说明 ── */}
         <div className="p-3 rounded-lg border border-orange-500/20 bg-orange-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Activity className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">七、大盘（深证成指）仓位调节器</span>
+            <span className="text-xs font-semibold text-orange-700 dark:text-orange-300">八、大盘（深证成指）仓位调节器</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
             <p className="text-foreground font-medium">大盘方向是仓位"调节器"，在阶梯基础上微调：</p>
@@ -822,11 +981,11 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
           </div>
         </div>
 
-        {/* ── 八、仓位速查表 ── */}
+        {/* ── 九、仓位速查表 ── */}
         <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Scale className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">八、仓位速查表</span>
+            <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">九、仓位速查表</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] border-collapse">
@@ -918,11 +1077,11 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
           </div>
         </div>
 
-        {/* ── 九、禁忌规矩 ── */}
+        {/* ── 十、禁忌规矩 ── */}
         <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <BookOpen className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">九、禁忌规矩（绝对不可违反）</span>
+            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">十、禁忌规矩（绝对不可违反）</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-1.5">
             <div className="flex items-start gap-2">
@@ -970,11 +1129,11 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
           </div>
         </div>
 
-        {/* ── 十、动态调节规矩 ── */}
+        {/* ── 十一、动态调节规矩 ── */}
         <div className={`p-3 rounded-lg border ${activeRules.has("vol_decline_position") ? "border-red-500/40 bg-red-500/5" : "border-orange-500/20 bg-orange-500/5"}`}>
           <div className="flex items-center gap-1.5 mb-2">
             <Activity className={`w-3.5 h-3.5 ${activeRules.has("vol_decline_position") ? "text-red-500" : "text-orange-500"}`} />
-            <span className={`text-xs font-semibold ${activeRules.has("vol_decline_position") ? "text-red-700 dark:text-red-300" : "text-orange-700 dark:text-orange-300"}`}>十、动态调节规矩（根据盘面实时调整）</span>
+            <span className={`text-xs font-semibold ${activeRules.has("vol_decline_position") ? "text-red-700 dark:text-red-300" : "text-orange-700 dark:text-orange-300"}`}>十一、动态调节规矩（根据盘面实时调整）</span>
             {activeRules.has("vol_decline_position") && (
               <Badge variant="outline" className="text-[9px] h-4 px-1 bg-red-500/15 text-red-600 border-red-500/30 animate-pulse ml-1">⚠ 触发</Badge>
             )}
@@ -1026,11 +1185,11 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
           </div>
         </div>
 
-        {/* ── 十一、实战案例 ── */}
+        {/* ── 十二、实战案例 ── */}
         <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5">
           <div className="flex items-center gap-1.5 mb-2">
             <Info className="w-3.5 h-3.5 text-rose-500" />
-            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十一、实战案例</span>
+            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">十二、实战案例</span>
           </div>
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
             <div className="p-2 rounded-md border border-green-500/10 bg-green-500/5">
