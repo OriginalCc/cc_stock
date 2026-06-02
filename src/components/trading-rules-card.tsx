@@ -793,7 +793,7 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
           <div className="flex items-center gap-1.5 mb-2">
             <Volume2 className="w-4 h-4 text-green-500" />
             <span className="text-xs font-bold text-green-700 dark:text-green-300">七、放量下跌买点规矩（放量下跌后何时买回）</span>
-            <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-green-500/10 text-green-600 border-green-500/25 ml-1">v5.1</Badge>
+            <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-green-500/10 text-green-600 border-green-500/25 ml-1">v5.3</Badge>
           </div>
 
           <div className="text-[11px] text-muted-foreground leading-relaxed space-y-2">
@@ -802,7 +802,8 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
             <div className="p-2 rounded-md border border-green-500/25 bg-green-500/5">
               <p className="text-green-600 dark:text-green-400 font-bold text-xs mb-1.5">📖 核心逻辑</p>
               <p className="mb-1.5">放量下跌是<strong className="text-red-600 dark:text-red-400">危险信号</strong>，但放量下跌后<strong className="text-green-600 dark:text-green-400">缩量企稳</strong>则是做T买回的时机。关键是等待空头动能释放完毕、抛压衰竭后再入场。</p>
-              <p>分时图中，放量下跌买点标记为<strong className="text-green-600 dark:text-green-400">绿色三角▲</strong>，表示"空头动能释放，可以轻仓买回"。</p>
+              <p>分时图中，放量下跌买点标记为<strong className="text-green-600 dark:text-green-400">红色三角▲+发光圆点</strong>，出现在V底最低价位置，表示"空头动能释放，可以轻仓买回"。</p>
+              <p className="text-amber-600 dark:text-amber-400 text-[10px] mt-1">⚠️ v5.3新增：跌停股不生成买点（跌停时量价失真会误判）</p>
             </div>
 
             {/* 2. 前置条件 */}
@@ -823,15 +824,15 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
 
             {/* 3. 三大买点条件 */}
             <div>
-              <p className="text-foreground font-bold text-xs mb-1.5">🎯 三大买点条件（满足任意两项即触发）</p>
+              <p className="text-foreground font-bold text-xs mb-1.5">🎯 五大买点条件（评分制，≥6分触发）</p>
               <div className="grid grid-cols-1 gap-1.5">
                 <div className="p-2 rounded-md border border-blue-500/25 bg-blue-500/5">
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-600 border border-blue-500/25 shrink-0">①</span>
-                    <span className="text-blue-600 dark:text-blue-400 font-bold text-[11px]">MACD绿柱衰减或转正</span>
+                    <span className="text-blue-600 dark:text-blue-400 font-bold text-[11px]">MACD绿柱缩短或转正（3/2分）</span>
                   </div>
                   <div className="text-[10px] space-y-0.5 ml-7">
-                    <p><span className="text-foreground font-medium">含义</span>：近80根内MACD柱出现过绿柱峰值，当前绿柱已衰减至60%以下或已转红</p>
+                    <p><span className="text-foreground font-medium">含义</span>：近80根内MACD柱出现过绿柱峰值，当前绿柱已缩短至50%以下（3分）或70%以下（2分），或已转红</p>
                     <p><span className="text-foreground font-medium">解读</span>：空头动能正在释放，下跌力量减弱</p>
                     <p><span className="text-blue-500/80">分时图特征：MACD绿柱从最长开始缩短，或由绿转红</span></p>
                   </div>
@@ -839,10 +840,10 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
                 <div className="p-2 rounded-md border border-orange-500/25 bg-orange-500/5">
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold bg-orange-500/15 text-orange-600 border border-orange-500/25 shrink-0">②</span>
-                    <span className="text-orange-600 dark:text-orange-400 font-bold text-[11px]">成交量缩量（抛压衰竭）</span>
+                    <span className="text-orange-600 dark:text-orange-400 font-bold text-[11px]">成交量缩量（3/2/1分）</span>
                   </div>
                   <div className="text-[10px] space-y-0.5 ml-7">
-                    <p><span className="text-foreground font-medium">含义</span>：当前成交量 &lt; 70%均量，交投清淡</p>
+                    <p><span className="text-foreground font-medium">极缩</span>：成交量 &lt; 50%均量（3分），<span className="text-foreground font-medium">缩量</span>：&lt; 70%（2分），<span className="text-foreground font-medium">轻缩</span>：&lt; 80%（1分）</p>
                     <p><span className="text-foreground font-medium">解读</span>：抛压基本释放完毕，卖方力量枯竭</p>
                     <p><span className="text-orange-500/80">分时图特征：下方量柱明显缩小，远低于前面放量下跌时的量柱</span></p>
                   </div>
@@ -850,12 +851,32 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
                 <div className="p-2 rounded-md border border-purple-500/25 bg-purple-500/5">
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold bg-purple-500/15 text-purple-600 border border-purple-500/25 shrink-0">③</span>
-                    <span className="text-purple-600 dark:text-purple-400 font-bold text-[11px]">价格在底部区域</span>
+                    <span className="text-purple-600 dark:text-purple-400 font-bold text-[11px]">价格在底部区域（3/2/1分）</span>
                   </div>
                   <div className="text-[10px] space-y-0.5 ml-7">
-                    <p><span className="text-foreground font-medium">含义</span>：当前价格接近近80根最低价（2%以内）</p>
+                    <p><span className="text-foreground font-medium">贴底</span>：离80根最低 ≤1%（3分），<span className="text-foreground font-medium">近低</span>：≤1.5%（2分），<span className="text-foreground font-medium">底部</span>：≤2%（1分）</p>
                     <p><span className="text-foreground font-medium">解读</span>：价格已跌到近期低位，下行空间有限</p>
                     <p><span className="text-purple-500/80">分时图特征：白线在低位横盘或开始走平，离最低点很近</span></p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-cyan-500/25 bg-cyan-500/5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold bg-cyan-500/15 text-cyan-600 border border-cyan-500/25 shrink-0">④</span>
+                    <span className="text-cyan-600 dark:text-cyan-400 font-bold text-[11px]">底部反弹确认（2分）</span>
+                  </div>
+                  <div className="text-[10px] space-y-0.5 ml-7">
+                    <p><span className="text-foreground font-medium">含义</span>：当前价 ≥ 近5根最低价，价格不再创新低</p>
+                    <p><span className="text-cyan-500/80">分时图特征：白线在最低点附近开始走平或微微回升</span></p>
+                  </div>
+                </div>
+                <div className="p-2 rounded-md border border-rose-500/25 bg-rose-500/5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-600 border border-rose-500/25 shrink-0">⑤</span>
+                    <span className="text-rose-600 dark:text-rose-400 font-bold text-[11px]">V底形态（2分）<span className="text-[9px] text-rose-400 ml-1">v5.3新增</span></span>
+                  </div>
+                  <div className="text-[10px] space-y-0.5 ml-7">
+                    <p><span className="text-foreground font-medium">含义</span>：近10根内出现先跌后涨的V型反转形态</p>
+                    <p><span className="text-rose-500/80">分时图特征：白线形成V底，左侧下跌、右侧回升</span></p>
                   </div>
                 </div>
               </div>
@@ -902,7 +923,7 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
             {/* 5. 冷却机制 */}
             <div className="p-2 rounded-md border border-amber-500/15 bg-amber-500/5">
               <p className="text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">⏱️ 冷却机制</p>
-              <p>每15根分钟线只标记一个买点，避免信号扎堆。分时图上不会出现连续密集的买点标记，每个买点之间至少间隔15分钟。</p>
+              <p>每7根分钟线只标记一个买点，避免信号扎堆。分时图上不会出现连续密集的买点标记，每个买点之间至少间隔7分钟。</p>
             </div>
 
             {/* 6. 操作纪律 */}
@@ -912,7 +933,7 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
                 <p>• <span className="text-foreground font-medium">买点≠全仓</span>：买点只是"可以考虑买回"的信号，仍需按仓位阶梯控制仓位</p>
                 <p>• <span className="text-foreground font-medium">强信号可正常仓位</span>：三条件全满足时，按仓位表正常操作</p>
                 <p>• <span className="text-foreground font-medium">中信号减半仓位</span>：只满足两条件时，按仓位表×50%执行</p>
-                <p>• <span className="text-foreground font-medium">三跌+放量下跌→不参与</span>：即使出现买点，三跌场景仍严禁正T买入</p>
+                <p>• <span className="text-foreground font-medium">三连阴+缩量可入场</span>：v5.3修改：三连阴但量递减（抛压衰竭），仍可标记买点</p>
                 <p>• <span className="text-foreground font-medium">买后必须设止损</span>：买入后若继续下跌2%，无条件止损</p>
                 <p>• <span className="text-foreground font-medium">午后买点更可靠</span>：午后缩量企稳比早盘更可信，早盘买点需更谨慎</p>
               </div>
@@ -942,7 +963,7 @@ export const TradingRulesCard = React.memo(function TradingRulesCard({ autoExpan
             </div>
 
             <div className="p-1.5 rounded border border-green-500/10 bg-green-500/5">
-              <p className="text-green-600 dark:text-green-400 font-medium text-[10px]">💡 买点口诀：放量下跌莫慌张，等缩量、看MACD、看底价，三条件两项满足再入场，仓位纪律不能忘。</p>
+              <p className="text-green-600 dark:text-green-400 font-medium text-[10px]">💡 买点口诀：放量下跌莫慌张，等缩量、看MACD、看底价、V底确认再入场，评分6分才触发，仓位纪律不能忘。</p>
             </div>
           </div>
         </div>

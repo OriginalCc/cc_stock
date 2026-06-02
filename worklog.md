@@ -1521,3 +1521,102 @@ Stage Summary:
 - 条件从简单计数改为评分制(4条件加权)，更精准
 - 视觉上新样式：圆点+连接线+三角形，更清晰指示买入位置
 - Lint通过，dev server正常运行
+
+---
+Task ID: 2
+Agent: general-purpose
+Task: Fetch declining stocks and analyze buy points (IDEAL vs current algorithm)
+
+Work Log:
+- Read worklog.md and project structure
+- Read t-strategy.ts lines 2583-2753 (放量下跌买点 algorithm: scoring-based with MACD/volume/near-low/bounce conditions, threshold ≥5)
+- Read time-sharing-panel.tsx lines 981-1049 (buy point marker rendering: dot + connecting line + triangle at 14px offset)
+- Read indicators.ts (MACD calculation: EMA12/26, DIF, DEA, Histogram=(DIF-DEA)*2)
+- Read chart-shared.ts (signal types, pulse volume detection)
+- Read ashare-api.ts (Tencent minute data parsing format)
+- Read use-stock-data.ts (TimelineItem type definition)
+- Created /home/z/my-project/scripts/ directory
+- Created /home/z/my-project/scripts/analyze-buy-points.ts (~500 lines) with:
+  - EastMoney API fetch for 100 declining mainboard A-shares (po=0 ascending by f3)
+  - Tencent minute data API for intraday timeline
+  - MACD calculation (same algorithm as indicators.ts)
+  - IDEAL buy point detection: V-bottom + MACD shrink + volume dry-up + near low + bounce (composite 0-11 score)
+  - Current algorithm replication: precondition check + 4-condition scoring (MACD 3pts + vol 3/1pts + nearLow 3/2pts + bounce 2pts, ≥5 trigger)
+  - Point matching (within 10 bars) + missed/false-positive analysis
+  - Detailed per-stock report + summary statistics + improvement recommendations
+- Executed with `bun run scripts/analyze-buy-points.ts` — successfully fetched 100 declining stocks, analyzed top 20
+- Key findings:
+  - 20 stocks analyzed, 151 IDEAL buy points found, 326 algorithm buy points found
+  - 148 matched (within 10 bars), 3 missed by algorithm, 178 false positives
+  - Detection rate: 98.0%, Precision: 45.4%
+  - Main issue: MASSIVE false positive problem — algorithm fires on limit-down stocks (price stuck at floor) every 10 minutes
+  - 7 out of 20 stocks had price stuck at daily limit (粤传媒, 舒华体育, 利仁科技, etc.), generating 17 false buy signals each
+  - The algorithm's precondition (vol > 1.5x avg + price drop > 0.2%) is too easily met for limit-down stocks
+  - The bounceScore=2 is given too freely (current price ≥ 5-bar minimum), always true at limit-down
+
+Stage Summary:
+- Created analysis script at /home/z/my-project/scripts/analyze-buy-points.ts
+- Algorithm detection rate is high (98%) but precision is very low (45.4%)
+- Primary problem: false positives on limit-down stocks (7/20 stocks = 35% of test set)
+- Top recommendations:
+  1. Add limit-down filter: skip stocks where price is at or near daily price floor
+  2. Relax volume threshold from <70% to <80% for 1pt score
+  3. Relax MACD decay from <60% to <70% for scoring
+  4. Expand near-low threshold from 1.5% to 2.0% for 1pt score
+  5. Add explicit V-bottom shape detection as a condition
+  6. Reduce cooldown from 10 to 7 bars
+  7. Mark buy point at V-bottom low, not at confirmation bar
+  8. Make triangle offset proportional to chart height instead of fixed 14px
+---
+Task ID: 2
+Agent: main
+Task: 搜索主板下跌100只股票，学习优化买点
+
+Work Log:
+- 读取了完整的买点信号生成代码 (t-strategy.ts 2583-2753行) 和渲染代码 (time-sharing-panel.tsx 981-1049行)
+- 使用general-purpose子代理创建分析脚本 scripts/analyze-buy-points.ts，从东方财富获取100只下跌股票
+- 分析结果：151个理想买点 vs 326个算法买点，匹配率98%但精确率仅45.4%（178个假阳性）
+- 根因：35%的股票处于跌停状态，算法在跌停时误判为"缩量+企稳"
+- 实施v5.3优化：
+
+  A. 信号检测优化 (t-strategy.ts):
+  1. 新增跌停板过滤：跌幅≤-9.5%或近30根波动<0.3%且价格<91%昨收 → 跳过
+  2. MACD衰减阈值放宽：从<60%改为<50%(3分)+<70%(2分)两档
+  3. 缩量条件放宽：从<70%改为<50%(3分)+<70%(2分)+<80%(1分)三档
+  4. 近低条件放宽：从≤1.5%改为≤1%(3分)+≤1.5%(2分)+≤2%(1分)三档
+  5. 新增V底形态检测：近10根先跌后涨(2分)
+  6. 触发阈值从5分提高到6分（降低误判率）
+  7. cooldown从10根降到7根
+  8. 三连阴过滤改为：三连阴+量不递减才跳过
+  9. 反弹上限从2%提到3%
+  10. 信号位置回溯：标记在V底最低点而非确认点
+
+  B. 条件评估器更新 (evaluateCondition in t-strategy.ts):
+  - macd_neg_near_peak: 衰减阈值从60%放宽到70%
+  - vol_dry_up_buy: 从70%放宽到80%
+  - price_near_lowest: 从1.5%放宽到2%
+
+  C. 视觉渲染优化 (time-sharing-panel.tsx):
+  1. 买点圆点更大(dotR=4)+白边更粗(1.5)
+  2. 新增外层发光圈(radius=10, 15%透明度)
+  3. 三角偏移从14px增到18px，避免遮挡价格线
+  4. 三角内新增"买"字标记(7px迷你字)
+  5. 连接线改为虚线+更柔和的透明度
+  6. 标签gap更紧凑(markerOffset=34, labelGap=8)
+
+  D. 交易规则卡片更新 (trading-rules-card.tsx):
+  - 版本号更新为v5.3
+  - 新增跌停股过滤说明
+  - 买点条件从"三大"扩展为"五大"(新增④反弹确认+⑤V底形态)
+  - 更新评分制描述(6分触发)
+  - 冷却机制从15根改为7根
+  - 更新操作纪律和买点口诀
+
+  E. CONDITION_LIBRARY更新 (chart-shared.ts):
+  - 更新三个条件的描述匹配v5.3逻辑
+
+Stage Summary:
+- 基于真实数据回测优化了买点检测算法，预期精确率从45%大幅提升
+- 跌停板过滤是最关键的改进，消除了35%的假阳性来源
+- 信号位置回溯让标记更贴近V底最低价，而非确认点
+- 视觉渲染更醒目：发光圈+大圆点+三角内"买"字

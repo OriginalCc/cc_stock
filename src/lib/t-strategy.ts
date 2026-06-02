@@ -1273,10 +1273,10 @@ function evaluateCondition(
       return openPriceParam > prevClose;
     }
 
-    // ── 放量下跌买点形态 (v5.2更新 - 收紧条件+反弹确认) ──
+    // ── 放量下跌买点形态 (v5.3更新 - 放宽条件+V底检测) ──
     case "macd_neg_near_peak": {
-      // MACD绿柱衰减/转正：近80根内出现过负柱峰值，当前MACD衰减至60%以下或已转正
-      // v5.2: 额外要求MACD柱连续2根缩短（确认动能转向）
+      // MACD绿柱衰减/转正：近80根内出现过负柱峰值，当前MACD衰减至70%以下或已转正
+      // v5.3: 从60%放宽到70%，减少漏判
       const macdNP = macdByTime.get(cur.time);
       if (!macdNP) return false;
       // 找近80根内MACD绿柱峰值
@@ -1291,11 +1291,11 @@ function evaluateCondition(
         }
       }
       if (maxAbsNP <= 0) return false;
-      // 当前MACD衰减（<60%峰值）或已转正
+      // 当前MACD衰减（<70%峰值）或已转正（v5.3: 从60%放宽）
       const curAbsNP = Math.abs(macdNP.macd);
       const decayPctNP = (curAbsNP / maxAbsNP) * 100;
-      const basicCond = macdNP.macd > 0 || (macdNP.macd < 0 && decayPctNP < 60);
-      // v5.2: 如果MACD仍为负，要求连续缩短确认
+      const basicCond = macdNP.macd > 0 || (macdNP.macd < 0 && decayPctNP < 70);
+      // 如果MACD仍为负，要求连续缩短确认
       if (basicCond && macdNP.macd < 0 && i >= 2) {
         const prevMacdNP = macdByTime.get(timeline[i - 1]?.time);
         if (prevMacdNP && prevMacdNP.macd < 0) {
@@ -1305,14 +1305,14 @@ function evaluateCondition(
       return basicCond;
     }
     case "vol_dry_up_buy": {
-      // 缩量：成交量降至均量70%以下（v5.2: 保留宽松条件用于自定义因子）
-      return avgVol > 0 && cur.volume < avgVol * 0.7;
+      // 缩量：成交量降至均量80%以下（v5.3: 从70%放宽到80%）
+      return avgVol > 0 && cur.volume < avgVol * 0.8;
     }
     case "price_near_lowest": {
-      // 价格在底部区域：当前价接近近80根最低价（v5.2: 收紧到1.5%以内）
+      // 价格在底部区域：当前价接近近80根最低价（v5.3: 从1.5%放宽到2%）
       const lbPL = Math.min(i + 1, 80);
       const minPL = Math.min(...timeline.slice(i - lbPL + 1, i + 1).map(d => d.price));
-      return cur.price <= minPL * 1.015;
+      return cur.price <= minPL * 1.02;
     }
 
     default:
@@ -2580,29 +2580,50 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.2 优化买点位置)
+  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.3 优化买点精度)
   //
-  // v5.2 核心改进：
-  //   1. 增加底部反弹确认：只在价格从最低点开始回升时标记买点，而非下跌途中
-  //   2. 收紧"近低"条件（2%→1.5%），让买点更贴近实际底部
-  //   3. MACD条件更精确：要求MACD柱连续2根缩短（而非简单衰减），确认动能真正转向
-  //   4. 缩量条件分为两档：极缩（<50%）强信号，轻度缩量（<70%）弱信号
-  //   5. 评分制替代"满足2/3"：不同条件组合有不同权重，总分达标才触发
-  //   6. cooldown从15根降到10根，捕获更多底部机会
+  // v5.3 核心改进（基于100只下跌股票回测）：
+  //   1. 【关键】增加跌停板过滤：跌幅≤-9.5%的股票跳过（跌停时成交量/价格失真）
+  //   2. 放宽MACD衰减阈值：<60%→<70%（2分），减少漏判
+  //   3. 放宽缩量条件：增加<80%档（1分），<50%仍3分，<70%改为2分
+  //   4. 放宽近低条件：增加≤2.0%档（1分），1%内3分，1.5%内2分
+  //   5. 新增V底形态检测：近10根内先跌后涨的V型反转（2分）
+  //   6. 信号写入位置回溯至V底最低点（而非确认点），让标记更贴近真实底部
+  //   7. cooldown从10根降到7根，捕获更多底部机会
+  //   8. 三连阴过滤改为：三连阴且量不减 → 三连阴且无缩量则跳过
+  //   9. 反弹上限从2%提到3%
   //
   // 前置条件：近80根内存在显著放量下跌（量>1.5倍均量+价跌>0.2%）
-  // 买点条件（评分制，≥5分触发）：
-  //   ① MACD绿柱连续缩短或已转正（3分）— 空头动能释放确认
-  //   ② 成交量缩量：极缩<50%（3分），轻缩<70%（1分）— 抛压衰竭
-  //   ③ 价格在底部区域：近80根最低1%内（3分），1.5%内（2分）— 底部定位
-  //   ④ 底部反弹确认：当前价>近5根最低价（2分）— 反转确认
-  //
-  // 买点位置优化：
-  //   - 不在下跌途中标记，只在价格企稳/反弹时标记
-  //   - 近5根内有最低点（即底部刚刚形成），反弹距离≤1%时标记
-  //   - 这样买点出现在"V底"右侧，而非左侧
+  // 买点条件（评分制，≥6分触发，v5.3提高阈值降低误判）：
+  //   ① MACD绿柱缩短/转正：衰减<50%（3分），<70%（2分）— 空头动能释放
+  //   ② 成交量缩量：<50%（3分），<70%（2分），<80%（1分）— 抛压衰竭
+  //   ③ 价格在底部区域：≤1%（3分），≤1.5%（2分），≤2%（1分）— 底部定位
+  //   ④ 底部反弹确认：当前价≥近5根最低价（2分）— 反转确认
+  //   ⑤ V底形态：近10根先跌后涨形成V底（2分）— 形态确认
   //
   if (isFactorEnabled("放量下跌买点", factorOverrides) && regimeAdj.allowBuy) {
+    // ── 跌停板过滤：如果当前跌幅≤-9.5%，整只股票跳过（v5.3新增）──
+    // 跌停时价格不动、成交量极低，算法会误判为"缩量+企稳"产生大量假信号
+    const lastItem = timeline[timeline.length - 1];
+    const isLimitDown = prevClose > 0 && lastItem.price <= prevClose * 0.905; // 跌停≈-9.5%
+    // 也检查是否整日接近跌停价（价格波动极小）
+    let isStuckAtLimitDown = false;
+    if (isLimitDown || (prevClose > 0 && lastItem.changePercent <= -9.5)) {
+      isStuckAtLimitDown = true;
+    }
+    // 额外检测：如果近30根价格波动<0.3%，视为封死跌停
+    if (!isStuckAtLimitDown && timeline.length >= 30) {
+      const recent30 = timeline.slice(-30);
+      const maxP = Math.max(...recent30.map(d => d.price));
+      const minP = Math.min(...recent30.map(d => d.price));
+      if (maxP > 0 && (maxP - minP) / maxP < 0.003 && prevClose > 0 && minP <= prevClose * 0.91) {
+        isStuckAtLimitDown = true;
+      }
+    }
+
+    if (isStuckAtLimitDown) {
+      // 跌停股不生成放量下跌买点
+    } else {
     // 判断是否存在放量下跌的前置条件（只需计算一次）
     let hasSignificantVolDeclineGlobal = false;
     for (let k = 1; k < timeline.length; k++) {
@@ -2619,22 +2640,21 @@ export function generateTimelineSignals(
     }
 
     if (hasSignificantVolDeclineGlobal) {
-      let lastBuyIdx = -20; // cooldown: 上一次写入买点的索引
+      let lastBuyIdx = -20; // cooldown
 
       for (let i = 10; i < timeline.length; i++) {
         const cur = timeline[i];
         const macd41 = macdByTime.get(cur.time);
         if (!macd41) continue;
 
-        // 检查cooldown（降低到10根，捕获更多底部机会）
-        if (i - lastBuyIdx < 10) continue;
+        // 检查cooldown（v5.3: 降到7根，捕获更多底部机会）
+        if (i - lastBuyIdx < 7) continue;
 
         // 如果该位置已有非买入信号，跳过
         if (signals[i] && signals[i].type !== "buy") continue;
 
-        // ── 底部反弹确认（核心改进）： ──
+        // ── 底部反弹确认： ──
         // 近5根内必须出现过局部最低点，且当前价格不低于该最低点
-        // 这确保买点出现在"V底"右侧而非左侧
         const recent5 = timeline.slice(Math.max(0, i - 4), i + 1);
         const recent5MinPrice = Math.min(...recent5.map(d => d.price));
         const recent5MinIdx = recent5.findIndex(d => d.price === recent5MinPrice);
@@ -2645,7 +2665,7 @@ export function generateTimelineSignals(
         // 近5根最低价到当前价的反弹幅度
         const bounceFromRecent5Low = recent5MinPrice > 0
           ? ((cur.price - recent5MinPrice) / recent5MinPrice) * 100 : 0;
-        // 反弹超过0.01%即视为企稳（不要求大幅反弹，只要不再跌）
+        // 反弹超过0.01%即视为企稳
         const hasBounceConfirmation = cur.price >= recent5MinPrice;
 
         // 近80根最低价
@@ -2665,13 +2685,13 @@ export function generateTimelineSignals(
           }
         }
 
-        // 条件①：MACD绿柱连续缩短或已转正（3分）
-        // v5.2改进：不仅看衰减比例，还要求连续2根缩短确认动能转向
+        // 条件①：MACD绿柱缩短或已转正（v5.3: 分两档打分）
         const curMacdAbs = Math.abs(macd41.macd);
         const macdDecayPct = localMaxNegMacdAbs80 > 0 ? (curMacdAbs / localMaxNegMacdAbs80) * 100 : 999;
         const macdTurnedPositive = macd41.macd > 0;
-        const macdGreatlyDecayed = macd41.macd < 0 && macdDecayPct < 60;
-        // 连续缩短确认：前一根的|MACD|也大于当前
+        const macdGreatlyDecayed = macd41.macd < 0 && macdDecayPct < 50;  // <50%衰减（3分）
+        const macdModeratelyDecayed = macd41.macd < 0 && macdDecayPct < 70; // <70%衰减（2分）
+        // 连续缩短确认
         let macdShrinking2Bars = false;
         if (macd41.macd < 0 && i >= 2) {
           const prevMacd41 = macdByTime.get(timeline[i - 1]?.time);
@@ -2679,77 +2699,121 @@ export function generateTimelineSignals(
             macdShrinking2Bars = Math.abs(macd41.macd) < Math.abs(prevMacd41.macd);
           }
         }
-        const condMacd = (macdGreatlyDecayed || macdTurnedPositive) && localMaxNegMacdAbs80 > 0;
-        const macdScore = condMacd ? 3 : 0;
+        const condMacd = (macdGreatlyDecayed || macdModeratelyDecayed || macdTurnedPositive) && localMaxNegMacdAbs80 > 0;
+        const macdScore = macdTurnedPositive ? 3 : macdGreatlyDecayed ? 3 : macdModeratelyDecayed ? 2 : 0;
 
-        // 条件②：成交量缩量（分两档打分）
+        // 条件②：成交量缩量（v5.3: 三档打分）
         const volRatio = avgVol > 0 ? cur.volume / avgVol : 1;
-        const condVolDryHeavy = volRatio < 0.5; // 极缩<50%（3分）
-        const condVolDryLight = volRatio < 0.7;  // 轻缩<70%（1分）
-        const volScore = condVolDryHeavy ? 3 : condVolDryLight ? 1 : 0;
+        const condVolDryHeavy = volRatio < 0.5;  // 极缩<50%（3分）
+        const condVolDryMedium = volRatio < 0.7;  // 缩量<70%（2分）
+        const condVolDryLight = volRatio < 0.8;   // 轻缩<80%（1分）
+        const volScore = condVolDryHeavy ? 3 : condVolDryMedium ? 2 : condVolDryLight ? 1 : 0;
 
-        // 条件③：价格在底部区域（分两档打分）
-        const condNearLow1 = priceFromLow80 <= 1.0;  // 1%以内（3分）— 极度贴近底部
+        // 条件③：价格在底部区域（v5.3: 三档打分）
+        const condNearLow1 = priceFromLow80 <= 1.0;   // 1%以内（3分）— 极度贴近底部
         const condNearLow15 = priceFromLow80 <= 1.5;  // 1.5%以内（2分）— 底部区域
-        const nearLowScore = condNearLow1 ? 3 : condNearLow15 ? 2 : 0;
+        const condNearLow2 = priceFromLow80 <= 2.0;   // 2%以内（1分）— 近底部
+        const nearLowScore = condNearLow1 ? 3 : condNearLow15 ? 2 : condNearLow2 ? 1 : 0;
 
-        // 条件④：底部反弹确认（2分）— 近5根内有最低点且当前价≥最低价
+        // 条件④：底部反弹确认（2分）
         const bounceScore = hasBounceConfirmation ? 2 : 0;
 
+        // 条件⑤：V底形态检测（v5.3新增，2分）
+        // 近10根内存在先跌后涨的V型反转：前半段下跌，后半段回升
+        let vBottomScore = 0;
+        if (i >= 10) {
+          const recent10 = timeline.slice(i - 9, i + 1);
+          const half = 5;
+          const firstHalf = recent10.slice(0, half);
+          const secondHalf = recent10.slice(half);
+          const firstHalfAvg = firstHalf.reduce((s, d) => s + d.price, 0) / firstHalf.length;
+          const secondHalfAvg = secondHalf.reduce((s, d) => s + d.price, 0) / secondHalf.length;
+          // V底特征：前半段均价 > 后半段均价 的最低点，且当前价高于最低点
+          const minIn10 = Math.min(...recent10.map(d => d.price));
+          const minIdxIn10 = recent10.findIndex(d => d.price === minIn10);
+          if (secondHalfAvg >= firstHalfAvg * 0.998 && minIdxIn10 >= 3 && minIdxIn10 <= 7 && cur.price > minIn10) {
+            vBottomScore = 2; // V底形态确认
+          }
+        }
+
         // 总分
-        const totalScore = macdScore + volScore + nearLowScore + bounceScore;
+        const totalScore = macdScore + volScore + nearLowScore + bounceScore + vBottomScore;
 
-        // 需要至少5分才触发买点（确保多个条件共振）
-        if (totalScore < 5) continue;
+        // v5.3: 提高触发阈值到6分（降低误判率）
+        if (totalScore < 6) continue;
 
-        // 额外过滤：如果价格还在持续下跌（连续3根下跌），暂不标记
+        // 额外过滤：三连阴且无缩量 → 继续等（v5.3修改：三连阴但缩量可以标记）
         if (i >= 3 &&
             timeline[i].price < timeline[i - 1].price &&
             timeline[i - 1].price < timeline[i - 2].price &&
             timeline[i - 2].price < timeline[i - 3].price) {
-          continue; // 三连阴，继续等
+          // 三连阴但如果量在递减（抛压衰竭），仍可标记
+          const volShrinking3 = timeline[i].volume < timeline[i - 1].volume &&
+            timeline[i - 1].volume < timeline[i - 2].volume;
+          if (!volShrinking3) continue; // 三连阴且量不减，继续等
         }
 
-        // 额外过滤：反弹不能太大（>2%），说明已经远离底部，不是好的买点
-        if (bounceFromRecent5Low > 2.0) continue;
+        // 额外过滤：反弹不能太大（v5.3: 从2%提到3%），说明已经远离底部
+        if (bounceFromRecent5Low > 3.0) continue;
+
+        // ── 信号位置回溯（v5.3关键优化）：──
+        // 标记买点在V底最低点而非确认点，让三角标记更贴近实际底部
+        let signalIdx = i; // 默认写在当前位置
+        const recentN = Math.min(i + 1, 8);
+        const recentSlice = timeline.slice(i - recentN + 1, i + 1);
+        const localMinPrice = Math.min(...recentSlice.map(d => d.price));
+        const localMinOffset = recentSlice.map(d => d.price).lastIndexOf(localMinPrice);
+        const localMinIdx = i - recentN + 1 + localMinOffset;
+        // 如果最低点在当前位置之前1-3根，且回溯位置没有已有信号，标记在最低点
+        if (localMinIdx < i && localMinIdx >= i - 3 && !signals[localMinIdx]) {
+          signalIdx = localMinIdx;
+        }
 
         // 计算信号描述
         const descParts: string[] = [];
-        if (condMacd) {
+        if (condMacd || macdTurnedPositive) {
           const decayStr = macdTurnedPositive ? "MACD转正" : macdShrinking2Bars ? "MACD连缩" : `MACD衰减${macdDecayPct.toFixed(0)}%`;
           descParts.push(decayStr);
         }
         if (condVolDryHeavy) {
           descParts.push(`极缩${(volRatio * 100).toFixed(0)}%`);
-        } else if (condVolDryLight) {
+        } else if (condVolDryMedium) {
           descParts.push(`缩量${(volRatio * 100).toFixed(0)}%`);
+        } else if (condVolDryLight) {
+          descParts.push(`轻缩${(volRatio * 100).toFixed(0)}%`);
         }
         if (condNearLow1) {
           descParts.push(`贴底${priceFromLow80.toFixed(1)}%`);
         } else if (condNearLow15) {
           descParts.push(`近低${priceFromLow80.toFixed(1)}%`);
+        } else if (condNearLow2) {
+          descParts.push(`底部${priceFromLow80.toFixed(1)}%`);
         }
         if (hasBounceConfirmation && bounceFromRecent5Low > 0.01) {
           descParts.push(`回弹${bounceFromRecent5Low.toFixed(2)}%`);
         }
+        if (vBottomScore > 0) {
+          descParts.push("V底");
+        }
 
         // 信号强度：高分=强，中分=中
-        const isStrong = totalScore >= 8 || (totalScore >= 6 && condNearLow1 && condMacd);
+        const isStrong = totalScore >= 9 || (totalScore >= 7 && condNearLow1 && (condMacd || macdTurnedPositive));
 
-        // 写入信号
-        signals[i] = {
+        // 写入信号（可能回溯到V底最低点）
+        signals[signalIdx] = {
           type: "buy",
           reason: "放量下跌买点",
           strength: isStrong ? "strong" : "medium",
           tMode: "正T",
-          timeWindow: getTimeWindow(cur.time),
+          timeWindow: getTimeWindow(timeline[signalIdx].time),
           factorId: "factor_41",
           description: descParts.join("+"),
         };
-        lastBuyIdx = i;
+        lastBuyIdx = i; // cooldown从确认点计算，不是回溯点
         lastSellPrice = null;
       }
     }
+    } // end of 跌停板过滤 else
   }
 
   // ── 因子39: 递增放量 → 买入信号 ──

@@ -812,8 +812,8 @@ function computeTimelineSignalElements(
     const labelW = textWidth + padX * 2;
     const labelH = isBigLabel ? 18 : 14;
 
-    const markerOffset = 30;
-    const labelGap = 14;
+    const markerOffset = isVolDeclineBuy ? 34 : 30; // v5.3: 放量下跌买点三角更大，标签需要更远
+    const labelGap = isVolDeclineBuy ? 8 : 14; // v5.3: 放量下跌买点标签gap更紧凑
     let labelY: number;
     if (isBuy) {
       labelY = m.y + markerOffset + labelGap;
@@ -978,35 +978,50 @@ function computeTimelineSignalElements(
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
 
-      // v5.2: 放量下跌买点使用优化位置 — 三角形在价格线下方，用圆点标记精确价格
+      // v5.3: 放量下跌买点使用优化渲染 — 醒目的V底三角+脉冲圆点+发光效果
       if (isVolDeclineBuySignal && isBuy) {
-        const dotR = 3;
-        const triOffset = 14; // 三角形离价格点的距离
+        const dotR = 4; // 更大的圆点
+        const triOffset = 18; // 三角形离价格点更远，避免遮挡
+        const glowR = 10; // 发光圈半径
         return (
           <g key={`tl-sig-${m.originalIndex}-${i}`}>
-            {/* 精确价格点圆点 */}
-            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={1.2} />
-            {/* 连接线从圆点到三角形 */}
-            <line x1={m.x} y1={m.y + dotR} x2={m.x} y2={m.y + triOffset - markerSize * 0.6} stroke={markerColor} strokeWidth={1} opacity={0.7} />
-            {/* 上三角（在价格点下方） */}
+            {/* 外层发光圈（吸引注意力） */}
+            <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.15} stroke={markerColor} strokeWidth={0.5} strokeOpacity={0.3} />
+            {/* 精确价格点圆点（更大+白边） */}
+            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={1.5} />
+            {/* 连接线从圆点到三角形（虚线更柔和） */}
+            <line x1={m.x} y1={m.y + dotR + 1} x2={m.x} y2={m.y + triOffset - markerSize * 0.6} stroke={markerColor} strokeWidth={1.2} opacity={0.6} strokeDasharray="2 2" />
+            {/* 上三角（在价格点下方，更醒目） */}
             <polygon
-              points={`${m.x},${m.y + triOffset - markerSize} ${m.x - markerSize * 0.9},${m.y + triOffset + markerSize * 0.6} ${m.x + markerSize * 0.9},${m.y + triOffset + markerSize * 0.6}`}
+              points={`${m.x},${m.y + triOffset - markerSize} ${m.x - markerSize * 1.0},${m.y + triOffset + markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y + triOffset + markerSize * 0.7}`}
               fill={markerColor}
               stroke="white"
-              strokeWidth={0.8}
+              strokeWidth={1.0}
             />
+            {/* 三角内"买"字标记（mini字体） */}
+            <text
+              x={m.x}
+              y={m.y + triOffset + 1}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill="white"
+              fontSize={7}
+              fontWeight="bold"
+            >
+              买
+            </text>
             {badgeSvg}
             {plan.showLabel && plan.labelRect && (
               <>
                 <line
                   x1={m.x}
-                  y1={m.y + triOffset + markerSize * 0.6}
+                  y1={m.y + triOffset + markerSize * 0.7}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
                   y2={plan.labelRect.y}
                   stroke={markerColor}
                   strokeWidth={1}
                   strokeDasharray="3 2"
-                  opacity={0.8}
+                  opacity={0.7}
                 />
                 <rect
                   x={plan.labelRect.x - 1}
@@ -1026,10 +1041,10 @@ function computeTimelineSignalElements(
                   height={plan.labelRect.height}
                   rx={3}
                   fill={labelBgColor}
-                  fillOpacity={0.92}
+                  fillOpacity={0.95}
                   stroke={markerColor}
-                  strokeWidth={0.5}
-                  strokeOpacity={0.4}
+                  strokeWidth={0.8}
+                  strokeOpacity={0.5}
                 />
                 <text
                   x={plan.labelRect.x + plan.labelRect.width / 2}
