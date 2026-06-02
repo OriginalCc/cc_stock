@@ -1412,3 +1412,27 @@ Stage Summary:
 - 修改文件：src/lib/t-strategy.ts, src/app/api/stock/strategy-factors/route.ts
 - 信号逻辑从v4.5升级到v4.6，放宽了条件使信号更容易触发
 - Lint检查通过，dev服务器正常运行
+
+---
+Task ID: 3
+Agent: main
+Task: 修复放量下跌买点信号在莱克电气分时图中仍然不显示的问题
+
+Work Log:
+- 通过Python手动分析603355(莱克电气)的timeline数据，验证三个条件确实同时满足
+- 发现MACD绿柱在11:10-11:23期间为负且达峰值，成交量<50%均量，价格距最低价<1%
+- 排查信号生成流程，发现两个关键问题：
+  1. signals[i]互斥：其他买点因子(量缩价稳、昨收价支撑等)可能先占据了同一索引
+  2. 指纹缓存：signalFingerprintCache不包含信号引擎版本号，代码更新后缓存未失效
+- 修复措施：
+  1. 放量下跌买点现在允许覆盖弱/中买入信号(v4.7)
+  2. MACD条件从"当前柱>=60%峰值且峰值在10根内"改为"近20根内出现过峰值即可"
+  3. 放量下跌前置条件从2倍均量降为1.5倍均量
+  4. 价格近低点从0.5%放宽到1%
+  5. 在信号指纹中添加SIGNAL_ENGINE_VERSION='v4.7'，确保代码更新后缓存失效
+
+Stage Summary:
+- 修改文件：src/lib/t-strategy.ts, src/lib/chart-shared.ts, src/app/page.tsx, src/app/api/stock/strategy-factors/route.ts
+- 核心修复：允许覆盖弱/中买入信号 + 指纹缓存版本号
+- 信号逻辑从v4.6升级到v4.7
+- Lint通过，dev服务器正常运行

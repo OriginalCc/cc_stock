@@ -633,7 +633,9 @@ export default function StockTAssistant() {
     // Skip the heaviest computation (~7000 condition evaluations) when not in timeline mode
     if (!isTimelineActive) return [] as (TSignal | null)[];
     // Fingerprint: skip if inputs haven't changed
-    const fp = `${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}:${quote?.open ?? 0}`;
+    // Include signal engine version to invalidate cache when signal logic changes
+    const SIGNAL_ENGINE_VERSION = 'v4.7';
+    const fp = `${SIGNAL_ENGINE_VERSION}:${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}:${quote?.open ?? 0}`;
     return signalFingerprintCache.compute(fp, () =>
       generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, quote?.open)
     );
