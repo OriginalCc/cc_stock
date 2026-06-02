@@ -1489,3 +1489,35 @@ Stage Summary:
 - 放量下跌买点 signals increased from 1 to 7 for 603355
 - Key buy points now at: 09:47, 10:02, 10:17, 10:32, 10:47, 11:02, 11:17
 - Modified files: t-strategy.ts, chart-shared.ts, page.tsx
+
+---
+Task ID: buy-point-position-optimization-v5.2
+Agent: main
+Task: 优化放量下跌买点的位置和显示效果
+
+Work Log:
+- 分析当前买点信号生成逻辑(t-strategy.ts 2574-2683行)：发现三个问题
+  1. 买点可能出现在价格仍在下跌时（无反转确认）
+  2. MACD衰减条件可能触发太早（简单比例衰减而非连续缩短确认）
+  3. "近低"条件2%太宽，导致买点偏离实际底部
+- 重写放量下跌买点逻辑(v5.2)，核心改进：
+  1. 增加底部反弹确认：近5根内必须出现最低点且当前价≥最低点，买点在V底右侧
+  2. 收紧"近低"条件：2%→1.5%（1%内=3分，1.5%内=2分）
+  3. MACD连续缩短确认：不仅看衰减比例，还要求MACD柱连续2根缩短
+  4. 缩量分两档：极缩<50%(3分)、轻缩<70%(1分)
+  5. 评分制替代"满足2/3"：4个条件加权评分，≥5分触发
+  6. 额外过滤：三连阴时暂不标记、反弹>2%时远离底部不标记
+  7. cooldown从15根降到10根，捕获更多底部机会
+- 更新evaluateCondition中的macd_neg_near_peak条件：MACD仍为负时要求连续2根缩短
+- 更新evaluateCondition中的price_near_lowest条件：从2%收紧到1.5%
+- 更新CONDITION_LIBRARY描述：反映v5.2更新
+- 优化买点标记视觉位置(time-sharing-panel.tsx)：
+  - 放量下跌买点使用新样式：价格点处圆点标记+连接线+下方三角形
+  - 圆点精确标记买入价格位置，三角形在下方指示方向
+  - 标签文字连接到三角形下方
+
+Stage Summary:
+- 买点位置从"下跌途中标记"优化为"V底右侧标记"
+- 条件从简单计数改为评分制(4条件加权)，更精准
+- 视觉上新样式：圆点+连接线+三角形，更清晰指示买入位置
+- Lint通过，dev server正常运行

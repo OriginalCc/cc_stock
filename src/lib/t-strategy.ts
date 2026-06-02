@@ -1273,9 +1273,10 @@ function evaluateCondition(
       return openPriceParam > prevClose;
     }
 
-    // ── 放量下跌买点形态 (v5.0更新) ──
+    // ── 放量下跌买点形态 (v5.2更新 - 收紧条件+反弹确认) ──
     case "macd_neg_near_peak": {
       // MACD绿柱衰减/转正：近80根内出现过负柱峰值，当前MACD衰减至60%以下或已转正
+      // v5.2: 额外要求MACD柱连续2根缩短（确认动能转向）
       const macdNP = macdByTime.get(cur.time);
       if (!macdNP) return false;
       // 找近80根内MACD绿柱峰值
@@ -1293,17 +1294,25 @@ function evaluateCondition(
       // 当前MACD衰减（<60%峰值）或已转正
       const curAbsNP = Math.abs(macdNP.macd);
       const decayPctNP = (curAbsNP / maxAbsNP) * 100;
-      return macdNP.macd > 0 || (macdNP.macd < 0 && decayPctNP < 60);
+      const basicCond = macdNP.macd > 0 || (macdNP.macd < 0 && decayPctNP < 60);
+      // v5.2: 如果MACD仍为负，要求连续缩短确认
+      if (basicCond && macdNP.macd < 0 && i >= 2) {
+        const prevMacdNP = macdByTime.get(timeline[i - 1]?.time);
+        if (prevMacdNP && prevMacdNP.macd < 0) {
+          return Math.abs(macdNP.macd) < Math.abs(prevMacdNP.macd);
+        }
+      }
+      return basicCond;
     }
     case "vol_dry_up_buy": {
-      // 缩量：成交量降至均量70%以下
+      // 缩量：成交量降至均量70%以下（v5.2: 保留宽松条件用于自定义因子）
       return avgVol > 0 && cur.volume < avgVol * 0.7;
     }
     case "price_near_lowest": {
-      // 价格在底部区域：当前价接近近80根最低价（2%以内）
+      // 价格在底部区域：当前价接近近80根最低价（v5.2: 收紧到1.5%以内）
       const lbPL = Math.min(i + 1, 80);
       const minPL = Math.min(...timeline.slice(i - lbPL + 1, i + 1).map(d => d.price));
-      return cur.price <= minPL * 1.02;
+      return cur.price <= minPL * 1.015;
     }
 
     default:
@@ -2571,20 +2580,28 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.1 重写：直接写入模式，解决被sell信号阻塞的问题)
+  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.2 优化买点位置)
   //
-  // v5.1 核心改进：
-  //   不再使用"先收集候选→合并→写入"模式，因为合并后候选可能恰好落在sell信号的位置被跳过
-  //   改为直接遍历timeline，满足条件直接写入，每15根只写一次（cooldown机制）
-  //   同时放宽缩量条件（50%→70%），让更多买点被标记
+  // v5.2 核心改进：
+  //   1. 增加底部反弹确认：只在价格从最低点开始回升时标记买点，而非下跌途中
+  //   2. 收紧"近低"条件（2%→1.5%），让买点更贴近实际底部
+  //   3. MACD条件更精确：要求MACD柱连续2根缩短（而非简单衰减），确认动能真正转向
+  //   4. 缩量条件分为两档：极缩（<50%）强信号，轻度缩量（<70%）弱信号
+  //   5. 评分制替代"满足2/3"：不同条件组合有不同权重，总分达标才触发
+  //   6. cooldown从15根降到10根，捕获更多底部机会
   //
   // 前置条件：近80根内存在显著放量下跌（量>1.5倍均量+价跌>0.2%）
-  // 买点条件（三条件满足任意两项即可）：
-  //   ① MACD曾经深绿现在衰减或转正（近80根内有绿柱峰值，当前abs<60%峰值 或 已转正）
-  //   ② 成交量缩量（< 70%均量）
-  //   ③ 价格在底部区域（近80根最低价2%以内）
+  // 买点条件（评分制，≥5分触发）：
+  //   ① MACD绿柱连续缩短或已转正（3分）— 空头动能释放确认
+  //   ② 成交量缩量：极缩<50%（3分），轻缩<70%（1分）— 抛压衰竭
+  //   ③ 价格在底部区域：近80根最低1%内（3分），1.5%内（2分）— 底部定位
+  //   ④ 底部反弹确认：当前价>近5根最低价（2分）— 反转确认
   //
-  // cooldown: 每15根只标记一个买点，避免信号扎堆
+  // 买点位置优化：
+  //   - 不在下跌途中标记，只在价格企稳/反弹时标记
+  //   - 近5根内有最低点（即底部刚刚形成），反弹距离≤1%时标记
+  //   - 这样买点出现在"V底"右侧，而非左侧
+  //
   if (isFactorEnabled("放量下跌买点", factorOverrides) && regimeAdj.allowBuy) {
     // 判断是否存在放量下跌的前置条件（只需计算一次）
     let hasSignificantVolDeclineGlobal = false;
@@ -2609,11 +2626,27 @@ export function generateTimelineSignals(
         const macd41 = macdByTime.get(cur.time);
         if (!macd41) continue;
 
-        // 检查cooldown
-        if (i - lastBuyIdx < 15) continue;
+        // 检查cooldown（降低到10根，捕获更多底部机会）
+        if (i - lastBuyIdx < 10) continue;
 
         // 如果该位置已有非买入信号，跳过
         if (signals[i] && signals[i].type !== "buy") continue;
+
+        // ── 底部反弹确认（核心改进）： ──
+        // 近5根内必须出现过局部最低点，且当前价格不低于该最低点
+        // 这确保买点出现在"V底"右侧而非左侧
+        const recent5 = timeline.slice(Math.max(0, i - 4), i + 1);
+        const recent5MinPrice = Math.min(...recent5.map(d => d.price));
+        const recent5MinIdx = recent5.findIndex(d => d.price === recent5MinPrice);
+        // 最低点不能是当前这根（即当前正在创出新低时不买），除非当前也是最低但开始走平
+        const isAtNewLow = cur.price === recent5MinPrice && recent5MinIdx === recent5.length - 1;
+        if (isAtNewLow && i >= 2 && cur.price < timeline[i - 1].price) continue; // 还在下跌，不标记
+
+        // 近5根最低价到当前价的反弹幅度
+        const bounceFromRecent5Low = recent5MinPrice > 0
+          ? ((cur.price - recent5MinPrice) / recent5MinPrice) * 100 : 0;
+        // 反弹超过0.01%即视为企稳（不要求大幅反弹，只要不再跌）
+        const hasBounceConfirmation = cur.price >= recent5MinPrice;
 
         // 近80根最低价
         const priceLookback = Math.min(i + 1, 80);
@@ -2632,45 +2665,82 @@ export function generateTimelineSignals(
           }
         }
 
-        // 条件①：MACD衰减或转正
+        // 条件①：MACD绿柱连续缩短或已转正（3分）
+        // v5.2改进：不仅看衰减比例，还要求连续2根缩短确认动能转向
         const curMacdAbs = Math.abs(macd41.macd);
         const macdDecayPct = localMaxNegMacdAbs80 > 0 ? (curMacdAbs / localMaxNegMacdAbs80) * 100 : 999;
         const macdTurnedPositive = macd41.macd > 0;
         const macdGreatlyDecayed = macd41.macd < 0 && macdDecayPct < 60;
+        // 连续缩短确认：前一根的|MACD|也大于当前
+        let macdShrinking2Bars = false;
+        if (macd41.macd < 0 && i >= 2) {
+          const prevMacd41 = macdByTime.get(timeline[i - 1]?.time);
+          if (prevMacd41 && prevMacd41.macd < 0) {
+            macdShrinking2Bars = Math.abs(macd41.macd) < Math.abs(prevMacd41.macd);
+          }
+        }
         const condMacd = (macdGreatlyDecayed || macdTurnedPositive) && localMaxNegMacdAbs80 > 0;
+        const macdScore = condMacd ? 3 : 0;
 
-        // 条件②：成交量缩量
+        // 条件②：成交量缩量（分两档打分）
         const volRatio = avgVol > 0 ? cur.volume / avgVol : 1;
-        const condVolDry = volRatio < 0.7; // <70%均量
+        const condVolDryHeavy = volRatio < 0.5; // 极缩<50%（3分）
+        const condVolDryLight = volRatio < 0.7;  // 轻缩<70%（1分）
+        const volScore = condVolDryHeavy ? 3 : condVolDryLight ? 1 : 0;
 
-        // 条件③：价格在底部区域
-        const condNearLow = priceFromLow80 <= 2.0; // 2%以内
+        // 条件③：价格在底部区域（分两档打分）
+        const condNearLow1 = priceFromLow80 <= 1.0;  // 1%以内（3分）— 极度贴近底部
+        const condNearLow15 = priceFromLow80 <= 1.5;  // 1.5%以内（2分）— 底部区域
+        const nearLowScore = condNearLow1 ? 3 : condNearLow15 ? 2 : 0;
 
-        // 三条件满足任意两项即触发买点
-        const condCount = (condMacd ? 1 : 0) + (condVolDry ? 1 : 0) + (condNearLow ? 1 : 0);
-        if (condCount < 2) continue;
+        // 条件④：底部反弹确认（2分）— 近5根内有最低点且当前价≥最低价
+        const bounceScore = hasBounceConfirmation ? 2 : 0;
 
-        // 至少需要价格在底部附近（条件③必选或条件②+①组合也可以）
-        // 但如果既不在底部又没缩量，只有MACD衰减不够，必须有价格或量的配合
+        // 总分
+        const totalScore = macdScore + volScore + nearLowScore + bounceScore;
+
+        // 需要至少5分才触发买点（确保多个条件共振）
+        if (totalScore < 5) continue;
+
+        // 额外过滤：如果价格还在持续下跌（连续3根下跌），暂不标记
+        if (i >= 3 &&
+            timeline[i].price < timeline[i - 1].price &&
+            timeline[i - 1].price < timeline[i - 2].price &&
+            timeline[i - 2].price < timeline[i - 3].price) {
+          continue; // 三连阴，继续等
+        }
+
+        // 额外过滤：反弹不能太大（>2%），说明已经远离底部，不是好的买点
+        if (bounceFromRecent5Low > 2.0) continue;
 
         // 计算信号描述
         const descParts: string[] = [];
         if (condMacd) {
-          const decayStr = macdTurnedPositive ? "MACD转正" : `MACD衰减至${macdDecayPct.toFixed(0)}%`;
+          const decayStr = macdTurnedPositive ? "MACD转正" : macdShrinking2Bars ? "MACD连缩" : `MACD衰减${macdDecayPct.toFixed(0)}%`;
           descParts.push(decayStr);
         }
-        if (condVolDry) {
+        if (condVolDryHeavy) {
+          descParts.push(`极缩${(volRatio * 100).toFixed(0)}%`);
+        } else if (condVolDryLight) {
           descParts.push(`缩量${(volRatio * 100).toFixed(0)}%`);
         }
-        if (condNearLow) {
-          descParts.push(`距低${priceFromLow80.toFixed(1)}%`);
+        if (condNearLow1) {
+          descParts.push(`贴底${priceFromLow80.toFixed(1)}%`);
+        } else if (condNearLow15) {
+          descParts.push(`近低${priceFromLow80.toFixed(1)}%`);
         }
+        if (hasBounceConfirmation && bounceFromRecent5Low > 0.01) {
+          descParts.push(`回弹${bounceFromRecent5Low.toFixed(2)}%`);
+        }
+
+        // 信号强度：高分=强，中分=中
+        const isStrong = totalScore >= 8 || (totalScore >= 6 && condNearLow1 && condMacd);
 
         // 写入信号
         signals[i] = {
           type: "buy",
           reason: "放量下跌买点",
-          strength: condCount >= 3 ? "strong" : "medium",
+          strength: isStrong ? "strong" : "medium",
           tMode: "正T",
           timeWindow: getTimeWindow(cur.time),
           factorId: "factor_41",

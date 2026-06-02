@@ -977,6 +977,78 @@ function computeTimelineSignalElements(
       const badgeCy = isBuy ? m.y - markerSize * 0.3 : m.y + markerSize * 0.3;
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
+
+      // v5.2: 放量下跌买点使用优化位置 — 三角形在价格线下方，用圆点标记精确价格
+      if (isVolDeclineBuySignal && isBuy) {
+        const dotR = 3;
+        const triOffset = 14; // 三角形离价格点的距离
+        return (
+          <g key={`tl-sig-${m.originalIndex}-${i}`}>
+            {/* 精确价格点圆点 */}
+            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={1.2} />
+            {/* 连接线从圆点到三角形 */}
+            <line x1={m.x} y1={m.y + dotR} x2={m.x} y2={m.y + triOffset - markerSize * 0.6} stroke={markerColor} strokeWidth={1} opacity={0.7} />
+            {/* 上三角（在价格点下方） */}
+            <polygon
+              points={`${m.x},${m.y + triOffset - markerSize} ${m.x - markerSize * 0.9},${m.y + triOffset + markerSize * 0.6} ${m.x + markerSize * 0.9},${m.y + triOffset + markerSize * 0.6}`}
+              fill={markerColor}
+              stroke="white"
+              strokeWidth={0.8}
+            />
+            {badgeSvg}
+            {plan.showLabel && plan.labelRect && (
+              <>
+                <line
+                  x1={m.x}
+                  y1={m.y + triOffset + markerSize * 0.6}
+                  x2={plan.labelRect.x + plan.labelRect.width / 2}
+                  y2={plan.labelRect.y}
+                  stroke={markerColor}
+                  strokeWidth={1}
+                  strokeDasharray="3 2"
+                  opacity={0.8}
+                />
+                <rect
+                  x={plan.labelRect.x - 1}
+                  y={plan.labelRect.y - 1}
+                  width={plan.labelRect.width + 2}
+                  height={plan.labelRect.height + 2}
+                  rx={4}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth={1.5}
+                  strokeOpacity={0.3}
+                />
+                <rect
+                  x={plan.labelRect.x}
+                  y={plan.labelRect.y}
+                  width={plan.labelRect.width}
+                  height={plan.labelRect.height}
+                  rx={3}
+                  fill={labelBgColor}
+                  fillOpacity={0.92}
+                  stroke={markerColor}
+                  strokeWidth={0.5}
+                  strokeOpacity={0.4}
+                />
+                <text
+                  x={plan.labelRect.x + plan.labelRect.width / 2}
+                  y={plan.labelRect.y + plan.labelRect.height / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="white"
+                  fontSize={11}
+                  fontWeight="800"
+                >
+                  {plan.labelText}
+                </text>
+              </>
+            )}
+          </g>
+        );
+      }
+
+      // 其他strong信号（非放量下跌买点）的原始渲染
       return (
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
           {isStoploss ? (
