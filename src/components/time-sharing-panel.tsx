@@ -52,7 +52,7 @@ import {
 // Avoids recomputing signals/labels when recharts gives us new object refs
 // but the underlying data hasn't actually changed (e.g. during crosshair moves).
 const overlayCache = new FingerprintCache<{
-  signalResult: { signalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null;
+  signalResult: { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null;
   pvPlacedLabels: PlacedLabel[];
 }>();
 
@@ -648,7 +648,7 @@ function computeTimelineSignalElements(
   yAxisMap: any,
   expandedIds: Set<string>,
   toggleExpand: (id: string) => void,
-): { signalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null {
+): { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null {
   if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
 
   const xAxis = Object.values(xAxisMap)[0] as any;
@@ -927,8 +927,10 @@ function computeTimelineSignalElements(
   };
 
   const bubbleElements: React.ReactNode[] = [];
+  const prioritySignalElements: React.ReactNode[] = []; // 高开卖出/放量下跌买点 — 渲染到最顶层
+  const signalElements: React.ReactNode[] = [];
 
-  const signalElements = labelPlans.map((plan, i) => {
+  labelPlans.forEach((plan, i) => {
     const m = plan.merged;
     const isBuy = m.direction === "up";
     const isStoploss = m.type === "stoploss";
@@ -980,25 +982,20 @@ function computeTimelineSignalElements(
 
       // v5.3: 放量下跌买点使用优化渲染 — 醒目的V底三角+脉冲圆点+发光效果
       if (isVolDeclineBuySignal && isBuy) {
-        const dotR = 4; // 更大的圆点
-        const triOffset = 18; // 三角形离价格点更远，避免遮挡
-        const glowR = 10; // 发光圈半径
-        return (
+        const dotR = 4;
+        const triOffset = 18;
+        const glowR = 10;
+        const el = (
           <g key={`tl-sig-${m.originalIndex}-${i}`}>
-            {/* 外层发光圈（吸引注意力） */}
             <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.15} stroke={markerColor} strokeWidth={0.5} strokeOpacity={0.3} />
-            {/* 精确价格点圆点（更大+白边） */}
             <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={1.5} />
-            {/* 连接线从圆点到三角形（虚线更柔和） */}
             <line x1={m.x} y1={m.y + dotR + 1} x2={m.x} y2={m.y + triOffset - markerSize * 0.6} stroke={markerColor} strokeWidth={1.2} opacity={0.6} strokeDasharray="2 2" />
-            {/* 上三角（在价格点下方，更醒目） */}
             <polygon
               points={`${m.x},${m.y + triOffset - markerSize} ${m.x - markerSize * 1.0},${m.y + triOffset + markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y + triOffset + markerSize * 0.7}`}
               fill={markerColor}
               stroke="white"
               strokeWidth={1.0}
             />
-            {/* 三角内"买"字标记（mini字体） */}
             <text
               x={m.x}
               y={m.y + triOffset + 1}
@@ -1061,10 +1058,13 @@ function computeTimelineSignalElements(
             )}
           </g>
         );
+        prioritySignalElements.push(el);
+        return;
       }
 
-      // 其他strong信号（非放量下跌买点）的原始渲染
-      return (
+      // 其他strong信号 — 高开卖出也放入优先层，确保显示在最前面
+      const isPrioritySignal = isGapUpSellSignal;
+      const el = (
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
           {isStoploss ? (
             <polygon
@@ -1140,13 +1140,19 @@ function computeTimelineSignalElements(
           )}
         </g>
       );
+      if (isPrioritySignal) {
+        prioritySignalElements.push(el);
+      } else {
+        signalElements.push(el);
+      }
+      return;
     } else if (m.strength === "medium") {
       const dotRadius = 6;
       const badgeCx = m.x + dotRadius + 4;
       const badgeCy = m.y - dotRadius + 1;
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
-      return (
+      signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
           <circle
             cx={m.x}
@@ -1175,7 +1181,7 @@ function computeTimelineSignalElements(
       );
     } else {
       const dotRadius = 4;
-      return (
+      signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
           <circle
             cx={m.x}
@@ -1191,7 +1197,7 @@ function computeTimelineSignalElements(
     }
   });
 
-  return { signalElements, bubbleElements };
+  return { signalElements, prioritySignalElements, bubbleElements };
 }
 
 // ── Intent segment overlay removed — intent segments now rendered as an external bar outside the chart ──
@@ -1281,7 +1287,7 @@ function CombinedChartOverlay(props: any) {
 
   return (
     <g>
-      {/* Layer 1: 分时因子 signal markers & labels */}
+      {/* Layer 1: 分时因子 signal markers & labels (常规信号) */}
       {signalResult?.signalElements}
       {/* Layer 2 (middle): 选股标记 pulse/volume markers — ON TOP of factor signals */}
       {pvPlacedLabels.length > 0 && (
@@ -1289,7 +1295,9 @@ function CombinedChartOverlay(props: any) {
           {pvPlacedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY, p.adjustedX))}
         </g>
       )}
-      {/* Layer 3 (top): Expanded bubbles — interactive, must be on top for usability */}
+      {/* Layer 3: 优先信号（高开卖出/放量下跌买点）— 确保显示在最前面，不被PV标签遮挡 */}
+      {signalResult?.prioritySignalElements}
+      {/* Layer 4 (top): Expanded bubbles — interactive, must be on top for usability */}
       {signalResult?.bubbleElements}
     </g>
   );
@@ -1316,6 +1324,7 @@ function TimelineSignalRenderer(props: any) {
   return (
     <g>
       {result.signalElements}
+      {result.prioritySignalElements}
       {result.bubbleElements}
     </g>
   );
