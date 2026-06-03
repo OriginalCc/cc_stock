@@ -1984,6 +1984,156 @@ export function generateTimelineSignals(
       }
     }
 
+    // ── 12.5 次高点放量卖出 → 卖出(正T) ── (v5.8 与"次低点缩量买入"对称)
+    //
+    // 核心逻辑：第二个次高点+放量 = 主力卖点
+    //   在日内分时走势中，股价经过一波上涨形成第一个高点(H1)，
+    //   然后回落，再冲高形成第二个次高点(H2)。如果H2处成交量明显
+    //   放大（比H1处高或超过均量），说明买盘耗尽/主力出货，是高概率卖出机会。
+    //
+    // 条件：
+    //   1. 找到两个局部高点H1(早)和H2(晚)，间隔≥3根
+    //   2. H1和H2之间必须有回调（中间价格低于H1和H2）
+    //   3. H2是"次高点"：H2不高于H1太多（≤3%），即顶部降低或接近
+    //   4. H2接近当日最高点（≤0.8%），确保卖在顶部区域
+    //   5. H2处放量确认（量>均量 或 H2量>H1量 或 量递增）
+    //   6. 当前价格在H2附近或开始回落
+    //   7. 当前价格必须在均线上方（做T高抛原则）
+    //
+    if (isFactorEnabled("次高点放量卖出", factorOverrides) && isSellWindow(timeWindow) && regimeAdj.allowSell && i >= 10) {
+      // 只在均线上方产生卖点
+      if (cur.price > cur.avgPrice) {
+        // ── Step 1: 在回看窗口内找局部高点 ──
+        const lookbackSell = Math.min(i + 1, 60);
+        const recentSliceSell = timeline.slice(i - lookbackSell + 1, i + 1);
+
+        interface LocalHigh { idx: number; globalIdx: number; price: number; volume: number; }
+        const localHighs: LocalHigh[] = [];
+
+        for (let k = 2; k < recentSliceSell.length - 1; k++) {
+          const p = recentSliceSell[k].price;
+          const prevP = recentSliceSell[k - 1].price;
+          const nextP = recentSliceSell[k + 1].price;
+          const ppP = k >= 2 ? recentSliceSell[k - 2].price : prevP;
+          const nnP = k + 2 < recentSliceSell.length ? recentSliceSell[k + 2].price : nextP;
+          // 局部最高：比前后各1-2根都高
+          if (p >= prevP && p >= nextP && p >= ppP && p >= nnP) {
+            localHighs.push({
+              idx: k,
+              globalIdx: i - lookbackSell + 1 + k,
+              price: p,
+              volume: recentSliceSell[k].volume,
+            });
+          }
+        }
+
+        // ── Step 2: 寻找"第二个次高点"组合 ──
+        let foundSecondHigh = false;
+        if (localHighs.length >= 2) {
+          // 从后往前找最近的高点作为H2候选
+          for (let hi = localHighs.length - 1; hi >= 1 && !foundSecondHigh; hi--) {
+            const h2 = localHighs[hi]; // 第二个高点（更近的）
+            // 在H2之前找H1（至少间隔3根，确保中间有回调）
+            for (let hj = hi - 1; hj >= 0 && !foundSecondHigh; hj--) {
+              const h1 = localHighs[hj]; // 第一个高点（更早的）
+
+              // H1/H2间隔至少3根
+              if (h2.globalIdx - h1.globalIdx < 3) continue;
+
+              // H1和H2之间必须有回调（中间价格低于H1和H2）
+              const betweenSliceSell = timeline.slice(h1.globalIdx + 1, h2.globalIdx);
+              if (betweenSliceSell.length < 1) continue;
+              const betweenMin = Math.min(...betweenSliceSell.map(d => d.price));
+              const pullbackPct = h1.price > 0 ? ((h1.price - betweenMin) / h1.price) * 100 : 0;
+              if (pullbackPct < 0.2) continue; // 中间回调至少0.2%
+
+              // H2是"次高点"：H2不高于H1太多（≤3%），即顶部降低或接近
+              const h2VsH1Pct = h1.price > 0 ? ((h2.price - h1.price) / h1.price) * 100 : 0;
+              if (h2VsH1Pct > 3.0) continue; // H2比H1高太多，不是次高点而是突破新高
+              if (h2VsH1Pct < -1.5) continue; // H2比H1低太多，是下降趋势中的反弹高点
+
+              // ── Step 2.5: H2必须接近当日最高点 ──
+              const intradayHigh = Math.max(...timeline.slice(0, i + 1).map(d => d.price));
+              const h2VsIntradayHighPct = intradayHigh > 0 ? ((intradayHigh - h2.price) / intradayHigh) * 100 : 0;
+              if (h2VsIntradayHighPct > 0.8) continue; // H2距日内最高超过0.8%，不够高
+
+              // ── Step 3: 放量确认 ──
+              // 方式A: H2处成交量 > 均量
+              const volRatioH2 = avgVol > 0 ? h2.volume / avgVol : 1;
+              const isVolExpandVsAvg = volRatioH2 > 1.0;
+              // 方式B: H2处成交量比H1处高
+              const volRatioH2VsH1 = h1.volume > 0 ? h2.volume / h1.volume : 1;
+              const isVolExpandVsH1 = volRatioH2VsH1 > 1.0;
+              // 方式C: 近3根成交量持续递增
+              let isVolIncreasing = false;
+              if (i >= 2) {
+                isVolIncreasing = cur.volume > prev.volume && prev.volume > prev2.volume;
+              }
+              // 方式D: H2处成交量高于近5根均值
+              let isVolExpandVsLocal = false;
+              if (h2.globalIdx >= 5) {
+                const local5 = timeline.slice(h2.globalIdx - 4, h2.globalIdx + 1);
+                const localAvgVol = local5.reduce((s, d) => s + d.volume, 0) / local5.length;
+                isVolExpandVsLocal = h2.volume > localAvgVol * 1.2;
+              }
+
+              const isExpanding = isVolExpandVsAvg || isVolExpandVsH1 || isVolIncreasing || isVolExpandVsLocal;
+              if (!isExpanding) continue;
+
+              // ── Step 4: 当前价格确认次高点 ──
+              // 当前价格应该在H2附近或开始回落（确认次高点形成）
+              const priceVsH2 = h2.price > 0 ? ((cur.price - h2.price) / h2.price) * 100 : 0;
+              // 当前价格在H2下方0~-2.5%区间（刚开始回落）
+              const isNearH2 = priceVsH2 >= -2.5 && priceVsH2 <= 0.3;
+
+              // 或者当前价格正在从H2回落
+              const isFallingFromH2 = cur.price < prev.price && prev.price >= h2.price * 0.995;
+
+              if (!isNearH2 && !isFallingFromH2) continue;
+
+              // 当前价不能离H2太低（回落超过3%说明已经远离顶部）
+              if (priceVsH2 < -3.0) continue;
+
+              // ── 条件全部满足，生成卖点 ──
+              // 信号位置回溯到H2最高点（如果在3根以内）
+              let signalIdx = i;
+              if (h2.globalIdx < i && h2.globalIdx >= i - 3 && !signals[h2.globalIdx]) {
+                signalIdx = h2.globalIdx;
+              }
+
+              const expandDesc = isVolExpandVsAvg && volRatioH2 > 1.5
+                ? `放量${(volRatioH2 * 100).toFixed(0)}%均量`
+                : isVolExpandVsH1
+                  ? `量增${((volRatioH2VsH1 - 1) * 100).toFixed(0)}%较前高`
+                  : isVolExpandVsLocal
+                    ? "放量较近5根"
+                    : "量递增3根";
+
+              const h2Label = h2VsH1Pct <= 0
+                ? `次高点${h2VsH1Pct.toFixed(1)}%`
+                : `次高点+${h2VsH1Pct.toFixed(1)}%`;
+
+              const highProximityDesc = h2VsIntradayHighPct <= 0.3
+                ? "贴顶"
+                : `距最高${h2VsIntradayHighPct.toFixed(1)}%`;
+
+              signals[signalIdx] = {
+                type: "sell",
+                reason: "次高点放量卖出",
+                strength: "strong",
+                tMode: "正T",
+                timeWindow,
+                factorId: "factor_44",
+                description: `${h2Label}+${expandDesc}+${highProximityDesc}+回落${priceVsH2.toFixed(1)}%`,
+              };
+              lastSellPrice = cur.price;
+              foundSecondHigh = true;
+            }
+          }
+        }
+      }
+    }
+
     // ── 13. 突破均价线(方向向上) → 买入 ── (保留原版逻辑但加时间窗口)
     if (!isInNoBuyZone && isFactorEnabled("突破均价线", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       if (prev.price < prev.avgPrice && cur.price > cur.avgPrice) {
@@ -3738,13 +3888,17 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── v5.8: 均线上方买点过滤 ──
-  // 做T策略核心原则：只在均线下方买入（低吸），均线上方只考虑卖出（高抛）
-  // 均线上方买入 = 追高，与做T低吸高抛的理念相悖
+  // ── v5.8: 均线过滤 — 做T核心原则：低吸高抛 ──
+  // 买点只在均线下方（低吸），卖点只在均线上方（高抛）
   for (let i = 0; i < signals.length; i++) {
     const sig = signals[i];
     if (!sig) continue;
     if (sig.type === "buy" && timeline[i].price >= timeline[i].avgPrice) {
+      signals[i] = null;
+    }
+    // 卖点在均线下方 = 卖在低位，违反高抛原则
+    // 但止损信号不受此限制（止损必须立即执行）
+    if (sig.type === "sell" && sig.reason !== "高开卖出" && timeline[i].price <= timeline[i].avgPrice) {
       signals[i] = null;
     }
   }

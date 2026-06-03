@@ -790,7 +790,8 @@ function computeTimelineSignalElements(
     const isBuy = m.direction === "up";
     const isGapUpSell = m.reasons.includes("高开卖出");
     const isKeyBuySignal = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
-    const isBigLabel = isGapUpSell || isKeyBuySignal; // 重要信号使用大标签
+    const isKeySellSignal = m.reasons.includes("次高点放量卖出"); // v5.8: 核心卖点
+    const isBigLabel = isGapUpSell || isKeyBuySignal || isKeySellSignal; // 重要信号使用大标签
 
     let labelText: string;
     const fmtCustom = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -813,8 +814,8 @@ function computeTimelineSignalElements(
     const labelW = textWidth + padX * 2;
     const labelH = isBigLabel ? 18 : 14;
 
-    const markerOffset = isKeyBuySignal ? 34 : 30; // v5.3: 核心买点三角更大，标签需要更远
-    const labelGap = isKeyBuySignal ? 8 : 14; // v5.3: 核心买点标签gap更紧凑
+    const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : 30; // v5.8: 核心买卖点三角更大，标签需要更远
+    const labelGap = (isKeyBuySignal || isKeySellSignal) ? 8 : 14; // v5.8: 核心买卖点标签gap更紧凑
     let labelY: number;
     if (isBuy) {
       labelY = m.y + markerOffset + labelGap;
@@ -974,7 +975,8 @@ function computeTimelineSignalElements(
     if (m.strength === "strong") {
       const isGapUpSellSignal = m.reasons.includes("高开卖出");
       const isKeyBuySignalR = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
-      const isBigMarker = isGapUpSellSignal || isKeyBuySignalR;
+      const isKeySellSignalR = m.reasons.includes("次高点放量卖出"); // v5.8: 核心卖点
+      const isBigMarker = isGapUpSellSignal || isKeyBuySignalR || isKeySellSignalR;
       const markerSize = isBigMarker ? 9 : 6;
       const badgeCx = m.x + markerSize + 4;
       const badgeCy = isBuy ? m.y - markerSize * 0.3 : m.y + markerSize * 0.3;
@@ -1021,6 +1023,93 @@ function computeTimelineSignalElements(
                   y1={m.y + triOffset + markerSize * 0.7}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
                   y2={plan.labelRect.y}
+                  stroke={markerColor}
+                  strokeWidth={1.5}
+                  opacity={0.9}
+                />
+                <rect
+                  x={plan.labelRect.x - 1}
+                  y={plan.labelRect.y - 1}
+                  width={plan.labelRect.width + 2}
+                  height={plan.labelRect.height + 2}
+                  rx={4}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth={1.5}
+                  strokeOpacity={0.3}
+                />
+                <rect
+                  x={plan.labelRect.x}
+                  y={plan.labelRect.y}
+                  width={plan.labelRect.width}
+                  height={plan.labelRect.height}
+                  rx={3}
+                  fill={labelBgColor}
+                  fillOpacity={0.95}
+                  stroke={markerColor}
+                  strokeWidth={0.8}
+                  strokeOpacity={0.5}
+                />
+                <text
+                  x={plan.labelRect.x + plan.labelRect.width / 2}
+                  y={plan.labelRect.y + plan.labelRect.height / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="white"
+                  fontSize={11}
+                  fontWeight="800"
+                >
+                  {plan.labelText}
+                </text>
+              </>
+            )}
+          </g>
+        );
+        prioritySignalElements.push(el);
+        return;
+      }
+
+      // v5.8: 核心卖点 — 醒目倒三角+脉冲圆点+发光+粗实线连接
+      if (isKeySellSignalR && !isBuy) {
+        const dotR = 5;
+        const triOffset = 18;
+        const glowR = 14;
+        const el = (
+          <g key={`tl-sig-${m.originalIndex}-${i}`}>
+            {/* 外圈发光 — 两层叠加 */}
+            <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.12} />
+            <circle cx={m.x} cy={m.y} r={glowR - 3} fill={markerColor} fillOpacity={0.2} stroke={markerColor} strokeWidth={0.8} strokeOpacity={0.5} />
+            {/* 价格线上的锚点圆 */}
+            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={2} />
+            {/* 锚点到倒三角的连接线 */}
+            <line x1={m.x} y1={m.y - dotR - 1} x2={m.x} y2={m.y - triOffset + markerSize * 0.6} stroke={markerColor} strokeWidth={2} opacity={0.9} />
+            {/* 倒三角（卖点朝下） */}
+            <polygon
+              points={`${m.x},${m.y - triOffset + markerSize} ${m.x - markerSize * 1.0},${m.y - triOffset - markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y - triOffset - markerSize * 0.7}`}
+              fill={markerColor}
+              stroke="white"
+              strokeWidth={1.0}
+            />
+            <text
+              x={m.x}
+              y={m.y - triOffset - 1}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill="white"
+              fontSize={7}
+              fontWeight="bold"
+            >
+              卖
+            </text>
+            {badgeSvg}
+            {plan.showLabel && plan.labelRect && (
+              <>
+                {/* 倒三角到文字标签的连接线 */}
+                <line
+                  x1={m.x}
+                  y1={m.y - triOffset - markerSize * 0.7}
+                  x2={plan.labelRect.x + plan.labelRect.width / 2}
+                  y2={plan.labelRect.y + plan.labelRect.height}
                   stroke={markerColor}
                   strokeWidth={1.5}
                   opacity={0.9}
