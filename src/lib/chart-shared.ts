@@ -381,10 +381,11 @@ export const CUSTOM_FACTORS_STORAGE_KEY = "customFactors_v1";
 
 // ── Helper Functions ──────────────────────────────────
 
-export function formatNum(num: number, digits: number = 2) {
+export function formatNum(num: number, digits?: number) {
   if (!num && num !== 0) return "--";
-  const fixed = num.toFixed(digits);
-  if (digits === 0) return fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const actualDigits = digits != null ? digits : 2;
+  const fixed = num.toFixed(actualDigits);
+  if (actualDigits === 0) return fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const [intPart, decPart] = fixed.split(".");
   const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${intFormatted}.${decPart}`;
@@ -402,6 +403,15 @@ export function formatAmount(amount: number) {
   if (amount >= 1e8) return (amount / 1e8).toFixed(2) + "亿";
   if (amount >= 1e4) return (amount / 1e4).toFixed(2) + "万";
   return amount.toLocaleString();
+}
+
+/**
+ * 格式化股价：低价股/ETF（价格<5元）保留3位小数，否则2位
+ * 解决低价ETF如588870(价格1.7~1.8)分时线变平线的问题
+ */
+export function formatPrice(price: number | undefined | null): string {
+  if (price == null || isNaN(price)) return "--";
+  return price < 5 ? price.toFixed(3) : price.toFixed(2);
 }
 
 export function formatMarketCap(val: number) {

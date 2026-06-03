@@ -24,6 +24,7 @@ import {
   T_MODE_CONFIG,
   formatVolume,
   formatAmount,
+  formatPrice,
   generateTimelineSignals,
   getStrengthLabel,
   getStrengthColor,
@@ -107,9 +108,9 @@ const TimelineTooltip = ({ active, payload }: any) => {
       <div className="font-medium mb-2 text-foreground">{data.time}</div>
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
         <span className="text-muted-foreground">价格</span>
-        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2) ?? "--"}</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{formatPrice(data.price)}</span>
         <span className="text-muted-foreground">均价</span>
-        <span className="text-right font-mono text-yellow-500">{data.avgPrice?.toFixed(2) ?? "--"}</span>
+        <span className="text-right font-mono text-yellow-500">{formatPrice(data.avgPrice)}</span>
         <span className="text-muted-foreground">涨跌</span>
         <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.changePercent?.toFixed(2) ?? "--"}%</span>
         <span className="text-muted-foreground">成交量</span>
@@ -152,7 +153,7 @@ const TimelineVolumeTooltip = ({ active, payload }: any) => {
         <span className="text-muted-foreground">成交额</span>
         <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * (data.price ?? 0))}</span>
         <span className="text-muted-foreground">价格</span>
-        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2) ?? "--"}</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{formatPrice(data.price)}</span>
       </div>
     </div>
   );
@@ -1494,6 +1495,11 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   indexTimelineData?: Record<string, { items: TimelineItem[]; prevClose: number }>;
   sectorTimelineData?: { items: TimelineItem[]; prevClose: number };
 }) {
+  // v5.8: 低价股/ETF（昨收<5元）价格显示3位小数，避免分时线变平线
+  const priceDps = (prevClose > 0 && prevClose < 5) ? 3 : 2;
+  const priceFmt = (v: number | undefined | null) => v != null ? v.toFixed(priceDps) : "--";
+  const priceFmtVal = (v: number) => v.toFixed(priceDps);
+
   // ── Build full-day timeline template (240 minutes total) ──
   // A-share trading day: 09:30-11:30 (120min) + 13:00-15:00 (120min)
   // Performance: fingerprint cache to skip rebuilding 242 objects when data hasn't meaningfully changed.
@@ -2397,7 +2403,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       <div className="px-3 py-2 border-b border-border/50 flex items-center gap-3 text-xs flex-wrap">
         <span className="font-medium text-sm text-foreground">{symbol}</span>
         <span className={`font-bold tabular-nums ${lastItem.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
-          {(lastItem.price ?? 0).toFixed(2)}
+          {formatPrice(lastItem.price)}
         </span>
         <span className={`tabular-nums ${lastItem.changePercent >= 0 ? "text-red-500" : "text-green-500"}`}>
           {lastItem.changePercent >= 0 ? "+" : ""}{(lastItem.changePercent ?? 0).toFixed(2)}%
@@ -2624,7 +2630,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           return (
             <span className="flex items-center gap-2 text-[10px] tabular-nums">
               <span className="text-muted-foreground">{crosshairItem.time}</span>
-              <span className={isUp ? "text-red-600" : "text-green-600"}>{crosshairItem.price?.toFixed(2)}</span>
+              <span className={isUp ? "text-red-600" : "text-green-600"}>{formatPrice(crosshairItem.price)}</span>
               <span className={isUp ? "text-red-600" : "text-green-600"}>{isUp ? "+" : ""}{pct?.toFixed(2)}%</span>
               {crosshairItem.volume > 0 && (
                 <>
@@ -2897,7 +2903,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               tickLine={false}
               axisLine={false}
               width={55}
-              tickFormatter={(v: number) => (v ?? 0).toFixed(2)}
+              tickFormatter={(v: number) => formatPrice(v)}
             />
             <YAxis
               yAxisId="percent"
@@ -2980,7 +2986,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 strokeDasharray="8 4"
                 strokeWidth={1.2}
                 strokeOpacity={0.9}
-                label={{ value: `MA5 ${(prevDayMA5 ?? 0).toFixed(2)}`, position: "right", fill: "#eab308", fontSize: 10, fillOpacity: 1 }}
+                label={{ value: `MA5 ${formatPrice(prevDayMA5)}`, position: "right", fill: "#eab308", fontSize: 10, fillOpacity: 1 }}
               />
             )}
 
@@ -3131,7 +3137,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   els.push(
                     <g key="hi-tag">
                       <rect x={labelX} y={y - 17} width={76} height={34} rx={3} fill="#ef4444" fillOpacity={0.6} />
-                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{(highestPrice ?? 0).toFixed(2)}</text>
+                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{formatPrice(highestPrice)}</text>
                       <text x={labelX + 38} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">+{pct.toFixed(2)}%</text>
                     </g>
                   );
@@ -3144,7 +3150,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   els.push(
                     <g key="lo-tag">
                       <rect x={labelX} y={y - 17} width={76} height={34} rx={3} fill="#22c55e" fillOpacity={0.6} />
-                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{(lowestPrice ?? 0).toFixed(2)}</text>
+                      <text x={labelX + 38} y={y - 2} textAnchor="middle" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ffffff">{formatPrice(lowestPrice)}</text>
                       <text x={labelX + 38} y={y + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={600} fill="rgba(255,255,255,0.85)">{pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</text>
                     </g>
                   );

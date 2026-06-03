@@ -568,10 +568,15 @@ async function getTencentMinuteData(
 
     const changePercent = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
 
+    // v5.8: 低价股/ETF（价格<5元）保留3位小数，避免分时线变平线
+    // 例如 588870 价格1.7~1.8，2位小数只保留9个不同值，3位小数保留62个
+    const priceDecimals = price < 5 ? 3 : 2;
+    const avgPriceDecimals = avgPrice < 5 ? 3 : 2;
+
     items.push({
       time: timeFormatted,
-      price: Number(price.toFixed(2)),
-      avgPrice: Number(avgPrice.toFixed(2)),
+      price: Number(price.toFixed(priceDecimals)),
+      avgPrice: Number(avgPrice.toFixed(avgPriceDecimals)),
       volume: Math.max(minuteVol, 0), // per-minute volume
       changePercent: Number(changePercent.toFixed(2)),
     });
@@ -681,7 +686,7 @@ function buildTimelineDataFromKLine(
     return {
       time: timeShort,
       price: close,
-      avgPrice: Number(vwap.toFixed(2)),
+      avgPrice: Number(vwap.toFixed(close < 5 ? 3 : 2)),
       volume: vol,
       changePercent: Number(changePercent.toFixed(2)),
     };
@@ -931,8 +936,8 @@ export async function getSectorTimeline(sectorCode: string): Promise<{ items: Se
 
       items.push({
         time: timeShort,
-        price: Number(price.toFixed(2)),
-        avgPrice: Number(avgPrice.toFixed(2)),
+        price: Number(price.toFixed(price < 5 ? 3 : 2)),
+        avgPrice: Number(avgPrice.toFixed(avgPrice < 5 ? 3 : 2)),
         volume,
         changePercent: Number(changePercent.toFixed(2)),
       });

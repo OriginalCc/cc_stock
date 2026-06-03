@@ -15,7 +15,7 @@ import {
   Customized,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
-import { formatVolume, formatAmount } from "@/lib/chart-shared";
+import { formatVolume, formatAmount, formatPrice } from "@/lib/chart-shared";
 import { analyzeFiveDayIntent, type FiveDayIntentResult, type DayIntentResult } from "@/lib/institutional-intent";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -280,9 +280,9 @@ const FiveDayTooltip = ({ active, payload }: any) => {
       <div className="font-medium mb-1.5 text-foreground">{data.date} {data.time}</div>
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
         <span className="text-muted-foreground">价格</span>
-        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.price?.toFixed(2) ?? "--"}</span>
+        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{formatPrice(data.price)}</span>
         <span className="text-muted-foreground">均价</span>
-        <span className="text-right font-mono text-yellow-500">{data.avgPrice?.toFixed(2) ?? "--"}</span>
+        <span className="text-right font-mono text-yellow-500">{formatPrice(data.avgPrice)}</span>
         <span className="text-muted-foreground">涨跌幅</span>
         <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.changePercent?.toFixed(2) ?? "--"}%</span>
         <span className="text-muted-foreground">成交量</span>
@@ -299,7 +299,7 @@ const FiveDayTooltip = ({ active, payload }: any) => {
 function PercentYTick(props: any) {
   const { x, y, payload, prevClose } = props;
   if (!prevClose || prevClose <= 0) {
-    return <text x={x} y={y} dy={4} textAnchor="end" fontSize={9} fontFamily="monospace" fill="#94a3b8">{(payload.value ?? 0).toFixed(2)}</text>;
+    return <text x={x} y={y} dy={4} textAnchor="end" fontSize={9} fontFamily="monospace" fill="#94a3b8">{formatPrice(payload.value)}</text>;
   }
   const pct = ((payload.value - prevClose) / prevClose) * 100;
   const isZero = Math.abs(pct) < 0.01;
@@ -308,7 +308,7 @@ function PercentYTick(props: any) {
   if (isZero) {
     return (
       <g>
-        <text x={x} y={y} textAnchor="end" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ef4444">{(payload.value ?? 0).toFixed(2)}</text>
+        <text x={x} y={y} textAnchor="end" fontSize={10} fontFamily="monospace" fontWeight={700} fill="#ef4444">{formatPrice(payload.value)}</text>
         <text x={x} y={y + 12} textAnchor="end" fontSize={8} fontWeight={600} fill="#ef4444" opacity={0.8}>0.0%</text>
       </g>
     );
@@ -316,7 +316,7 @@ function PercentYTick(props: any) {
 
   return (
     <g>
-      <text x={x} y={y} textAnchor="end" fontSize={9} fontFamily="monospace" fill={isUp ? "#ef4444" : "#16a34a"}>{(payload.value ?? 0).toFixed(2)}</text>
+      <text x={x} y={y} textAnchor="end" fontSize={9} fontFamily="monospace" fill={isUp ? "#ef4444" : "#16a34a"}>{formatPrice(payload.value)}</text>
       <text x={x} y={y + 11} textAnchor="end" fontSize={7} fill={isUp ? "#ef4444" : "#16a34a"} opacity={0.7}>{isUp ? "+" : ""}{(pct ?? 0).toFixed(1)}%</text>
     </g>
   );
@@ -914,7 +914,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                 return (
                   <div key={i} className="flex items-center gap-1.5 shrink-0 text-xs">
                     <span className="text-muted-foreground font-medium">{ds.label.split(" ").pop() || ds.date.slice(5)}</span>
-                    <span className={`font-mono font-semibold ${isUp ? "text-red-500" : "text-green-500"}`}>{(ds.close ?? 0).toFixed(2)}</span>
+                    <span className={`font-mono font-semibold ${isUp ? "text-red-500" : "text-green-500"}`}>{formatPrice(ds.close)}</span>
                     <span className={`font-mono text-[10px] ${isUp ? "text-red-500" : "text-green-500"}`}>{isUp ? "+" : ""}{(ds.change ?? 0).toFixed(2)}%</span>
                   </div>
                 );

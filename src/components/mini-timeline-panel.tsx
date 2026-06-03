@@ -13,7 +13,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
-import { formatVolume, computeMiniMACD } from "@/lib/chart-shared";
+import { formatVolume, formatPrice, computeMiniMACD } from "@/lib/chart-shared";
 import { ALL_TRADE_TIMES } from "@/lib/trading-times";
 
 // ── Stable shape renderers (module-level to avoid re-creating on every render) ──
@@ -204,7 +204,7 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
       <div className="px-3 py-1.5 border-b border-border/50 flex items-center gap-2 text-xs">
         <span className="font-medium text-foreground">{title}</span>
         <span className={`font-bold tabular-nums text-xs ${isUp ? "text-red-500" : "text-green-500"}`}>
-          {(lastItem.price ?? 0).toFixed(2)}
+          {formatPrice(lastItem.price)}
         </span>
         <span className={`tabular-nums text-[10px] ${isUp ? "text-red-500" : "text-green-500"}`}>
           {isUp ? "+" : ""}{(lastItem.changePercent ?? 0).toFixed(2)}%
@@ -227,7 +227,7 @@ export const MiniTimelinePanel = React.memo(function MiniTimelinePanel({
             yAxisId="price" domain={[yMin, yMax]}
             tick={{ fontSize: 7, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false} axisLine={false} width={42}
-            tickFormatter={(v: number) => (v ?? 0).toFixed(2)}
+            tickFormatter={(v: number) => formatPrice(v)}
           />
           <YAxis
             yAxisId="percent" orientation="right" domain={[percentMin, percentMax]}
