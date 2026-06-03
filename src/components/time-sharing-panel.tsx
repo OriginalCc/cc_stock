@@ -981,16 +981,20 @@ function computeTimelineSignalElements(
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
 
-      // v5.3: 核心买点使用优化渲染 — 醒目的V底三角+脉冲圆点+发光效果
+      // v5.8: 核心买点使用优化渲染 — 醒目V底三角+脉冲圆点+发光+粗实线连接
       if (isKeyBuySignalR && isBuy) {
-        const dotR = 4;
+        const dotR = 5;
         const triOffset = 18;
-        const glowR = 10;
+        const glowR = 14;
         const el = (
           <g key={`tl-sig-${m.originalIndex}-${i}`}>
-            <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.15} stroke={markerColor} strokeWidth={0.5} strokeOpacity={0.3} />
-            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={1.5} />
-            <line x1={m.x} y1={m.y + dotR + 1} x2={m.x} y2={m.y + triOffset - markerSize * 0.6} stroke={markerColor} strokeWidth={1.2} opacity={0.6} strokeDasharray="2 2" />
+            {/* 外圈发光 — 两层叠加更醒目 */}
+            <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.12} />
+            <circle cx={m.x} cy={m.y} r={glowR - 3} fill={markerColor} fillOpacity={0.2} stroke={markerColor} strokeWidth={0.8} strokeOpacity={0.5} />
+            {/* 价格线上的锚点圆 */}
+            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={2} />
+            {/* 锚点到三角的连接线 — 粗实线更明显 */}
+            <line x1={m.x} y1={m.y + dotR + 1} x2={m.x} y2={m.y + triOffset - markerSize * 0.6} stroke={markerColor} strokeWidth={2} opacity={0.9} />
             <polygon
               points={`${m.x},${m.y + triOffset - markerSize} ${m.x - markerSize * 1.0},${m.y + triOffset + markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y + triOffset + markerSize * 0.7}`}
               fill={markerColor}
@@ -1011,15 +1015,15 @@ function computeTimelineSignalElements(
             {badgeSvg}
             {plan.showLabel && plan.labelRect && (
               <>
+                {/* 三角到文字标签的连接线 — 粗实线 */}
                 <line
                   x1={m.x}
                   y1={m.y + triOffset + markerSize * 0.7}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
                   y2={plan.labelRect.y}
                   stroke={markerColor}
-                  strokeWidth={1}
-                  strokeDasharray="3 2"
-                  opacity={0.7}
+                  strokeWidth={1.5}
+                  opacity={0.9}
                 />
                 <rect
                   x={plan.labelRect.x - 1}
@@ -1092,15 +1096,15 @@ function computeTimelineSignalElements(
           {badgeSvg}
           {plan.showLabel && plan.labelRect && (
             <>
+              {/* v5.8: 连接线改为粗实线更明显 */}
               <line
                 x1={m.x}
                 y1={isBuy ? m.y + markerSize : m.y - markerSize}
                 x2={plan.labelRect.x + plan.labelRect.width / 2}
                 y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
                 stroke={markerColor}
-                strokeWidth={1}
-                strokeDasharray="3 2"
-                opacity={0.8}
+                strokeWidth={1.5}
+                opacity={0.9}
               />
               <rect
                 x={plan.labelRect.x - 1}
@@ -1149,20 +1153,23 @@ function computeTimelineSignalElements(
       return;
     } else if (m.strength === "medium") {
       const dotRadius = 6;
+      const glowR = 10;
       const badgeCx = m.x + dotRadius + 4;
       const badgeCy = m.y - dotRadius + 1;
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
       signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
+          {/* v5.8: 发光圈让medium信号也更醒目 */}
+          <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.12} />
           <circle
             cx={m.x}
             cy={m.y}
             r={dotRadius}
             fill={markerColor}
-            fillOpacity={0.85}
+            fillOpacity={0.9}
             stroke="white"
-            strokeWidth={0.7}
+            strokeWidth={1.2}
           />
           {isBuy ? (
             <polygon
@@ -1181,18 +1188,34 @@ function computeTimelineSignalElements(
         </g>
       );
     } else {
-      const dotRadius = 4;
+      const dotRadius = 5;
+      const glowR = 8;
       signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
+          {/* v5.8: weak信号也加发光圈，提升可见性 */}
+          <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.1} />
           <circle
             cx={m.x}
             cy={m.y}
             r={dotRadius}
             fill={markerColor}
-            fillOpacity={0.65}
+            fillOpacity={0.8}
             stroke="white"
-            strokeWidth={0.5}
+            strokeWidth={1.0}
           />
+          {isBuy ? (
+            <polygon
+              points={`${m.x},${m.y - 2} ${m.x - 1.5},${m.y + 0.8} ${m.x + 1.5},${m.y + 0.8}`}
+              fill="white"
+              fillOpacity={0.85}
+            />
+          ) : (
+            <polygon
+              points={`${m.x},${m.y + 2} ${m.x - 1.5},${m.y - 0.8} ${m.x + 1.5},${m.y - 0.8}`}
+              fill="white"
+              fillOpacity={0.85}
+            />
+          )}
         </g>
       );
     }
