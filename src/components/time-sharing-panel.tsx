@@ -1516,30 +1516,60 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       });
 
       // ── Filter buy signals in early decline ban zone ──
-      // If pvMarkers indicate early volume decline, calculate a simple ban cutoff
-      // and remove buy signals before that time. This keeps the logic close to
-      // the data layer so all downstream code (zoomData, chart) uses filtered data.
-      if (pvMarkers && pvMarkers.length > 0 && data.length > 0) {
-        const earlyDeclines = pvMarkers.filter(m =>
-          (m.type === "volume_decline" || m.type === "pulse_decline"
-            || m.type === "early_vol_drop" || m.type === "slow_decline")
-          && pvParseTime(m.time) >= 570 && pvParseTime(m.time) <= 630
-        );
-        if (earlyDeclines.length > 0) {
-          // Check if early session overall declined
-          const earlyData = data.filter(d => {
-            const mins = pvParseTime(d.time);
-            return mins >= 570 && mins < 630;
-          });
-          if (earlyData.length >= 5) {
-            const openPrice = earlyData[0].price;
-            const lastEarlyPrice = earlyData[earlyData.length - 1].price;
-            const earlyNetChange = openPrice > 0 ? ((lastEarlyPrice - openPrice) / openPrice) * 100 : 0;
-            // Only filter if early session actually declined
-            if (earlyNetChange <= 0 && !(prevClose > 0 && lastEarlyPrice > prevClose)) {
-              // Calculate a simple ban end time (9:45 to 10:30 based on decline count)
-              const banEndTime = Math.min(630, 585 + earlyDeclines.length * 5);
-              // Remove buy signals before ban end time
+      // Remove buy signals before the ban end time when early decline is detected.
+      // This works with both pvMarkers-based detection and pure-price-decline fallback.
+      if (data.length > 0) {
+        const earlySessionData = data.filter(d => {
+          const mins = pvParseTime(d.time);
+          return mins >= 570 && mins < 630;
+        });
+        if (earlySessionData.length >= 5) {
+          const eOpen = earlySessionData[0].price;
+          const eLast = earlySessionData[earlySessionData.length - 1].price;
+          const eNetChg = eOpen > 0 ? ((eLast - eOpen) / eOpen) * 100 : 0;
+          // Only filter if early session actually declined and below prevClose
+          if (eNetChg <= 0 && !(prevClose > 0 && eLast > prevClose)) {
+            // Determine ban end time
+            let banEndTime = -1;
+            // First: check pvMarkers for decline markers
+            if (pvMarkers && pvMarkers.length > 0) {
+              const earlyDeclines = pvMarkers.filter(m =>
+                (m.type === "volume_decline" || m.type === "pulse_decline"
+                  || m.type === "early_vol_drop" || m.type === "slow_decline")
+                && pvParseTime(m.time) >= 570 && pvParseTime(m.time) <= 630
+              );
+              if (earlyDeclines.length > 0) {
+                banEndTime = Math.min(630, 585 + earlyDeclines.length * 5);
+              }
+            }
+            // Fallback: pure price decline detection
+            if (banEndTime < 0) {
+              const dropFromOpen = eOpen > 0 ? ((eOpen - eLast) / eOpen) * 100 : 0;
+              const belowPrevClose = prevClose > 0 && eLast < prevClose;
+              const recent5 = earlySessionData.slice(-5);
+              let recentDownCount = 0;
+              for (let k = 1; k < recent5.length; k++) {
+                if (recent5[k].price < recent5[k - 1].price) recentDownCount++;
+              }
+              const recentDropping = recentDownCount >= 3;
+              let avgDeclining = false;
+              if (earlySessionData.length >= 5) {
+                const recent5Avg = earlySessionData.slice(-5).map(d => d.avgPrice);
+                let avgDownCount = 0;
+                for (let k = 1; k < recent5Avg.length; k++) {
+                  if (recent5Avg[k] < recent5Avg[k - 1]) avgDownCount++;
+                }
+                avgDeclining = avgDownCount >= 3;
+              }
+              if (dropFromOpen >= 0.5 && belowPrevClose && (recentDropping || avgDeclining)) {
+                // Ban duration based on drop severity
+                if (dropFromOpen >= 2) banEndTime = 615; // 10:15
+                else if (dropFromOpen >= 1) banEndTime = 605; // 10:05
+                else banEndTime = 595; // 9:55
+              }
+            }
+            // Remove buy signals before ban end time
+            if (banEndTime > 0) {
               const keysToRemove: string[] = [];
               signalByTime.forEach((sig, time) => {
                 if (sig.type === "buy" && pvParseTime(time) < banEndTime) {
@@ -1957,22 +1987,11 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     earlyLifted: boolean;     // 是否因企稳提前解禁
   } | null => {
     // Fingerprint cache to skip heavy 300+ line computation when data hasn't changed
-    const fp = `${pvMarkers?.length}:${pvMarkers?.filter(m => m.type === "volume_decline" || m.type === "pulse_decline" || m.type === "early_vol_drop" || m.type === "slow_decline").map(m => `${m.time}:${m.type}`).join(',')}:${data.length}:${data.slice(-3).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',')}:${prevClose}`;
+    // Include early data summary to catch pure-price-decline (not just pvMarkers)
+    const earlyDataFp = data.filter(d => { const m = pvParseTime(d.time); return m >= 570 && m < 630; }).slice(-5).map(d => `${(d.price ?? 0).toFixed(2)}:${(d.avgPrice ?? 0).toFixed(2)}`).join(',');
+    const fp = `${pvMarkers?.length}:${pvMarkers?.filter(m => m.type === "volume_decline" || m.type === "pulse_decline" || m.type === "early_vol_drop" || m.type === "slow_decline").map(m => `${m.time}:${m.type}`).join(',')}:${data.length}:${data.slice(-3).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',')}:${prevClose}:early=${earlyDataFp}`;
     return banCache.compute(fp, () => {
-    if (!pvMarkers || pvMarkers.length === 0) return null;
-
-    // ── 1. 收集早盘下跌标记（扩展：含缩量下跌和阴跌） ──
-    const earlyVolDeclines = pvMarkers.filter(m => {
-      if (m.type !== "volume_decline" && m.type !== "pulse_decline"
-          && m.type !== "early_vol_drop" && m.type !== "slow_decline") return false;
-      const mins = pvParseTime(m.time);
-      // 动态窗口：从9:30到当前最新数据时间，不再固定<630
-      // 但最晚只看10:30(630min)，因为禁买不可能超过10:30
-      return mins >= 570 && mins <= 630;
-    });
-    if (earlyVolDeclines.length === 0) return null;
-
-    // ── 2. 提取早盘原始数据 ──
+    // ── 0. 提取早盘原始数据 ──（提前计算，pvMarkers 和纯价格检测都要用）
     const earlyData = data.filter(d => {
       const mins = pvParseTime(d.time);
       return mins >= 570 && mins < 630;
@@ -1984,13 +2003,64 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     const highPrice = Math.max(...earlyData.map(d => d.price));
     const lastEarlyPrice = earlyData[earlyData.length - 1].price;
 
-    // ── 3. 二次校验：早盘整体趋势 ──
+    // ── 0.5 二次校验：早盘整体趋势 ──
     const earlyNetChange = openPrice > 0
       ? ((lastEarlyPrice - openPrice) / openPrice) * 100 : 0;
-    // 早盘整体上涨 → 不是真正的放量下跌，不触发禁买
+    // 早盘整体上涨 → 不是真正的下跌，不触发禁买
     if (earlyNetChange > 0) return null;
-    // 相对昨收上涨 → 也不是真正的放量下跌
+    // 相对昨收上涨 → 也不是真正的下跌
     if (prevClose > 0 && lastEarlyPrice > prevClose) return null;
+
+    // ── 1. 收集早盘下跌标记（扩展：含缩量下跌和阴跌） ──
+    let earlyVolDeclines: PulseVolumeMarker[] = [];
+    if (pvMarkers && pvMarkers.length > 0) {
+      earlyVolDeclines = pvMarkers.filter(m => {
+        if (m.type !== "volume_decline" && m.type !== "pulse_decline"
+            && m.type !== "early_vol_drop" && m.type !== "slow_decline") return false;
+        const mins = pvParseTime(m.time);
+        return mins >= 570 && mins <= 630;
+      });
+    }
+
+    // ── 1.5 补充检测：纯价格下跌（不依赖pvMarkers） ──
+    // 如果 pvMarkers 没有检测到下跌标记（比如缓慢阴跌分数不够阈值），
+    // 但价格确实在持续下跌，也需要触发禁买区域
+    if (earlyVolDeclines.length === 0) {
+      // 检查条件：1) 早盘从开盘价下跌超过0.5%  2) 当前价低于昨收  3) 近5分钟持续下跌
+      const dropFromOpen = openPrice > 0 ? ((openPrice - lastEarlyPrice) / openPrice) * 100 : 0;
+      const belowPrevClose = prevClose > 0 && lastEarlyPrice < prevClose;
+      // 检查近5分钟是否持续走低
+      const recent5 = earlyData.slice(-5);
+      let recentDownCount = 0;
+      for (let k = 1; k < recent5.length; k++) {
+        if (recent5[k].price < recent5[k - 1].price) recentDownCount++;
+      }
+      const recentDropping = recentDownCount >= 3 && recent5.length >= 3;
+      // 检查均价线是否在下移（近5根均价线下降）
+      let avgDeclining = false;
+      if (earlyData.length >= 5) {
+        const recent5Avg = earlyData.slice(-5).map(d => d.avgPrice);
+        let avgDownCount = 0;
+        for (let k = 1; k < recent5Avg.length; k++) {
+          if (recent5Avg[k] < recent5Avg[k - 1]) avgDownCount++;
+        }
+        avgDeclining = avgDownCount >= 3;
+      }
+
+      if (dropFromOpen >= 0.5 && belowPrevClose && (recentDropping || avgDeclining)) {
+        // 创建一个虚拟的下跌标记
+        earlyVolDeclines.push({
+          time: earlyData[earlyData.length - 1].time,
+          type: "slow_decline",
+          score: -Math.min(50, Math.round(dropFromOpen * 10 + (avgDeclining ? 10 : 0))),
+          label: `持续下跌 跌${dropFromOpen.toFixed(1)}%`,
+          detail: `早盘从开盘跌${dropFromOpen.toFixed(1)}%，低于昨收`,
+          amount: 0,
+        });
+      }
+    }
+
+    if (earlyVolDeclines.length === 0) return null;
 
     // ── 4. 精确计算量比 ──
     // 用全日数据的前15分钟作为基线，计算早盘量比
