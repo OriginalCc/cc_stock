@@ -277,6 +277,19 @@ export const CONDITION_LIBRARY: CustomFactorCondition[] = [
   // ── 次低点缩量买点形态 (v6.0核心买点，80%权重) ──
   { key: "second_low_point", label: "第二个次低点", description: "价格先形成第一个低点L1，反弹后回落形成第二个次低点L2（L2≈L1±1.5%且接近日内最低价≤0.5%），底部确认", category: "price" },
   { key: "vol_shrink_at_second_low", label: "次低点缩量", description: "第二个次低点处成交量萎缩（<70%均量或比L1处低30%+），抛压衰竭标志", category: "volume" },
+
+  // ── 放量上涨卖点形态 (v6.0核心卖点，与factor_41对称) ──
+  { key: "macd_pos_near_peak", label: "MACD红柱缩短/转负", description: "近80根内MACD柱出现过红柱峰值，当前红柱缩短至80%以下或已转负，多头动能释放确认", category: "indicator" },
+  { key: "vol_expand_sell", label: "放量", description: "成交量放大至均量120%以上，买盘活跃（放量>200%更佳，放量>150%中等）", category: "volume" },
+  { key: "price_near_highest", label: "价格在顶部区域", description: "当前价格接近近80根最高价（2.5%以内），顶部区域定位（贴顶1%内更佳）", category: "price" },
+
+  // ── 次高点放量卖点形态 (v6.0核心卖点，与factor_43对称) ──
+  { key: "second_high_point", label: "第二个次高点", description: "价格先形成第一个高点H1，回落后再冲高形成第二个次高点H2（H2≈H1±3%且接近日内最高价≤0.8%），顶部确认", category: "price" },
+  { key: "vol_expand_at_second_high", label: "次高点放量", description: "第二个次高点处成交量放大（>均量或比H1处高），买盘耗尽标志", category: "volume" },
+
+  // ── 缩量滞涨卖点形态 (v6.0核心卖点，与factor_41_5对称) ──
+  { key: "rising_deceleration", label: "涨幅收窄", description: "上涨过程中涨幅逐步收窄，买盘动能衰减", category: "price" },
+  { key: "vol_shrink_rise", label: "上涨缩量", description: "上涨过程中成交量递减，买盘衰竭（<80%均量更佳）", category: "volume" },
 ];
 
 export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
@@ -370,6 +383,38 @@ export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
       { key: "declining", label: "下跌趋势", description: "近5根有3根以上下跌", category: "trend" },
       { key: "vol_shrinking", label: "缩量递减", description: "近3根成交量持续递减", category: "volume" },
       { key: "deceleration", label: "跌幅收窄", description: "最近2根跌幅在收窄", category: "price" },
+    ],
+    enabled: true,
+    isBuiltIn: true,
+    dataSource: "分时线",
+  },
+  {
+    id: "factor_45",
+    name: "放量上涨卖点",
+    description: "上涨过程中出现放量+接近顶部+动能衰减→买盘耗尽+冲高见顶→卖点信号。评分制：MACD红柱缩短/转负+放量+近顶+冲高回落+倒V顶+上涨减速+迷你倒V顶。与factor_41放量下跌买点完全对称。",
+    signalType: "sell",
+    tMode: "正T",
+    strength: "medium",
+    conditions: [
+      { key: "macd_pos_near_peak", label: "MACD红柱缩短/转负", description: "近80根内MACD红柱缩短至80%以下或已转负", category: "indicator" },
+      { key: "vol_expand_sell", label: "放量", description: "成交量放大至均量120%以上", category: "volume" },
+      { key: "price_near_highest", label: "价格在顶部区域", description: "当前价格接近近80根最高价（2.5%以内）", category: "price" },
+    ],
+    enabled: true,
+    isBuiltIn: true,
+    dataSource: "分时线",
+  },
+  {
+    id: "factor_45_5",
+    name: "缩量滞涨",
+    description: "上涨过程中出现缩量+涨幅收窄→买盘衰竭+动能衰减→见顶信号。不需要MACD确认，不需要倒V顶形态，是最早的顶部信号。条件：近5根≥3根上涨+近3根量递减+最近2根涨幅收窄+近顶≤1.5%+量<80%均量。",
+    signalType: "sell",
+    tMode: "正T",
+    strength: "medium",
+    conditions: [
+      { key: "rising", label: "上涨趋势", description: "近5根有3根以上上涨", category: "trend" },
+      { key: "vol_shrink_rise", label: "上涨缩量", description: "近3根成交量持续递减", category: "volume" },
+      { key: "rising_deceleration", label: "涨幅收窄", description: "最近2根涨幅在收窄", category: "price" },
     ],
     enabled: true,
     isBuiltIn: true,

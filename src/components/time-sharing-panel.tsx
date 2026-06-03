@@ -790,7 +790,7 @@ function computeTimelineSignalElements(
     const isBuy = m.direction === "up";
     const isGapUpSell = m.reasons.includes("高开卖出");
     const isKeyBuySignal = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
-    const isKeySellSignal = m.reasons.includes("次高点放量卖出"); // v5.8: 核心卖点
+    const isKeySellSignal = m.reasons.includes("次高点放量卖出") || m.reasons.includes("放量上涨卖点") || m.reasons.includes("缩量滞涨"); // v6.0: 核心卖点
     const isBigLabel = isGapUpSell || isKeyBuySignal || isKeySellSignal; // 重要信号使用大标签
 
     let labelText: string;
@@ -975,7 +975,7 @@ function computeTimelineSignalElements(
     if (m.strength === "strong") {
       const isGapUpSellSignal = m.reasons.includes("高开卖出");
       const isKeyBuySignalR = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
-      const isKeySellSignalR = m.reasons.includes("次高点放量卖出"); // v5.8: 核心卖点
+      const isKeySellSignalR = m.reasons.includes("次高点放量卖出") || m.reasons.includes("放量上涨卖点") || m.reasons.includes("缩量滞涨"); // v6.0: 核心卖点
       const isBigMarker = isGapUpSellSignal || isKeyBuySignalR || isKeySellSignalR;
       const markerSize = isBigMarker ? 9 : 6;
       const badgeCx = m.x + markerSize + 4;
