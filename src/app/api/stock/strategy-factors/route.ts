@@ -63,6 +63,12 @@ export async function PUT(request: NextRequest) {
     if (params !== undefined) updateData.params = typeof params === "string" ? params : JSON.stringify(params);
     if (priority !== undefined) updateData.priority = priority;
     if (strength !== undefined) updateData.strength = strength;
+    if (body.tMode !== undefined) updateData.tMode = body.tMode;
+    if (body.timeWindow !== undefined) updateData.timeWindow = body.timeWindow;
+    if (body.description !== undefined) updateData.description = body.description;
+    if (body.signalType !== undefined) updateData.signalType = body.signalType;
+    if (body.category !== undefined) updateData.category = body.category;
+    if (body.name !== undefined) updateData.name = body.name;
 
     const factor = await db.strategyFactor.update({
       where: { id },
@@ -96,6 +102,8 @@ export async function POST(request: NextRequest) {
         enabled: enabled ?? true,
         priority: priority ?? 0,
         strength: strength ?? "medium",
+        tMode: body.tMode ?? "正T",
+        timeWindow: body.timeWindow ?? "any",
       },
     });
 
@@ -141,6 +149,11 @@ const DEFAULT_FACTOR_SEEDS = [
   { name: "高开卖出", category: "GAP_UP", signalType: "sell", description: "只要高开（开盘价>昨收价），立即显示卖出信号做正T（v4.3）", params: JSON.stringify({ gapUpPct: 0 }), enabled: true, priority: 23, strength: "strong", tMode: "正T", timeWindow: "sell_window" },
   // v4.5 new factor
   { name: "放量下跌买点", category: "VOLUME_DECLINE_BUY", signalType: "buy", description: "放量下跌后的买点(v5.0)：A)跌势衰竭-MACD绿柱大幅衰减/转正+缩量+近低 B)二次探底-MACD缩短+极缩量+近低", params: JSON.stringify({ typeALookback: 80, decayThreshold: 50, volDryUpRatio: 0.5, priceNearLowPct: 1.5, typeBShrinkPct: 70, typeBVolRatio: 0.4 }), enabled: true, priority: 24, strength: "strong", tMode: "正T", timeWindow: "buy_window" },
+  // v6.0 built-in custom factors (CUSTOM_COMBINED)
+  { name: "脉冲缩量企稳", category: "CUSTOM_COMBINED", signalType: "buy", description: "脉冲下跌后卖出量能萎缩+VWAP走平 → 强买回信号", params: JSON.stringify({ conditions: [{ key: "pulse_drop", label: "脉冲下跌", description: "短时间内价格快速下跌超过1%", category: "price" }, { key: "vol_shrink", label: "量能萎缩", description: "成交量缩小至均量的50%以下", category: "volume" }, { key: "vwap_flat", label: "均线走平", description: "VWAP均价线斜率趋近于零", category: "trend" }], isBuiltIn: true, dataSource: "分时线" }), enabled: true, priority: 31, strength: "strong", tMode: "正T", timeWindow: "any" },
+  { name: "脉冲拉升缩量滞涨", category: "CUSTOM_COMBINED", signalType: "sell", description: "脉冲拉升后买入量能萎缩+VWAP走平 → 强卖出信号", params: JSON.stringify({ conditions: [{ key: "pulse_rise", label: "脉冲拉升", description: "短时间内价格快速上涨超过1%", category: "price" }, { key: "vol_shrink", label: "量能萎缩", description: "成交量缩小至均量的50%以下", category: "volume" }, { key: "vwap_flat", label: "均线走平", description: "VWAP均价线斜率趋近于零", category: "trend" }], isBuiltIn: true, dataSource: "分时线" }), enabled: true, priority: 32, strength: "strong", tMode: "正T", timeWindow: "any" },
+  { name: "缩量横盘突破", category: "CUSTOM_COMBINED", signalType: "buy", description: "缩量窄幅盘整后价格向上突破 → 强买信号", params: JSON.stringify({ conditions: [{ key: "consolidation", label: "缩量横盘", description: "价格窄幅盘整+成交量萎缩", category: "trend" }, { key: "vol_expand", label: "放量", description: "成交量显著放大", category: "volume" }, { key: "vwap_cross_up", label: "上穿均线", description: "价格从均线下方突破到上方", category: "price" }], isBuiltIn: true, dataSource: "分时线" }), enabled: true, priority: 33, strength: "strong", tMode: "反T", timeWindow: "any" },
+  { name: "放量突破均线", category: "CUSTOM_COMBINED", signalType: "buy", description: "成交量放大+价格从均线下方突破到上方 → 强买信号", params: JSON.stringify({ conditions: [{ key: "price_below_vwap", label: "价格在均线下方", description: "当前价格低于VWAP均价线", category: "price" }, { key: "vol_expand", label: "放量", description: "成交量显著放大", category: "volume" }, { key: "vwap_cross_up", label: "上穿均线", description: "价格从均线下方突破到上方", category: "price" }], isBuiltIn: true, dataSource: "分时线" }), enabled: true, priority: 34, strength: "strong", tMode: "反T", timeWindow: "any" },
 ];
 
 // ── 初始化默认数据 ──────────────────────────────────────

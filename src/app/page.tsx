@@ -402,10 +402,64 @@ export default function StockTAssistant() {
 
   // ── Custom Factors ──
   const [customFactors, setCustomFactors] = useState<CustomFactorDefinition[]>([]);
-  useEffect(() => {
-    const load = () => { try { const saved = localStorage.getItem(CUSTOM_FACTORS_STORAGE_KEY); if (saved) setCustomFactors(JSON.parse(saved)); else setCustomFactors(BUILT_IN_CUSTOM_FACTORS); } catch { setCustomFactors(BUILT_IN_CUSTOM_FACTORS); } };
-    load(); const handler = () => load(); window.addEventListener('custom-factors-changed', handler); return () => window.removeEventListener('custom-factors-changed', handler);
+  const loadCustomFactorsFromDB = useCallback(async () => {
+    try {
+      const res = await fetch("/api/stock/strategy-factors");
+      if (!res.ok) { setCustomFactors(BUILT_IN_CUSTOM_FACTORS); return; }
+      const data = await res.json();
+      if (data.factors && Array.isArray(data.factors)) {
+        const customFactorRecords = data.factors.filter((f: any) => f.category === "CUSTOM_COMBINED");
+        const converted = customFactorRecords
+          .map((r: any) => {
+            try {
+              const params = typeof r.params === "string" ? JSON.parse(r.params) : r.params || {};
+              const conditions = Array.isArray(params.conditions)
+                ? params.conditions.map((c: any) => ({
+                    key: c.key || "",
+                    label: c.label || c.key || "",
+                    description: c.description || "",
+                    category: c.category || "price" as const,
+                  }))
+                : [];
+              const isBuiltIn = params.isBuiltIn === true;
+              const dataSource = params.dataSource || "分时线";
+              let id = r.id;
+              if (isBuiltIn) {
+                if (r.name === "脉冲缩量企稳") id = "factor_31";
+                else if (r.name === "脉冲拉升缩量滞涨") id = "factor_32";
+                else if (r.name === "缩量横盘突破") id = "factor_33";
+                else if (r.name === "放量突破均线") id = "factor_34";
+              }
+              return {
+                id,
+                name: r.name,
+                description: r.description || "",
+                signalType: r.signalType || "buy",
+                tMode: r.tMode || "正T",
+                strength: r.strength || "medium",
+                conditions,
+                enabled: r.enabled ?? true,
+                isBuiltIn,
+                dataSource: dataSource as "分时线",
+                _dbId: r.id,
+              } as CustomFactorDefinition;
+            } catch { return null; }
+          })
+          .filter(Boolean) as CustomFactorDefinition[];
+        startTransition(() => setCustomFactors(converted));
+      } else {
+        setCustomFactors(BUILT_IN_CUSTOM_FACTORS);
+      }
+    } catch {
+      // Fallback to localStorage
+      try {
+        const saved = localStorage.getItem(CUSTOM_FACTORS_STORAGE_KEY);
+        if (saved) setCustomFactors(JSON.parse(saved));
+        else setCustomFactors(BUILT_IN_CUSTOM_FACTORS);
+      } catch { setCustomFactors(BUILT_IN_CUSTOM_FACTORS); }
+    }
   }, []);
+  useEffect(() => { loadCustomFactorsFromDB(); }, [loadCustomFactorsFromDB]);
 
   // ── Debounced search ──
   const handleSearch = useCallback((value: string) => {
@@ -964,7 +1018,7 @@ export default function StockTAssistant() {
         {/* Strategy Admin Panel — hidden in 5d-timeline mode */}
         {chartMode !== "5d-timeline" && (
         <LazyMount height={100}>
-          <StrategyAdminPanel onFactorsChanged={(factors) => setFactorOverrides(buildFactorOverridesFromDB(factors))} />
+          <StrategyAdminPanel onFactorsChanged={(factors) => setFactorOverrides(buildFactorOverridesFromDB(factors))} onCustomFactorsChanged={loadCustomFactorsFromDB} />
         </LazyMount>
         )}
         </>

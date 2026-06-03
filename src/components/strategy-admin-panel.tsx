@@ -100,6 +100,7 @@ interface CustomFactorDefinition {
   enabled: boolean;
   isBuiltIn: boolean;   // 是否内置因子
   dataSource: "分时线";  // 数据来源
+  _dbId?: string;       // 实际DB记录ID（内置因子的DB id与引擎兼容id不同）
 }
 
 // 预定义条件库（用户可组合）
@@ -277,27 +278,73 @@ const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
 
 const CUSTOM_FACTORS_STORAGE_KEY = "customFactors_v1";
 
-function CustomFactorsTab() {
-  // Initialize with defaults to avoid hydration mismatch (localStorage read after mount)
+function CustomFactorsTab({ onCustomFactorsChanged }: { onCustomFactorsChanged?: () => void }) {
+  // Load from DB
   const [customFactors, setCustomFactors] = useState<CustomFactorDefinition[]>(BUILT_IN_CUSTOM_FACTORS);
-  // Read from localStorage after mount
-  useEffect(() => {
+  const [dbLoading, setDbLoading] = useState(true);
+
+  // Fetch custom factors from DB
+  const fetchCustomFactors = useCallback(async () => {
     try {
-      const saved = localStorage.getItem(CUSTOM_FACTORS_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as CustomFactorDefinition[];
-        const builtInIds = BUILT_IN_CUSTOM_FACTORS.map(f => f.id);
-        const userFactors = parsed.filter(f => !builtInIds.includes(f.id));
-        const mergedBuiltIn = BUILT_IN_CUSTOM_FACTORS.map(bf => {
-          const savedBf = parsed.find(f => f.id === bf.id);
-          if (savedBf) return { ...bf, enabled: savedBf.enabled };
-          return bf;
-        });
-        // Use microtask to avoid lint warning about setState in effect
-        queueMicrotask(() => setCustomFactors([...mergedBuiltIn, ...userFactors]));
+      const res = await fetch("/api/stock/strategy-factors");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.factors && Array.isArray(data.factors)) {
+        const customFactorRecords = data.factors.filter((f: any) => f.category === "CUSTOM_COMBINED");
+        const converted = customFactorRecords
+          .map((r: any) => {
+            try {
+              const params = typeof r.params === "string" ? JSON.parse(r.params) : r.params || {};
+              const conditions: CustomFactorCondition[] = Array.isArray(params.conditions)
+                ? params.conditions.map((c: any) => ({
+                    key: c.key || "",
+                    label: c.label || c.key || "",
+                    description: c.description || "",
+                    category: c.category || "price",
+                  }))
+                : [];
+              const isBuiltIn = params.isBuiltIn === true;
+              const dataSource = params.dataSource || "分时线";
+              // Determine engine-compatible id for built-ins
+              let id = r.id;
+              if (isBuiltIn) {
+                if (r.name === "脉冲缩量企稳") id = "factor_31";
+                else if (r.name === "脉冲拉升缩量滞涨") id = "factor_32";
+                else if (r.name === "缩量横盘突破") id = "factor_33";
+                else if (r.name === "放量突破均线") id = "factor_34";
+              }
+              return {
+                id,
+                name: r.name,
+                description: r.description || "",
+                signalType: r.signalType || "buy",
+                tMode: r.tMode || "正T",
+                strength: r.strength || "medium",
+                conditions,
+                enabled: r.enabled ?? true,
+                isBuiltIn,
+                dataSource: dataSource as "分时线",
+                _dbId: r.id,
+              } as CustomFactorDefinition;
+            } catch { return null; }
+          })
+          .filter(Boolean) as CustomFactorDefinition[];
+        setCustomFactors(converted);
+        // Also write to localStorage as fallback
+        try { localStorage.setItem(CUSTOM_FACTORS_STORAGE_KEY, JSON.stringify(converted)); } catch {}
       }
-    } catch {}
+    } catch {
+      // Fallback to localStorage
+      try {
+        const saved = localStorage.getItem(CUSTOM_FACTORS_STORAGE_KEY);
+        if (saved) setCustomFactors(JSON.parse(saved));
+      } catch {}
+    } finally {
+      setDbLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchCustomFactors(); }, [fetchCustomFactors]);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingFactorId, setEditingFactorId] = useState<string | null>(null);
@@ -310,28 +357,48 @@ function CustomFactorsTab() {
   const [expandedFactorId, setExpandedFactorId] = useState<string | null>(null);
   const [conditionFilter, setConditionFilter] = useState<string>("all");
 
-  // 保存到 localStorage
-  useEffect(() => {
+  // Save individual field to DB and refresh
+  const updateFactorDB = useCallback(async (dbId: string, updates: Record<string, any>) => {
     try {
-      localStorage.setItem(CUSTOM_FACTORS_STORAGE_KEY, JSON.stringify(customFactors));
-      window.dispatchEvent(new CustomEvent('custom-factors-changed'));
+      await fetch("/api/stock/strategy-factors", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: dbId, ...updates }),
+      });
+      // Refresh from DB
+      await fetchCustomFactors();
+      onCustomFactorsChanged?.();
     } catch {}
-  }, [customFactors]);
+  }, [fetchCustomFactors, onCustomFactorsChanged]);
 
-  const toggleFactor = (id: string) => {
-    setCustomFactors(prev => prev.map(f => f.id === id ? { ...f, enabled: !f.enabled } : f));
+  const toggleFactor = (factor: CustomFactorDefinition) => {
+    const dbId = factor._dbId || factor.id;
+    updateFactorDB(dbId, { enabled: !factor.enabled });
   };
 
-  const deleteFactor = (id: string) => {
-    const factor = customFactors.find(f => f.id === id);
-    if (factor?.isBuiltIn) return;
-    setCustomFactors(prev => prev.filter(f => f.id !== id));
+  const updateStrength = (factor: CustomFactorDefinition, strength: "strong" | "medium" | "weak") => {
+    const dbId = factor._dbId || factor.id;
+    updateFactorDB(dbId, { strength });
   };
 
-  const startEditFactor = (id: string) => {
-    const factor = customFactors.find(f => f.id === id);
-    if (!factor || factor.isBuiltIn) return;
-    setEditingFactorId(id);
+  const updateTMode = (factor: CustomFactorDefinition, tMode: "正T" | "反T") => {
+    const dbId = factor._dbId || factor.id;
+    updateFactorDB(dbId, { tMode });
+  };
+
+  const deleteFactor = async (factor: CustomFactorDefinition) => {
+    if (factor.isBuiltIn) return;
+    const dbId = factor._dbId || factor.id;
+    try {
+      await fetch(`/api/stock/strategy-factors?id=${encodeURIComponent(dbId)}`, { method: "DELETE" });
+      await fetchCustomFactors();
+      onCustomFactorsChanged?.();
+    } catch {}
+  };
+
+  const startEditFactor = (factor: CustomFactorDefinition) => {
+    if (factor.isBuiltIn) return;
+    setEditingFactorId(factor._dbId || factor.id);
     setNewFactorName(factor.name);
     setNewFactorDesc(factor.description);
     setNewFactorSignal(factor.signalType);
@@ -354,36 +421,43 @@ function CustomFactorsTab() {
     setConditionFilter("all");
   };
 
-  const addFactor = () => {
+  const addFactor = async () => {
     if (!newFactorName.trim() || selectedConditions.length === 0) return;
     const conditions = selectedConditions.map(key => CONDITION_LIBRARY.find(c => c.key === key)!).filter(Boolean);
+    const params = { conditions, isBuiltIn: false, dataSource: "分时线" };
 
     if (editingFactorId) {
-      // 编辑模式：更新现有因子
-      setCustomFactors(prev => prev.map(f => f.id === editingFactorId ? {
-        ...f,
+      // Update existing factor
+      await updateFactorDB(editingFactorId, {
         name: newFactorName.trim(),
         description: newFactorDesc.trim() || `自定义因子：${newFactorName}`,
         signalType: newFactorSignal,
         tMode: newFactorTMode,
         strength: newFactorStrength,
-        conditions,
-      } : f));
+        params,
+      });
     } else {
-      // 新增模式
-      const newFactor: CustomFactorDefinition = {
-        id: `factor_custom_${Date.now()}`,
-        name: newFactorName.trim(),
-        description: newFactorDesc.trim() || `自定义因子：${newFactorName}`,
-        signalType: newFactorSignal,
-        tMode: newFactorTMode,
-        strength: newFactorStrength,
-        conditions,
-        enabled: true,
-        isBuiltIn: false,
-        dataSource: "分时线",
-      };
-      setCustomFactors(prev => [...prev, newFactor]);
+      // Create new factor
+      try {
+        await fetch("/api/stock/strategy-factors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: newFactorName.trim(),
+            category: "CUSTOM_COMBINED",
+            signalType: newFactorSignal,
+            description: newFactorDesc.trim() || `自定义因子：${newFactorName}`,
+            params,
+            enabled: true,
+            priority: 100 + Date.now() % 1000,
+            strength: newFactorStrength,
+            tMode: newFactorTMode,
+            timeWindow: "any",
+          }),
+        });
+        await fetchCustomFactors();
+        onCustomFactorsChanged?.();
+      } catch {}
     }
     resetForm();
   };
@@ -469,7 +543,7 @@ function CustomFactorsTab() {
                 {/* 启用开关 */}
                 <button
                   className={`shrink-0 w-8 h-4.5 rounded-full transition-colors relative ${factor.enabled ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600"}`}
-                  onClick={(e) => { e.stopPropagation(); toggleFactor(factor.id); }}
+                  onClick={(e) => { e.stopPropagation(); toggleFactor(factor); }}
                 >
                   <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform ${factor.enabled ? "left-4" : "left-0.5"}`} />
                 </button>
@@ -487,10 +561,27 @@ function CustomFactorsTab() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-bold">{factor.name}</span>
-                    <Badge className={`text-[9px] h-4 px-1 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
-                      {factor.strength === "strong" ? "强" : factor.strength === "medium" ? "中" : "弱"}
-                    </Badge>
-                    <Badge variant="outline" className="text-[9px] h-4 px-1">{factor.tMode}</Badge>
+                    {/* Inline strength Select */}
+                    <Select value={factor.strength} onValueChange={(v: string) => updateStrength(factor, v as "strong" | "medium" | "weak")}>
+                      <SelectTrigger className="h-5 w-14 text-[9px] border-0 p-0 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="strong" className="text-xs">强</SelectItem>
+                        <SelectItem value="medium" className="text-xs">中</SelectItem>
+                        <SelectItem value="weak" className="text-xs">弱</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {/* Inline tMode Select */}
+                    <Select value={factor.tMode} onValueChange={(v: string) => updateTMode(factor, v as "正T" | "反T")}>
+                      <SelectTrigger className="h-5 w-14 text-[9px] border-0 p-0 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="正T" className="text-xs">正T</SelectItem>
+                        <SelectItem value="反T" className="text-xs">反T</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Badge variant="outline" className="text-[9px] h-4 px-1 bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
                       {factor.dataSource}
                     </Badge>
@@ -570,7 +661,7 @@ function CustomFactorsTab() {
                 >
                   <button
                     className={`shrink-0 w-8 h-4.5 rounded-full transition-colors relative ${factor.enabled ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600"}`}
-                    onClick={(e) => { e.stopPropagation(); toggleFactor(factor.id); }}
+                    onClick={(e) => { e.stopPropagation(); toggleFactor(factor); }}
                   >
                     <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform ${factor.enabled ? "left-4" : "left-0.5"}`} />
                   </button>
@@ -584,10 +675,27 @@ function CustomFactorsTab() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-bold">{factor.name}</span>
-                      <Badge className={`text-[9px] h-4 px-1 ${factor.strength === "strong" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : factor.strength === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
-                        {factor.strength === "strong" ? "强" : factor.strength === "medium" ? "中" : "弱"}
-                      </Badge>
-                      <Badge variant="outline" className="text-[9px] h-4 px-1">{factor.tMode}</Badge>
+                      {/* Inline strength Select */}
+                      <Select value={factor.strength} onValueChange={(v: string) => updateStrength(factor, v as "strong" | "medium" | "weak")}>
+                        <SelectTrigger className="h-5 w-14 text-[9px] border-0 p-0 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="strong" className="text-xs">强</SelectItem>
+                          <SelectItem value="medium" className="text-xs">中</SelectItem>
+                          <SelectItem value="weak" className="text-xs">弱</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {/* Inline tMode Select */}
+                      <Select value={factor.tMode} onValueChange={(v: string) => updateTMode(factor, v as "正T" | "反T")}>
+                        <SelectTrigger className="h-5 w-14 text-[9px] border-0 p-0 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="正T" className="text-xs">正T</SelectItem>
+                          <SelectItem value="反T" className="text-xs">反T</SelectItem>
+                        </SelectContent>
+                      </Select>
                       {factor.enabled && (
                         <Badge className="text-[8px] h-4 px-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 animate-pulse">
                           ● 检测中
@@ -599,13 +707,13 @@ function CustomFactorsTab() {
                     <Badge variant="outline" className="text-[9px] h-4 px-1">{factor.conditions.length}条件</Badge>
                     <button
                       className="shrink-0 h-5 w-5 rounded flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-950/50 transition-colors"
-                      onClick={(e) => { e.stopPropagation(); startEditFactor(factor.id); }}
+                      onClick={(e) => { e.stopPropagation(); startEditFactor(factor); }}
                     >
                       <Pencil className="h-3 w-3 text-blue-500" />
                     </button>
                     <button
                       className="shrink-0 h-5 w-5 rounded flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors"
-                      onClick={(e) => { e.stopPropagation(); deleteFactor(factor.id); }}
+                      onClick={(e) => { e.stopPropagation(); deleteFactor(factor); }}
                     >
                       <Trash2 className="h-3 w-3 text-red-500" />
                     </button>
@@ -907,7 +1015,7 @@ function CustomFactorsTab() {
   );
 }
 
-export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (factors: any[]) => void }) {
+export function StrategyAdminPanel({ onFactorsChanged, onCustomFactorsChanged }: { onFactorsChanged?: (factors: any[]) => void; onCustomFactorsChanged?: () => void }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [strategyData, setStrategyData] = useState<StrategyData | null>(null);
@@ -2981,7 +3089,7 @@ export function StrategyAdminPanel({ onFactorsChanged }: { onFactorsChanged?: (f
 
             {/* ── Tab: 自定义因子 ── */}
             {activeTab === "customfactors" && (
-              <CustomFactorsTab />
+              <CustomFactorsTab onCustomFactorsChanged={onCustomFactorsChanged} />
             )}
 
             {/* ── Tab: 资讯原理 ── */}

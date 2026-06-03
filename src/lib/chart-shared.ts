@@ -62,6 +62,7 @@ export interface CustomFactorDefinition {
   enabled: boolean;
   isBuiltIn: boolean;
   dataSource: "分时线";
+  _dbId?: string; // actual DB record id for updates (differs from engine-compatible id for built-ins)
 }
 
 export interface StrategyData {
@@ -423,6 +424,63 @@ export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
 ];
 
 export const CUSTOM_FACTORS_STORAGE_KEY = "customFactors_v1";
+
+// ── DB Record → CustomFactorDefinition converter ─────
+
+const BUILT_IN_FACTOR_PRIORITY_MAP: Record<number, string> = {
+  31: "factor_31",
+  32: "factor_32",
+  33: "factor_33",
+  34: "factor_34",
+};
+
+export function dbRecordToCustomFactorDefinition(record: any): CustomFactorDefinition | null {
+  if (record.category !== "CUSTOM_COMBINED") return null;
+  try {
+    const params = typeof record.params === "string" ? JSON.parse(record.params) : record.params || {};
+    const conditions: CustomFactorCondition[] = Array.isArray(params.conditions)
+      ? params.conditions.map((c: any) => ({
+          key: c.key || "",
+          label: c.label || c.key || "",
+          description: c.description || "",
+          category: c.category || "price",
+        }))
+      : [];
+    const isBuiltIn = params.isBuiltIn === true;
+    const dataSource = params.dataSource || "分时线";
+
+    // Determine the compatible id for the strategy engine
+    // Built-in factors with priority 31-34 get factor_31..factor_34
+    let id = record.id;
+    if (isBuiltIn && BUILT_IN_FACTOR_PRIORITY_MAP[record.priority]) {
+      id = BUILT_IN_FACTOR_PRIORITY_MAP[record.priority];
+    } else if (isBuiltIn && record.name === "脉冲缩量企稳") {
+      id = "factor_31";
+    } else if (isBuiltIn && record.name === "脉冲拉升缩量滞涨") {
+      id = "factor_32";
+    } else if (isBuiltIn && record.name === "缩量横盘突破") {
+      id = "factor_33";
+    } else if (isBuiltIn && record.name === "放量突破均线") {
+      id = "factor_34";
+    }
+
+    return {
+      id,
+      name: record.name,
+      description: record.description || "",
+      signalType: record.signalType || "buy",
+      tMode: record.tMode || "正T",
+      strength: record.strength || "medium",
+      conditions,
+      enabled: record.enabled ?? true,
+      isBuiltIn,
+      dataSource: dataSource as "分时线",
+      _dbId: record.id, // preserve the actual DB id for updates
+    };
+  } catch {
+    return null;
+  }
+}
 
 // ── Helper Functions ──────────────────────────────────
 

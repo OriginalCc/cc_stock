@@ -43,3 +43,51 @@ Stage Summary:
 - 卖点信号体系从1个核心因子扩展到3个，与买点对称
 - 卖点在分时图上显示为绿色倒三角+"卖"标签，核心卖点获得更大标记和发光效果
 - 版本更新至v6.0
+
+## Task 2: Save Custom Strategy Factors to DB
+
+**Date**: 2026-03-04
+**Status**: Completed
+
+### Summary
+Implemented persistence of custom strategy factors (CUSTOM_COMBINED) to the database instead of localStorage, ensuring that strength/tMode edits persist across page refreshes.
+
+### Changes Made
+
+#### 1. API Route (`/src/app/api/stock/strategy-factors/route.ts`)
+- Added 4 built-in custom factors (factor_31-34) to `DEFAULT_FACTOR_SEEDS` with category `CUSTOM_COMBINED`, so they auto-migrate into DB
+- Extended PUT handler to support `tMode`, `timeWindow`, `description`, `signalType`, `category`, `name` fields
+- Extended POST handler to support `tMode` and `timeWindow` fields
+- GET already returns all factors including CUSTOM_COMBINED (no change needed)
+- DELETE already works (no change needed)
+
+#### 2. Chart Shared (`/src/lib/chart-shared.ts`)
+- Added `_dbId` optional field to `CustomFactorDefinition` interface (stores actual DB record ID, which differs from engine-compatible id for built-in factors like factor_31)
+- Added `dbRecordToCustomFactorDefinition()` helper that converts a DB record with `category=CUSTOM_COMBINED` to `CustomFactorDefinition`, parsing `params` JSON for conditions/isBuiltIn/dataSource
+- Built-in factors get their engine-compatible ids (factor_31-34) via name-based mapping
+
+#### 3. Strategy Admin Panel (`/src/components/strategy-admin-panel.tsx`)
+- `CustomFactorsTab` now loads from DB via `fetch("/api/stock/strategy-factors")` filtering by `category === "CUSTOM_COMBINED"`
+- Replaced localStorage-based save with DB API calls (PUT for updates, POST for creates, DELETE for deletes)
+- Added inline Select dropdowns for strength (强/中/弱) and tMode (正T/反T) on both built-in and user factor cards
+- Built-in factors cannot be deleted, but CAN have strength/tMode edited
+- User factors can be fully edited and deleted
+- Replaced `custom-factors-changed` event with `onCustomFactorsChanged` callback prop
+- localStorage still written as fallback for backward compatibility
+- Added `_dbId` field to local `CustomFactorDefinition` interface
+- `StrategyAdminPanel` now accepts `onCustomFactorsChanged` prop
+
+#### 4. Page.tsx (`/src/app/page.tsx`)
+- Replaced localStorage loading with `loadCustomFactorsFromDB()` that fetches from `/api/stock/strategy-factors` and converts DB records
+- Removed `custom-factors-changed` event listener
+- Added `onCustomFactorsChanged={loadCustomFactorsFromDB}` prop to `StrategyAdminPanel`
+- Falls back to localStorage if DB fetch fails
+
+### API Verification
+- GET: Returns 4 CUSTOM_COMBINED factors with conditions in params JSON ✓
+- PUT: Updates strength/tMode/enabled fields ✓
+- POST: Creates new CUSTOM_COMBINED factors ✓
+- DELETE: Deletes user-created factors ✓
+
+### Lint
+- `bun run lint` passes cleanly ✓
