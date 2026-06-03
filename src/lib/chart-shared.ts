@@ -291,6 +291,11 @@ export const CONDITION_LIBRARY: CustomFactorCondition[] = [
   // ── 缩量滞涨卖点形态 (v6.0核心卖点，与factor_41_5对称) ──
   { key: "rising_deceleration", label: "涨幅收窄", description: "上涨过程中涨幅逐步收窄，买盘动能衰减", category: "price" },
   { key: "vol_shrink_rise", label: "上涨缩量", description: "上涨过程中成交量递减，买盘衰竭（<80%均量更佳）", category: "volume" },
+
+  // ── 均线引力卖点形态 (v6.1核心卖点) ──
+  { key: "vwap_deviation_sell", label: "偏离均价过高(卖点)", description: "价格偏离VWAP超过1%以上，存在均值回归压力，偏离越大卖压越强", category: "indicator" },
+  { key: "pullback_confirm", label: "回落确认", description: "价格在均线上方开始回落，当前价低于前1根价，高抛时机确认", category: "price" },
+  { key: "rally_deceleration", label: "冲高减速", description: "连续上涨但涨幅逐根收窄，买盘衰竭形成顶部，是最早的顶部信号", category: "price" },
 ];
 
 export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
@@ -416,6 +421,38 @@ export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
       { key: "rising", label: "上涨趋势", description: "近5根有3根以上上涨", category: "trend" },
       { key: "vol_shrink_rise", label: "上涨缩量", description: "近3根成交量持续递减", category: "volume" },
       { key: "rising_deceleration", label: "涨幅收窄", description: "最近2根涨幅在收窄", category: "price" },
+    ],
+    enabled: true,
+    isBuiltIn: true,
+    dataSource: "分时线",
+  },
+  {
+    id: "factor_46",
+    name: "均线引力卖点",
+    description: "做T高抛的核心原理=均价线引力回归。当价格远离均价线上方且开始回落，均值回归力量增大，是最佳高抛时机。评分制6条件：偏离均线幅度+回落确认+近5根最高点回落+量能配合+MACD红柱缩短/转负+近80根顶部区域。",
+    signalType: "sell",
+    tMode: "正T",
+    strength: "strong",
+    conditions: [
+      { key: "vwap_deviation_sell", label: "偏离均价过高(卖点)", description: "价格偏离VWAP超过1%以上，存在均值回归压力", category: "indicator" },
+      { key: "pullback_confirm", label: "回落确认", description: "价格在均线上方开始回落，高抛时机确认", category: "price" },
+      { key: "vol_shrink", label: "量能萎缩", description: "成交量缩小至均量的50%以下", category: "volume" },
+    ],
+    enabled: true,
+    isBuiltIn: true,
+    dataSource: "分时线",
+  },
+  {
+    id: "factor_47",
+    name: "冲高减速见顶",
+    description: "连续上涨但涨幅逐根收窄=买盘衰竭。3根以上连续上涨+涨幅递减+缩量=顶部形成，比缩量滞涨更早的信号——不需要MACD确认。条件：3连涨+涨幅递减+价格在均线上方+缩量+距最高≤2%。",
+    signalType: "sell",
+    tMode: "正T",
+    strength: "medium",
+    conditions: [
+      { key: "rally_deceleration", label: "冲高减速", description: "连续上涨但涨幅逐根收窄，买盘衰竭", category: "price" },
+      { key: "price_above_vwap", label: "价格在均线上方", description: "当前价格高于VWAP均价线", category: "price" },
+      { key: "vol_shrink", label: "量能萎缩", description: "成交量缩小至均量的50%以下", category: "volume" },
     ],
     enabled: true,
     isBuiltIn: true,

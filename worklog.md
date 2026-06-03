@@ -91,3 +91,25 @@ Implemented persistence of custom strategy factors (CUSTOM_COMBINED) to the data
 
 ### Lint
 - `bun run lint` passes cleanly ✓
+
+---
+Task ID: 1
+Agent: main
+Task: 优化做T卖点策略 (v6.1)
+
+Work Log:
+- 修正factor 4 "跌破均价线"：原逻辑在价格跌破VWAP时触发卖出=卖低，违反高抛原则。改为价格在VWAP上方但开始回落时触发（均价线引力预警）
+- 降级factor 10 "放量下挫"：原逻辑强度为medium/strong，改为默认weak，且增加cur.price > cur.avgPrice条件，均线下方不触发
+- 新增factor 46 "均线引力卖点"：v6.1核心卖点，评分制6条件（偏离幅度+回落确认+近5根最高点回落+量能配合+MACD红柱缩短+近80根顶部区域），≥4分触发，极偏离≥3分
+- 新增factor 47 "冲高减速见顶"：3连涨+涨幅递减+缩量+均线上方+近顶≤2%，比缩量滞涨更早的顶部信号
+- 修正factor 12 "冲高回落"：增加cur.price > cur.avgPrice条件，确保只在均线上方触发
+- 新增卖点信号去噪逻辑：3根内只保留最强卖点信号，5根内弱卖点被强/中卖点压制移除
+- 更新chart-shared.ts：添加3个新条件key(vwap_deviation_sell, pullback_confirm, rally_deceleration) + 2个BUILT_IN_CUSTOM_FACTORS(factor_46, factor_47)
+- 更新page.tsx版本号v6.0→v6.1
+- Lint检查通过
+
+Stage Summary:
+- 核心修正：3个卖点因子(4,10,12)改为只在VWAP上方触发，符合做T高抛原则
+- 新增2个卖点因子(46,47)：均线引力卖点(strong)+冲高减速见顶(medium)
+- 新增卖点去噪后处理：减少近距离重复卖点信号
+- 版本更新至v6.1
