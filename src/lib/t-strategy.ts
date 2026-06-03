@@ -3738,6 +3738,17 @@ export function generateTimelineSignals(
     }
   }
 
+  // ── v5.8: 均线上方买点过滤 ──
+  // 做T策略核心原则：只在均线下方买入（低吸），均线上方只考虑卖出（高抛）
+  // 均线上方买入 = 追高，与做T低吸高抛的理念相悖
+  for (let i = 0; i < signals.length; i++) {
+    const sig = signals[i];
+    if (!sig) continue;
+    if (sig.type === "buy" && timeline[i].price >= timeline[i].avgPrice) {
+      signals[i] = null;
+    }
+  }
+
   return signals;
 }
 
