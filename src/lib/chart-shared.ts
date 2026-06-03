@@ -359,6 +359,22 @@ export const BUILT_IN_CUSTOM_FACTORS: CustomFactorDefinition[] = [
     isBuiltIn: true,
     dataSource: "分时线",
   },
+  {
+    id: "factor_41_5",
+    name: "缩量止跌",
+    description: "下跌过程中出现缩量+跌幅收窄→抛压衰竭+动能衰减→止跌信号。不需要MACD确认，不需要V底形态，是最早的底部信号。条件：近5根≥3根下跌+近3根量递减+最近2根跌幅收窄+近低≤1.5%+量<80%均量。",
+    signalType: "buy",
+    tMode: "正T",
+    strength: "medium",
+    conditions: [
+      { key: "declining", label: "下跌趋势", description: "近5根有3根以上下跌", category: "trend" },
+      { key: "vol_shrinking", label: "缩量递减", description: "近3根成交量持续递减", category: "volume" },
+      { key: "deceleration", label: "跌幅收窄", description: "最近2根跌幅在收窄", category: "price" },
+    ],
+    enabled: true,
+    isBuiltIn: true,
+    dataSource: "分时线",
+  },
 ];
 
 export const CUSTOM_FACTORS_STORAGE_KEY = "customFactors_v1";

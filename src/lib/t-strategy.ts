@@ -1588,21 +1588,22 @@ export function generateTimelineSignals(
       continue;
     }
 
-    // ── 0.5 次低点缩量买入 → 买入(正T) ── (v6.0 核心买点，占80%权重)
+    // ── 0.5 次低点缩量买入 → 买入(正T) ── (v6.1 更早触发)
     //
     // 核心逻辑：第二个次低点+缩量 = 主力买点
     //   在日内分时走势中，股价经过一波下跌形成第一个低点(L1)，
     //   然后反弹，再回落形成第二个次低点(L2)。如果L2处成交量明显
     //   萎缩（比L1处低或低于均量），说明抛压衰竭，是高概率买入机会。
     //
-    // 检测条件：
-    //   1) 回看60根内找到两个局部低点(L1, L2)，L2在L1之后
-    //   2) L2不低于L1太多（≤1.5%），即"次低点"而非"新低"
-    //   3) L2必须接近当日最低点（距日内最低≤0.5%），确保买在底部区域
-    //   4) L2处成交量缩量（<70%均量，或比L1处成交量低30%+）
-    //   5) 当前价格在L2附近企稳或开始反弹（确认次低点形成）
+    // v6.1改进：
+    //   1. i>=20降到i>=10（更早开始检测）
+    //   2. L1/L2间隔从5根降到3根（更快识别双底）
+    //   3. 缩量条件新增<80%均量档（更容易满足）
+    //   4. L2距日内最低从≤0.5%放宽到≤0.8%
+    //   5. 中间反弹要求从0.3%降到0.2%（微反弹也算）
+    //   6. 新增L2处成交量低于近5根均值的方式D
     //
-    if (!isInNoBuyZone && isFactorEnabled("次低点缩量买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 20) {
+    if (!isInNoBuyZone && isFactorEnabled("次低点缩量买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 10) {
       // ── Step 1: 在回看窗口内找局部低点 ──
       const lookback = Math.min(i + 1, 60);
       const recentSlice = timeline.slice(i - lookback + 1, i + 1);
@@ -1639,15 +1640,15 @@ export function generateTimelineSignals(
           for (let lj = li - 1; lj >= 0 && !foundSecondLow; lj--) {
             const l1 = localLows[lj]; // 第一个低点（更早的）
 
-            // L1和L2之间至少间隔5根（确保中间有反弹）
-            if (l2.globalIdx - l1.globalIdx < 5) continue;
+            // v6.1: L1/L2间隔从5根降到3根（更快识别双底）
+            if (l2.globalIdx - l1.globalIdx < 3) continue;
 
             // L1和L2之间必须有反弹（中间价格高于L1和L2）
             const betweenSlice = timeline.slice(l1.globalIdx + 1, l2.globalIdx);
-            if (betweenSlice.length < 3) continue;
+            if (betweenSlice.length < 1) continue;
             const betweenMax = Math.max(...betweenSlice.map(d => d.price));
             const bouncePct = l1.price > 0 ? ((betweenMax - l1.price) / l1.price) * 100 : 0;
-            if (bouncePct < 0.3) continue; // 中间反弹不到0.3%，不够明显
+            if (bouncePct < 0.2) continue; // v6.1: 中间反弹从0.3%降到0.2%（微反弹也算）
 
             // L2是"次低点"：L2不低于L1太多（≤1.5%），即底部抬高或接近
             const l2VsL1Pct = l1.price > 0 ? ((l2.price - l1.price) / l1.price) * 100 : 0;
@@ -1661,13 +1662,13 @@ export function generateTimelineSignals(
             // 计算截至当前位置的日内最低价
             const intradayLow = Math.min(...timeline.slice(0, i + 1).map(d => d.price));
             const l2VsIntradayLowPct = intradayLow > 0 ? ((l2.price - intradayLow) / intradayLow) * 100 : 0;
-            // L2距日内最低不超过0.5%（即L2紧贴最低点）
-            if (l2VsIntradayLowPct > 0.5) continue;
+            // v6.1: L2距日内最低从≤0.5%放宽到≤0.8%
+            if (l2VsIntradayLowPct > 0.8) continue;
 
             // ── Step 3: 缩量确认 ──
-            // 方式A: L2处成交量 < 70%均量
+            // 方式A: L2处成交量 < 80%均量（v6.1: 从70%放宽到80%）
             const volRatioL2 = avgVol > 0 ? l2.volume / avgVol : 1;
-            const isVolShrinkVsAvg = volRatioL2 < 0.7;
+            const isVolShrinkVsAvg = volRatioL2 < 0.8;
             // 方式B: L2处成交量比L1处低30%+
             const volRatioL2VsL1 = l1.volume > 0 ? l2.volume / l1.volume : 1;
             const isVolShrinkVsL1 = volRatioL2VsL1 < 0.7;
@@ -1676,8 +1677,15 @@ export function generateTimelineSignals(
             if (i >= 2) {
               isVolDecreasing = cur.volume < prev.volume && prev.volume < prev2.volume;
             }
+            // 方式D: L2处成交量低于近5根均值（v6.1新增，更灵活的缩量判定）
+            let isVolShrinkVsLocal = false;
+            if (l2.globalIdx >= 5) {
+              const local5 = timeline.slice(l2.globalIdx - 4, l2.globalIdx + 1);
+              const localAvgVol = local5.reduce((s, d) => s + d.volume, 0) / local5.length;
+              isVolShrinkVsLocal = l2.volume < localAvgVol * 0.7;
+            }
 
-            const isShrinking = isVolShrinkVsAvg || isVolShrinkVsL1 || isVolDecreasing;
+            const isShrinking = isVolShrinkVsAvg || isVolShrinkVsL1 || isVolDecreasing || isVolShrinkVsLocal;
             if (!isShrinking) continue;
 
             // ── Step 4: 当前价格确认次低点 ──
@@ -1701,11 +1709,13 @@ export function generateTimelineSignals(
               signalIdx = l2.globalIdx;
             }
 
-            const shrinkDesc = isVolShrinkVsAvg
+            const shrinkDesc = isVolShrinkVsAvg && volRatioL2 < 0.7
               ? `缩量${(volRatioL2 * 100).toFixed(0)}%均量`
               : isVolShrinkVsL1
                 ? `量缩${((1 - volRatioL2VsL1) * 100).toFixed(0)}%较前低`
-                : "量递减3根";
+                : isVolShrinkVsLocal
+                  ? "缩量较近5根"
+                  : "量递减3根";
 
             const l2Label = l2VsL1Pct >= 0
               ? `次低点+${l2VsL1Pct.toFixed(1)}%`
@@ -1873,11 +1883,13 @@ export function generateTimelineSignals(
       }
     }
 
-    // ── 8. 量缩价稳 → 买入 ── (PDF策略新增)
+    // ── 8. 量缩价稳 → 买入 ── (PDF策略新增，v5.7放宽条件)
     if (!isInNoBuyZone && isFactorEnabled("量缩价稳", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
       const volumeShrinking = cur.volume < avgVol * config.volumeShrinkRatio;
-      const priceStable = i >= 3 && cur.price >= Math.min(...timeline.slice(i - 3, i).map(d => d.price));
-      if (volumeShrinking && priceStable && cur.changePercent < 0) {
+      // v5.7: 价格稳定放宽 — 当前价不低于近2根最低价即可（原3根），且允许微涨
+      const priceStable = i >= 2 && cur.price >= Math.min(...timeline.slice(Math.max(0, i - 2), i).map(d => d.price));
+      // v5.7: 取消changePercent<0要求 — 横盘企稳也算，不必一定要下跌
+      if (volumeShrinking && priceStable && cur.changePercent <= 1.0) {
         signals[i] = {
           type: "buy",
           reason: "量缩价稳",
@@ -1930,9 +1942,14 @@ export function generateTimelineSignals(
       }
     }
 
-    // ── 11. 急跌反弹 → 买入(反T) ──
+    // ── 11. 急跌反弹 → 买入(反T) ── (v5.7: 更快检测反弹)
     if (!isInNoBuyZone && isFactorEnabled("急跌反弹", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy) {
-      if (prev2.price > prev.price && prev.price < cur.price && prev.changePercent < config.momentumDropThreshold && cur.price > prev.price) {
+      // v5.7: 增加"连续2根反弹"检测 — 不只看V型，也看逐步反弹
+      const isVRebound = prev2.price > prev.price && prev.price < cur.price && prev.changePercent < config.momentumDropThreshold && cur.price > prev.price;
+      // 新增：连续2根从低点反弹（跌幅收窄+转涨）
+      const isGradualRebound = i >= 3 && timeline[i - 2].price > timeline[i - 1].price && timeline[i - 1].price <= cur.price
+        && prev.changePercent < 0 && cur.price > prev.price;
+      if (isVRebound || isGradualRebound) {
         // 买入信号统一降级为weak
         signals[i] = {
           type: "buy",
@@ -1940,7 +1957,9 @@ export function generateTimelineSignals(
           strength: "weak",
           tMode: "反T",
           timeWindow,
-          description: prev.changePercent < config.momentumDropStrong ? "深度急跌后V型反转" : "小幅急跌后反弹",
+          description: isGradualRebound
+            ? "急跌后逐步反弹，动能回升"
+            : prev.changePercent < config.momentumDropStrong ? "深度急跌后V型反转" : "小幅急跌后反弹",
         };
 
         continue;
@@ -3059,23 +3078,107 @@ export function generateTimelineSignals(
     } // end of 跌停板过滤 else
   }
 
-  // ── 42. 缩量底部买点 → 买入(正T) ── (v5.6新增)
+  // ── 41.5 缩量止跌 → 买入(正T) ── (v5.7新增，第一时间买入信号)
+  //
+  // 核心思路：下跌过程中出现"缩量+跌幅收窄"→ 抛压衰竭+动能衰减 → 止跌信号
+  // 这是最早的底部信号，不需要MACD确认，不需要V底形态，不需要反弹确认
+  // 只要满足三个条件即可触发：
+  //   ① 近5根处于下跌趋势（有3根以上下跌）
+  //   ② 近3根成交量持续递减（抛压衰竭）
+  //   ③ 最近2根跌幅收窄（价格跌速放缓）
+  //
+  // 补充条件（提高准确率）：
+  //   - 当前价格接近近期最低点（≤1.5%）
+  //   - 当前成交量低于均量80%
+  //
+  if (isFactorEnabled("缩量止跌", factorOverrides) && regimeAdj.allowBuy) {
+    let lastShrinkStopIdx = -8; // cooldown 8根
+    let shrinkStopCount = 0;
+
+    for (let i = 5; i < timeline.length; i++) {
+      if (signals[i]) continue; // 已有信号则跳过
+      if (i - lastShrinkStopIdx < 8) continue;
+
+      // 下跌禁买区检查
+      if (checkIsInNoBuyZone(i)) continue;
+
+      const cur = timeline[i];
+      const timeWindow = getTimeWindow(cur.time);
+      if (!isBuyWindow(timeWindow)) continue;
+
+      // 条件①：近5根处于下跌趋势
+      const recent5 = timeline.slice(i - 4, i + 1);
+      let downCount = 0;
+      for (let k = 1; k < recent5.length; k++) {
+        if (recent5[k].price < recent5[k - 1].price) downCount++;
+      }
+      if (downCount < 3) continue; // 至少3根下跌
+
+      // 条件②：近3根成交量持续递减
+      let volShrinking3 = true;
+      for (let k = i - 1; k <= i; k++) {
+        if (k < 1 || timeline[k].volume >= timeline[k - 1].volume) {
+          volShrinking3 = false;
+          break;
+        }
+      }
+      if (!volShrinking3) continue;
+
+      // 条件③：最近2根跌幅收窄（价格跌速放缓）
+      if (i < 3) continue;
+      const drop1 = timeline[i - 2].price - timeline[i - 1].price;
+      const drop2 = timeline[i - 1].price - cur.price;
+      // 当前仍在下跌但跌幅在收窄
+      if (drop2 <= 0 || drop1 <= 0) continue; // 需要两段都在下跌
+      if (drop2 >= drop1) continue; // 跌幅未收窄
+
+      // 补充条件A：当前价格接近近期最低点
+      const lookback = Math.min(i + 1, 30);
+      const minPrice = Math.min(...timeline.slice(i - lookback + 1, i + 1).map(d => d.price));
+      const priceFromLow = minPrice > 0 ? ((cur.price - minPrice) / minPrice) * 100 : 999;
+      if (priceFromLow > 1.5) continue; // 离最低点超过1.5%不算底部
+
+      // 补充条件B：当前成交量低于均量80%
+      const volRatio = avgVol > 0 ? cur.volume / avgVol : 1;
+      if (volRatio > 0.8) continue; // 量还不够小
+
+      // 通过所有条件 → 生成信号
+      signals[i] = {
+        type: "buy",
+        reason: "缩量止跌",
+        strength: "medium",
+        tMode: "正T",
+        timeWindow,
+        factorId: "factor_41_5",
+        description: `缩量${(volRatio * 100).toFixed(0)}%+跌幅收窄${((1 - drop2 / drop1) * 100).toFixed(0)}%+近低${priceFromLow.toFixed(1)}%`,
+      };
+      lastShrinkStopIdx = i;
+      lastSellPrice = null;
+      shrinkStopCount++;
+      if (shrinkStopCount >= 4) break;
+    }
+  }
+
+  // ── 42. 缩量底部买点 → 买入(正T) ── (v5.7优化更早触发)
   //
   // 用户核心需求：三个条件同时满足即触发买点
   //   ① MACD为负（空头市场）且量柱接近峰值（绿柱衰减<80%或已转正）
-  //   ② 成交量缩量到地量（<60%均量）
+  //   ② 成交量缩量到地量（<70%均量，v5.7从60%放宽）
   //   ③ 当前价格挨着最低价（近80根最低价3%以内）
   //
-  // 这是最直接的底部信号，不需要反弹确认或V底形态，
-  // 适合在持续下跌中捕捉恐慌性底部
+  // v5.7改进：
+  //   - 扫描起点从i=10降到i=5
+  //   - 缩量条件从<60%放宽到<70%均量
+  //   - MACD为null时(早期K线)不阻塞，只依靠缩量+近底条件
+  //   - cooldown从15根降到10根
   //
   if (isFactorEnabled("缩量底部买点", factorOverrides) && regimeAdj.allowBuy) {
-    let lastSimpleBuyIdx = -15; // cooldown 15根
+    let lastSimpleBuyIdx = -10; // v5.7: cooldown从15根降到10根
     let simpleBuyCount = 0;
 
-    for (let i = 10; i < timeline.length; i++) {
+    for (let i = 5; i < timeline.length; i++) {
       if (signals[i] && signals[i].type !== "buy") continue;
-      if (i - lastSimpleBuyIdx < 15) continue;
+      if (i - lastSimpleBuyIdx < 10) continue;
 
       // 下跌禁买区检查
       if (checkIsInNoBuyZone(i)) continue;
@@ -3085,42 +3188,42 @@ export function generateTimelineSignals(
       if (!isBuyWindow(timeWindow)) continue;
 
       const macd42 = macdByTime.get(cur.time);
-      if (!macd42) continue;
 
       // 条件①：MACD为负（DIF<0 或 MACD柱<0）
-      const macdIsNegative = macd42.dif < 0 || macd42.macd < 0;
+      // v5.7: macd42为null时跳过MACD检查（早期K线MACD可能未计算完成）
+      const macdIsNegative = !macd42 || macd42.dif < 0 || macd42.macd < 0;
       if (!macdIsNegative) continue;
 
       // MACD绿柱接近峰值：近80根内MACD柱负峰值存在，当前已衰减至80%以下
-      const macdLb42 = Math.min(i + 1, 80);
-      let maxNegMacd42 = 0;
-      for (let k = i - macdLb42 + 1; k <= i; k++) {
-        if (k < 0) continue;
-        const m42 = macdByTime.get(timeline[k].time);
-        if (m42 && m42.macd < 0) {
-          const abs42 = Math.abs(m42.macd);
-          if (abs42 > maxNegMacd42) maxNegMacd42 = abs42;
-        }
-      }
-      // MACD柱衰减到80%以下或已转正
-      const macdDecayOk = maxNegMacd42 > 0 && (macd42.macd > 0 || (macd42.macd < 0 && Math.abs(macd42.macd) < maxNegMacd42 * 0.85));
-      if (!macdDecayOk && maxNegMacd42 > 0) {
-        // 即使未衰减，如果MACD柱在连续缩短也视为接近峰值
-        if (i >= 2 && macd42.macd < 0) {
-          const prevM42 = macdByTime.get(timeline[i - 1]?.time);
-          if (prevM42 && prevM42.macd < 0 && Math.abs(macd42.macd) < Math.abs(prevM42.macd)) {
-            // MACD柱在缩短，条件①通过
-          } else {
-            continue;
+      let macdDecayOk = true; // v5.7: macd42为null时默认通过
+      if (macd42) {
+        const macdLb42 = Math.min(i + 1, 80);
+        let maxNegMacd42 = 0;
+        for (let k = i - macdLb42 + 1; k <= i; k++) {
+          if (k < 0) continue;
+          const m42 = macdByTime.get(timeline[k].time);
+          if (m42 && m42.macd < 0) {
+            const abs42 = Math.abs(m42.macd);
+            if (abs42 > maxNegMacd42) maxNegMacd42 = abs42;
           }
-        } else {
-          continue;
+        }
+        // MACD柱衰减到85%以下或已转正（v5.7: 从80%放宽到85%）
+        macdDecayOk = maxNegMacd42 > 0 && (macd42.macd > 0 || (macd42.macd < 0 && Math.abs(macd42.macd) < maxNegMacd42 * 0.85));
+        if (!macdDecayOk && maxNegMacd42 > 0) {
+          // 即使未衰减，如果MACD柱在连续缩短也视为接近峰值
+          if (i >= 2 && macd42.macd < 0) {
+            const prevM42 = macdByTime.get(timeline[i - 1]?.time);
+            if (prevM42 && prevM42.macd < 0 && Math.abs(macd42.macd) < Math.abs(prevM42.macd)) {
+              macdDecayOk = true;
+            }
+          }
         }
       }
+      if (!macdDecayOk) continue;
 
-      // 条件②：成交量缩量到地量（<60%均量）
+      // 条件②：成交量缩量到地量（v5.7: 从<60%放宽到<70%均量）
       const volRatio42 = avgVol > 0 ? cur.volume / avgVol : 1;
-      if (volRatio42 >= 0.6) continue;
+      if (volRatio42 >= 0.7) continue;
 
       // 条件③：当前价格挨着最低价（近80根最低价3%以内）
       const priceLb42 = Math.min(i + 1, 80);
@@ -3138,7 +3241,7 @@ export function generateTimelineSignals(
         tMode: "正T",
         timeWindow,
         factorId: "factor_42",
-        description: `MACD负${macd42.macd < 0 ? `柱${Math.abs(macd42.macd).toFixed(3)}` : "转正"}+缩量${(volRatio42 * 100).toFixed(0)}%+近低${priceFromLow42.toFixed(1)}%`,
+        description: `MACD${macd42 ? (macd42.macd < 0 ? `负柱${Math.abs(macd42.macd).toFixed(3)}` : "转正") : "待确认"}+缩量${(volRatio42 * 100).toFixed(0)}%+近低${priceFromLow42.toFixed(1)}%`,
       };
       lastSimpleBuyIdx = i;
       lastSellPrice = null;
@@ -3755,5 +3858,6 @@ export const STRATEGY_OVERVIEW = {
     { id: 36, name: "KDJ死叉卖出", type: "sell" as const, tMode: "正T" as const, strength: "strong" as const, version: "v3.9", description: "K线下穿D线(死叉)，J>80超买区更可靠 → 卖出信号" },
     { id: 37, name: "J线超卖反弹", type: "buy" as const, tMode: "反T" as const, strength: "weak" as const, version: "v3.9", description: "J值低于0后拐头向上 → 极端超卖反弹信号(weak)" },
     { id: 38, name: "J线超买回落", type: "sell" as const, tMode: "正T" as const, strength: "medium" as const, version: "v3.9", description: "J值高于100后拐头向下 → 极端超买回落信号" },
+    { id: 415, name: "缩量止跌", type: "buy" as const, tMode: "正T" as const, strength: "medium" as const, version: "v5.7", description: "下跌中缩量+跌幅收窄→最早底部信号(medium)" },
   ],
 };
