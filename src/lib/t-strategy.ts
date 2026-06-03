@@ -2706,7 +2706,15 @@ export function generateTimelineSignals(
     }
   }
 
-  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.6 优化买点精度)
+  // ── 41. 放量下跌买点 → 买入(正T) ── (v5.7 第一时间信号显示)
+  //
+  // v5.7 改进（核心目标：信号第一时间显示）：
+  //   1. 扫描起点从i=10降到i=5，5根K线即开始检测
+  //   2. 新增快速前置路径E：仅3根内跌>0.3%即可触发前置条件
+  //   3. 新增条件⑥"下跌减速"：连续2根跌幅收窄（1分）— 不等MACD即可感知动能衰减
+  //   4. 新增条件⑦"迷你V底"：仅5根窗口V型反转（1分）— 比10根V底更早触发
+  //   5. 触发阈值动态：priceFromLow80≤0.5%(极贴底)时≥3分即可触发
+  //   6. cooldown从7根降到5根，更早捕获第二个买点
   //
   // v5.6 改进：
   //   - 触发阈值从5分降到4分，减少漏判
@@ -2724,13 +2732,14 @@ export function generateTimelineSignals(
   //   8. 三连阴过滤改为：三连阴且量不减 → 三连阴且无缩量则跳过
   //   9. 反弹上限从2%提到3%
   //
-  // 前置条件：近80根内存在显著放量下跌（量>1.5倍均量+价跌>0.2%）
-  // 买点条件（评分制，≥6分触发，v5.3提高阈值降低误判）：
-  //   ① MACD绿柱缩短/转正：衰减<50%（3分），<70%（2分）— 空头动能释放
-  //   ② 成交量缩量：<50%（3分），<70%（2分），<80%（1分）— 抛压衰竭
-  //   ③ 价格在底部区域：≤1%（3分），≤1.5%（2分），≤2%（1分）— 底部定位
-  //   ④ 底部反弹确认：当前价≥近5根最低价（2分）— 反转确认
-  //   ⑤ V底形态：近10根先跌后涨形成V底（2分）— 形态确认
+  // 买点条件（评分制，≥4分触发，极贴底≥3分）：
+  //   ① MACD绿柱缩短/转正：衰减<50%（3分），<70%（2分），<80%（1分）
+  //   ② 成交量缩量：<50%（3分），<70%（2分），<80%（1分）
+  //   ③ 价格在底部区域：≤1%（3分），≤1.5%（2分），≤2%/2.5%（1分）
+  //   ④ 底部反弹确认：当前价≥近5根最低价（2分）
+  //   ⑤ V底形态：近10根先跌后涨形成V底（2分）
+  //   ⑥ 下跌减速（v5.7新增）：连续2根跌幅收窄（1分）— 不等MACD
+  //   ⑦ 迷你V底（v5.7新增）：5根窗口V型反转（1分）— 更早触发
   //
   if (isFactorEnabled("放量下跌买点", factorOverrides) && regimeAdj.allowBuy) {
     // ── 跌停板过滤：如果当前跌幅≤-9.5%，整只股票跳过（v5.3新增）──
@@ -2811,21 +2820,34 @@ export function generateTimelineSignals(
         hasSignificantVolDeclineGlobal = true;
       }
     }
+    // 路径E: 快速下跌（v5.7新增，仅3根内跌>0.3%即可触发，实现第一时间检测）
+    if (!hasSignificantVolDeclineGlobal && timeline.length >= 3) {
+      const last3 = timeline.slice(-3);
+      const drop3 = last3[0].price > 0
+        ? ((last3[0].price - last3[last3.length - 1].price) / last3[0].price) * 100
+        : 0;
+      if (drop3 > 0.3) {
+        hasSignificantVolDeclineGlobal = true;
+      }
+    }
 
     if (hasSignificantVolDeclineGlobal) {
       let lastBuyIdx = -20; // cooldown
-      let volDeclineBuyCount = 0; // 只显示前2个买点，后续不再标记
+      let volDeclineBuyCount = 0; // 只显示前4个买点，后续不再标记
 
-      for (let i = 10; i < timeline.length; i++) {
+      // v5.7: 扫描起点从i=10降到i=5，5根K线即开始检测（原需10根太慢）
+      for (let i = 5; i < timeline.length; i++) {
         const cur = timeline[i];
         const macd41 = macdByTime.get(cur.time);
-        if (!macd41) continue;
+        // v5.7: 不再强制要求macd41存在——当MACD数据尚不可用时（早期K线），
+        // 依靠缩量+近底+减速+迷你V底等非MACD条件仍然可以触发信号
+        // MACD相关条件在macd41为null时自动得0分，不会误触发
 
         // 下跌禁买区检查
         if (checkIsInNoBuyZone(i)) continue;
 
-        // 检查cooldown（v5.3: 降到7根，捕获更多底部机会）
-        if (i - lastBuyIdx < 7) continue;
+        // 检查cooldown（v5.7: 降到5根，更早捕获第二个买点）
+        if (i - lastBuyIdx < 5) continue;
 
         // 如果该位置已有非买入信号，跳过
         if (signals[i] && signals[i].type !== "buy") continue;
@@ -2863,18 +2885,26 @@ export function generateTimelineSignals(
         }
 
         // 条件①：MACD绿柱缩短或已转正（v5.5: 分三档打分，新增轻度衰减档）
-        const curMacdAbs = Math.abs(macd41.macd);
-        const macdDecayPct = localMaxNegMacdAbs80 > 0 ? (curMacdAbs / localMaxNegMacdAbs80) * 100 : 999;
-        const macdTurnedPositive = macd41.macd > 0;
-        const macdGreatlyDecayed = macd41.macd < 0 && macdDecayPct < 50;  // <50%衰减（3分）
-        const macdModeratelyDecayed = macd41.macd < 0 && macdDecayPct < 70; // <70%衰减（2分）
-        const macdLightlyDecayed = macd41.macd < 0 && macdDecayPct < 80;  // <80%衰减（1分，v5.5新增）
-        // 连续缩短确认
+        // v5.7: macd41可能为null（早期K线MACD尚未计算完成），此时MACD得分=0
+        let macdDecayPct = 999;
+        let macdTurnedPositive = false;
+        let macdGreatlyDecayed = false;
+        let macdModeratelyDecayed = false;
+        let macdLightlyDecayed = false;
         let macdShrinking2Bars = false;
-        if (macd41.macd < 0 && i >= 2) {
-          const prevMacd41 = macdByTime.get(timeline[i - 1]?.time);
-          if (prevMacd41 && prevMacd41.macd < 0) {
-            macdShrinking2Bars = Math.abs(macd41.macd) < Math.abs(prevMacd41.macd);
+        if (macd41) {
+          const curMacdAbs = Math.abs(macd41.macd);
+          macdDecayPct = localMaxNegMacdAbs80 > 0 ? (curMacdAbs / localMaxNegMacdAbs80) * 100 : 999;
+          macdTurnedPositive = macd41.macd > 0;
+          macdGreatlyDecayed = macd41.macd < 0 && macdDecayPct < 50;
+          macdModeratelyDecayed = macd41.macd < 0 && macdDecayPct < 70;
+          macdLightlyDecayed = macd41.macd < 0 && macdDecayPct < 80;
+          // 连续缩短确认
+          if (macd41.macd < 0 && i >= 2) {
+            const prevMacd41 = macdByTime.get(timeline[i - 1]?.time);
+            if (prevMacd41 && prevMacd41.macd < 0) {
+              macdShrinking2Bars = Math.abs(macd41.macd) < Math.abs(prevMacd41.macd);
+            }
           }
         }
         const condMacd = (macdGreatlyDecayed || macdModeratelyDecayed || macdLightlyDecayed || macdTurnedPositive) && localMaxNegMacdAbs80 > 0;
@@ -2915,11 +2945,38 @@ export function generateTimelineSignals(
           }
         }
 
-        // 总分
-        const totalScore = macdScore + volScore + nearLowScore + bounceScore + vBottomScore;
+        // 条件⑥：下跌减速（v5.7新增，1分）
+        // 不等MACD，直接检测价格下跌动能在收敛：连续2根跌幅收窄
+        let decelerationScore = 0;
+        if (i >= 3 && cur.price < timeline[i - 1].price) {
+          const drop1 = timeline[i - 1].price - cur.price;
+          const drop2 = timeline[i - 2].price - timeline[i - 1].price;
+          // 第2根跌幅 < 第1根跌幅 → 下跌减速
+          if (drop2 > 0 && drop1 < drop2) {
+            decelerationScore = 1;
+          }
+        }
 
-        // v5.6: 触发阈值从5降到4分（原5分仍过严，很多真实买点漏判）
-        if (totalScore < 4) continue;
+        // 条件⑦：迷你V底（v5.7新增，1分）
+        // 仅5根窗口的V型反转，比10根V底更早触发
+        let miniVBottomScore = 0;
+        if (i >= 5) {
+          const recent5b = timeline.slice(i - 4, i + 1);
+          const minIdx5 = recent5b.findIndex(d => d.price === Math.min(...recent5b.map(d => d.price)));
+          const maxIdx5 = recent5b.findIndex(d => d.price === Math.max(...recent5b.map(d => d.price)));
+          // 迷你V底：低点在中间(1-3位)，高点不在低点后面紧挨着，当前价>最低点
+          if (minIdx5 >= 1 && minIdx5 <= 3 && maxIdx5 !== minIdx5 + 1 && cur.price > recent5b[minIdx5].price) {
+            miniVBottomScore = 1;
+          }
+        }
+
+        // 总分
+        const totalScore = macdScore + volScore + nearLowScore + bounceScore + vBottomScore + decelerationScore + miniVBottomScore;
+
+        // v5.7: 动态触发阈值
+        // 极贴底（priceFromLow80≤0.5%）时≥3分即可触发，否则≥4分
+        const triggerThreshold = priceFromLow80 <= 0.5 ? 3 : 4;
+        if (totalScore < triggerThreshold) continue;
 
         // 额外过滤：三连阴且无缩量 → 继续等（v5.3修改：三连阴但缩量可以标记）
         if (i >= 3 &&
@@ -2973,6 +3030,12 @@ export function generateTimelineSignals(
         }
         if (vBottomScore > 0) {
           descParts.push("V底");
+        }
+        if (decelerationScore > 0) {
+          descParts.push("减速");
+        }
+        if (miniVBottomScore > 0) {
+          descParts.push("迷你V底");
         }
 
         // 买入信号统一降级为weak（次低点缩量买入占80%权重）
