@@ -1034,36 +1034,20 @@ function computeTimelineSignalElements(
     let badgeColor: string;
     let badgeTextColor: string;
 
+    // 买点统一#dc2626鲜红，卖点统一#16a34a鲜绿
     if (m.isCustom) {
-      if (m.strength === "strong") {
-        markerColor = isBuy ? "#8b5cf6" : "#a78bfa";
-        labelBgColor = isBuy ? "#5b21b6" : "#6d28d9";
-        badgeColor = markerColor;
-        badgeTextColor = "white";
-      } else if (m.strength === "medium") {
-        markerColor = "#c084fc";
-        badgeColor = markerColor;
-        badgeTextColor = "white";
-      } else {
-        markerColor = "#a78bfa";
-        badgeColor = "#a78bfa";
-        badgeTextColor = "white";
-      }
-    } else if (m.strength === "strong") {
-      // strong: 深红买/深绿卖，最醒目
-      markerColor = isStoploss ? "#f59e0b" : isBuy ? "#dc2626" : "#16a34a";
-      labelBgColor = isStoploss ? "#92400e" : isBuy ? "#b91c1c" : "#15803d";
+      markerColor = isBuy ? "#8b5cf6" : "#a78bfa";
+      labelBgColor = isBuy ? "#dc2626" : "#16a34a";
       badgeColor = markerColor;
       badgeTextColor = "white";
-    } else if (m.strength === "medium") {
-      // medium: 中红买/中绿卖
-      markerColor = isStoploss ? "#d97706" : isBuy ? "#f87171" : "#4ade80";
-      labelBgColor = isStoploss ? "#92400e" : isBuy ? "#ef4444" : "#22c55e";
+    } else if (isStoploss) {
+      markerColor = "#f59e0b";
+      labelBgColor = "#92400e";
       badgeColor = markerColor;
       badgeTextColor = "white";
     } else {
-      // weak: 浅红买/浅绿卖，最淡
-      markerColor = isBuy ? "#fca5a5" : "#86efac";
+      markerColor = isBuy ? "#dc2626" : "#16a34a";
+      labelBgColor = isBuy ? "#dc2626" : "#16a34a";
       badgeColor = markerColor;
       badgeTextColor = "white";
     }
@@ -1351,8 +1335,8 @@ function computeTimelineSignalElements(
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
 
-      // medium 信号标签背景色 — 中红买/中绿卖
-      const mediumLabelBg = isBuy ? "#ef4444" : "#22c55e";
+      // 买点统一#dc2626鲜红，卖点统一#16a34a鲜绿
+      const mediumLabelBg = isBuy ? "#dc2626" : "#16a34a";
 
       signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
