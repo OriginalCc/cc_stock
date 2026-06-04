@@ -255,6 +255,42 @@ export function isSellWindow(timeWindow: TimeWindow): boolean {
 }
 
 /**
+ * 判断是否处于早盘阶段（9:30-10:00）
+ * 早盘阶段价格与均价线接近，VWAP过滤需要宽松处理
+ */
+function isMorningSession(timeStr: string): boolean {
+  const [h, m] = timeStr.split(":").map(Number);
+  const minutes = h * 60 + m;
+  return minutes >= 570 && minutes < 600; // 9:30-10:00
+}
+
+/**
+ * 判断是否处于早盘宽松阶段（9:30-10:15）
+ * 这个阶段均价线尚未稳定，卖点过滤需要更宽松
+ */
+function isEarlySession(timeStr: string): boolean {
+  const [h, m] = timeStr.split(":").map(Number);
+  const minutes = h * 60 + m;
+  return minutes >= 570 && minutes < 615; // 9:30-10:15
+}
+
+/**
+ * v6.3: 判断卖点是否满足均价线条件
+ * 早盘（9:30-10:15）均价线尚未稳定，允许价格在均线附近0.3%以内触发卖点
+ * 非早盘严格要求 price > avgPrice
+ */
+function isAboveAvgPriceForSell(price: number, avgPrice: number, timeStr: string): boolean {
+  if (avgPrice <= 0) return false;
+  if (price > avgPrice) return true; // 均线上方，直接通过
+  // 早盘允许价格在均线附近0.3%以内
+  if (isEarlySession(timeStr)) {
+    const deviationPct = ((price - avgPrice) / avgPrice) * 100;
+    return deviationPct > -0.3;
+  }
+  return false;
+}
+
+/**
  * 判断当前时间窗口是否允许买入信号
  */
 export function isBuyWindow(timeWindow: TimeWindow): boolean {
@@ -1928,11 +1964,12 @@ export function generateTimelineSignals(
       }
     }
 
-    // ── 10. 放量下挫 → 卖出 ── (v6.1修正：做T高抛原则)
+    // ── 10. 放量下挫 → 卖出 ── (v6.3优化：早盘宽松VWAP条件)
     // v6.1 修正：放量下挫=价格急跌+放量，如果在均线下方=卖低，违反高抛原则
     // 新条件：只在均线上方触发（高抛位），且默认强度降为weak
+    // v6.3：早盘允许均线附近0.3%以内触发
     if (isFactorEnabled("放量下挫", factorOverrides) && isSellWindow(timeWindow) && regimeAdj.allowSell) {
-      if (cur.volume > avgVol * config.volumeMultiplier && cur.price < prev.price && cur.changePercent < 0 && cur.price > cur.avgPrice) {
+      if (cur.volume > avgVol * config.volumeMultiplier && cur.price < prev.price && cur.changePercent < 0 && isAboveAvgPriceForSell(cur.price, cur.avgPrice, cur.time)) {
         // v6.1: 均线上方的放量下挫只是弱信号（高抛区急跌不常见，但也不追涨）
         const deviationPct = cur.avgPrice > 0 ? ((cur.price - cur.avgPrice) / cur.avgPrice) * 100 : 0;
         let strength: Strength = "weak";
@@ -1979,10 +2016,11 @@ export function generateTimelineSignals(
       }
     }
 
-    // ── 12. 冲高回落 → 卖出(正T) ── (v6.1修正：增加VWAP条件)
+    // ── 12. 冲高回落 → 卖出(正T) ── (v6.3优化：早盘宽松VWAP条件)
     // v6.1 新增：只在均线上方触发冲高回落卖出，符合高抛原则
+    // v6.3 优化：早盘均价线未稳定，允许均线附近0.3%以内触发
     if (isFactorEnabled("冲高回落", factorOverrides) && isSellWindow(timeWindow) && regimeAdj.allowSell) {
-      if (prev2.price < prev.price && prev.price > cur.price && prev.changePercent > config.momentumRiseThreshold && cur.price < prev.price && cur.price > cur.avgPrice) {
+      if (prev2.price < prev.price && prev.price > cur.price && prev.changePercent > config.momentumRiseThreshold && cur.price < prev.price && isAboveAvgPriceForSell(cur.price, cur.avgPrice, cur.time)) {
         let strength: Strength = prev.changePercent > config.momentumRiseStrong ? "strong" : "weak";
 
         signals[i] = {
@@ -2014,9 +2052,9 @@ export function generateTimelineSignals(
     //   6. 当前价格在H2附近或开始回落
     //   7. 当前价格必须在均线上方（做T高抛原则）
     //
-    if (isFactorEnabled("次高点放量卖出", factorOverrides) && isSellWindow(timeWindow) && regimeAdj.allowSell && i >= 10) {
-      // 只在均线上方产生卖点
-      if (cur.price > cur.avgPrice) {
+    if (isFactorEnabled("次高点放量卖出", factorOverrides) && isSellWindow(timeWindow) && regimeAdj.allowSell && i >= 8) {
+      // v6.3：早盘允许均线附近0.3%以内触发
+      if (isAboveAvgPriceForSell(cur.price, cur.avgPrice, cur.time)) {
         // ── Step 1: 在回看窗口内找局部高点 ──
         const lookbackSell = Math.min(i + 1, 60);
         const recentSliceSell = timeline.slice(i - lookbackSell + 1, i + 1);
@@ -2163,8 +2201,8 @@ export function generateTimelineSignals(
     //   ⑦ 迷你倒V顶：5根窗口倒V型反转（1分）
     //
     if (isFactorEnabled("放量上涨卖点", factorOverrides) && isSellWindow(timeWindow) && regimeAdj.allowSell && i >= 5) {
-      // 只在均线上方产生卖点（高抛原则）
-      if (cur.price > cur.avgPrice) {
+      // v6.3：早盘允许均线附近0.3%以内触发
+      if (isAboveAvgPriceForSell(cur.price, cur.avgPrice, cur.time)) {
         // ── 涨停板过滤 ──
         const isLimitUp = prevClose > 0 && cur.price >= prevClose * 1.095;
         let isStuckAtLimitUp = false;
@@ -2233,9 +2271,8 @@ export function generateTimelineSignals(
               const macdJ = macdByTime.get(curJ.time);
 
               if (j - lastSellIdx < 5) continue;
-              // 只处理均线上方的点
-              if (curJ.price <= curJ.avgPrice) continue;
-              // 如果该位置已有非卖出信号，跳过
+              // v6.3：早盘允许均线附近0.3%以内
+              if (!isAboveAvgPriceForSell(curJ.price, curJ.avgPrice, curJ.time)) continue;
               if (signals[j] && signals[j].type !== "sell") continue;
 
               // ── 冲高回落确认 ──
@@ -2440,8 +2477,8 @@ export function generateTimelineSignals(
     //   - 当前成交量低于均量80%
     //
     if (isFactorEnabled("缩量滞涨", factorOverrides) && isSellWindow(timeWindow) && regimeAdj.allowSell && i >= 5) {
-      // 只在均线上方产生卖点
-      if (cur.price > cur.avgPrice) {
+      // v6.3：早盘允许均线附近0.3%以内触发
+      if (isAboveAvgPriceForSell(cur.price, cur.avgPrice, cur.time)) {
         let lastShrinkRiseIdx = -8; // cooldown 8根
 
         // 遍历所有时间点（不仅仅是当前位置i，确保早期也能检测）
@@ -2452,7 +2489,8 @@ export function generateTimelineSignals(
           const curJ = timeline[j];
           const timeWindowJ = getTimeWindow(curJ.time);
           if (!isSellWindow(timeWindowJ)) continue;
-          if (curJ.price <= curJ.avgPrice) continue; // 只在均线上方
+          // v6.3：早盘允许均线附近0.3%以内
+          if (!isAboveAvgPriceForSell(curJ.price, curJ.avgPrice, curJ.time)) continue;
 
           // 条件①：近5根处于上涨趋势
           const recent5j = timeline.slice(j - 4, j + 1);
@@ -3274,8 +3312,8 @@ export function generateTimelineSignals(
       if (!isSellWindow(timeWindow46)) continue;
       const prev46 = i46 >= 1 ? timeline[i46 - 1] : null;
 
-      // 前提条件：价格必须在均线上方
-      if (cur46.avgPrice > 0 && cur46.price > cur46.avgPrice) {
+      // 前提条件：价格必须在均线上方（v6.3：早盘允许均线附近0.3%以内）
+      if (cur46.avgPrice > 0 && isAboveAvgPriceForSell(cur46.price, cur46.avgPrice, cur46.time)) {
         const deviationPct46 = ((cur46.price - cur46.avgPrice) / cur46.avgPrice) * 100;
         let score46 = 0;
 
@@ -3373,8 +3411,8 @@ export function generateTimelineSignals(
       const prev47_2 = i47 >= 2 ? timeline[i47 - 2] : null;
       const prev47_3 = i47 >= 3 ? timeline[i47 - 3] : null;
 
-      // ③ 价格在均线上方
-      if (cur47.avgPrice > 0 && cur47.price > cur47.avgPrice && prev47 && prev47_2 && prev47_3) {
+      // ③ 价格在均线上方（v6.3：早盘允许均线附近0.3%以内）
+      if (cur47.avgPrice > 0 && isAboveAvgPriceForSell(cur47.price, cur47.avgPrice, cur47.time) && prev47 && prev47_2 && prev47_3) {
         // ① 近3根以上连续上涨
         const rise1 = cur47.price > prev47.price;
         const rise2 = prev47.price > prev47_2.price;
@@ -4085,8 +4123,8 @@ export function generateTimelineSignals(
       const cur = timeline[i];
       const timeWindow = getTimeWindow(cur.time);
       if (!isSellWindow(timeWindow)) continue;
-      // 只在均线上方产生卖点
-      if (cur.price <= cur.avgPrice) continue;
+      // v6.3：早盘允许均线附近0.3%以内
+      if (!isAboveAvgPriceForSell(cur.price, cur.avgPrice, cur.time)) continue;
       // 涨停板过滤
       if (prevClose > 0 && cur.price >= prevClose * 1.095) continue;
 
@@ -4178,7 +4216,8 @@ export function generateTimelineSignals(
       const cur = timeline[i];
       const timeWindow = getTimeWindow(cur.time);
       if (!isSellWindow(timeWindow)) continue;
-      if (cur.price <= cur.avgPrice) continue; // 只在均线上方
+      // v6.3：早盘允许均线附近0.3%以内
+      if (!isAboveAvgPriceForSell(cur.price, cur.avgPrice, cur.time)) continue;
 
       // 涨停板过滤
       const isLimitUp = prevClose > 0 && cur.price >= prevClose * 1.095;
@@ -4210,7 +4249,8 @@ export function generateTimelineSignals(
           const curJ = timeline[j];
           const timeWindowJ = getTimeWindow(curJ.time);
           if (!isSellWindow(timeWindowJ)) continue;
-          if (curJ.price <= curJ.avgPrice) continue;
+          // v6.3：早盘允许均线附近0.3%以内
+          if (!isAboveAvgPriceForSell(curJ.price, curJ.avgPrice, curJ.time)) continue;
 
           let score = 0;
           const macdJ = macdByTime.get(curJ.time);
@@ -4313,7 +4353,8 @@ export function generateTimelineSignals(
       const curJ = timeline[j];
       const timeWindowJ = getTimeWindow(curJ.time);
       if (!isSellWindow(timeWindowJ)) continue;
-      if (curJ.price <= curJ.avgPrice) continue; // 只在均线上方
+      // v6.3：早盘允许均线附近0.3%以内
+      if (!isAboveAvgPriceForSell(curJ.price, curJ.avgPrice, curJ.time)) continue;
 
       // 条件①：近5根处于上涨趋势
       const recent5j = timeline.slice(j - 4, j + 1);
@@ -4375,7 +4416,7 @@ export function generateTimelineSignals(
       if (!isSellWindow(timeWindow46)) continue;
       const prev46 = i46 >= 1 ? timeline[i46 - 1] : null;
 
-      if (cur46.avgPrice > 0 && cur46.price > cur46.avgPrice) {
+      if (cur46.avgPrice > 0 && isAboveAvgPriceForSell(cur46.price, cur46.avgPrice, cur46.time)) {
         const deviationPct46 = ((cur46.price - cur46.avgPrice) / cur46.avgPrice) * 100;
         let score46 = 0;
 
@@ -4455,7 +4496,7 @@ export function generateTimelineSignals(
       const prev47_2 = i47 >= 2 ? timeline[i47 - 2] : null;
       const prev47_3 = i47 >= 3 ? timeline[i47 - 3] : null;
 
-      if (cur47.avgPrice > 0 && cur47.price > cur47.avgPrice && prev47 && prev47_2 && prev47_3) {
+      if (cur47.avgPrice > 0 && isAboveAvgPriceForSell(cur47.price, cur47.avgPrice, cur47.time) && prev47 && prev47_2 && prev47_3) {
         const rise1 = cur47.price > prev47.price;
         const rise2 = prev47.price > prev47_2.price;
         const rise3 = prev47_2.price > prev47_3.price;
@@ -4667,11 +4708,17 @@ export function generateTimelineSignals(
 
     // 高波动环境（标准差>0.5%）：弱信号降级，避免噪声
     // 低波动环境（标准差<0.2%）：弱信号也可以考虑，因为波动小更安全
+    // v6.3优化：早盘（9:30-10:15）不删除卖点弱信号，因为早盘冲高回落是常见模式
     if (vol > 0.5) {
       for (let i = 0; i < signals.length; i++) {
         if (signals[i] && signals[i]!.strength === "weak" && signals[i]!.type !== "stoploss") {
-          // 高波动时弱信号不可靠，降为不显示
-          signals[i] = null;
+          // v6.3: 早盘卖点弱信号保留，其他弱信号仍然删除
+          const isEarly = i < timeline.length && isEarlySession(timeline[i].time);
+          const isEarlySell = isEarly && signals[i]!.type === "sell";
+          if (!isEarlySell) {
+            // 高波动时弱信号不可靠，降为不显示
+            signals[i] = null;
+          }
         }
       }
     }
@@ -4911,6 +4958,9 @@ export function generateTimelineSignals(
 
   // ── v5.8: 均线过滤 — 做T核心原则：低吸高抛 ──
   // 买点只在均线下方（低吸），卖点只在均线上方（高抛）
+  // v6.3优化：早盘（9:30-10:15）均价线尚未稳定，卖点过滤宽松处理
+  //   - 早盘允许价格在均线附近（±0.3%以内）的卖点
+  //   - 非早盘严格执行 price > avgPrice
   for (let i = 0; i < signals.length; i++) {
     const sig = signals[i];
     if (!sig) continue;
@@ -4920,7 +4970,25 @@ export function generateTimelineSignals(
     // 卖点在均线下方 = 卖在低位，违反高抛原则
     // 但止损信号不受此限制（止损必须立即执行）
     if (sig.type === "sell" && sig.reason !== "高开卖出" && timeline[i].price <= timeline[i].avgPrice) {
-      signals[i] = null;
+      // v6.3: 早盘均价线尚未稳定，允许价格在均线附近0.3%以内的卖点
+      const isEarly = isEarlySession(timeline[i].time);
+      const deviationPct = timeline[i].avgPrice > 0
+        ? ((timeline[i].price - timeline[i].avgPrice) / timeline[i].avgPrice) * 100
+        : -999;
+      if (isEarly && deviationPct > -0.3) {
+        // 早盘且价格仅略低于均线（0.3%以内），保留卖点但降级
+        if (sig.strength === "strong") {
+          // strong保持，早盘冲高回落很可能在均线附近
+        } else if (sig.strength === "medium") {
+          // medium降为weak但保留
+          sig.strength = "weak";
+        } else {
+          // weak在均线以下即使早盘也删除（太弱了）
+          signals[i] = null;
+        }
+      } else {
+        signals[i] = null;
+      }
     }
   }
 
