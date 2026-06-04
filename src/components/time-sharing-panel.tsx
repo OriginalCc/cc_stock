@@ -813,8 +813,12 @@ function computeTimelineSignalElements(
     );
     const isBigLabel = isStrong && (isGapUpSell || isKeyBuySignal || isKeySellSignal); // 只有strong信号才使用大标签
 
+    const strengthTag = `(${getStrengthLabel(m.strength)})`;
     let labelText: string;
-    const fmtCustom = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
+    const fmtCustom = (text: string) => {
+      const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
+      return `${base}${strengthTag}`;
+    };
     if (m.count >= 3) {
       labelText = fmtCustom(`${m.reasons[0]} ×${m.count}`);
     } else if (m.count === 2) {
@@ -903,7 +907,10 @@ function computeTimelineSignalElements(
 
     // 尝试8: 缩短文本后重试
     if (!placed) {
-      const sfmt = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
+      const sfmt = (text: string) => {
+        const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
+        return `${base}${strengthTag}`;
+      };
       const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
       let sw = 0;
       for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
@@ -918,7 +925,10 @@ function computeTimelineSignalElements(
 
     // 尝试9: 缩短文本+左右偏移
     if (!placed) {
-      const sfmt = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
+      const sfmt = (text: string) => {
+        const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
+        return `${base}${strengthTag}`;
+      };
       const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
       let sw = 0;
       for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
