@@ -1771,39 +1771,63 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       });
 
       // ── Filter buy signals in early decline ban zone ──
-      // If pvMarkers indicate early volume decline, calculate a simple ban cutoff
-      // and remove buy signals before that time. This keeps the logic close to
-      // the data layer so all downstream code (zoomData, chart) uses filtered data.
-      if (pvMarkers && pvMarkers.length > 0 && data.length > 0) {
-        const earlyDeclines = pvMarkers.filter(m =>
-          (m.type === "volume_decline" || m.type === "pulse_decline"
-            || m.type === "early_vol_drop" || m.type === "slow_decline")
-          && pvParseTime(m.time) >= 570 && pvParseTime(m.time) <= 630
-        );
-        if (earlyDeclines.length > 0) {
-          // Check if early session overall declined
-          const earlyData = data.filter(d => {
-            const mins = pvParseTime(d.time);
-            return mins >= 570 && mins < 630;
-          });
-          if (earlyData.length >= 5) {
-            const openPrice = earlyData[0].price;
-            const lastEarlyPrice = earlyData[earlyData.length - 1].price;
-            const earlyNetChange = openPrice > 0 ? ((lastEarlyPrice - openPrice) / openPrice) * 100 : 0;
-            // Only filter if early session actually declined
-            if (earlyNetChange <= 0 && !(prevClose > 0 && lastEarlyPrice > prevClose)) {
-              // Calculate a simple ban end time (9:45 to 10:30 based on decline count)
-              const banEndTime = Math.min(630, 585 + earlyDeclines.length * 5);
-              // Remove buy signals before ban end time
-              const keysToRemove: string[] = [];
-              signalByTime.forEach((sig, time) => {
-                if (sig.type === "buy" && pvParseTime(time) < banEndTime) {
-                  keysToRemove.push(time);
-                }
-              });
-              keysToRemove.forEach(k => signalByTime.delete(k));
+      // 快速检测：不依赖 pvMarkers，3根数据即可触发
+      {
+        const earlyData = data.filter(d => {
+          const mins = pvParseTime(d.time);
+          return mins >= 570 && mins < 630;
+        });
+        let shouldFilter = false;
+        let banEndTime = 585; // default 9:45
+
+        if (earlyData.length >= 3) {
+          const openPrice = earlyData[0].price;
+          const lastEarlyPrice = earlyData[earlyData.length - 1].price;
+          const earlyNetChange = openPrice > 0 ? ((lastEarlyPrice - openPrice) / openPrice) * 100 : 0;
+          const belowPrevClose = prevClose > 0 && lastEarlyPrice < prevClose;
+
+          // 条件1: pvMarkers 有下跌标记
+          let hasPvDecline = false;
+          if (pvMarkers && pvMarkers.length > 0) {
+            const earlyDeclines = pvMarkers.filter(m =>
+              (m.type === "volume_decline" || m.type === "pulse_decline"
+                || m.type === "early_vol_drop" || m.type === "slow_decline")
+              && pvParseTime(m.time) >= 570 && pvParseTime(m.time) <= 630
+            );
+            if (earlyDeclines.length > 0 && earlyData.length >= 5) {
+              if (earlyNetChange <= 0 && !(prevClose > 0 && lastEarlyPrice > prevClose)) {
+                hasPvDecline = true;
+                banEndTime = Math.min(630, 585 + earlyDeclines.length * 5);
+              }
             }
           }
+
+          // 条件2: 纯价格下跌快速检测（3根即可，不依赖pvMarkers）
+          let quickDecline = false;
+          if (!hasPvDecline && earlyNetChange <= 0 && belowPrevClose) {
+            let downCount = 0;
+            for (let k = 1; k < earlyData.length; k++) {
+              if (earlyData[k].price < earlyData[k - 1].price) downCount++;
+            }
+            const mostlyDropping = downCount >= Math.floor(earlyData.length / 2);
+            const dropFromOpen = openPrice > 0 ? ((openPrice - lastEarlyPrice) / openPrice) * 100 : 0;
+            if (dropFromOpen >= 0.3 && mostlyDropping) {
+              quickDecline = true;
+              banEndTime = Math.min(610, 580 + Math.round(dropFromOpen * 8));
+            }
+          }
+
+          shouldFilter = hasPvDecline || quickDecline;
+        }
+
+        if (shouldFilter) {
+          const keysToRemove: string[] = [];
+          signalByTime.forEach((sig, time) => {
+            if (sig.type === "buy" && pvParseTime(time) < banEndTime) {
+              keysToRemove.push(time);
+            }
+          });
+          keysToRemove.forEach(k => signalByTime.delete(k));
         }
       }
 
@@ -2221,6 +2245,48 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       const mins = pvParseTime(d.time);
       return mins >= 570 && mins < 630;
     });
+
+    // ── 0-FAST: 快速检测（只需3根数据即可触发） ──
+    // 不等 pvMarkers（需10根），纯基于价格/量判断，第一时间显示禁买区
+    if (earlyData.length >= 3 && earlyData.length < 5) {
+      const openPrice = earlyData[0].price;
+      const lastPrice = earlyData[earlyData.length - 1].price;
+      const dropFromOpen = openPrice > 0 ? ((openPrice - lastPrice) / openPrice) * 100 : 0;
+      const belowPrevClose = prevClose > 0 && lastPrice < prevClose;
+      // 3根中2根以上下跌
+      let downCount = 0;
+      for (let k = 1; k < earlyData.length; k++) {
+        if (earlyData[k].price < earlyData[k - 1].price) downCount++;
+      }
+      const mostlyDropping = downCount >= Math.floor(earlyData.length / 2);
+      // 放量下跌检测：后几根量 > 前几根
+      const firstHalfVol = earlyData.slice(0, Math.ceil(earlyData.length / 2)).reduce((s, d) => s + d.volume, 0);
+      const secondHalfVol = earlyData.slice(Math.ceil(earlyData.length / 2)).reduce((s, d) => s + d.volume, 0);
+      const volIncreasing = secondHalfVol > firstHalfVol * 1.2;
+
+      if (dropFromOpen >= 0.3 && belowPrevClose && (mostlyDropping || volIncreasing)) {
+        const quickDanger = Math.min(60, Math.round(dropFromOpen * 15 + (volIncreasing ? 15 : 0) + (mostlyDropping ? 10 : 0)));
+        let quickTier: "mild" | "medium" | "strong" | "extreme" = "mild";
+        let quickBanEnd = 580;
+        if (quickDanger >= 50) { quickTier = "strong"; quickBanEnd = 610; }
+        else if (quickDanger >= 30) { quickTier = "medium"; quickBanEnd = 595; }
+        else { quickTier = "mild"; quickBanEnd = 580; }
+        const banH = Math.floor(quickBanEnd / 60);
+        const banM = quickBanEnd % 60;
+        return {
+          tier: quickTier, banEndTime: quickBanEnd,
+          banEndTimeStr: `${banH.toString().padStart(2, '0')}:${banM.toString().padStart(2, '0')}`,
+          declineScore: Math.round(dropFromOpen * 10), dropRate: dropFromOpen,
+          volRatio: volIncreasing ? 1.5 : 1, speedIndex: Math.round(dropFromOpen * 10),
+          stabilityIndex: 0, waveCount: 1, vwapDeviation: 0,
+          gapDownRate: prevClose > 0 && openPrice > 0 ? ((prevClose - openPrice) / prevClose) * 100 : 0,
+          dangerIndex: quickDanger, earlyLifted: false,
+        };
+      }
+      // 数据太少且不符合快速条件，暂不触发
+      return null;
+    }
+
     if (earlyData.length < 5) return null;
 
     const openPrice = earlyData[0].price;
@@ -2248,40 +2314,42 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     }
 
     // ── 1.5 补充检测：纯价格下跌（不依赖pvMarkers） ──
-    // 如果 pvMarkers 没有检测到下跌标记（比如缓慢阴跌分数不够阈值），
-    // 但价格确实在持续下跌，也需要触发禁买区域
-    if (earlyVolDeclines.length === 0) {
-      // 检查条件：1) 早盘从开盘价下跌超过0.5%  2) 当前价低于昨收  3) 近5分钟持续下跌
+    // 始终执行（不再要求 earlyVolDeclines 为空），确保第一时间能检测到下跌
+    {
       const dropFromOpen = openPrice > 0 ? ((openPrice - lastEarlyPrice) / openPrice) * 100 : 0;
       const belowPrevClose = prevClose > 0 && lastEarlyPrice < prevClose;
-      // 检查近5分钟是否持续走低
+      // 检查近5分钟是否持续走低（降低门槛：2根下跌即可）
       const recent5 = earlyData.slice(-5);
       let recentDownCount = 0;
       for (let k = 1; k < recent5.length; k++) {
         if (recent5[k].price < recent5[k - 1].price) recentDownCount++;
       }
-      const recentDropping = recentDownCount >= 3 && recent5.length >= 3;
-      // 检查均价线是否在下移（近5根均价线下降）
+      const recentDropping = recentDownCount >= 2 && recent5.length >= 2;
+      // 检查均价线是否在下移（降低门槛：2根下降即可）
       let avgDeclining = false;
-      if (earlyData.length >= 5) {
-        const recent5Avg = earlyData.slice(-5).map(d => d.avgPrice);
+      if (earlyData.length >= 3) {
+        const recentAvg = earlyData.slice(-5).map(d => d.avgPrice);
         let avgDownCount = 0;
-        for (let k = 1; k < recent5Avg.length; k++) {
-          if (recent5Avg[k] < recent5Avg[k - 1]) avgDownCount++;
+        for (let k = 1; k < recentAvg.length; k++) {
+          if (recentAvg[k] < recentAvg[k - 1]) avgDownCount++;
         }
-        avgDeclining = avgDownCount >= 3;
+        avgDeclining = avgDownCount >= 2;
       }
 
-      if (dropFromOpen >= 0.5 && belowPrevClose && (recentDropping || avgDeclining)) {
-        // 创建一个虚拟的下跌标记
-        earlyVolDeclines.push({
-          time: earlyData[earlyData.length - 1].time,
-          type: "slow_decline",
-          score: -Math.min(50, Math.round(dropFromOpen * 10 + (avgDeclining ? 10 : 0))),
-          label: `持续下跌 跌${dropFromOpen.toFixed(1)}%`,
-          detail: `早盘从开盘跌${dropFromOpen.toFixed(1)}%，低于昨收`,
-          amount: 0,
-        });
+      // 降低触发门槛：0.3%即可触发（原来是0.5%），且不再需要同时满足belowPrevClose
+      if (dropFromOpen >= 0.3 && (recentDropping || avgDeclining || belowPrevClose)) {
+        // 检查是否已有同类型的标记，避免重复
+        const alreadyHasDecline = earlyVolDeclines.some(m => m.type === "slow_decline");
+        if (!alreadyHasDecline) {
+          earlyVolDeclines.push({
+            time: earlyData[earlyData.length - 1].time,
+            type: "slow_decline",
+            score: -Math.min(50, Math.round(dropFromOpen * 10 + (avgDeclining ? 10 : 0))),
+            label: `持续下跌 跌${dropFromOpen.toFixed(1)}%`,
+            detail: `早盘从开盘跌${dropFromOpen.toFixed(1)}%，${belowPrevClose ? '低于昨收' : '均价线下行'}`,
+            amount: 0,
+          });
+        }
       }
     }
 
