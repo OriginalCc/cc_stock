@@ -757,13 +757,14 @@ function computeTimelineSignalElements(
     });
   }
 
-  // ── Step 3: Only strong signals get text labels ──
+  // ── Step 3: Strong + Medium signals get text labels ──
   const labelRects: { x: number; y: number; width: number; height: number }[] = [];
+  const LABEL_GAP = 2; // 最小间距，避免标签紧贴
 
   function overlapsAny(rect: { x: number; y: number; width: number; height: number }, rects: typeof labelRects): boolean {
     for (const r of rects) {
-      if (rect.x < r.x + r.width && rect.x + rect.width > r.x &&
-          rect.y < r.y + r.height && rect.y + rect.height > r.y) {
+      if (rect.x - LABEL_GAP < r.x + r.width && rect.x + rect.width + LABEL_GAP > r.x &&
+          rect.y - LABEL_GAP < r.y + r.height && rect.y + rect.height + LABEL_GAP > r.y) {
         return true;
       }
     }
@@ -775,19 +776,29 @@ function computeTimelineSignalElements(
     labelRect: { x: number; y: number; width: number; height: number } | null;
     labelText: string;
     showLabel: boolean;
+    labelFontSize: number;
+    labelIsBig: boolean;
   }
 
   const labelPlans: LabelPlan[] = [];
   const assignedLabels = new Map<number, LabelPlan>();
 
-  const strongIndices = merged
+  // strong 信号优先放置，medium 其次，按 x 位置排序
+  const labeledIndices = merged
     .map((_, i) => i)
-    .filter((i) => merged[i].strength === "strong")
-    .sort((a, b) => merged[a].x - merged[b].x);
+    .filter((i) => merged[i].strength === "strong" || merged[i].strength === "medium")
+    .sort((a, b) => {
+      // strong 排前面，同 strength 按 x 排序
+      const sa = merged[a].strength === "strong" ? 0 : 1;
+      const sb = merged[b].strength === "strong" ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+      return merged[a].x - merged[b].x;
+    });
 
-  for (const idx of strongIndices) {
+  for (const idx of labeledIndices) {
     const m = merged[idx];
     const isBuy = m.direction === "up";
+    const isStrong = m.strength === "strong";
     const isGapUpSell = m.reasons.includes("高开卖出");
     const isKeyBuySignal = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
     // v6.2: 核心卖点信号也使用大标签
@@ -799,7 +810,7 @@ function computeTimelineSignalElements(
       m.reasons.includes("缩量滞涨") ||
       m.reasons.includes("脉冲拉升缩量滞涨")
     );
-    const isBigLabel = isGapUpSell || isKeyBuySignal || isKeySellSignal; // 重要信号使用大标签
+    const isBigLabel = isStrong && (isGapUpSell || isKeyBuySignal || isKeySellSignal); // 只有strong信号才使用大标签
 
     let labelText: string;
     const fmtCustom = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -812,18 +823,19 @@ function computeTimelineSignalElements(
       labelText = fmtCustom(m.reasons[0]);
     }
 
-    // 重要信号（高开卖出/放量下跌买点）使用更大的字号和标签
-    const labelFontSize = isBigLabel ? 11 : 8;
+    // strong 重要信号用大字号，strong 普通用中字号，medium 用小字号
+    const labelFontSize = isBigLabel ? 11 : isStrong ? 9 : 7;
     let textWidth = 0;
     for (const ch of labelText) {
       textWidth += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
     }
-    const padX = isBigLabel ? 6 : 4;
+    const padX = isBigLabel ? 6 : isStrong ? 5 : 3;
     const labelW = textWidth + padX * 2;
-    const labelH = isBigLabel ? 18 : 14;
+    const labelH = isBigLabel ? 18 : isStrong ? 16 : 12;
 
-    const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : 30; // v6.2: 核心+卖点三角更大，标签需要更远
-    const labelGap = (isKeyBuySignal || isKeySellSignal) ? 8 : 14; // v6.2: 核心买/卖点标签gap更紧凑
+    // 根据信号强度和类型决定标签偏移距离
+    const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : isStrong ? 30 : 22;
+    const labelGap = (isKeyBuySignal || isKeySellSignal) ? 8 : isStrong ? 10 : 6;
     let labelY: number;
     if (isBuy) {
       labelY = m.y + markerOffset + labelGap;
@@ -834,22 +846,58 @@ function computeTimelineSignalElements(
     let labelRect = { x: m.x - labelW / 2, y: labelY, width: labelW, height: labelH };
 
     let placed = false;
+
+    // 尝试1: 默认位置
     if (!overlapsAny(labelRect, labelRects)) {
       placed = true;
-    } else {
-      const shifted = { ...labelRect, x: labelRect.x + labelRect.width * 0.6 };
-      if (!overlapsAny(shifted, labelRects)) {
-        labelRect = shifted;
+    }
+
+    // 尝试2-3: 左右偏移
+    if (!placed) {
+      const shiftR = { ...labelRect, x: labelRect.x + labelRect.width * 0.6 };
+      if (!overlapsAny(shiftR, labelRects)) {
+        labelRect = shiftR;
         placed = true;
       } else {
-        const shiftedL = { ...labelRect, x: labelRect.x - labelRect.width * 0.6 };
-        if (!overlapsAny(shiftedL, labelRects)) {
-          labelRect = shiftedL;
+        const shiftL = { ...labelRect, x: labelRect.x - labelRect.width * 0.6 };
+        if (!overlapsAny(shiftL, labelRects)) {
+          labelRect = shiftL;
           placed = true;
         }
       }
     }
 
+    // 尝试4-5: 更大左右偏移
+    if (!placed) {
+      const shiftR2 = { ...labelRect, x: labelRect.x + labelRect.width * 1.2 };
+      if (!overlapsAny(shiftR2, labelRects)) {
+        labelRect = shiftR2;
+        placed = true;
+      } else {
+        const shiftL2 = { ...labelRect, x: labelRect.x - labelRect.width * 1.2 };
+        if (!overlapsAny(shiftL2, labelRects)) {
+          labelRect = shiftL2;
+          placed = true;
+        }
+      }
+    }
+
+    // 尝试6-7: 垂直偏移（向下/向上额外偏移一个标签高度）
+    if (!placed) {
+      const shiftDown = { ...labelRect, y: labelRect.y + labelH + 4 };
+      if (!overlapsAny(shiftDown, labelRects)) {
+        labelRect = shiftDown;
+        placed = true;
+      } else {
+        const shiftUp = { ...labelRect, y: labelRect.y - labelH - 4 };
+        if (!overlapsAny(shiftUp, labelRects)) {
+          labelRect = shiftUp;
+          placed = true;
+        }
+      }
+    }
+
+    // 尝试8: 缩短文本后重试
     if (!placed) {
       const sfmt = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
       const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
@@ -864,16 +912,38 @@ function computeTimelineSignalElements(
       }
     }
 
+    // 尝试9: 缩短文本+左右偏移
+    if (!placed) {
+      const sfmt = (text: string) => m.customReasons?.has(text) ? `自定义[${text}]` : text;
+      const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
+      let sw = 0;
+      for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
+      const shortW = sw + padX * 2;
+      const shortRectR = { x: m.x - shortW / 2 + shortW * 0.6, y: labelY, width: shortW, height: labelH };
+      if (!overlapsAny(shortRectR, labelRects)) {
+        labelRect = shortRectR;
+        labelText = shortText;
+        placed = true;
+      } else {
+        const shortRectL = { x: m.x - shortW / 2 - shortW * 0.6, y: labelY, width: shortW, height: labelH };
+        if (!overlapsAny(shortRectL, labelRects)) {
+          labelRect = shortRectL;
+          labelText = shortText;
+          placed = true;
+        }
+      }
+    }
+
     if (placed) {
       labelRects.push(labelRect);
     }
 
-    assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed });
+    assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed, labelFontSize, labelIsBig: isBigLabel });
   }
 
   for (let i = 0; i < merged.length; i++) {
     if (assignedLabels.has(i)) continue;
-    assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false });
+    assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false, labelFontSize: 8, labelIsBig: false });
   }
 
   for (let i = 0; i < merged.length; i++) {
@@ -1072,8 +1142,8 @@ function computeTimelineSignalElements(
                   textAnchor="middle"
                   dominantBaseline="middle"
                   fill="white"
-                  fontSize={11}
-                  fontWeight="800"
+                  fontSize={plan.labelFontSize}
+                  fontWeight={plan.labelIsBig ? "800" : "700"}
                 >
                   {plan.labelText}
                 </text>
@@ -1085,7 +1155,7 @@ function computeTimelineSignalElements(
         return;
       }
 
-      // v5.8: 核心卖点 — 醒目倒三角+脉冲圆点+发光+粗实线连接
+      // 核心卖点 — 醒目倒三角+脉冲圆点+发光+粗实线连接
       if (isKeySellSignalR && !isBuy) {
         const dotR = 5;
         const triOffset = 18;
@@ -1159,90 +1229,8 @@ function computeTimelineSignalElements(
                   textAnchor="middle"
                   dominantBaseline="middle"
                   fill="white"
-                  fontSize={11}
-                  fontWeight="800"
-                >
-                  {plan.labelText}
-                </text>
-              </>
-            )}
-          </g>
-        );
-        prioritySignalElements.push(el);
-        return;
-      }
-
-      // v6.2: 核心卖点使用优化渲染 — 醒目的倒V顶三角+脉冲圆点+发光效果（与核心买点对称）
-      if (isKeySellSignalR && !isBuy) {
-        const dotR = 4;
-        const triOffset = 18;
-        const glowR = 10;
-        const el = (
-          <g key={`tl-sig-${m.originalIndex}-${i}`}>
-            <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.15} stroke={markerColor} strokeWidth={0.5} strokeOpacity={0.3} />
-            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={1.5} />
-            <line x1={m.x} y1={m.y - dotR - 1} x2={m.x} y2={m.y - triOffset + markerSize * 0.6} stroke={markerColor} strokeWidth={1.2} opacity={0.6} strokeDasharray="2 2" />
-            <polygon
-              points={`${m.x},${m.y - triOffset + markerSize} ${m.x - markerSize * 1.0},${m.y - triOffset - markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y - triOffset - markerSize * 0.7}`}
-              fill={markerColor}
-              stroke="white"
-              strokeWidth={1.0}
-            />
-            <text
-              x={m.x}
-              y={m.y - triOffset - 1}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="white"
-              fontSize={7}
-              fontWeight="bold"
-            >
-              卖
-            </text>
-            {badgeSvg}
-            {plan.showLabel && plan.labelRect && (
-              <>
-                <line
-                  x1={m.x}
-                  y1={m.y - triOffset - markerSize * 0.7}
-                  x2={plan.labelRect.x + plan.labelRect.width / 2}
-                  y2={plan.labelRect.y + plan.labelRect.height}
-                  stroke={markerColor}
-                  strokeWidth={1}
-                  strokeDasharray="3 2"
-                  opacity={0.7}
-                />
-                <rect
-                  x={plan.labelRect.x - 1}
-                  y={plan.labelRect.y - 1}
-                  width={plan.labelRect.width + 2}
-                  height={plan.labelRect.height + 2}
-                  rx={4}
-                  fill="none"
-                  stroke="white"
-                  strokeWidth={1.5}
-                  strokeOpacity={0.3}
-                />
-                <rect
-                  x={plan.labelRect.x}
-                  y={plan.labelRect.y}
-                  width={plan.labelRect.width}
-                  height={plan.labelRect.height}
-                  rx={3}
-                  fill={labelBgColor}
-                  fillOpacity={0.95}
-                  stroke={markerColor}
-                  strokeWidth={0.8}
-                  strokeOpacity={0.5}
-                />
-                <text
-                  x={plan.labelRect.x + plan.labelRect.width / 2}
-                  y={plan.labelRect.y + plan.labelRect.height / 2}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fill="white"
-                  fontSize={11}
-                  fontWeight="800"
+                  fontSize={plan.labelFontSize}
+                  fontWeight={plan.labelIsBig ? "800" : "700"}
                 >
                   {plan.labelText}
                 </text>
@@ -1323,8 +1311,8 @@ function computeTimelineSignalElements(
                 textAnchor="middle"
                 dominantBaseline="middle"
                 fill="white"
-                fontSize={isBigMarker ? 11 : 8}
-                fontWeight={isBigMarker ? "800" : "600"}
+                fontSize={plan.labelFontSize}
+                fontWeight={plan.labelIsBig ? "800" : "600"}
               >
                 {plan.labelText}
               </text>
@@ -1345,9 +1333,13 @@ function computeTimelineSignalElements(
       const badgeCy = m.y - dotRadius + 1;
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
+
+      // medium 信号的标签背景色
+      const mediumLabelBg = isBuy ? "#9a3412" : "#065f46";
+
       signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
-          {/* v5.8: 发光圈让medium信号也更醒目 */}
+          {/* 发光圈让medium信号也更醒目 */}
           <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.12} />
           <circle
             cx={m.x}
@@ -1372,6 +1364,42 @@ function computeTimelineSignalElements(
             />
           )}
           {badgeSvg}
+          {plan.showLabel && plan.labelRect && (
+            <>
+              <line
+                x1={m.x}
+                y1={isBuy ? m.y + dotRadius : m.y - dotRadius}
+                x2={plan.labelRect.x + plan.labelRect.width / 2}
+                y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
+                stroke={markerColor}
+                strokeWidth={1}
+                opacity={0.7}
+              />
+              <rect
+                x={plan.labelRect.x}
+                y={plan.labelRect.y}
+                width={plan.labelRect.width}
+                height={plan.labelRect.height}
+                rx={2}
+                fill={mediumLabelBg}
+                fillOpacity={0.88}
+                stroke={markerColor}
+                strokeWidth={0.5}
+                strokeOpacity={0.4}
+              />
+              <text
+                x={plan.labelRect.x + plan.labelRect.width / 2}
+                y={plan.labelRect.y + plan.labelRect.height / 2}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="white"
+                fontSize={plan.labelFontSize}
+                fontWeight="600"
+              >
+                {plan.labelText}
+              </text>
+            </>
+          )}
         </g>
       );
     } else {
