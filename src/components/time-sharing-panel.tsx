@@ -790,7 +790,15 @@ function computeTimelineSignalElements(
     const isBuy = m.direction === "up";
     const isGapUpSell = m.reasons.includes("高开卖出");
     const isKeyBuySignal = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
-    const isKeySellSignal = m.reasons.includes("次高点放量卖出") || m.reasons.includes("放量上涨卖点") || m.reasons.includes("缩量滞涨"); // v6.0: 核心卖点
+    // v6.2: 核心卖点信号也使用大标签
+    const isKeySellSignal = !isBuy && (
+      m.reasons.includes("均线引力卖点") ||
+      m.reasons.includes("次高点放量卖出") ||
+      m.reasons.includes("冲高减速见顶") ||
+      m.reasons.includes("放量上涨卖点") ||
+      m.reasons.includes("缩量滞涨") ||
+      m.reasons.includes("脉冲拉升缩量滞涨")
+    );
     const isBigLabel = isGapUpSell || isKeyBuySignal || isKeySellSignal; // 重要信号使用大标签
 
     let labelText: string;
@@ -814,8 +822,8 @@ function computeTimelineSignalElements(
     const labelW = textWidth + padX * 2;
     const labelH = isBigLabel ? 18 : 14;
 
-    const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : 30; // v5.8: 核心买卖点三角更大，标签需要更远
-    const labelGap = (isKeyBuySignal || isKeySellSignal) ? 8 : 14; // v5.8: 核心买卖点标签gap更紧凑
+    const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : 30; // v6.2: 核心+卖点三角更大，标签需要更远
+    const labelGap = (isKeyBuySignal || isKeySellSignal) ? 8 : 14; // v6.2: 核心买/卖点标签gap更紧凑
     let labelY: number;
     if (isBuy) {
       labelY = m.y + markerOffset + labelGap;
@@ -975,7 +983,15 @@ function computeTimelineSignalElements(
     if (m.strength === "strong") {
       const isGapUpSellSignal = m.reasons.includes("高开卖出");
       const isKeyBuySignalR = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
-      const isKeySellSignalR = m.reasons.includes("次高点放量卖出") || m.reasons.includes("放量上涨卖点") || m.reasons.includes("缩量滞涨"); // v6.0: 核心卖点
+      // v6.2: 核心卖点因子 — 均线引力/次高点放量/冲高减速见顶/放量上涨卖点/缩量滞涨
+      const isKeySellSignalR = !isBuy && (
+        m.reasons.includes("均线引力卖点") ||
+        m.reasons.includes("次高点放量卖出") ||
+        m.reasons.includes("冲高减速见顶") ||
+        m.reasons.includes("放量上涨卖点") ||
+        m.reasons.includes("缩量滞涨") ||
+        m.reasons.includes("脉冲拉升缩量滞涨")
+      );
       const isBigMarker = isGapUpSellSignal || isKeyBuySignalR || isKeySellSignalR;
       const markerSize = isBigMarker ? 9 : 6;
       const badgeCx = m.x + markerSize + 4;
@@ -1113,6 +1129,88 @@ function computeTimelineSignalElements(
                   stroke={markerColor}
                   strokeWidth={1.5}
                   opacity={0.9}
+                />
+                <rect
+                  x={plan.labelRect.x - 1}
+                  y={plan.labelRect.y - 1}
+                  width={plan.labelRect.width + 2}
+                  height={plan.labelRect.height + 2}
+                  rx={4}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth={1.5}
+                  strokeOpacity={0.3}
+                />
+                <rect
+                  x={plan.labelRect.x}
+                  y={plan.labelRect.y}
+                  width={plan.labelRect.width}
+                  height={plan.labelRect.height}
+                  rx={3}
+                  fill={labelBgColor}
+                  fillOpacity={0.95}
+                  stroke={markerColor}
+                  strokeWidth={0.8}
+                  strokeOpacity={0.5}
+                />
+                <text
+                  x={plan.labelRect.x + plan.labelRect.width / 2}
+                  y={plan.labelRect.y + plan.labelRect.height / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="white"
+                  fontSize={11}
+                  fontWeight="800"
+                >
+                  {plan.labelText}
+                </text>
+              </>
+            )}
+          </g>
+        );
+        prioritySignalElements.push(el);
+        return;
+      }
+
+      // v6.2: 核心卖点使用优化渲染 — 醒目的倒V顶三角+脉冲圆点+发光效果（与核心买点对称）
+      if (isKeySellSignalR && !isBuy) {
+        const dotR = 4;
+        const triOffset = 18;
+        const glowR = 10;
+        const el = (
+          <g key={`tl-sig-${m.originalIndex}-${i}`}>
+            <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.15} stroke={markerColor} strokeWidth={0.5} strokeOpacity={0.3} />
+            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={1.5} />
+            <line x1={m.x} y1={m.y - dotR - 1} x2={m.x} y2={m.y - triOffset + markerSize * 0.6} stroke={markerColor} strokeWidth={1.2} opacity={0.6} strokeDasharray="2 2" />
+            <polygon
+              points={`${m.x},${m.y - triOffset + markerSize} ${m.x - markerSize * 1.0},${m.y - triOffset - markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y - triOffset - markerSize * 0.7}`}
+              fill={markerColor}
+              stroke="white"
+              strokeWidth={1.0}
+            />
+            <text
+              x={m.x}
+              y={m.y - triOffset - 1}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill="white"
+              fontSize={7}
+              fontWeight="bold"
+            >
+              卖
+            </text>
+            {badgeSvg}
+            {plan.showLabel && plan.labelRect && (
+              <>
+                <line
+                  x1={m.x}
+                  y1={m.y - triOffset - markerSize * 0.7}
+                  x2={plan.labelRect.x + plan.labelRect.width / 2}
+                  y2={plan.labelRect.y + plan.labelRect.height}
+                  stroke={markerColor}
+                  strokeWidth={1}
+                  strokeDasharray="3 2"
+                  opacity={0.7}
                 />
                 <rect
                   x={plan.labelRect.x - 1}

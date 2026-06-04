@@ -4076,6 +4076,430 @@ export function generateTimelineSignals(
     }
   }
 
+  // ── 44. 次高点放量卖出 → 卖出(正T) ── (v6.2 restored)
+  // 与factor_43(次低点缩量买入)完全对称的卖出逻辑
+  // 核心思路：冲高后形成H1高点，回落后再冲高形成H2次高点+放量=卖盘涌出
+  if (isFactorEnabled("次高点放量卖出", factorOverrides) && regimeAdj.allowSell && timeline.length >= 5) {
+    for (let i = 5; i < timeline.length; i++) {
+      if (signals[i]) continue;
+      const cur = timeline[i];
+      const timeWindow = getTimeWindow(cur.time);
+      if (!isSellWindow(timeWindow)) continue;
+      // 只在均线上方产生卖点
+      if (cur.price <= cur.avgPrice) continue;
+      // 涨停板过滤
+      if (prevClose > 0 && cur.price >= prevClose * 1.095) continue;
+
+      // 寻找次高点：H1高点 → 回落 → H2次高点 → 当前回落
+      const lookback = Math.min(i + 1, 80);
+      const recent = timeline.slice(i - lookback + 1, i + 1);
+      let h1Idx = -1;
+      let h1Price = -Infinity;
+      // 找H1：近80根最高点
+      for (let k = 0; k < recent.length; k++) {
+        if (recent[k].price > h1Price) {
+          h1Price = recent[k].price;
+          h1Idx = k;
+        }
+      }
+      if (h1Idx >= recent.length - 3) continue; // H1不能在最后3根（需要回落空间）
+
+      // 从H1之后找回落低点
+      let lAfterH1 = Infinity;
+      let lAfterH1Idx = -1;
+      for (let k = h1Idx + 1; k < recent.length; k++) {
+        if (recent[k].price < lAfterH1) {
+          lAfterH1 = recent[k].price;
+          lAfterH1Idx = k;
+        }
+      }
+      if (lAfterH1Idx < 0) continue;
+
+      // 从回落低点之后找H2次高点
+      let h2Price = -Infinity;
+      let h2Idx = -1;
+      for (let k = lAfterH1Idx + 1; k < recent.length; k++) {
+        if (recent[k].price > h2Price) {
+          h2Price = recent[k].price;
+          h2Idx = k;
+        }
+      }
+      if (h2Idx < 0) continue;
+
+      // H2距H1 ≤ 1.5%（双顶形态）
+      const h2VsH1 = h1Price > 0 ? ((h1Price - h2Price) / h1Price) * 100 : 999;
+      if (h2VsH1 > 1.5) continue;
+
+      // H2距日内最高 ≤ 0.5%（确认在顶部区域）
+      const intradayHigh = Math.max(...timeline.map(d => d.price));
+      const h2VsIntradayHighPct = intradayHigh > 0 ? ((intradayHigh - h2Price) / intradayHigh) * 100 : 999;
+      if (h2VsIntradayHighPct > 0.5) continue;
+
+      // H2处放量
+      const h2Vol = recent[h2Idx]?.volume || 0;
+      const h1Vol = recent[h1Idx]?.volume || 0;
+      const expandVsAvg = avgVol > 0 ? h2Vol / avgVol : 1;
+      const expandVsH1 = h1Vol > 0 ? h2Vol / h1Vol : 1;
+      const isExpanded = expandVsAvg > 1.2 || expandVsH1 > 1.3;
+      if (!isExpanded) continue;
+
+      // 当前价已从H2回落
+      const priceVsH2 = h2Price > 0 ? ((h2Price - cur.price) / h2Price) * 100 : 0;
+      if (priceVsH2 < 0) continue; // 还在涨，不卖
+
+      // 确认信号写入位置（在H2处或当前回落点）
+      const signalIdx = i - (recent.length - 1 - h2Idx);
+      if (signalIdx < 0 || signalIdx >= timeline.length || signals[signalIdx]) continue;
+
+      const h2Label = h2VsH1 <= 0.3 ? "贴顶" : `距顶${h2VsH1.toFixed(1)}%`;
+      const expandDesc = expandVsAvg > 1.5 ? `放量${(expandVsAvg * 100).toFixed(0)}%` : `比H1量+${((expandVsH1 - 1) * 100).toFixed(0)}%`;
+      const highProximityDesc = h2VsIntradayHighPct <= 0.3 ? "贴顶" : `距最高${h2VsIntradayHighPct.toFixed(1)}%`;
+
+      signals[signalIdx] = {
+        type: "sell",
+        reason: "次高点放量卖出",
+        strength: "strong",
+        tMode: "正T",
+        timeWindow,
+        factorId: "factor_44",
+        description: `${h2Label}+${expandDesc}+${highProximityDesc}+回落${priceVsH2.toFixed(1)}%`,
+      };
+      lastSellPrice = cur.price;
+      break; // 只取第一个
+    }
+  }
+
+  // ── 45. 放量上涨卖点 → 卖出(正T) ── (v6.2 restored)
+  // 核心思路：上涨过程中出现"放量+接近顶部+动能衰减"→ 买盘耗尽+冲高见顶 → 卖点
+  // 评分制（对称于factor_41买点），≥4分触发，极贴顶≥3分
+  if (isFactorEnabled("放量上涨卖点", factorOverrides) && regimeAdj.allowSell && timeline.length >= 5) {
+    for (let i = 5; i < timeline.length; i++) {
+      if (signals[i]) continue;
+      const cur = timeline[i];
+      const timeWindow = getTimeWindow(cur.time);
+      if (!isSellWindow(timeWindow)) continue;
+      if (cur.price <= cur.avgPrice) continue; // 只在均线上方
+
+      // 涨停板过滤
+      const isLimitUp = prevClose > 0 && cur.price >= prevClose * 1.095;
+      if (isLimitUp) continue;
+
+      // 检查是否存在放量上涨的前置条件
+      let hasSignificantVolRise = false;
+      // 路径A: 单根放量上涨
+      for (let k = 1; k < timeline.length; k++) {
+        const bar = timeline[k];
+        const prevBar = timeline[k - 1];
+        const priceRisePct = prevBar.price > 0 ? ((bar.price - prevBar.price) / prevBar.price) * 100 : 0;
+        if (bar.volume > avgVol * 1.2 && bar.price > prevBar.price && priceRisePct > 0.1) {
+          hasSignificantVolRise = true;
+          break;
+        }
+      }
+      // 路径B: 快速上涨
+      if (!hasSignificantVolRise && timeline.length >= 3) {
+        const last3 = timeline.slice(-3);
+        const rise3 = last3[0].price > 0 ? ((last3[last3.length - 1].price - last3[0].price) / last3[0].price) * 100 : 0;
+        if (rise3 > 0.3) hasSignificantVolRise = true;
+      }
+
+      if (hasSignificantVolRise) {
+        let volRiseSellCount = 0;
+        for (let j = 5; j < timeline.length; j++) {
+          if (signals[j]) continue;
+          const curJ = timeline[j];
+          const timeWindowJ = getTimeWindow(curJ.time);
+          if (!isSellWindow(timeWindowJ)) continue;
+          if (curJ.price <= curJ.avgPrice) continue;
+
+          let score = 0;
+          const macdJ = macdByTime.get(curJ.time);
+          const prevMacdJ = j >= 1 ? macdByTime.get(timeline[j - 1]?.time) : null;
+
+          // ① MACD红柱缩短/转正：衰减<50%(3分)，<70%(2分)，<80%(1分)
+          if (macdJ && prevMacdJ) {
+            if (macdJ.macd > 0 && prevMacdJ.macd > 0) {
+              const decayRatio = macdJ.macd / prevMacdJ.macd;
+              if (decayRatio < 0.5) score += 3;
+              else if (decayRatio < 0.7) score += 2;
+              else if (decayRatio < 0.8) score += 1;
+            } else if (macdJ.macd <= 0) {
+              score += 2; // 已转负
+            }
+          }
+
+          // ② 成交量放大：>200%(3分)，>150%(2分)，>120%(1分)
+          const volRatioJ = avgVol > 0 ? curJ.volume / avgVol : 1;
+          if (volRatioJ > 2.0) score += 3;
+          else if (volRatioJ > 1.5) score += 2;
+          else if (volRatioJ > 1.2) score += 1;
+
+          // ③ 价格在顶部区域：距最高≤1%(3分)，≤1.5%(2分)，≤2.5%(1分)
+          const lookback80J = Math.min(j + 1, 80);
+          const maxPrice80J = Math.max(...timeline.slice(j - lookback80J + 1, j + 1).map(d => d.price));
+          const priceFromHigh80J = maxPrice80J > 0 ? ((maxPrice80J - curJ.price) / maxPrice80J) * 100 : 999;
+          if (priceFromHigh80J <= 1.0) score += 3;
+          else if (priceFromHigh80J <= 1.5) score += 2;
+          else if (priceFromHigh80J <= 2.5) score += 1;
+
+          // ④ 冲高回落确认：当前价≤近5根最高价
+          const recent5J = timeline.slice(Math.max(0, j - 4), j + 1);
+          const recent5HighJ = Math.max(...recent5J.map(d => d.price));
+          if (curJ.price < recent5HighJ) score += 2;
+
+          // ⑤ 倒V顶形态：近10根先涨后跌
+          if (j >= 10) {
+            const recent10J = timeline.slice(j - 9, j + 1);
+            let maxIdx10 = 0;
+            for (let k = 1; k < recent10J.length; k++) {
+              if (recent10J[k].price > recent10J[maxIdx10].price) maxIdx10 = k;
+            }
+            if (maxIdx10 > 0 && maxIdx10 < recent10J.length - 1 && maxIdx10 <= recent10J.length / 2) {
+              score += 2; // 倒V顶
+            }
+          }
+
+          // ⑥ 上涨减速：连续2根涨幅收窄
+          if (j >= 3) {
+            const r1 = timeline[j].price - timeline[j - 1].price;
+            const r2 = timeline[j - 1].price - timeline[j - 2].price;
+            if (r2 > 0 && r1 > 0 && r1 < r2) score += 1;
+          }
+
+          // ⑦ 迷你倒V顶：5根窗口倒V型反转
+          if (j >= 5) {
+            const recent5V = timeline.slice(j - 4, j + 1);
+            let maxIdx5 = 0;
+            for (let k = 1; k < recent5V.length; k++) {
+              if (recent5V[k].price > recent5V[maxIdx5].price) maxIdx5 = k;
+            }
+            if (maxIdx5 > 0 && maxIdx5 < recent5V.length - 1 && maxIdx5 <= 2) {
+              score += 1;
+            }
+          }
+
+          // 触发判定
+          const threshold = priceFromHigh80J <= 0.5 ? 3 : 4; // 极贴顶≥3分即可触发
+          if (score >= threshold) {
+            const descParts: string[] = [];
+            if (macdJ && macdJ.macd > 0) descParts.push("MACD衰减");
+            else if (macdJ && macdJ.macd <= 0) descParts.push("MACD转负");
+            if (volRatioJ > 1.2) descParts.push(`放量${(volRatioJ * 100).toFixed(0)}%`);
+            descParts.push(`距顶${priceFromHigh80J.toFixed(1)}%`);
+
+            signals[j] = {
+              type: "sell",
+              reason: "放量上涨卖点",
+              strength: "medium",
+              tMode: "正T",
+              timeWindow: timeWindowJ,
+              factorId: "factor_45",
+              description: descParts.join("+"),
+            };
+            lastSellPrice = curJ.price;
+            volRiseSellCount++;
+            if (volRiseSellCount >= 4) break;
+          }
+        }
+      }
+    }
+  }
+
+  // ── 45_5. 缩量滞涨 → 卖出(正T) ── (v6.2 restored)
+  // 核心思路：上涨过程中出现"缩量+涨幅收窄"→ 买盘衰竭+动能衰减 → 见顶信号
+  if (isFactorEnabled("缩量滞涨", factorOverrides) && regimeAdj.allowSell && timeline.length >= 5) {
+    for (let j = 5; j < timeline.length; j++) {
+      if (signals[j]) continue;
+      const curJ = timeline[j];
+      const timeWindowJ = getTimeWindow(curJ.time);
+      if (!isSellWindow(timeWindowJ)) continue;
+      if (curJ.price <= curJ.avgPrice) continue; // 只在均线上方
+
+      // 条件①：近5根处于上涨趋势
+      const recent5j = timeline.slice(j - 4, j + 1);
+      let upCount = 0;
+      for (let k = 1; k < recent5j.length; k++) {
+        if (recent5j[k].price > recent5j[k - 1].price) upCount++;
+      }
+      if (upCount < 3) continue;
+
+      // 条件②：近3根成交量持续递减
+      let volShrinking3 = true;
+      for (let k = j - 1; k <= j; k++) {
+        if (k < 1 || timeline[k].volume >= timeline[k - 1].volume) {
+          volShrinking3 = false;
+          break;
+        }
+      }
+      if (!volShrinking3) continue;
+
+      // 条件③：最近2根涨幅收窄
+      if (j < 3) continue;
+      const rise1 = curJ.price - timeline[j - 1].price;
+      const rise2 = timeline[j - 1].price - timeline[j - 2].price;
+      if (rise2 <= 0 || rise1 >= rise2) continue;
+      if (rise1 <= 0) continue;
+
+      // 补充条件：当前价格接近近期最高点（≤1.5%）
+      const priceLookbackJ = Math.min(j + 1, 80);
+      const maxPrice80 = Math.max(...timeline.slice(j - priceLookbackJ + 1, j + 1).map(d => d.price));
+      const priceFromHigh80 = maxPrice80 > 0 ? ((maxPrice80 - curJ.price) / maxPrice80) * 100 : 999;
+      if (priceFromHigh80 > 1.5) continue;
+
+      // 当前成交量低于均量80%
+      const volRatioJ = avgVol > 0 ? curJ.volume / avgVol : 1;
+      const volBelowAvg = volRatioJ < 0.8;
+      if (!volBelowAvg && priceFromHigh80 > 0.8) continue;
+
+      signals[j] = {
+        type: "sell",
+        reason: "缩量滞涨",
+        strength: "medium",
+        tMode: "正T",
+        timeWindow: timeWindowJ,
+        factorId: "factor_45_5",
+        description: `涨幅收窄+量递减+距顶${priceFromHigh80.toFixed(1)}%${volBelowAvg ? `+缩量${(volRatioJ * 100).toFixed(0)}%` : ""}`,
+      };
+      lastSellPrice = curJ.price;
+    }
+  }
+
+  // ── 46. 均线引力卖点 → 卖出(正T) ── (v6.2 restored)
+  // 核心逻辑：做T高抛的核心原理 = 均价线引力回归
+  // 条件（评分制，≥3分触发，极偏离≥2分）：
+  if (isFactorEnabled("均线引力卖点", factorOverrides) && regimeAdj.allowSell && timeline.length >= 5) {
+    for (let i46 = 5; i46 < timeline.length; i46++) {
+      if (signals[i46]) continue;
+      const cur46 = timeline[i46];
+      const timeWindow46 = getTimeWindow(cur46.time);
+      if (!isSellWindow(timeWindow46)) continue;
+      const prev46 = i46 >= 1 ? timeline[i46 - 1] : null;
+
+      if (cur46.avgPrice > 0 && cur46.price > cur46.avgPrice) {
+        const deviationPct46 = ((cur46.price - cur46.avgPrice) / cur46.avgPrice) * 100;
+        let score46 = 0;
+
+        // ① 偏离均价线幅度
+        if (deviationPct46 > 2.5) score46 += 3;
+        else if (deviationPct46 > 1.5) score46 += 2;
+        else if (deviationPct46 > 1.0) score46 += 1;
+
+        // ② 回落确认
+        if (prev46 && cur46.price < prev46.price) score46 += 2;
+
+        // ③ 近5根最高点回落>0.3%
+        if (i46 >= 5) {
+          const recent5High = Math.max(...timeline.slice(Math.max(0, i46 - 4), i46 + 1).map(d => d.price));
+          const pullbackFrom5High = recent5High > 0 ? ((recent5High - cur46.price) / recent5High) * 100 : 0;
+          if (pullbackFrom5High > 0.3) score46 += 2;
+        }
+
+        // ④ 量能配合
+        if (cur46.volume < avgVol * 0.8) {
+          score46 += 1;
+          if (i46 >= 5) {
+            const hadVolSpike = timeline.slice(Math.max(0, i46 - 5), i46).some(d => d.volume > avgVol * 1.5);
+            if (hadVolSpike) score46 += 1;
+          }
+        }
+
+        // ⑤ MACD红柱缩短或转负
+        const macd46 = macdByTime.get(cur46.time);
+        const prevMacd46 = prev46 ? macdByTime.get(prev46.time) : null;
+        if (macd46 && prevMacd46) {
+          if (macd46.macd > 0 && macd46.macd < prevMacd46.macd) score46 += 1;
+          else if (macd46.macd <= 0) score46 += 1;
+        }
+
+        // ⑥ 价格在近80根顶部区域
+        if (i46 >= 10) {
+          const lookback80 = Math.min(i46 + 1, 80);
+          const high80 = Math.max(...timeline.slice(i46 - lookback80 + 1, i46 + 1).map(d => d.price));
+          const distFromHigh80 = high80 > 0 ? ((high80 - cur46.price) / high80) * 100 : 100;
+          if (distFromHigh80 <= 2.0) score46 += 1;
+        }
+
+        // 触发判定（v6.2: 降低门槛≥3分触发，极偏离≥2分）
+        const threshold46 = deviationPct46 > 2.5 ? 2 : 3;
+        if (score46 >= threshold46) {
+          let strength46: Strength = score46 >= 7 ? "strong" : score46 >= 5 ? "medium" : "weak";
+          if (regimeAdj.signalStrengthBoost < 0) {
+            if (strength46 === "strong") strength46 = "medium";
+            else if (strength46 === "medium") strength46 = "weak";
+          }
+
+          signals[i46] = {
+            type: "sell",
+            reason: "均线引力卖点",
+            strength: strength46,
+            tMode: "正T",
+            timeWindow: timeWindow46,
+            description: `偏离${deviationPct46.toFixed(1)}%，${score46}分(≥${threshold46})，均值回归高抛`,
+            factorId: "factor_46",
+          };
+          lastSellPrice = cur46.price;
+        }
+      }
+    }
+  }
+
+  // ── 47. 冲高减速见顶 → 卖出(正T) ── (v6.2 restored)
+  // 核心逻辑：连续上涨但涨幅逐根收窄 = 买盘衰竭
+  if (isFactorEnabled("冲高减速见顶", factorOverrides) && regimeAdj.allowSell && timeline.length >= 5) {
+    for (let i47 = 5; i47 < timeline.length; i47++) {
+      if (signals[i47]) continue;
+      const cur47 = timeline[i47];
+      const timeWindow47 = getTimeWindow(cur47.time);
+      if (!isSellWindow(timeWindow47)) continue;
+      const prev47 = i47 >= 1 ? timeline[i47 - 1] : null;
+      const prev47_2 = i47 >= 2 ? timeline[i47 - 2] : null;
+      const prev47_3 = i47 >= 3 ? timeline[i47 - 3] : null;
+
+      if (cur47.avgPrice > 0 && cur47.price > cur47.avgPrice && prev47 && prev47_2 && prev47_3) {
+        const rise1 = cur47.price > prev47.price;
+        const rise2 = prev47.price > prev47_2.price;
+        const rise3 = prev47_2.price > prev47_3.price;
+
+        if (rise1 && rise2 && rise3) {
+          const gain1 = prev47.price > 0 ? (cur47.price - prev47.price) / prev47.price * 100 : 0;
+          const gain2 = prev47_2.price > 0 ? (prev47.price - prev47_2.price) / prev47_2.price * 100 : 0;
+          const gain3 = prev47_3.price > 0 ? (prev47_2.price - prev47_3.price) / prev47_3.price * 100 : 0;
+
+          if (gain1 < gain2 && gain2 < gain3) {
+            const volDec = cur47.volume < prev47.volume && prev47.volume < prev47_2.volume;
+            const volShrink = cur47.volume < avgVol * 0.8;
+            const volOk47 = volDec || volShrink;
+
+            const lookback80_47 = Math.min(i47 + 1, 80);
+            const high80_47 = Math.max(...timeline.slice(i47 - lookback80_47 + 1, i47 + 1).map(d => d.price));
+            const distFromHigh47 = high80_47 > 0 ? ((high80_47 - cur47.price) / high80_47) * 100 : 100;
+            const nearTop47 = distFromHigh47 <= 2.0;
+
+            if (volOk47 && nearTop47) {
+              const deviationPct47 = cur47.avgPrice > 0 ? ((cur47.price - cur47.avgPrice) / cur47.avgPrice) * 100 : 0;
+              let strength47: Strength = deviationPct47 > 2.0 ? "strong" : "medium";
+              if (regimeAdj.signalStrengthBoost < 0) {
+                if (strength47 === "strong") strength47 = "medium";
+                else if (strength47 === "medium") strength47 = "weak";
+              }
+
+              signals[i47] = {
+                type: "sell",
+                reason: "冲高减速见顶",
+                strength: strength47,
+                tMode: "正T",
+                timeWindow: timeWindow47,
+                description: `3连涨涨幅递减(${gain3.toFixed(2)}→${gain2.toFixed(2)}→${gain1.toFixed(2)}%)，${volShrink ? "缩量" : "量递减"}，顶部信号`,
+                factorId: "factor_47",
+              };
+              lastSellPrice = cur47.price;
+            }
+          }
+        }
+      }
+    }
+  }
+
   // ── 后处理 v3.6：信号增强系统 ──
   // 1. 信号去重：连续相同因子名称的信号只保留第一个
   let lastFactorName: string | null = null;
@@ -4329,9 +4753,14 @@ export function generateTimelineSignals(
         };
       }
 
-      // 大盘上升 + 个股卖出信号 → 降级（可能卖飞）
+      // 大盘上升 + 个股弱卖出信号 → 降级保留（v6.2: 不再直接删除，改为标注提示）
       if (isMarketUp && curSig.type === "sell" && curSig.strength === "weak") {
-        signals[i] = null; // 弱卖出信号在牛市中过滤掉
+        signals[i] = {
+          ...curSig,
+          description: curSig.description
+            ? `${curSig.description} 【大盘上升，弱卖需谨慎】`
+            : `大盘上升通道中弱卖出信号，注意卖飞风险`,
+        };
       }
 
       // 大盘下跌 + 个股买入信号 → 降级（可能接飞刀）
@@ -4387,9 +4816,14 @@ export function generateTimelineSignals(
         };
       }
 
-      // 板块上升 + 个股弱卖出信号 → 降级（板块向上，别急着卖）
+      // 板块上升 + 个股弱卖出信号 → 降级保留（v6.2: 不再直接删除，改为标注提示）
       if (isSectorUp && curSig.type === "sell" && curSig.strength === "weak") {
-        signals[i] = null; // 弱卖出信号在板块上涨中过滤掉
+        signals[i] = {
+          ...curSig,
+          description: curSig.description
+            ? `${curSig.description} 【板块上升，弱卖需谨慎】`
+            : `板块上升通道中弱卖出信号，注意卖飞风险`,
+        };
       }
 
       // 板块下跌 + 个股弱买入信号 → 降级（板块向下，别急着买）
@@ -4611,5 +5045,10 @@ export const STRATEGY_OVERVIEW = {
     { id: 37, name: "J线超卖反弹", type: "buy" as const, tMode: "反T" as const, strength: "weak" as const, version: "v3.9", description: "J值低于0后拐头向上 → 极端超卖反弹信号(weak)" },
     { id: 38, name: "J线超买回落", type: "sell" as const, tMode: "正T" as const, strength: "medium" as const, version: "v3.9", description: "J值高于100后拐头向下 → 极端超买回落信号" },
     { id: 415, name: "缩量止跌", type: "buy" as const, tMode: "正T" as const, strength: "medium" as const, version: "v5.7", description: "下跌中缩量+跌幅收窄→最早底部信号(medium)" },
+    { id: 44, name: "次高点放量卖出", type: "sell" as const, tMode: "正T" as const, strength: "strong" as const, version: "v6.2", description: "冲高后次高点+放量=卖盘涌出，双顶形态量化" },
+    { id: 45, name: "放量上涨卖点", type: "sell" as const, tMode: "正T" as const, strength: "medium" as const, version: "v6.2", description: "放量+接近顶部+动能衰减=买盘耗尽，评分制≥4分触发" },
+    { id: 455, name: "缩量滞涨", type: "sell" as const, tMode: "正T" as const, strength: "medium" as const, version: "v6.2", description: "上涨缩量+涨幅收窄=买盘衰竭，最早顶部信号" },
+    { id: 46, name: "均线引力卖点", type: "sell" as const, tMode: "正T" as const, strength: "strong" as const, version: "v6.2", description: "偏离均价线+回落=均值回归高抛，核心卖点因子" },
+    { id: 47, name: "冲高减速见顶", type: "sell" as const, tMode: "正T" as const, strength: "strong" as const, version: "v6.2", description: "3连涨+涨幅递减+缩量=买盘衰竭，早期顶部信号" },
   ],
 };
