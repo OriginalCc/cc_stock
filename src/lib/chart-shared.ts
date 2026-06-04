@@ -132,7 +132,7 @@ export const DEFAULT_ASHARES = [
 ];
 
 export const INDEX_CONFIG: Record<IndexKey, { symbol: string; label: string; shortLabel: string }> = {
-  sz:  { symbol: "399001",    label: "深证成指", shortLabel: "深" },
+  sz:  { symbol: "399001",    label: "深证成指(骗人指数)", shortLabel: "深" },
   sh:  { symbol: "000001.SS", label: "上证指数", shortLabel: "沪" },
   cyb: { symbol: "399006",    label: "创业板指", shortLabel: "创" },
 };

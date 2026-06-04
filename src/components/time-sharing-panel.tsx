@@ -2845,7 +2845,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           const cfg = REGIME_CONFIG[szIndexRegime.regime] || REGIME_CONFIG["震荡市"];
           const idxInfo = indexConfig?.[activeIndexKey || "sz"];
           const shortLabel = idxInfo?.shortLabel || "深";
-          const fullLabel = idxInfo?.label || "深证成指";
+          const fullLabel = idxInfo?.label || "深证成指(骗人指数)";
           return (
             <span
               className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold cursor-pointer select-none hover:opacity-80 active:scale-95 transition-all ${cfg.bg} ${cfg.text}`}
@@ -3798,7 +3798,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
           <div className="mt-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {hasSectorData && <MiniTimelinePanel title={`${sectorInfo.name}板块`} data={sectorTimelineData.items} prevClose={sectorTimelineData.prevClose} badge={<div className="ml-auto">{regimeBadge(sectorRegime)}</div>} />}
-              {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime)}{onCycleIndex && <span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={onCycleIndex} title="点击切换指数">切换</span>}</div>} />}
+              {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指(骗人指数)"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime)}{onCycleIndex && <span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={onCycleIndex} title="点击切换指数">切换</span>}</div>} />}
             </div>
           </div>
         );
