@@ -1041,12 +1041,14 @@ function computeTimelineSignalElements(
       badgeColor = markerColor;
       badgeTextColor = "white";
     } else if (m.strength === "medium") {
-      markerColor = isStoploss ? "#d97706" : isBuy ? "#f97316" : "#06b6d4";
+      // v6.3: 买点红色系/卖点绿色系，与strong信号保持一致
+      markerColor = isStoploss ? "#d97706" : isBuy ? "#dc2626" : "#16a34a";
       badgeColor = markerColor;
       badgeTextColor = "white";
     } else {
-      markerColor = "#9ca3af";
-      badgeColor = "#9ca3af";
+      // weak: 买点浅红/卖点浅绿
+      markerColor = isBuy ? "#f87171" : "#4ade80";
+      badgeColor = markerColor;
       badgeTextColor = "white";
     }
 
@@ -1334,8 +1336,8 @@ function computeTimelineSignalElements(
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
 
-      // medium 信号的标签背景色
-      const mediumLabelBg = isBuy ? "#9a3412" : "#065f46";
+      // medium 信号的标签背景色 — 买点红色/卖点绿色
+      const mediumLabelBg = isBuy ? "#991b1b" : "#166534";
 
       signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
