@@ -778,6 +778,7 @@ function computeTimelineSignalElements(
     showLabel: boolean;
     labelFontSize: number;
     labelIsBig: boolean;
+    labelStrength: "strong" | "medium" | "weak";
   }
 
   const labelPlans: LabelPlan[] = [];
@@ -823,19 +824,22 @@ function computeTimelineSignalElements(
       labelText = fmtCustom(m.reasons[0]);
     }
 
-    // strong 重要信号用大字号，strong 普通用中字号，medium 用小字号
+    // v6.3: 标签大小按信号强度分3级 — 大/中/小
+    // strong+核心因子(放量下跌买点/均线引力卖点等) = 大标签
+    // strong+普通因子(高开卖出/其他) = 中标签
+    // medium = 小标签
     const labelFontSize = isBigLabel ? 11 : isStrong ? 9 : 7;
     let textWidth = 0;
     for (const ch of labelText) {
       textWidth += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
     }
-    const padX = isBigLabel ? 6 : isStrong ? 5 : 3;
+    const padX = isBigLabel ? 7 : isStrong ? 5 : 3;
     const labelW = textWidth + padX * 2;
-    const labelH = isBigLabel ? 18 : isStrong ? 16 : 12;
+    const labelH = isBigLabel ? 20 : isStrong ? 16 : 12;
 
-    // 根据信号强度和类型决定标签偏移距离
+    // 根据信号强度决定标签偏移距离
     const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : isStrong ? 30 : 22;
-    const labelGap = (isKeyBuySignal || isKeySellSignal) ? 8 : isStrong ? 10 : 6;
+    const labelGap = (isKeyBuySignal || isKeySellSignal) ? 6 : isStrong ? 8 : 5;
     let labelY: number;
     if (isBuy) {
       labelY = m.y + markerOffset + labelGap;
@@ -938,12 +942,12 @@ function computeTimelineSignalElements(
       labelRects.push(labelRect);
     }
 
-    assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed, labelFontSize, labelIsBig: isBigLabel });
+    assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed, labelFontSize, labelIsBig: isBigLabel, labelStrength: m.strength });
   }
 
   for (let i = 0; i < merged.length; i++) {
     if (assignedLabels.has(i)) continue;
-    assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false, labelFontSize: 8, labelIsBig: false });
+    assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false, labelFontSize: 8, labelIsBig: false, labelStrength: merged[i].strength });
   }
 
   for (let i = 0; i < merged.length; i++) {
@@ -951,6 +955,16 @@ function computeTimelineSignalElements(
   }
 
   // ── Step 4: Render ──
+
+  // v6.3: 标签样式按强度分3级
+  const getLabelStyle = (strength: "strong" | "medium" | "weak") => {
+    switch (strength) {
+      case "strong": return { rx: 4, strokeWidth: 1.0, strokeOpacity: 0.6, fillOpacity: 0.95, fontWeight: "800" as const, connWidth: 1.5, connOpacity: 0.9 };
+      case "medium": return { rx: 3, strokeWidth: 0.6, strokeOpacity: 0.4, fillOpacity: 0.88, fontWeight: "600" as const, connWidth: 1.0, connOpacity: 0.7 };
+      case "weak": return { rx: 2, strokeWidth: 0.4, strokeOpacity: 0.3, fillOpacity: 0.80, fontWeight: "500" as const, connWidth: 0.8, connOpacity: 0.5 };
+    }
+  };
+
   const renderCountBadge = (m: MergedSignal, badgeCx: number, badgeCy: number, badgeColor: string, badgeTextColor: string): { badgeSvg: React.ReactNode; bubbleSvg: React.ReactNode } => {
     if (m.count <= 1) return { badgeSvg: null, bubbleSvg: null };
     const isExpanded = expandedIds.has(m.id);
@@ -1036,18 +1050,20 @@ function computeTimelineSignalElements(
         badgeTextColor = "white";
       }
     } else if (m.strength === "strong") {
-      markerColor = isStoploss ? "#f59e0b" : isBuy ? "#ef4444" : "#22c55e";
-      labelBgColor = isStoploss ? "#92400e" : isBuy ? "#dc2626" : "#16a34a";
+      // strong: 深红买/深绿卖，最醒目
+      markerColor = isStoploss ? "#f59e0b" : isBuy ? "#dc2626" : "#16a34a";
+      labelBgColor = isStoploss ? "#92400e" : isBuy ? "#b91c1c" : "#15803d";
       badgeColor = markerColor;
       badgeTextColor = "white";
     } else if (m.strength === "medium") {
-      // v6.3: 买点红色系/卖点绿色系，与strong信号保持一致
-      markerColor = isStoploss ? "#d97706" : isBuy ? "#dc2626" : "#16a34a";
+      // medium: 中红买/中绿卖
+      markerColor = isStoploss ? "#d97706" : isBuy ? "#f87171" : "#4ade80";
+      labelBgColor = isStoploss ? "#92400e" : isBuy ? "#ef4444" : "#22c55e";
       badgeColor = markerColor;
       badgeTextColor = "white";
     } else {
-      // weak: 买点浅红/卖点浅绿
-      markerColor = isBuy ? "#f87171" : "#4ade80";
+      // weak: 浅红买/浅绿卖，最淡
+      markerColor = isBuy ? "#fca5a5" : "#86efac";
       badgeColor = markerColor;
       badgeTextColor = "white";
     }
@@ -1071,11 +1087,11 @@ function computeTimelineSignalElements(
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
 
-      // v5.8: 核心买点使用优化渲染 — 醒目V底三角+脉冲圆点+发光+粗实线连接
+      // 核心买点使用优化渲染 — 醒目V底三角+脉冲圆点+发光+粗实线连接
       if (isKeyBuySignalR && isBuy) {
-        const dotR = 5;
-        const triOffset = 18;
-        const glowR = 14;
+        const dotR = 6;
+        const triOffset = 20;
+        const glowR = 16;
         const el = (
           <g key={`tl-sig-${m.originalIndex}-${i}`}>
             {/* 外圈发光 — 两层叠加更醒目 */}
@@ -1105,25 +1121,25 @@ function computeTimelineSignalElements(
             {badgeSvg}
             {plan.showLabel && plan.labelRect && (
               <>
-                {/* 三角到文字标签的连接线 — 粗实线 */}
+                {/* 三角到文字标签的连接线 */}
                 <line
                   x1={m.x}
                   y1={m.y + triOffset + markerSize * 0.7}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
                   y2={plan.labelRect.y}
                   stroke={markerColor}
-                  strokeWidth={1.5}
-                  opacity={0.9}
+                  strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+                  opacity={getLabelStyle(plan.labelStrength).connOpacity}
                 />
                 <rect
                   x={plan.labelRect.x - 1}
                   y={plan.labelRect.y - 1}
                   width={plan.labelRect.width + 2}
                   height={plan.labelRect.height + 2}
-                  rx={4}
+                  rx={getLabelStyle(plan.labelStrength).rx + 1}
                   fill="none"
                   stroke="white"
-                  strokeWidth={1.5}
+                  strokeWidth={1.0}
                   strokeOpacity={0.3}
                 />
                 <rect
@@ -1131,12 +1147,12 @@ function computeTimelineSignalElements(
                   y={plan.labelRect.y}
                   width={plan.labelRect.width}
                   height={plan.labelRect.height}
-                  rx={3}
+                  rx={getLabelStyle(plan.labelStrength).rx}
                   fill={labelBgColor}
-                  fillOpacity={0.95}
+                  fillOpacity={getLabelStyle(plan.labelStrength).fillOpacity}
                   stroke={markerColor}
-                  strokeWidth={0.8}
-                  strokeOpacity={0.5}
+                  strokeWidth={getLabelStyle(plan.labelStrength).strokeWidth}
+                  strokeOpacity={getLabelStyle(plan.labelStrength).strokeOpacity}
                 />
                 <text
                   x={plan.labelRect.x + plan.labelRect.width / 2}
@@ -1145,7 +1161,7 @@ function computeTimelineSignalElements(
                   dominantBaseline="middle"
                   fill="white"
                   fontSize={plan.labelFontSize}
-                  fontWeight={plan.labelIsBig ? "800" : "700"}
+                  fontWeight={getLabelStyle(plan.labelStrength).fontWeight}
                 >
                   {plan.labelText}
                 </text>
@@ -1159,9 +1175,9 @@ function computeTimelineSignalElements(
 
       // 核心卖点 — 醒目倒三角+脉冲圆点+发光+粗实线连接
       if (isKeySellSignalR && !isBuy) {
-        const dotR = 5;
-        const triOffset = 18;
-        const glowR = 14;
+        const dotR = 6;
+        const triOffset = 20;
+        const glowR = 16;
         const el = (
           <g key={`tl-sig-${m.originalIndex}-${i}`}>
             {/* 外圈发光 — 两层叠加 */}
@@ -1199,18 +1215,18 @@ function computeTimelineSignalElements(
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
                   y2={plan.labelRect.y + plan.labelRect.height}
                   stroke={markerColor}
-                  strokeWidth={1.5}
-                  opacity={0.9}
+                  strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+                  opacity={getLabelStyle(plan.labelStrength).connOpacity}
                 />
                 <rect
                   x={plan.labelRect.x - 1}
                   y={plan.labelRect.y - 1}
                   width={plan.labelRect.width + 2}
                   height={plan.labelRect.height + 2}
-                  rx={4}
+                  rx={getLabelStyle(plan.labelStrength).rx + 1}
                   fill="none"
                   stroke="white"
-                  strokeWidth={1.5}
+                  strokeWidth={1.0}
                   strokeOpacity={0.3}
                 />
                 <rect
@@ -1218,12 +1234,12 @@ function computeTimelineSignalElements(
                   y={plan.labelRect.y}
                   width={plan.labelRect.width}
                   height={plan.labelRect.height}
-                  rx={3}
+                  rx={getLabelStyle(plan.labelStrength).rx}
                   fill={labelBgColor}
-                  fillOpacity={0.95}
+                  fillOpacity={getLabelStyle(plan.labelStrength).fillOpacity}
                   stroke={markerColor}
-                  strokeWidth={0.8}
-                  strokeOpacity={0.5}
+                  strokeWidth={getLabelStyle(plan.labelStrength).strokeWidth}
+                  strokeOpacity={getLabelStyle(plan.labelStrength).strokeOpacity}
                 />
                 <text
                   x={plan.labelRect.x + plan.labelRect.width / 2}
@@ -1232,7 +1248,7 @@ function computeTimelineSignalElements(
                   dominantBaseline="middle"
                   fill="white"
                   fontSize={plan.labelFontSize}
-                  fontWeight={plan.labelIsBig ? "800" : "700"}
+                  fontWeight={getLabelStyle(plan.labelStrength).fontWeight}
                 >
                   {plan.labelText}
                 </text>
@@ -1273,25 +1289,24 @@ function computeTimelineSignalElements(
           {badgeSvg}
           {plan.showLabel && plan.labelRect && (
             <>
-              {/* v5.8: 连接线改为粗实线更明显 */}
               <line
                 x1={m.x}
                 y1={isBuy ? m.y + markerSize : m.y - markerSize}
                 x2={plan.labelRect.x + plan.labelRect.width / 2}
                 y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
                 stroke={markerColor}
-                strokeWidth={1.5}
-                opacity={0.9}
+                strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+                opacity={getLabelStyle(plan.labelStrength).connOpacity}
               />
               <rect
                 x={plan.labelRect.x - 1}
                 y={plan.labelRect.y - 1}
                 width={plan.labelRect.width + 2}
                 height={plan.labelRect.height + 2}
-                rx={4}
+                rx={getLabelStyle(plan.labelStrength).rx + 1}
                 fill="none"
                 stroke="white"
-                strokeWidth={1.5}
+                strokeWidth={1.0}
                 strokeOpacity={0.3}
               />
               <rect
@@ -1299,13 +1314,13 @@ function computeTimelineSignalElements(
                 y={plan.labelRect.y}
                 width={plan.labelRect.width}
                 height={plan.labelRect.height}
-                rx={3}
+                rx={getLabelStyle(plan.labelStrength).rx}
                 fill={labelBgColor}
-                fillOpacity={0.92}
+                fillOpacity={getLabelStyle(plan.labelStrength).fillOpacity}
                 stroke={m.isCustom ? "#c084fc" : markerColor}
-                strokeWidth={m.isCustom ? 0.8 : 0.5}
+                strokeWidth={m.isCustom ? 0.8 : getLabelStyle(plan.labelStrength).strokeWidth}
                 strokeDasharray={m.isCustom ? "2 1" : "none"}
-                strokeOpacity={m.isCustom ? 1 : 0.4}
+                strokeOpacity={m.isCustom ? 1 : getLabelStyle(plan.labelStrength).strokeOpacity}
               />
               <text
                 x={plan.labelRect.x + plan.labelRect.width / 2}
@@ -1314,7 +1329,7 @@ function computeTimelineSignalElements(
                 dominantBaseline="middle"
                 fill="white"
                 fontSize={plan.labelFontSize}
-                fontWeight={plan.labelIsBig ? "800" : "600"}
+                fontWeight={getLabelStyle(plan.labelStrength).fontWeight}
               >
                 {plan.labelText}
               </text>
@@ -1329,15 +1344,15 @@ function computeTimelineSignalElements(
       }
       return;
     } else if (m.strength === "medium") {
-      const dotRadius = 6;
-      const glowR = 10;
+      const dotRadius = 5;
+      const glowR = 8;
       const badgeCx = m.x + dotRadius + 4;
       const badgeCy = m.y - dotRadius + 1;
       const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
       if (bubbleSvg) bubbleElements.push(bubbleSvg);
 
-      // medium 信号的标签背景色 — 买点鲜红/卖点鲜绿
-      const mediumLabelBg = isBuy ? "#dc2626" : "#16a34a";
+      // medium 信号标签背景色 — 中红买/中绿卖
+      const mediumLabelBg = isBuy ? "#ef4444" : "#22c55e";
 
       signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
@@ -1374,20 +1389,20 @@ function computeTimelineSignalElements(
                 x2={plan.labelRect.x + plan.labelRect.width / 2}
                 y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
                 stroke={markerColor}
-                strokeWidth={1}
-                opacity={0.7}
+                strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+                opacity={getLabelStyle(plan.labelStrength).connOpacity}
               />
               <rect
                 x={plan.labelRect.x}
                 y={plan.labelRect.y}
                 width={plan.labelRect.width}
                 height={plan.labelRect.height}
-                rx={2}
+                rx={getLabelStyle(plan.labelStrength).rx}
                 fill={mediumLabelBg}
-                fillOpacity={0.88}
+                fillOpacity={getLabelStyle(plan.labelStrength).fillOpacity}
                 stroke={markerColor}
-                strokeWidth={0.5}
-                strokeOpacity={0.4}
+                strokeWidth={getLabelStyle(plan.labelStrength).strokeWidth}
+                strokeOpacity={getLabelStyle(plan.labelStrength).strokeOpacity}
               />
               <text
                 x={plan.labelRect.x + plan.labelRect.width / 2}
@@ -1396,7 +1411,7 @@ function computeTimelineSignalElements(
                 dominantBaseline="middle"
                 fill="white"
                 fontSize={plan.labelFontSize}
-                fontWeight="600"
+                fontWeight={getLabelStyle(plan.labelStrength).fontWeight}
               >
                 {plan.labelText}
               </text>
@@ -1405,8 +1420,8 @@ function computeTimelineSignalElements(
         </g>
       );
     } else {
-      const dotRadius = 5;
-      const glowR = 8;
+      const dotRadius = 4;
+      const glowR = 6;
       signalElements.push(
         <g key={`tl-sig-${m.originalIndex}-${i}`}>
           {/* v5.8: weak信号也加发光圈，提升可见性 */}
