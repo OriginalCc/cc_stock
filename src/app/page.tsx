@@ -111,14 +111,23 @@ export default function StockTAssistant() {
   useEffect(() => { queueMicrotask(() => setMounted(true)); }, []);
 
   // ── Menu Bar Stocks ──
+  // Fix: use a ref to track whether localStorage has been loaded,
+  // so we don't overwrite saved data with DEFAULT_ASHARES on first render.
+  const menuStocksLoadedRef = useRef(false);
   const [menuStocks, setMenuStocks] = useState<{ symbol: string; name: string }[]>(DEFAULT_ASHARES);
   useEffect(() => {
     try {
       const saved = localStorage.getItem("menuStocks");
-      if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) queueMicrotask(() => setMenuStocks(parsed)); }
+      if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) { setMenuStocks(parsed); } }
     } catch {}
+    menuStocksLoadedRef.current = true;
   }, []);
-  useEffect(() => { try { localStorage.setItem("menuStocks", JSON.stringify(menuStocks)); } catch {} }, [menuStocks]);
+  useEffect(() => {
+    // Only save to localStorage AFTER initial load is complete,
+    // otherwise we overwrite saved data with DEFAULT_ASHARES
+    if (!menuStocksLoadedRef.current) return;
+    try { localStorage.setItem("menuStocks", JSON.stringify(menuStocks)); } catch {}
+  }, [menuStocks]);
   const isInMenu = menuStocks.some((s) => s.symbol === symbol);
   const toggleMenuStock = useCallback(() => {
     if (!quote) return;
