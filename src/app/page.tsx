@@ -211,7 +211,7 @@ export default function StockTAssistant() {
     const fetchBreadth = async () => {
       if (cancelled) return;
       try {
-        const res = await fetch("/api/stock/market-breadth", { signal: AbortSignal.timeout(6000) });
+        const res = await fetch("/api/stock/market-breadth", { signal: AbortSignal.timeout(8000) });
         if (!res.ok) return;
         const data = await res.json();
         if (!data.error && !cancelled) {
@@ -252,12 +252,10 @@ export default function StockTAssistant() {
 
     const fetchAll = () => { fetchBreadth(); fetchDistribution(); fetchLimitStats(); };
 
-    // Initial fetch using requestIdleCallback to avoid competing with stock data
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => { if (!cancelled) fetchAll(); }, { timeout: 1000 });
-    } else {
-      setTimeout(fetchAll, 1000);
-    }
+    // Always fetch immediately on mount — API has DB fallback so data will show even outside trading hours
+    fetchAll();
+
+    // During trading hours, poll every 15s
     if (isTradingHours()) {
       intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAll(); }, 15000);
     }

@@ -148,3 +148,25 @@ model AppConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// ── 市场涨跌家数快照 ──────────────────────────────────────
+
+model MarketBreadthSnapshot {
+  id          String   @id @default(cuid())
+  date        String                     // 日期 YYYY-MM-DD
+  time        String                     // 时间 HH:mm (2分钟间隔)
+  shUp        Int      @default(0)      // 沪市上涨家数
+  shDown      Int      @default(0)      // 沪市下跌家数
+  shFlat      Int      @default(0)      // 沪市平盘家数
+  szUp        Int      @default(0)      // 深市上涨家数
+  szDown      Int      @default(0)      // 深市下跌家数
+  szFlat      Int      @default(0)      // 深市平盘家数
+  totalUp     Int      @default(0)      // 总上涨家数
+  totalDown   Int      @default(0)      // 总下跌家数
+  totalFlat   Int      @default(0)      // 总平盘家数
+  limitUp     Int      @default(0)      // 涨停家数
+  limitDown   Int      @default(0)      // 跌停家数
+  createdAt   DateTime @default(now())
+
+  @@unique([date, time]) // 同一天同一时间点只记录一次
+}

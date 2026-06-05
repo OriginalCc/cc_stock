@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
-import { join } from "path";
+import { db } from "@/lib/db";
 
 /**
  * GET /api/stock/market-breadth
  * Fetch A-share market breadth data (涨跌家数) from East Money API
  * Returns up/down/flat stock counts + 2-min interval history for the current trading day
+ * 
+ * Persistence: saves every 2-min snapshot to SQLite (MarketBreadthSnapshot)
+ * Fallback: if live API fails, loads today's history from database
  */
 
 export interface BreadthHistoryPoint {
@@ -31,56 +33,11 @@ export interface MarketBreadthData {
   limitDown: number;
   timestamp: number;
   history: BreadthHistoryPoint[];
-}
-
-// ── Persistent 2-min history store (file-based) ──
-const DATA_DIR = join(process.cwd(), "db");
-const HISTORY_FILE = join(DATA_DIR, "market-breadth-history.json");
-
-interface PersistedHistory {
-  date: string;
-  points: BreadthHistoryPoint[];
-  lastSlot: string;
-}
-
-function loadPersistedHistory(): PersistedHistory | null {
-  try {
-    if (!existsSync(HISTORY_FILE)) return null;
-    const raw = readFileSync(HISTORY_FILE, "utf-8");
-    const data = JSON.parse(raw) as PersistedHistory;
-    // Only return if it's today's data
-    const todayStr = getTodayDateStr();
-    if (data.date !== todayStr) return null;
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-function persistHistory(date: string, points: BreadthHistoryPoint[], lastSlot: string) {
-  try {
-    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-    const data: PersistedHistory = { date, points, lastSlot };
-    writeFileSync(HISTORY_FILE, JSON.stringify(data), "utf-8");
-  } catch (err) {
-    console.error("Failed to persist breadth history:", err);
-  }
-}
-
-// In-memory cache loaded from file on first request
-let memoryHistory: { date: string; points: BreadthHistoryPoint[]; lastSlot: string } | null = null;
-let historyLoaded = false;
-
-function ensureHistoryLoaded() {
-  if (!historyLoaded) {
-    memoryHistory = loadPersistedHistory();
-    historyLoaded = true;
-  }
+  fromCache?: boolean; // true if data loaded from DB fallback
 }
 
 function getCurrent2MinSlot(): string {
   const now = new Date();
-  // Use China timezone
   const h = (now.getUTCHours() + 8) % 24;
   const m = now.getUTCMinutes();
   const slotMin = Math.floor(m / 2) * 2;
@@ -95,64 +52,149 @@ function getTodayDateStr(): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-// Cache: 15s TTL for raw data fetch
+// In-memory cache: 15s TTL for raw data fetch
 let cached: { data: Omit<MarketBreadthData, "history">; ts: number } | null = null;
 const CACHE_TTL = 15_000;
 
-export async function GET() {
-  // Load persisted history on first request
-  ensureHistoryLoaded();
+// ── Database helpers ──
 
-  // Determine if we need to re-fetch
-  const needsFetch = !cached || Date.now() - cached.ts >= CACHE_TTL;
-
-  let rawData: Omit<MarketBreadthData, "history">;
-
-  if (needsFetch) {
-    try {
-      rawData = await fetchMarketBreadth();
-      cached = { data: rawData, ts: Date.now() };
-    } catch (err) {
-      console.error("market-breadth error:", err);
-      if (cached) {
-        rawData = cached.data;
-      } else {
-        return NextResponse.json({ error: "Failed to fetch market breadth" }, { status: 500 });
-      }
-    }
-  } else {
-    rawData = cached!.data;
+async function saveSnapshotToDb(date: string, time: string, data: Omit<MarketBreadthData, "history">) {
+  try {
+    await db.marketBreadthSnapshot.upsert({
+      where: { date_time: { date, time } },
+      create: {
+        date,
+        time,
+        shUp: data.shUp,
+        shDown: data.shDown,
+        shFlat: data.shFlat,
+        szUp: data.szUp,
+        szDown: data.szDown,
+        szFlat: data.szFlat,
+        totalUp: data.totalUp,
+        totalDown: data.totalDown,
+        totalFlat: data.totalFlat,
+        limitUp: data.limitUp,
+        limitDown: data.limitDown,
+      },
+      update: {
+        shUp: data.shUp,
+        shDown: data.shDown,
+        shFlat: data.shFlat,
+        szUp: data.szUp,
+        szDown: data.szDown,
+        szFlat: data.szFlat,
+        totalUp: data.totalUp,
+        totalDown: data.totalDown,
+        totalFlat: data.totalFlat,
+        limitUp: data.limitUp,
+        limitDown: data.limitDown,
+      },
+    });
+  } catch (err) {
+    console.error("Failed to save breadth snapshot to DB:", err);
   }
+}
 
-  // ── Record history point (2-min interval) ──
+async function loadHistoryFromDb(date: string): Promise<BreadthHistoryPoint[]> {
+  try {
+    const rows = await db.marketBreadthSnapshot.findMany({
+      where: { date },
+      orderBy: { time: "asc" },
+    });
+    return rows.map(r => ({
+      time: r.time,
+      totalUp: r.totalUp,
+      totalDown: r.totalDown,
+      totalFlat: r.totalFlat,
+      limitUp: r.limitUp,
+      limitDown: r.limitDown,
+    }));
+  } catch (err) {
+    console.error("Failed to load breadth history from DB:", err);
+    return [];
+  }
+}
+
+async function loadLatestFromDb(date: string): Promise<Omit<MarketBreadthData, "history"> | null> {
+  try {
+    const row = await db.marketBreadthSnapshot.findFirst({
+      where: { date },
+      orderBy: { time: "desc" },
+    });
+    if (!row) return null;
+    return {
+      shUp: row.shUp,
+      shDown: row.shDown,
+      shFlat: row.shFlat,
+      szUp: row.szUp,
+      szDown: row.szDown,
+      szFlat: row.szFlat,
+      totalUp: row.totalUp,
+      totalDown: row.totalDown,
+      totalFlat: row.totalFlat,
+      limitUp: row.limitUp,
+      limitDown: row.limitDown,
+      timestamp: Date.now(),
+    };
+  } catch (err) {
+    console.error("Failed to load latest breadth from DB:", err);
+    return null;
+  }
+}
+
+export async function GET() {
   const todayStr = getTodayDateStr();
   const currentSlot = getCurrent2MinSlot();
 
   // Only record during extended hours (9:00 ~ 15:30) to cover pre/post market
   const slotH = parseInt(currentSlot.slice(0, 2));
   const slotM = parseInt(currentSlot.slice(3, 5));
-  const slotVal = slotH * 100 + slotM;  // HHMM format: 9:30 = 930, 11:22 = 1122
+  const slotVal = slotH * 100 + slotM;
   const isRecordableTime = slotVal >= 900 && slotVal <= 1530;
 
-  // Reset history if date changed
-  if (memoryHistory && memoryHistory.date !== todayStr) {
-    memoryHistory = null;
+  // Determine if we need to re-fetch from live API
+  const needsFetch = !cached || Date.now() - cached.ts >= CACHE_TTL;
+
+  let rawData: Omit<MarketBreadthData, "history">;
+  let fromCache = false;
+
+  if (needsFetch) {
+    try {
+      rawData = await fetchMarketBreadth();
+      cached = { data: rawData, ts: Date.now() };
+
+      // ── Save snapshot to database (await to ensure persistence) ──
+      if (isRecordableTime && rawData.totalUp + rawData.totalDown > 0) {
+        await saveSnapshotToDb(todayStr, currentSlot, rawData);
+      }
+    } catch (err) {
+      console.error("market-breadth live fetch error:", err);
+      // ── Fallback: try database ──
+      if (cached) {
+        rawData = cached.data;
+      } else {
+        const dbData = await loadLatestFromDb(todayStr);
+        if (dbData) {
+          rawData = dbData;
+          fromCache = true;
+        } else {
+          return NextResponse.json({ error: "Failed to fetch market breadth and no cached data available" }, { status: 500 });
+        }
+      }
+    }
+  } else {
+    rawData = cached!.data;
   }
 
-  // Always record if history is empty (first data point), otherwise only during recordable hours
-  const shouldRecord = isRecordableTime || !memoryHistory || memoryHistory.points.length === 0;
+  // ── Load history from database (always, for consistency) ──
+  const history = await loadHistoryFromDb(todayStr);
 
-  if (shouldRecord && rawData.totalUp + rawData.totalDown > 0) {
-    // Initialize history for today if needed
-    if (!memoryHistory) {
-      memoryHistory = { date: todayStr, points: [], lastSlot: "" };
-    }
-
-    const points = memoryHistory.points;
-
-    // Always record/update: new slot → add point, same slot → update with latest data
-    const existingIdx = points.findIndex(p => p.time === currentSlot);
-    const point: BreadthHistoryPoint = {
+  // If current slot data is newer than the last history point, add it
+  const lastHistoryTime = history.length > 0 ? history[history.length - 1].time : "";
+  if (rawData.totalUp + rawData.totalDown > 0 && currentSlot > lastHistoryTime && isRecordableTime) {
+    // Ensure current data is in the history
+    const currentPoint: BreadthHistoryPoint = {
       time: currentSlot,
       totalUp: rawData.totalUp,
       totalDown: rawData.totalDown,
@@ -160,20 +202,19 @@ export async function GET() {
       limitUp: rawData.limitUp,
       limitDown: rawData.limitDown,
     };
-    if (existingIdx >= 0) {
-      points[existingIdx] = point; // Update existing slot with latest data
+    if (history.length === 0 || history[history.length - 1].time !== currentSlot) {
+      history.push(currentPoint);
     } else {
-      points.push(point); // New time slot
+      history[history.length - 1] = currentPoint;
     }
-    memoryHistory.lastSlot = currentSlot;
-
-    // Persist to file after each update
-    persistHistory(todayStr, points, currentSlot);
+    // Also ensure it's saved to DB (await)
+    await saveSnapshotToDb(todayStr, currentSlot, rawData);
   }
 
   const result: MarketBreadthData = {
     ...rawData,
-    history: memoryHistory?.points || [],
+    history,
+    fromCache,
   };
 
   return NextResponse.json(result);
