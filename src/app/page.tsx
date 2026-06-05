@@ -132,72 +132,66 @@ export default function StockTAssistant() {
   const [indexRegimes, setIndexRegimes] = useState<Record<IndexKey, RegimeDetail | null>>({ sz: null, sh: null, cyb: null });
   const [activeIndexKey, setActiveIndexKey] = useState<IndexKey>("sz");
   const [indexTimelineData, setIndexTimelineData] = useState<Record<IndexKey, { items: TimelineItem[]; prevClose: number }>>({ sz: { items: [], prevClose: 0 }, sh: { items: [], prevClose: 0 }, cyb: { items: [], prevClose: 0 } });
+  const [indexLoading, setIndexLoading] = useState(false);
 
-  useEffect(() => {
-    // Index data fetch - start with active index immediately, then others with a delay
-    let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
+  // Ref for manual retry
+  const fetchIndexDataRef = useCallback(() => {
+    setIndexLoading(true);
     const fetchIndex = async (key: IndexKey) => {
       const { symbol: sym } = INDEX_CONFIG[key];
       try {
-        const res = await fetch(`/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}`, { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(`/api/stock/ashare-timeline?symbol=${encodeURIComponent(sym)}`, { signal: AbortSignal.timeout(8000) });
         if (!res.ok) return null;
         const data = await res.json();
-        if (data.error || !data.items || data.items.length < 10) return null;
+        if (data.error || !data.items || data.items.length < 5) return null;
         return { regime: detectMarketRegimeDetail(data.items, data.prevClose || data.items[0].price), items: data.items as TimelineItem[], prevClose: data.prevClose || data.items[0].price };
       } catch { return null; }
     };
 
-    const applyIndexResults = (results: PromiseSettledResult<{ regime: RegimeDetail; items: TimelineItem[]; prevClose: number } | null>[]) => {
-      if (cancelled) return;
+    Promise.allSettled(INDEX_KEYS.map(key => fetchIndex(key))).then(results => {
       setIndexRegimes(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newRegime = results[i].value!.regime; if (prev[key]?.regime !== newRegime.regime || prev[key]?.confidence !== newRegime.confidence) { next[key] = newRegime; changed = true; } } }); return changed ? next : prev; });
       setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; INDEX_KEYS.forEach((key, i) => { if (results[i].status === "fulfilled" && results[i].value) { const newVal = { items: results[i].value!.items, prevClose: results[i].value!.prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
-    };
+      setIndexLoading(false);
 
-    const fetchAllIndices = async (isRetry = false) => {
-      const results = await Promise.allSettled(
-        INDEX_KEYS.map(key => fetchIndex(key))
-      );
-      applyIndexResults(results);
-
-      // Retry: if any index returned null on first attempt, retry those once after 3s
-      if (!isRetry) {
-        const failedKeys = INDEX_KEYS.filter((_, i) => results[i].status !== "fulfilled" || !results[i].value);
-        if (failedKeys.length > 0) {
-          setTimeout(async () => {
-            if (cancelled) return;
-            const retryResults = await Promise.allSettled(
-              failedKeys.map(key => fetchIndex(key))
-            );
-            // Map retry results back to full INDEX_KEYS order for applyIndexResults
-            const mergedResults = INDEX_KEYS.map((key) => {
-              const retryIdx = failedKeys.indexOf(key);
-              if (retryIdx >= 0) return retryResults[retryIdx];
-              return results[INDEX_KEYS.indexOf(key)];
-            });
-            applyIndexResults(mergedResults as PromiseSettledResult<{ regime: RegimeDetail; items: TimelineItem[]; prevClose: number } | null>[]);
-          }, 3000);
-        }
+      // Auto-retry: if any index still empty, retry after 5s
+      const failedKeys = INDEX_KEYS.filter((_, i) => results[i].status !== "fulfilled" || !results[i].value);
+      if (failedKeys.length > 0) {
+        setTimeout(async () => {
+          const retryResults = await Promise.allSettled(failedKeys.map(key => fetchIndex(key)));
+          setIndexRegimes(prev => { let changed = false; const next = { ...prev }; failedKeys.forEach((key, i) => { if (retryResults[i].status === "fulfilled" && retryResults[i].value) { const newRegime = (retryResults[i].value as any).regime; if (prev[key]?.regime !== newRegime.regime || prev[key]?.confidence !== newRegime.confidence) { next[key] = newRegime; changed = true; } } }); return changed ? next : prev; });
+          setIndexTimelineData(prev => { let changed = false; const next = { ...prev }; failedKeys.forEach((key, i) => { if (retryResults[i].status === "fulfilled" && retryResults[i].value) { const newVal = { items: (retryResults[i].value as any).items, prevClose: (retryResults[i].value as any).prevClose }; if (prev[key]?.items.length !== newVal.items.length || prev[key]?.items[newVal.items.length - 1]?.time !== newVal.items[newVal.items.length - 1]?.time) { next[key] = newVal; changed = true; } } }); return changed ? next : prev; });
+          // Check again - if still failing, schedule another retry
+          const stillFailed = failedKeys.filter((_, i) => retryResults[i].status !== "fulfilled" || !retryResults[i].value);
+          if (stillFailed.length > 0) {
+            setTimeout(() => fetchIndexDataRef(), 10000);
+          }
+        }, 5000);
       }
-    };
+    });
+  }, []);
+
+  const retryIndexFetch = useCallback(() => {
+    fetchIndexDataRef();
+  }, [fetchIndexDataRef]);
+
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
     // Defer index fetch to avoid competing with stock timeline for connection pool
-    // Index data is less critical than stock data for initial paint
-    const startDelay = 3000; // Fixed 3s delay to ensure main stock data loads first
-    setTimeout(() => fetchAllIndices(), startDelay);
+    const startDelay = 3000;
+    setTimeout(() => fetchIndexDataRef(), startDelay);
 
-    // Refresh every 30s during trading hours
+    // Refresh every 15s during trading hours
     const isTradingHours = () => {
       const now = new Date(); const h = (now.getUTCHours() + 8) % 24; const m = now.getUTCMinutes();
       const t = h * 100 + m; const day = now.getUTCDay();
       return day >= 1 && day <= 5 && ((t >= 925 && t <= 1135) || (t >= 1255 && t <= 1505));
     };
     if (isTradingHours()) {
-      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchAllIndices(); }, 15000);
+      intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchIndexDataRef(); }, 15000);
     }
-    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
-  }, []);
+    return () => { if (intervalId) clearInterval(intervalId); };
+  }, [fetchIndexDataRef]);
 
   // ── Market Breadth (涨跌家数) ──
   useEffect(() => {
@@ -933,7 +927,7 @@ export default function StockTAssistant() {
           <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
-            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} />
+            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} />
             {/* 涨跌家数 + 市场情绪指数 — 放在深证成指分时图后面 */}
             {marketBreadth && (() => {
               const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;

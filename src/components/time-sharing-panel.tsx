@@ -1664,6 +1664,7 @@ function timeSharingPropsEqual(
   if (prev.sectorRegime?.regime !== next.sectorRegime?.regime) return false;
   if (prev.sectorInfo?.code !== next.sectorInfo?.code) return false;
   if (prev.sectorLoading !== next.sectorLoading) return false;
+  if (prev.indexLoading !== next.indexLoading) return false;
 
   // Index timeline data: compare items length for active key + last item price
   const prevIdxData = prev.indexTimelineData?.[prev.activeIndexKey || "sz"];
@@ -1743,6 +1744,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   stockName?: string;
   indexTimelineData?: Record<string, { items: TimelineItem[]; prevClose: number }>;
   sectorTimelineData?: { items: TimelineItem[]; prevClose: number };
+  indexLoading?: boolean;
+  onRetryIndex?: () => void;
 }) {
   // v5.8: 低价股/ETF（昨收<5元）价格显示3位小数，避免分时线变平线
   const priceDps = (prevClose > 0 && prevClose < 5) ? 3 : 2;
@@ -2947,6 +2950,27 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             )}
           </button>
         )}
+        {/* Index retry button - shown when index timeline data is empty */}
+        {(!indexTimelineData?.[activeIndexKey || "sz"]?.items?.length) && onRetryIndex && (
+          <button
+            onClick={onRetryIndex}
+            disabled={indexLoading}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold bg-blue-500/10 border-blue-500/20 text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="指数分时数据未加载，点击重新请求"
+          >
+            {indexLoading ? (
+              <>
+                <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                <span>加载中</span>
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-2.5 h-2.5" />
+                <span>指数</span>
+              </>
+            )}
+          </button>
+        )}
         {/* Market Index Regime Badge - click to cycle 深/沪/创 */}
         {szIndexRegime && (() => {
           const cfg = REGIME_CONFIG[szIndexRegime.regime] || REGIME_CONFIG["震荡市"];
@@ -3893,7 +3917,35 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         const idxInfo = indexConfig?.[activeIndexKey || "sz"];
         const hasIdxData = szData && szData.items.length > 0;
         const hasSectorData = sectorTimelineData.items.length > 0 && sectorInfo;
-        if (!hasIdxData && !hasSectorData) return null;
+
+        // Show index retry placeholder when data is missing
+        const idxRetryPlaceholder = !hasIdxData && onRetryIndex ? (
+          <div className="rounded-lg border bg-card p-3 flex items-center justify-center gap-2 text-muted-foreground">
+            <span className="text-xs">{idxInfo?.label || "深证成指(骗人指数)"}分时数据未加载</span>
+            <button
+              onClick={onRetryIndex}
+              disabled={indexLoading}
+              className="inline-flex items-center gap-0.5 px-2 py-1 rounded border text-[9px] font-semibold bg-blue-500/10 border-blue-500/20 text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+              title="点击重新请求指数分时数据"
+            >
+              {indexLoading ? (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                  <span>加载中</span>
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>重新加载</span>
+                </>
+              )}
+            </button>
+          </div>
+        ) : null;
+
+        if (!hasIdxData && !hasSectorData) {
+          return idxRetryPlaceholder;
+        }
 
         const regimeBadge = (regime: RegimeDetail | null) => {
           if (!regime) return null;
@@ -3906,6 +3958,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {hasSectorData && <MiniTimelinePanel title={`${sectorInfo.name}板块`} data={sectorTimelineData.items} prevClose={sectorTimelineData.prevClose} badge={<div className="ml-auto">{regimeBadge(sectorRegime)}</div>} />}
               {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指(骗人指数)"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime)}{onCycleIndex && <span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={onCycleIndex} title="点击切换指数">切换</span>}</div>} />}
+              {!hasIdxData && idxRetryPlaceholder}
             </div>
           </div>
         );
