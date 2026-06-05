@@ -1716,6 +1716,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   stockName,
   indexTimelineData,
   sectorTimelineData,
+  indexLoading,
+  onRetryIndex,
 }: {
   data: TimelineItem[];
   prevClose: number;
