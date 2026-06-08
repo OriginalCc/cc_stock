@@ -1492,26 +1492,126 @@ function buildOverlayFingerprint(
 }
 
 // ── VWAP (均线) 禁止买卖标注 ─────────────────────────────
-// 在均线旁标注"禁止买卖"：均线上方禁买，均线下方禁卖
-// 做T核心原则：低吸高抛 → 均线下方买入，均线上方卖出
+// 在均线旁标注"禁止买卖"：均线上方+0.3%禁买，均线下方-0.3%禁卖，±0.3%内禁止买卖
+// 做T核心原则：低吸高抛 → 均线下0.3%外买入，均线上0.3%外卖出，均线附近不操作
 
 function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pricePoints: any[] }) {
   if (vwapPoints.length < 10) return null;
 
-  // Pick key positions along the VWAP line to place annotations
-  // We place labels at roughly evenly-spaced intervals
   const totalPoints = vwapPoints.length;
   const LABEL_COUNT = Math.min(3, Math.max(1, Math.floor(totalPoints / 60)));
   
-  // Calculate positions: early, middle, late
   const positions: number[] = [];
   const spacing = Math.floor(totalPoints / (LABEL_COUNT + 1));
   for (let i = 1; i <= LABEL_COUNT; i++) {
     positions.push(spacing * i);
   }
 
-  const elements: React.ReactNode[] = [];
+  // ── Build the ±0.3% shaded band along the VWAP line ──
+  // We create a polygon path: upper boundary = VWAP + 0.3%, lower = VWAP - 0.3%
+  // Since we only have pixel coords, we need the Y-axis scale to convert
+  // Instead, we can estimate: find the pixel distance for 0.3% from a few sample points
+  // Using the price data payload to calculate the ratio of pixels to percentage
+  const bandElements: React.ReactNode[] = [];
+  const labelElements: React.ReactNode[] = [];
 
+  // Sample a point to estimate pixel-per-percent ratio
+  const sampleIdx = Math.floor(totalPoints / 2);
+  const sampleVwapPt = vwapPoints[sampleIdx];
+  const samplePayload = sampleVwapPt?.payload;
+  const sampleAvgPrice = samplePayload?.avgPrice;
+  const samplePrice = samplePayload?.price;
+  
+  // We need to figure out how many pixels = 0.3% of price
+  // Since we have both price and avgPrice in the same payload, and their pixel y values,
+  // we can calculate the ratio
+  let pxPerPercent = 0;
+  if (sampleAvgPrice && sampleAvgPrice > 0 && samplePrice) {
+    // Find the corresponding price point
+    const samplePricePt = pricePoints[sampleIdx];
+    if (samplePricePt) {
+      const priceDiffPx = samplePricePt.y - sampleVwapPt.y; // positive = price below vwap
+      const priceDiffPct = ((samplePrice - sampleAvgPrice) / sampleAvgPrice) * 100;
+      if (Math.abs(priceDiffPct) > 0.01) {
+        pxPerPercent = priceDiffPx / priceDiffPct; // pixels per 1% change
+      }
+    }
+  }
+  
+  // Fallback: estimate from VWAP point spacing
+  if (pxPerPercent === 0 && totalPoints > 2) {
+    // Use the chart height to estimate - typically a ±5% range
+    const firstPt = vwapPoints[0];
+    const lastPt = vwapPoints[totalPoints - 1];
+    const chartHeight = Math.abs(pricePoints[0]?.y - pricePoints[Math.floor(totalPoints / 2)]?.y) || 100;
+    // Assume chart shows roughly ±3% range
+    pxPerPercent = chartHeight / 6;
+  }
+
+  // 0.3% in pixels
+  const bandPx = Math.abs(pxPerPercent * 0.3);
+
+  // Build the band polygon as a series of rectangles between upper and lower boundaries
+  if (bandPx > 1) {
+    // Create the band as a single path
+    const upperPath: string[] = [];
+    const lowerPath: string[] = [];
+    
+    // Sample every few points for performance
+    const step = Math.max(1, Math.floor(totalPoints / 120));
+    for (let i = 0; i < totalPoints; i += step) {
+      const pt = vwapPoints[i];
+      if (!pt || pt.x == null || pt.y == null) continue;
+      upperPath.push(`${pt.x},${pt.y - bandPx}`);
+      lowerPath.push(`${pt.x},${pt.y + bandPx}`);
+    }
+    // Add the last point
+    const lastPt = vwapPoints[totalPoints - 1];
+    if (lastPt && lastPt.x != null && lastPt.y != null) {
+      upperPath.push(`${lastPt.x},${lastPt.y - bandPx}`);
+      lowerPath.push(`${lastPt.x},${lastPt.y + bandPx}`);
+    }
+
+    if (upperPath.length > 2) {
+      // Polygon: go forward along upper, then backward along lower
+      const points = [...upperPath, ...lowerPath.reverse()].join(' ');
+      bandElements.push(
+        <polygon
+          key="vwap-band"
+          points={points}
+          fill="#ca8a04"
+          fillOpacity={0.10}
+          stroke="none"
+        />
+      );
+      // Upper boundary line (VWAP + 0.3%)
+      bandElements.push(
+        <polyline
+          key="vwap-band-upper"
+          points={upperPath.join(' ')}
+          fill="none"
+          stroke="#ca8a04"
+          strokeWidth={0.6}
+          strokeOpacity={0.35}
+          strokeDasharray="3 3"
+        />
+      );
+      // Lower boundary line (VWAP - 0.3%)
+      bandElements.push(
+        <polyline
+          key="vwap-band-lower"
+          points={lowerPath.reverse().join(' ')}
+          fill="none"
+          stroke="#ca8a04"
+          strokeWidth={0.6}
+          strokeOpacity={0.35}
+          strokeDasharray="3 3"
+        />
+      );
+    }
+  }
+
+  // ── Place labels at key positions ──
   for (const pos of positions) {
     const vwapPt = vwapPoints[pos];
     const pricePt = pricePoints[pos];
@@ -1520,26 +1620,50 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
     const x = vwapPt.x;
     const y = vwapPt.y;
     const priceY = pricePt.y;
+    const payload = vwapPt.payload;
+    const avgPrice = payload?.avgPrice ?? 0;
+    const curPrice = payload?.price ?? 0;
     
-    // Determine direction: price above VWAP = 禁买, price below VWAP = 禁卖
-    const isPriceAboveVwap = priceY < y; // In SVG, lower y = higher price
-    const label = isPriceAboveVwap ? "禁买" : "禁卖";
-    const subLabel = isPriceAboveVwap ? "均线上方高抛区" : "均线下方低吸区";
-    const color = isPriceAboveVwap ? "#dc2626" : "#16a34a"; // red for 禁买, green for 禁卖
+    // Calculate deviation from VWAP in percentage
+    const devPct = avgPrice > 0 ? ((curPrice - avgPrice) / avgPrice) * 100 : 0;
+    const absDevPct = Math.abs(devPct);
     
-    // Place label on the VWAP line, offset towards the forbidden zone
-    // 禁买 → label above VWAP (towards price), 禁卖 → label below VWAP
-    const offsetY = isPriceAboveVwap ? -18 : 18;
+    let label: string;
+    let subLabel: string;
+    let color: string;
+    let offsetY: number;
 
-    elements.push(
+    if (absDevPct <= 0.3) {
+      // Within ±0.3% of VWAP → 禁止买卖 (both buying AND selling)
+      label = "禁止买卖";
+      subLabel = `均线±0.3%震荡区`;
+      color = "#ca8a04"; // amber/yellow to match VWAP line
+      offsetY = priceY < y ? -22 : 22; // offset away from VWAP
+    } else if (devPct > 0.3) {
+      // Price above VWAP + 0.3% → 禁买 (only sell allowed)
+      label = "禁买";
+      subLabel = "均线上方高抛区";
+      color = "#dc2626"; // red
+      offsetY = -18;
+    } else {
+      // Price below VWAP - 0.3% → 禁卖 (only buy allowed)
+      label = "禁卖";
+      subLabel = "均线下方低吸区";
+      color = "#16a34a"; // green
+      offsetY = 18;
+    }
+
+    const pillWidth = label.length > 2 ? 56 : 44;
+
+    labelElements.push(
       <g key={`vwap-ban-${pos}`}>
-        {/* Small indicator arrow/dot on VWAP line */}
+        {/* Small indicator dot on VWAP line */}
         <circle cx={x} cy={y} r={2.5} fill={color} fillOpacity={0.6} />
         {/* Main label pill */}
         <rect
-          x={x - 22}
+          x={x - pillWidth / 2}
           y={y + offsetY - 8}
-          width={44}
+          width={pillWidth}
           height={16}
           rx={3}
           fill={color}
@@ -1561,10 +1685,10 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
         >
           {label}
         </text>
-        {/* Sub-label below/above */}
+        {/* Sub-label */}
         <text
           x={x}
-          y={y + offsetY + (isPriceAboveVwap ? -12 : 12)}
+          y={y + offsetY + (offsetY < 0 ? -12 : 12)}
           textAnchor="middle"
           dominantBaseline="middle"
           fontSize={7}
@@ -1579,7 +1703,14 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
     );
   }
 
-  return <g className="vwap-ban-annotations">{elements}</g>;
+  return (
+    <g className="vwap-ban-annotations">
+      {/* Band (bottom layer) */}
+      {bandElements}
+      {/* Labels (on top of band) */}
+      {labelElements}
+    </g>
+  );
 }
 
 // ── Combined Chart Overlay Renderer ──────────────────────
