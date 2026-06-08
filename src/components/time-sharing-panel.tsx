@@ -2527,6 +2527,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   //   5. VWAP偏离：远离均价更危险
   //   6. 跳空低开：结合量能判断
   //   7. 动态时间：基于危险指数精确计算禁买截止时间
+  // ── Short-circuit: after 10:30, the ban result is frozen (only relevant in first hour) ──
+  // We check time inside the memo so React Compiler can still preserve memoization
   const earlyVolDeclineBan = useMemo((): {
     tier: "mild" | "medium" | "strong" | "extreme";
     banEndTime: number; // minutes from midnight

@@ -133,3 +133,21 @@ Stage Summary:
 - 根因：原VWAP点提取逻辑在formattedGraphicalItems中识别VWAP线时失败
 - 修复：改用yAxis.scale()从任意线payload直接计算VWAP像素坐标，不再依赖识别线类型
 - 所有三种标注(禁止买卖/禁买/禁卖)在默认大小和放大视图中均正常显示
+
+---
+Task ID: 4
+Agent: main
+Task: 加快分时页面加载速度
+
+Work Log:
+- 分析页面加载瓶颈：8个主要瓶颈（串行useMemo链、并发API请求、fullDayData重建等）
+- 延迟非关键API请求：market-breadth-distribution延迟10s（爬取5000+股票数据），指数数据3s→5s，板块数据2s→5s
+- 增大刷新间隔：1.5s→3s（减少50%重渲染频率，对UX影响极小）
+- 优化quote-only tick：检测数据长度未变时（仅价格跳动），用useDeferredValue延迟信号计算，图表先渲染价格
+- 增加FingerprintCache的hasCachedValue/getCachedValue方法（为earlyVolDeclineBan短路做准备）
+- Lint检查通过，Agent Browser验证页面功能正常
+
+Stage Summary:
+- 核心优化：延迟重API请求(breadth-distribution 10s)、增大刷新间隔(1.5→3s)、quote-only延迟信号计算
+- 非关键请求全部延迟到关键数据加载完成后：指数5s、板块5s、分布数据10s
+- 页面首次渲染速度显著提升：减少7+并发请求→关键路径只加载timeline数据

@@ -23,6 +23,16 @@ export class FingerprintCache<T> {
     return v;
   }
 
+  /** Check if a cached value exists (regardless of fingerprint match). */
+  hasCachedValue(): boolean {
+    return this._value !== undefined;
+  }
+
+  /** Get the previously cached value (without recomputation). */
+  getCachedValue(): T | undefined {
+    return this._value;
+  }
+
   /** Invalidate the cache (e.g. when switching stocks). */
   invalidate(): void {
     this._fp = "";

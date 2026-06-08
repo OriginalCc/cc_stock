@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useMemo, useEffect, startTransition } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect, startTransition, useDeferredValue } from "react";
 import dynamic from "next/dynamic";
 import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem, type TimelineItem, type ChartMode } from "@/hooks/use-stock-data";
 
@@ -187,7 +187,7 @@ export default function StockTAssistant() {
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     // Defer index fetch to avoid competing with stock timeline for connection pool
-    const startDelay = 3000;
+    const startDelay = 5000;
     setTimeout(() => fetchIndexDataRef(), startDelay);
 
     // Refresh every 15s during trading hours
@@ -252,8 +252,12 @@ export default function StockTAssistant() {
 
     const fetchAll = () => { fetchBreadth(); fetchDistribution(); fetchLimitStats(); };
 
-    // Always fetch immediately on mount — API has DB fallback so data will show even outside trading hours
-    fetchAll();
+    // Fetch market-breadth (lightweight) immediately on mount — API has DB fallback
+    fetchBreadth();
+    fetchLimitStats();
+    // Defer heavy distribution fetch (scrapes 5000+ stocks) by 10s to avoid connection pool starvation
+    // during critical initial page load when timeline/quote data is still loading
+    setTimeout(() => { if (!cancelled) fetchDistribution(); }, 10000);
 
     // During trading hours, poll every 15s
     if (isTradingHours()) {
@@ -377,8 +381,8 @@ export default function StockTAssistant() {
       fetchSectorData();
     };
 
-    // Initial fetch — delayed 2s to avoid competing with main stock timeline data
-    setTimeout(() => { if (!cancelled) fetchSectorData(); }, 2000);
+    // Initial fetch — delayed 5s to avoid competing with main stock timeline data
+    setTimeout(() => { if (!cancelled) fetchSectorData(); }, 5000);
     // Periodic refresh every 15s — no fail counter, always retry
     const refreshInterval = setInterval(() => {
       retryCount = 0; // Reset retry counter on periodic refresh
@@ -642,6 +646,22 @@ export default function StockTAssistant() {
     return truncated;
   }, [timeline, quote, isTimelineActive]);
 
+  // ── Quote-only tick detection ──
+  // When only the last price changes (no new time slot), we can skip the
+  // heaviest computations (signal generation). The chart still renders
+  // immediately with the new price, and signals catch up on the next real data update.
+  const prevTimelineLenRef = useRef(0);
+  const isQuoteOnlyTick = liveTimeline.length > 0 && liveTimeline.length === prevTimelineLenRef.current;
+  useEffect(() => { prevTimelineLenRef.current = liveTimeline.length; }, [liveTimeline.length]);
+
+  // ── Deferred signal computation ──
+  // Always call useDeferredValue (hooks can't be conditional), but only use the
+  // deferred version for signal computation when it's a quote-only tick.
+  // On real data updates (new time slot), the deferred value will already be
+  // up-to-date because React processes updates in order.
+  const deferredTimeline = useDeferredValue(liveTimeline);
+  const liveTimelineForSignals = isQuoteOnlyTick ? deferredTimeline : liveTimeline;
+
   const tlLastDataIdx = useMemo(() => {
     if (liveTimeline.length === 0) return -1;
     const lastTime = liveTimeline[liveTimeline.length - 1].time;
@@ -672,17 +692,17 @@ export default function StockTAssistant() {
 
   const timelineMACDData = useMemo(() => {
     // Skip heavy MACD computation when not in timeline mode
-    if (!isTimelineActive || liveTimeline.length === 0) return [];
+    if (!isTimelineActive || liveTimelineForSignals.length === 0) return [];
     // Fingerprint: skip recomputation if data hasn't meaningfully changed
-    const fp = `${liveTimeline.length}:${liveTimeline.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}`;
+    const fp = `${liveTimelineForSignals.length}:${liveTimelineForSignals.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}`;
     return macdFingerprintCache.compute(fp, () => {
-      const prices = liveTimeline.map((d) => d.price);
+      const prices = liveTimelineForSignals.map((d) => d.price);
       const macdResult = calculateMACD(prices);
       const result: { time: string; dif: number | null; dea: number | null; macd: number | null }[] = [];
-      for (let i = 0; i < liveTimeline.length; i++) { const mr = macdResult[i]; if (isNaN(mr.dif) || isNaN(mr.dea) || isNaN(mr.macd)) result.push({ time: liveTimeline[i].time, dif: null, dea: null, macd: null }); else result.push({ time: liveTimeline[i].time, dif: mr.dif, dea: mr.dea, macd: mr.macd }); }
+      for (let i = 0; i < liveTimelineForSignals.length; i++) { const mr = macdResult[i]; if (isNaN(mr.dif) || isNaN(mr.dea) || isNaN(mr.macd)) result.push({ time: liveTimelineForSignals[i].time, dif: null, dea: null, macd: null }); else result.push({ time: liveTimelineForSignals[i].time, dif: mr.dif, dea: mr.dea, macd: mr.macd }); }
       return result.filter((d) => d.dif != null);
     });
-  }, [liveTimeline, isTimelineActive]);
+  }, [liveTimelineForSignals, isTimelineActive]);
 
   const timelineSignals = useMemo(() => {
     // Skip the heaviest computation (~7000 condition evaluations) when not in timeline mode
@@ -690,11 +710,11 @@ export default function StockTAssistant() {
     // Fingerprint: skip if inputs haven't changed
     // Include signal engine version to invalidate cache when signal logic changes
     const SIGNAL_ENGINE_VERSION = 'v6.1';
-    const fp = `${SIGNAL_ENGINE_VERSION}:${liveTimeline.length}:${timelineMACDData.length}:${liveTimeline.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}:${quote?.open ?? 0}`;
+    const fp = `${SIGNAL_ENGINE_VERSION}:${liveTimelineForSignals.length}:${timelineMACDData.length}:${liveTimelineForSignals.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}:${quote?.open ?? 0}`;
     return signalFingerprintCache.compute(fp, () =>
-      generateTimelineSignals(liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, quote?.open)
+      generateTimelineSignals(liveTimelineForSignals, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, quote?.open)
     );
-  }, [liveTimeline, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, isTimelineActive, quote?.open]);
+  }, [liveTimelineForSignals, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, isTimelineActive, quote?.open]);
   // NOTE: Removed useDeferredValue — it was causing labels to appear with visible delay.
   // The fingerprint caching above makes recomputation cheap when data hasn't changed,
   // so deferred rendering is no longer needed and directly using values is faster.
