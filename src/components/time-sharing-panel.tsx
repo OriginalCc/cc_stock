@@ -1496,15 +1496,22 @@ function buildOverlayFingerprint(
 // 做T核心原则：低吸高抛 → 均线下0.3%外买入，均线上0.3%外卖出，均线附近不操作
 
 function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pricePoints: any[] }) {
-  if (vwapPoints.length < 5) return null;
+  if (vwapPoints.length < 2) return null;
 
   const totalPoints = vwapPoints.length;
-  const LABEL_COUNT = Math.min(3, Math.max(1, Math.floor(totalPoints / 60)));
+  // Adaptive label count: show 1 label as soon as VWAP appears, scale up as data grows
+  const LABEL_COUNT = totalPoints < 10 ? 1
+    : Math.min(3, Math.max(1, Math.floor(totalPoints / 60)));
   
   const positions: number[] = [];
-  const spacing = Math.floor(totalPoints / (LABEL_COUNT + 1));
-  for (let i = 1; i <= LABEL_COUNT; i++) {
-    positions.push(spacing * i);
+  // With very few points, place the single label at the latest point for visibility
+  if (totalPoints < 10) {
+    positions.push(totalPoints - 1);
+  } else {
+    const spacing = Math.floor(totalPoints / (LABEL_COUNT + 1));
+    for (let i = 1; i <= LABEL_COUNT; i++) {
+      positions.push(spacing * i);
+    }
   }
 
   // ── Build the ±0.3% shaded band along the VWAP line ──
@@ -1581,7 +1588,8 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
       lowerPath.push(`${lastPt.x},${lastPt.y + bandPx}`);
     }
 
-    if (upperPath.length > 2) {
+    // Only need 2 points to draw a band segment
+    if (upperPath.length >= 2) {
       // Polygon: go forward along upper, then backward along lower
       const points = [...upperPath, ...lowerPath.reverse()].join(' ');
       bandElements.push(
@@ -1621,6 +1629,7 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
   }
 
   // ── Place labels at key positions ──
+  const lastVwapX = vwapPoints[totalPoints - 1]?.x ?? 0;
   for (const pos of positions) {
     const vwapPt = vwapPoints[pos];
     const pricePt = pricePoints[pos];
@@ -1663,6 +1672,10 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
     }
 
     const pillWidth = label.length > 2 ? 56 : 44;
+    // When label is at the rightmost position (latest data point), shift it left
+    // to avoid being clipped by the chart boundary
+    const isAtRightEdge = pos === totalPoints - 1;
+    const labelOffsetX = isAtRightEdge ? -pillWidth / 2 - 4 : 0;
 
     labelElements.push(
       <g key={`vwap-ban-${pos}`}>
@@ -1670,7 +1683,7 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
         <circle cx={x} cy={y} r={2.5} fill={color} fillOpacity={0.6} />
         {/* Main label pill */}
         <rect
-          x={x - pillWidth / 2}
+          x={x - pillWidth / 2 + labelOffsetX}
           y={y + offsetY - 8}
           width={pillWidth}
           height={16}
@@ -1682,7 +1695,7 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
           strokeOpacity={0.5}
         />
         <text
-          x={x}
+          x={x + labelOffsetX}
           y={y + offsetY + 1}
           textAnchor="middle"
           dominantBaseline="middle"
@@ -1696,7 +1709,7 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
         </text>
         {/* Sub-label */}
         <text
-          x={x}
+          x={x + labelOffsetX}
           y={y + offsetY + (offsetY < 0 ? -12 : 12)}
           textAnchor="middle"
           dominantBaseline="middle"
@@ -1779,7 +1792,7 @@ function CombinedChartOverlay(props: any) {
       pt.x != null
     );
 
-    if (validPoints.length < 5) return null;
+    if (validPoints.length < 2) return null;
 
     // Compute both price and VWAP pixel positions from the same source points
     const pricePoints = validPoints.map((pt: any) => ({
