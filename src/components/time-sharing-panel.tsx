@@ -1737,6 +1737,9 @@ function CombinedChartOverlay(props: any) {
   const vwapAnnotations = useMemo(() => {
     if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
     
+    const yAxis = Object.values(yAxisMap)[0] as any;
+    if (!yAxis?.scale) return null;
+    
     // Collect all line point arrays from formattedGraphicalItems
     const lineData: { points: any[]; index: number }[] = [];
     for (let i = 0; i < formattedGraphicalItems.length; i++) {
@@ -1745,44 +1748,32 @@ function CombinedChartOverlay(props: any) {
         lineData.push({ points: item.props.points, index: i });
       }
     }
-    if (lineData.length < 2) return null;
-    
-    // We have at least 2 lines. We need to identify which is price and which is VWAP.
-    // Strategy: Check the first point's payload to see if the point.y matches price or avgPrice
-    // In recharts, the y coordinate of a point corresponds to the value that line is plotting.
-    // The yAxisMap maps pixel coords back to data values.
-    const yAxis = Object.values(yAxisMap)[0] as any;
-    if (!yAxis?.scale) return null;
     
     let pricePoints: any[] = [];
     let vwapPoints: any[] = [];
     
-    for (const { points } of lineData) {
-      if (points.length === 0) continue;
-      const p0 = points[0];
-      const payload = p0?.payload;
-      if (!payload) continue;
-      
-      // Use yAxis.scale.invert() to convert pixel y to data value
-      const dataValue = yAxis.scale.invert(p0.y);
-      
-      // Compare with price and avgPrice from payload
-      const priceDiff = Math.abs(dataValue - (payload.price ?? 0));
-      const vwapDiff = Math.abs(dataValue - (payload.avgPrice ?? 0));
-      
-      if (vwapDiff < priceDiff && payload.avgPrice != null) {
-        // This line's y values are closer to avgPrice → it's the VWAP line
-        vwapPoints = points;
-      } else if (pricePoints.length === 0) {
-        pricePoints = points;
+    // Method 1: Try to identify by yAxis.scale.invert()
+    if (lineData.length >= 1) {
+      for (const { points } of lineData) {
+        if (points.length === 0) continue;
+        const p0 = points[0];
+        const payload = p0?.payload;
+        if (!payload) continue;
+        
+        const dataValue = yAxis.scale.invert(p0.y);
+        const priceDiff = Math.abs(dataValue - (payload.price ?? 0));
+        const vwapDiff = Math.abs(dataValue - (payload.avgPrice ?? 0));
+        
+        if (vwapDiff < priceDiff && payload.avgPrice != null) {
+          vwapPoints = points;
+        } else if (pricePoints.length === 0) {
+          pricePoints = points;
+        }
       }
     }
     
-    // If VWAP not found via invert, try another approach: check if we have 2+ lines
-    // and one of them has y values that consistently differ from price
-    if (vwapPoints.length === 0 && lineData.length >= 2) {
-      // The first line with more points is typically the price line
-      // Try the second line as VWAP
+    // Method 2: If VWAP not found, try remaining lines
+    if (vwapPoints.length === 0 && pricePoints.length > 0) {
       for (const { points } of lineData) {
         if (points === pricePoints) continue;
         const p0 = points[0]?.payload;
@@ -1790,6 +1781,18 @@ function CombinedChartOverlay(props: any) {
           vwapPoints = points;
           break;
         }
+      }
+    }
+    
+    // Method 3: Final fallback — compute VWAP pixel positions from price line data
+    // using payload.avgPrice values and the Y-axis scale
+    if (vwapPoints.length === 0 && pricePoints.length > 0) {
+      const computedVwapPts = pricePoints.map((pt: any) => {
+        if (!pt?.payload?.avgPrice || pt.x == null) return null;
+        return { x: pt.x, y: yAxis.scale(pt.payload.avgPrice), payload: pt.payload };
+      }).filter(Boolean);
+      if (computedVwapPts.length >= 10) {
+        vwapPoints = computedVwapPts;
       }
     }
     
