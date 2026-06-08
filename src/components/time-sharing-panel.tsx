@@ -1491,9 +1491,101 @@ function buildOverlayFingerprint(
   return `${priceLineLen}:${(lastX ?? 0).toFixed(1)}:${(lastY ?? 0).toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}`;
 }
 
+// ── VWAP (均线) 禁止买卖标注 ─────────────────────────────
+// 在均线旁标注"禁止买卖"：均线上方禁买，均线下方禁卖
+// 做T核心原则：低吸高抛 → 均线下方买入，均线上方卖出
+
+function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pricePoints: any[] }) {
+  if (vwapPoints.length < 10) return null;
+
+  // Pick key positions along the VWAP line to place annotations
+  // We place labels at roughly evenly-spaced intervals
+  const totalPoints = vwapPoints.length;
+  const LABEL_COUNT = Math.min(3, Math.max(1, Math.floor(totalPoints / 60)));
+  
+  // Calculate positions: early, middle, late
+  const positions: number[] = [];
+  const spacing = Math.floor(totalPoints / (LABEL_COUNT + 1));
+  for (let i = 1; i <= LABEL_COUNT; i++) {
+    positions.push(spacing * i);
+  }
+
+  const elements: React.ReactNode[] = [];
+
+  for (const pos of positions) {
+    const vwapPt = vwapPoints[pos];
+    const pricePt = pricePoints[pos];
+    if (!vwapPt || !pricePt || vwapPt.x == null || vwapPt.y == null) continue;
+
+    const x = vwapPt.x;
+    const y = vwapPt.y;
+    const priceY = pricePt.y;
+    
+    // Determine direction: price above VWAP = 禁买, price below VWAP = 禁卖
+    const isPriceAboveVwap = priceY < y; // In SVG, lower y = higher price
+    const label = isPriceAboveVwap ? "禁买" : "禁卖";
+    const subLabel = isPriceAboveVwap ? "均线上方高抛区" : "均线下方低吸区";
+    const color = isPriceAboveVwap ? "#dc2626" : "#16a34a"; // red for 禁买, green for 禁卖
+    
+    // Place label on the VWAP line, offset towards the forbidden zone
+    // 禁买 → label above VWAP (towards price), 禁卖 → label below VWAP
+    const offsetY = isPriceAboveVwap ? -18 : 18;
+
+    elements.push(
+      <g key={`vwap-ban-${pos}`}>
+        {/* Small indicator arrow/dot on VWAP line */}
+        <circle cx={x} cy={y} r={2.5} fill={color} fillOpacity={0.6} />
+        {/* Main label pill */}
+        <rect
+          x={x - 22}
+          y={y + offsetY - 8}
+          width={44}
+          height={16}
+          rx={3}
+          fill={color}
+          fillOpacity={0.15}
+          stroke={color}
+          strokeWidth={0.8}
+          strokeOpacity={0.5}
+        />
+        <text
+          x={x}
+          y={y + offsetY + 1}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize={9}
+          fontWeight={700}
+          fill={color}
+          fillOpacity={0.85}
+          fontFamily="sans-serif"
+        >
+          {label}
+        </text>
+        {/* Sub-label below/above */}
+        <text
+          x={x}
+          y={y + offsetY + (isPriceAboveVwap ? -12 : 12)}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize={7}
+          fontWeight={500}
+          fill={color}
+          fillOpacity={0.45}
+          fontFamily="sans-serif"
+        >
+          {subLabel}
+        </text>
+      </g>
+    );
+  }
+
+  return <g className="vwap-ban-annotations">{elements}</g>;
+}
+
 // ── Combined Chart Overlay Renderer ──────────────────────
 // Ensures proper layer order:
-//   Layer 1 (bottom): 分时因子 signal markers & labels
+//   Layer 0 (bottom): 均线禁止买卖标注
+//   Layer 1: 分时因子 signal markers & labels
 //   Layer 2 (middle): 选股标记 pulse/volume markers (ON TOP of factor signals)
 //   Layer 3 (top):    Expanded bubbles (interactive, must be on top for usability)
 
@@ -1509,6 +1601,70 @@ function CombinedChartOverlay(props: any) {
       return next;
     });
   }, []);
+
+  // ── Extract VWAP (avgPrice) line points for "禁止买卖" annotations ──
+  const vwapAnnotations = useMemo(() => {
+    if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+    
+    // Collect all line point arrays from formattedGraphicalItems
+    const lineData: { points: any[]; index: number }[] = [];
+    for (let i = 0; i < formattedGraphicalItems.length; i++) {
+      const item = formattedGraphicalItems[i];
+      if (item?.props?.points && Array.isArray(item.props.points) && item.props.points.length > 0) {
+        lineData.push({ points: item.props.points, index: i });
+      }
+    }
+    if (lineData.length < 2) return null;
+    
+    // We have at least 2 lines. We need to identify which is price and which is VWAP.
+    // Strategy: Check the first point's payload to see if the point.y matches price or avgPrice
+    // In recharts, the y coordinate of a point corresponds to the value that line is plotting.
+    // The yAxisMap maps pixel coords back to data values.
+    const yAxis = Object.values(yAxisMap)[0] as any;
+    if (!yAxis?.scale) return null;
+    
+    let pricePoints: any[] = [];
+    let vwapPoints: any[] = [];
+    
+    for (const { points } of lineData) {
+      if (points.length === 0) continue;
+      const p0 = points[0];
+      const payload = p0?.payload;
+      if (!payload) continue;
+      
+      // Use yAxis.scale.invert() to convert pixel y to data value
+      const dataValue = yAxis.scale.invert(p0.y);
+      
+      // Compare with price and avgPrice from payload
+      const priceDiff = Math.abs(dataValue - (payload.price ?? 0));
+      const vwapDiff = Math.abs(dataValue - (payload.avgPrice ?? 0));
+      
+      if (vwapDiff < priceDiff && payload.avgPrice != null) {
+        // This line's y values are closer to avgPrice → it's the VWAP line
+        vwapPoints = points;
+      } else if (pricePoints.length === 0) {
+        pricePoints = points;
+      }
+    }
+    
+    // If VWAP not found via invert, try another approach: check if we have 2+ lines
+    // and one of them has y values that consistently differ from price
+    if (vwapPoints.length === 0 && lineData.length >= 2) {
+      // The first line with more points is typically the price line
+      // Try the second line as VWAP
+      for (const { points } of lineData) {
+        if (points === pricePoints) continue;
+        const p0 = points[0]?.payload;
+        if (p0?.avgPrice != null) {
+          vwapPoints = points;
+          break;
+        }
+      }
+    }
+    
+    if (vwapPoints.length === 0 || pricePoints.length === 0) return null;
+    return { vwapPoints, pricePoints };
+  }, [formattedGraphicalItems, xAxisMap, yAxisMap]);
 
   // ── Fingerprint-based cache for overlay computation ──
   // recharts creates new formattedGraphicalItems on every render, even if the data
@@ -1533,10 +1689,12 @@ function CombinedChartOverlay(props: any) {
       })
     : { signalResult: null, pvPlacedLabels: [] as PlacedLabel[] };
 
-  if (!signalResult && pvPlacedLabels.length === 0) return null;
+  if (!signalResult && pvPlacedLabels.length === 0 && !vwapAnnotations) return null;
 
   return (
     <g>
+      {/* Layer 0 (bottom-most): 均线禁止买卖标注 — 挨着均线显示 */}
+      {vwapAnnotations && <VwapBanAnnotations vwapPoints={vwapAnnotations.vwapPoints} pricePoints={vwapAnnotations.pricePoints} />}
       {/* Layer 1: 分时因子 signal markers & labels (常规信号) */}
       {signalResult?.signalElements}
       {/* Layer 2 (middle): 选股标记 pulse/volume markers — ON TOP of factor signals */}
