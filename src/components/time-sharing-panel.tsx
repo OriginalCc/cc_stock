@@ -1496,7 +1496,7 @@ function buildOverlayFingerprint(
 // 做T核心原则：低吸高抛 → 均线下0.3%外买入，均线上0.3%外卖出，均线附近不操作
 
 function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pricePoints: any[] }) {
-  if (vwapPoints.length < 10) return null;
+  if (vwapPoints.length < 5) return null;
 
   const totalPoints = vwapPoints.length;
   const LABEL_COUNT = Math.min(3, Math.max(1, Math.floor(totalPoints / 60)));
@@ -1515,35 +1515,44 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
   const bandElements: React.ReactNode[] = [];
   const labelElements: React.ReactNode[] = [];
 
-  // Sample a point to estimate pixel-per-percent ratio
+  // ── Calculate pixels-per-percent using VWAP data ──
+  // Since vwapPoints[i].y = yAxis.scale(avgPrice), we can directly compute
+  // how many pixels correspond to 0.3% of the price at any sample point
   const sampleIdx = Math.floor(totalPoints / 2);
   const sampleVwapPt = vwapPoints[sampleIdx];
-  const samplePayload = sampleVwapPt?.payload;
-  const sampleAvgPrice = samplePayload?.avgPrice;
-  const samplePrice = samplePayload?.price;
-  
-  // We need to figure out how many pixels = 0.3% of price
-  // Since we have both price and avgPrice in the same payload, and their pixel y values,
-  // we can calculate the ratio
+  const sampleAvgPrice = sampleVwapPt?.payload?.avgPrice;
+
+  // Method 1: Use price vs avgPrice pixel difference
   let pxPerPercent = 0;
-  if (sampleAvgPrice && sampleAvgPrice > 0 && samplePrice) {
-    // Find the corresponding price point
+  if (sampleAvgPrice && sampleAvgPrice > 0) {
     const samplePricePt = pricePoints[sampleIdx];
     if (samplePricePt) {
-      const priceDiffPx = samplePricePt.y - sampleVwapPt.y; // positive = price below vwap
-      const priceDiffPct = ((samplePrice - sampleAvgPrice) / sampleAvgPrice) * 100;
+      const priceDiffPx = samplePricePt.y - sampleVwapPt.y; // positive = price below vwap in SVG coords
+      const priceDiffPct = ((samplePricePt.payload.price - sampleAvgPrice) / sampleAvgPrice) * 100;
       if (Math.abs(priceDiffPct) > 0.01) {
-        pxPerPercent = priceDiffPx / priceDiffPct; // pixels per 1% change
+        pxPerPercent = priceDiffPx / priceDiffPct;
       }
     }
   }
-  
-  // Fallback: estimate from VWAP point spacing
-  if (pxPerPercent === 0 && totalPoints > 2) {
-    // Use the chart height to estimate - typically a ±5% range
-    const firstPt = vwapPoints[0];
-    const lastPt = vwapPoints[totalPoints - 1];
-    const chartHeight = Math.abs(pricePoints[0]?.y - pricePoints[Math.floor(totalPoints / 2)]?.y) || 100;
+
+  // Method 2: If price ≈ avgPrice, use the chart's Y range to estimate pxPerPercent
+  // The chart shows [yMin, yMax] which maps to the full pixel height
+  if (pxPerPercent === 0 && sampleAvgPrice && sampleAvgPrice > 0 && pricePoints.length >= 2) {
+    // 1% of the sampleAvgPrice in price units
+    const onePctInPrice = sampleAvgPrice * 0.01;
+    // Use the first and last price points to estimate the scale
+    const firstPt = pricePoints[0];
+    const midPt = pricePoints[Math.floor(pricePoints.length / 2)];
+    if (firstPt && midPt && firstPt.payload?.price && midPt.payload?.price) {
+      const priceRange = Math.abs(firstPt.payload.price - midPt.payload.price) || sampleAvgPrice * 0.02;
+      const pxRange = Math.abs(firstPt.y - midPt.y) || 100;
+      pxPerPercent = (pxRange / priceRange) * onePctInPrice;
+    }
+  }
+
+  // Method 3: Final fallback — estimate from chart dimensions
+  if (pxPerPercent === 0 && pricePoints.length >= 2) {
+    const chartHeight = Math.abs(pricePoints[0].y - pricePoints[pricePoints.length - 1].y) || 100;
     // Assume chart shows roughly ±3% range
     pxPerPercent = chartHeight / 6;
   }
@@ -1734,69 +1743,57 @@ function CombinedChartOverlay(props: any) {
   }, []);
 
   // ── Extract VWAP (avgPrice) line points for "禁止买卖" annotations ──
+  // Strategy: Find ANY line's points (all payloads contain both price and avgPrice),
+  // then compute VWAP pixel Y positions using yAxis.scale(avgPrice).
+  // This is much more robust than trying to identify which line IS the VWAP line.
   const vwapAnnotations = useMemo(() => {
     if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
-    
+
     const yAxis = Object.values(yAxisMap)[0] as any;
     if (!yAxis?.scale) return null;
-    
-    // Collect all line point arrays from formattedGraphicalItems
-    const lineData: { points: any[]; index: number }[] = [];
+
+    // Find the first line with points that has payload with avgPrice
+    let sourcePoints: any[] | null = null;
     for (let i = 0; i < formattedGraphicalItems.length; i++) {
       const item = formattedGraphicalItems[i];
       if (item?.props?.points && Array.isArray(item.props.points) && item.props.points.length > 0) {
-        lineData.push({ points: item.props.points, index: i });
-      }
-    }
-    
-    let pricePoints: any[] = [];
-    let vwapPoints: any[] = [];
-    
-    // Method 1: Try to identify by yAxis.scale.invert()
-    if (lineData.length >= 1) {
-      for (const { points } of lineData) {
-        if (points.length === 0) continue;
-        const p0 = points[0];
-        const payload = p0?.payload;
-        if (!payload) continue;
-        
-        const dataValue = yAxis.scale.invert(p0.y);
-        const priceDiff = Math.abs(dataValue - (payload.price ?? 0));
-        const vwapDiff = Math.abs(dataValue - (payload.avgPrice ?? 0));
-        
-        if (vwapDiff < priceDiff && payload.avgPrice != null) {
-          vwapPoints = points;
-        } else if (pricePoints.length === 0) {
-          pricePoints = points;
+        const pts = item.props.points;
+        // Check if the first point with data has avgPrice in payload
+        for (const pt of pts) {
+          if (pt?.payload?.avgPrice != null && pt?.payload?.price != null) {
+            sourcePoints = pts;
+            break;
+          }
         }
+        if (sourcePoints) break;
       }
     }
-    
-    // Method 2: If VWAP not found, try remaining lines
-    if (vwapPoints.length === 0 && pricePoints.length > 0) {
-      for (const { points } of lineData) {
-        if (points === pricePoints) continue;
-        const p0 = points[0]?.payload;
-        if (p0?.avgPrice != null) {
-          vwapPoints = points;
-          break;
-        }
-      }
-    }
-    
-    // Method 3: Final fallback — compute VWAP pixel positions from price line data
-    // using payload.avgPrice values and the Y-axis scale
-    if (vwapPoints.length === 0 && pricePoints.length > 0) {
-      const computedVwapPts = pricePoints.map((pt: any) => {
-        if (!pt?.payload?.avgPrice || pt.x == null) return null;
-        return { x: pt.x, y: yAxis.scale(pt.payload.avgPrice), payload: pt.payload };
-      }).filter(Boolean);
-      if (computedVwapPts.length >= 10) {
-        vwapPoints = computedVwapPts;
-      }
-    }
-    
-    if (vwapPoints.length === 0 || pricePoints.length === 0) return null;
+
+    if (!sourcePoints || sourcePoints.length === 0) return null;
+
+    // Filter to only points that have actual data (hasData === true)
+    const validPoints = sourcePoints.filter((pt: any) =>
+      pt?.payload?.hasData === true &&
+      pt?.payload?.avgPrice != null &&
+      pt?.payload?.price != null &&
+      pt.x != null
+    );
+
+    if (validPoints.length < 5) return null;
+
+    // Compute both price and VWAP pixel positions from the same source points
+    const pricePoints = validPoints.map((pt: any) => ({
+      x: pt.x,
+      y: yAxis.scale(pt.payload.price),
+      payload: pt.payload,
+    }));
+
+    const vwapPoints = validPoints.map((pt: any) => ({
+      x: pt.x,
+      y: yAxis.scale(pt.payload.avgPrice),
+      payload: pt.payload,
+    }));
+
     return { vwapPoints, pricePoints };
   }, [formattedGraphicalItems, xAxisMap, yAxisMap]);
 

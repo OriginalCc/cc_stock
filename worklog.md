@@ -113,3 +113,23 @@ Stage Summary:
 - 新增2个卖点因子(46,47)：均线引力卖点(strong)+冲高减速见顶(medium)
 - 新增卖点去噪后处理：减少近距离重复卖点信号
 - 版本更新至v6.1
+
+---
+Task ID: 3
+Agent: main
+Task: 修复均线禁买禁卖标注在默认大小分时图中不显示的问题
+
+Work Log:
+- 调查VwapBanAnnotations组件不显示的原因：原逻辑依赖formattedGraphicalItems识别VWAP线点
+- 原方法1使用yAxis.scale.invert()区分价格线与VWAP线，但价格和均价接近时区分失败
+- 原方法2/3也有各种边界情况导致VWAP点提取失败
+- 重构vwapAnnotations计算逻辑：不再尝试从formattedGraphicalItems识别哪条线是VWAP线
+- 新策略：找到任意一条包含payload（含price和avgPrice）的线，使用yAxis.scale()直接计算VWAP和价格的像素Y坐标
+- 过滤只保留hasData=true的有效数据点，降低最少点数阈值从10到5
+- 改进pxPerPercent计算：3级回退策略确保色带宽度计算正确
+- Agent Browser验证：比亚迪/宁德时代/中国平安三只股票均正确显示禁止买卖/禁买/禁卖标注
+
+Stage Summary:
+- 根因：原VWAP点提取逻辑在formattedGraphicalItems中识别VWAP线时失败
+- 修复：改用yAxis.scale()从任意线payload直接计算VWAP像素坐标，不再依赖识别线类型
+- 所有三种标注(禁止买卖/禁买/禁卖)在默认大小和放大视图中均正常显示
