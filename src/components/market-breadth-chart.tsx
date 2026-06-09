@@ -68,7 +68,8 @@ function timeToSlotIdx(time: string): number {
 /** Catmull-Rom smooth curve through points, using absolute X positions */
 function smoothCurvePath(xs: number[], values: number[], toY: (v: number) => number): string {
   const n = xs.length;
-  if (n < 2) return "";
+  if (n < 1) return "";
+  if (n === 1) return `M${xs[0].toFixed(1)},${toY(values[0]).toFixed(1)}`;
   const points = xs.map((x, i) => ({ x, y: toY(values[i]) }));
   if (n === 2) return `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)} L${points[1].x.toFixed(1)},${points[1].y.toFixed(1)}`;
   let path = `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
@@ -94,7 +95,7 @@ function buildBetweenArea(
   mode: "upDominant" | "downDominant",
 ): string {
   const n = data.length;
-  if (n < 2) return "";
+  if (n < 1) return "";
   const segments: string[] = [];
   const isTarget = (i: number) =>
     mode === "upDominant" ? data[i].totalUp >= data[i].totalDown : data[i].totalDown > data[i].totalUp;
@@ -196,7 +197,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
   // ── All chart computations in a single useMemo ──
   const chart = useMemo(() => {
-    if (data.length < 2) return null;
+    if (data.length < 1) return null;
 
     // viewBox width = actual container pixel width
     // This makes SVG coordinates 1:1 with screen pixels,
@@ -390,56 +391,15 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     );
   }
 
-  // ── Single data point: show a simple bar instead of blank ──
-  if (data.length === 1 || !chart) {
-    const pt0 = data[0];
-    const sDiff = pt0.totalUp - pt0.totalDown;
-    const sTotal = pt0.totalUp + pt0.totalDown + pt0.totalFlat || 1;
-    const sRatio = ((pt0.totalUp / sTotal) * 100).toFixed(1);
-
+  // ── Render chart (works for 1+ data points) ──
+  if (!chart) {
     return (
       <div className={cardCls}>
         <div className="px-2 pt-2 pb-1">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-semibold text-foreground/80">市场涨跌家数</span>
-            <span className="text-[9px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-full">数据积累中...</span>
-          </div>
-          {summaryRow}
-          <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted/30 mt-1.5">
-            <div className="h-full rounded-l-full transition-all duration-500" style={{ width: `${sRatio}%`, backgroundColor: UP_COLOR, opacity: 0.8 }} />
-            <div className="h-full rounded-r-full transition-all duration-500" style={{ width: `${100 - parseFloat(sRatio)}%`, backgroundColor: DOWN_COLOR, opacity: 0.8 }} />
-          </div>
-          <div className="flex justify-between mt-1">
-            <span className="text-[9px] font-bold tabular-nums" style={{ color: UP_COLOR }}>{sRatio}%</span>
-            <span className="text-[9px] font-bold tabular-nums" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(sRatio)).toFixed(1)}%</span>
-          </div>
-          {/* Simple horizontal bar chart for single data point */}
-          <div className="mt-2 space-y-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] text-muted-foreground w-6">涨</span>
-              <div className="flex-1 h-4 bg-muted/20 rounded overflow-hidden">
-                <div className="h-full rounded transition-all duration-700 flex items-center justify-end pr-1" style={{ width: `${sRatio}%`, backgroundColor: UP_COLOR, opacity: 0.6 }}>
-                  <span className="text-[8px] font-bold text-white/90 tabular-nums">{pt0.totalUp}</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] text-muted-foreground w-6">跌</span>
-              <div className="flex-1 h-4 bg-muted/20 rounded overflow-hidden">
-                <div className="h-full rounded transition-all duration-700 flex items-center justify-end pr-1" style={{ width: `${100 - parseFloat(sRatio)}%`, backgroundColor: DOWN_COLOR, opacity: 0.6 }}>
-                  <span className="text-[8px] font-bold text-white/90 tabular-nums">{pt0.totalDown}</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] text-muted-foreground w-6">平</span>
-              <div className="flex-1 h-4 bg-muted/20 rounded overflow-hidden">
-                <div className="h-full rounded transition-all duration-700 flex items-center justify-end pr-1" style={{ width: `${Math.max((pt0.totalFlat / sTotal) * 100, 2)}%`, backgroundColor: "#6b7280", opacity: 0.5 }}>
-                  <span className="text-[8px] font-bold text-white/90 tabular-nums">{pt0.totalFlat}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <div className="text-[11px] font-semibold text-foreground/80 mb-1">市场涨跌家数</div>
+        </div>
+        <div className="px-2 pb-2 pt-1">
+          <div className="text-xs text-muted-foreground text-center py-3 border-t border-border/40">等待分时数据...</div>
         </div>
       </div>
     );
@@ -503,10 +463,34 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           {betweenRed && <path d={betweenRed} fill="url(#betweenRed)" />}
           {betweenGreen && <path d={betweenGreen} fill="url(#betweenGreen)" />}
 
-          {/* Up line with glow */}
-          <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />
-          {/* Down line with glow */}
-          <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />
+          {/* Up line with glow (only visible with 2+ points) */}
+          {data.length >= 2 && <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />}
+          {/* Down line with glow (only visible with 2+ points) */}
+          {data.length >= 2 && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
+
+          {/* Single data point: draw visible dots with value labels */}
+          {data.length === 1 && (() => {
+            const d0 = data[0];
+            const x0 = xs[0];
+            const yUp0 = toY(d0.totalUp);
+            const yDown0 = toY(d0.totalDown);
+            return (
+              <g>
+                {/* Dashed horizontal lines from left to point */}
+                <line x1={cPx} y1={yUp0} x2={x0} y2={yUp0} stroke={UP_COLOR} strokeWidth={0.8} strokeDasharray="4,3" opacity={0.5} />
+                <line x1={cPx} y1={yDown0} x2={x0} y2={yDown0} stroke={DOWN_COLOR} strokeWidth={0.8} strokeDasharray="4,3" opacity={0.5} />
+                {/* Up dot */}
+                <circle cx={x0} cy={yUp0} r={3} fill={UP_COLOR} />
+                <circle cx={x0} cy={yUp0} r={1.2} fill="#fff" opacity={0.6} />
+                {/* Down dot */}
+                <circle cx={x0} cy={yDown0} r={3} fill={DOWN_COLOR} />
+                <circle cx={x0} cy={yDown0} r={1.2} fill="#fff" opacity={0.6} />
+                {/* Value labels */}
+                <text x={x0 + 6} y={yUp0 + 3} fontSize={9} fontWeight={700} fill={UP_COLOR}>{d0.totalUp}</text>
+                <text x={x0 + 6} y={yDown0 + 3} fontSize={9} fontWeight={700} fill={DOWN_COLOR}>{d0.totalDown}</text>
+              </g>
+            );
+          })()}
 
           {/* Pre-compute label visibility: anti-overlap algorithm */}
           {(() => {
