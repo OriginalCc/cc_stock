@@ -151,3 +151,24 @@ Stage Summary:
 - 核心优化：延迟重API请求(breadth-distribution 10s)、增大刷新间隔(1.5→3s)、quote-only延迟信号计算
 - 非关键请求全部延迟到关键数据加载完成后：指数5s、板块5s、分布数据10s
 - 页面首次渲染速度显著提升：减少7+并发请求→关键路径只加载timeline数据
+
+---
+Task ID: 5
+Agent: main
+Task: 恢复市场涨跌家数分时图到历史简单SVG实现方式
+
+Work Log:
+- 对比git历史：4834226(原始版本) vs 当前复杂版本
+- 原始版本：固定viewBox(600x160)，简单line path，无外部依赖，2个数据点即可渲染
+- 当前版本：ResizeObserver+ALL_TRADE_TIMES+Catmull-Rom曲线+渐变填充+脉冲动画+速度/加速度计算，662行
+- 当前版本问题：过于复杂，依赖ResizeObserver测量容器宽度、ALL_TRADE_TIMES时间映射、preserveAspectRatio="none"导致变形
+- 重写market-breadth-chart.tsx：恢复原始简单SVG方式，保留额外props(limitUp/limitDown/shUp/shDown/szUp/szDown)
+- 新实现特点：固定viewBox(640x180)、简单line path、面积填充、涨跌差虚线、比例条、支持单数据点显示
+- Lint检查通过
+- Agent Browser验证：市场涨跌家数分时图正确渲染，SVG图表区域可见，数据(2447涨/2685跌/144平)正确显示
+
+Stage Summary:
+- 从662行复杂实现恢复到250行简单SVG实现
+- 移除了ResizeObserver、ALL_TRADE_TIMES依赖、Catmull-Rom曲线、脉冲动画等复杂特性
+- 保留了额外props支持(涨停/跌停/沪深分开)和比例条显示
+- 图表在浏览器中正确渲染和显示
