@@ -154,7 +154,7 @@ model AppConfig {
 model MarketBreadthSnapshot {
   id          String   @id @default(cuid())
   date        String                     // 日期 YYYY-MM-DD
-  time        String                     // 时间 HH:mm (2分钟间隔)
+  time        String                     // 时间 HH:mm (1分钟间隔)
   shUp        Int      @default(0)      // 沪市上涨家数
   shDown      Int      @default(0)      // 沪市下跌家数
   shFlat      Int      @default(0)      // 沪市平盘家数

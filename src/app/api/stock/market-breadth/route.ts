@@ -4,9 +4,9 @@ import { db } from "@/lib/db";
 /**
  * GET /api/stock/market-breadth
  * Fetch A-share market breadth data (涨跌家数) from East Money API
- * Returns up/down/flat stock counts + 2-min interval history for the current trading day
+ * Returns up/down/flat stock counts + 1-min interval history for the current trading day
  * 
- * Persistence: saves every 2-min snapshot to SQLite (MarketBreadthSnapshot)
+ * Persistence: saves every 1-min snapshot to SQLite (MarketBreadthSnapshot)
  * Fallback: if live API fails, loads today's history from database
  */
 
@@ -36,12 +36,11 @@ export interface MarketBreadthData {
   fromCache?: boolean; // true if data loaded from DB fallback
 }
 
-function getCurrent2MinSlot(): string {
+function getCurrent1MinSlot(): string {
   const now = new Date();
   const h = (now.getUTCHours() + 8) % 24;
   const m = now.getUTCMinutes();
-  const slotMin = Math.floor(m / 2) * 2;
-  return `${String(h).padStart(2, "0")}:${String(slotMin).padStart(2, "0")}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 function getTodayDateStr(): string {
@@ -145,7 +144,7 @@ async function loadLatestFromDb(date: string): Promise<Omit<MarketBreadthData, "
 
 export async function GET() {
   const todayStr = getTodayDateStr();
-  const currentSlot = getCurrent2MinSlot();
+  const currentSlot = getCurrent1MinSlot();
 
   // Only record during extended hours (9:00 ~ 15:30) to cover pre/post market
   const slotH = parseInt(currentSlot.slice(0, 2));

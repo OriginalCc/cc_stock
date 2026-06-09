@@ -390,7 +390,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     );
   }
 
-  // ── Single data point ──
+  // ── Single data point: show a simple bar instead of blank ──
   if (data.length === 1 || !chart) {
     const pt0 = data[0];
     const sDiff = pt0.totalUp - pt0.totalDown;
@@ -402,7 +402,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         <div className="px-2 pt-2 pb-1">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-semibold text-foreground/80">市场涨跌家数</span>
-            <span className="text-[9px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-full">第1个数据点</span>
+            <span className="text-[9px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-full">数据积累中...</span>
           </div>
           {summaryRow}
           <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted/30 mt-1.5">
@@ -412,6 +412,33 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
           <div className="flex justify-between mt-1">
             <span className="text-[9px] font-bold tabular-nums" style={{ color: UP_COLOR }}>{sRatio}%</span>
             <span className="text-[9px] font-bold tabular-nums" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(sRatio)).toFixed(1)}%</span>
+          </div>
+          {/* Simple horizontal bar chart for single data point */}
+          <div className="mt-2 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-muted-foreground w-6">涨</span>
+              <div className="flex-1 h-4 bg-muted/20 rounded overflow-hidden">
+                <div className="h-full rounded transition-all duration-700 flex items-center justify-end pr-1" style={{ width: `${sRatio}%`, backgroundColor: UP_COLOR, opacity: 0.6 }}>
+                  <span className="text-[8px] font-bold text-white/90 tabular-nums">{pt0.totalUp}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-muted-foreground w-6">跌</span>
+              <div className="flex-1 h-4 bg-muted/20 rounded overflow-hidden">
+                <div className="h-full rounded transition-all duration-700 flex items-center justify-end pr-1" style={{ width: `${100 - parseFloat(sRatio)}%`, backgroundColor: DOWN_COLOR, opacity: 0.6 }}>
+                  <span className="text-[8px] font-bold text-white/90 tabular-nums">{pt0.totalDown}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-muted-foreground w-6">平</span>
+              <div className="flex-1 h-4 bg-muted/20 rounded overflow-hidden">
+                <div className="h-full rounded transition-all duration-700 flex items-center justify-end pr-1" style={{ width: `${Math.max((pt0.totalFlat / sTotal) * 100, 2)}%`, backgroundColor: "#6b7280", opacity: 0.5 }}>
+                  <span className="text-[8px] font-bold text-white/90 tabular-nums">{pt0.totalFlat}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
