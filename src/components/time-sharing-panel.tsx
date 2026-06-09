@@ -3871,6 +3871,112 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               strokeDasharray="5 3"
               isAnimationActive={false}
             />
+            {/* ── VWAP Ban Zone Annotations (均线±0.3%三层标注) ── */}
+            <Customized component={(props: any) => {
+              const { yAxisMap, xAxisMap, offset } = props;
+              if (!yAxisMap || !xAxisMap || !offset) return null;
+              const yAxis = yAxisMap.price;
+              const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
+              if (!yAxis || !yAxis.scale || !xAxis || !xAxis.scale) return null;
+              const yScale = yAxis.scale;
+              const xScale = xAxis.scale;
+
+              // Collect VWAP data points
+              const pts: { idx: number; avg: number }[] = [];
+              for (let i = 0; i < zoomData.length; i++) {
+                const d = zoomData[i];
+                if (d.hasData && d.avgPrice != null && d.avgPrice > 0) {
+                  pts.push({ idx: i, avg: d.avgPrice });
+                }
+              }
+              if (pts.length < 2) return null;
+
+              const plotLeft = offset.left;
+              const plotRight = offset.left + offset.width;
+
+              // Build SVG path strings for each zone band
+              // Each band is a closed polygon: forward along upper boundary, backward along lower boundary
+              const buildBandPath = (
+                upperFn: (avg: number) => number, // price → y-pixel for upper edge
+                lowerFn: (avg: number) => number, // price → y-pixel for lower edge
+              ) => {
+                const fwd: string[] = []; // upper boundary (left→right)
+                const bwd: string[] = []; // lower boundary (right→left)
+                for (let i = 0; i < pts.length; i++) {
+                  const x = Math.max(Math.min(xScale(pts[i].idx), plotRight), plotLeft);
+                  const yU = upperFn(pts[i].avg);
+                  const yL = lowerFn(pts[i].avg);
+                  fwd.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${yU.toFixed(1)}`);
+                  bwd.push(`${x.toFixed(1)},${yL.toFixed(1)}`);
+                }
+                return fwd.join(' ') + ' ' + bwd.reverse().join(' ').replace(/^[ML]/, 'L') + ' Z';
+              };
+
+              // Three zones around VWAP:
+              // Inner: VWAP ±0.1% → 禁止买卖 (yellow)
+              // Upper: VWAP +0.1% ~ +0.3% → 禁卖 (green)
+              // Lower: VWAP -0.3% ~ -0.1% → 禁买 (red)
+              const innerPct = 0.001;
+              const outerPct = 0.003;
+
+              const innerPath = buildBandPath(
+                (avg) => yScale(avg * (1 + innerPct)),
+                (avg) => yScale(avg * (1 - innerPct)),
+              );
+              const upperPath = buildBandPath(
+                (avg) => yScale(avg * (1 + outerPct)),
+                (avg) => yScale(avg * (1 + innerPct)),
+              );
+              const lowerPath = buildBandPath(
+                (avg) => yScale(avg * (1 - innerPct)),
+                (avg) => yScale(avg * (1 - outerPct)),
+              );
+
+              // Labels: sparse, placed at strategic positions along the VWAP line
+              const els: React.ReactNode[] = [];
+              const labelCount = pts.length <= 10 ? 1 : pts.length <= 50 ? 2 : Math.min(4, Math.floor(pts.length / 60) + 1);
+              const step = Math.max(1, Math.floor(pts.length / (labelCount + 1)));
+              const labelPositions = [];
+              for (let i = step; i < pts.length; i += step) {
+                labelPositions.push(i);
+              }
+              // Always include near the right edge (latest data)
+              if (labelPositions.length === 0 || labelPositions[labelPositions.length - 1] < pts.length - 3) {
+                labelPositions.push(Math.max(0, pts.length - 2));
+              }
+
+              const labelFontSize = 8;
+              for (const pi of labelPositions) {
+                const pt = pts[pi];
+                const x = Math.min(xScale(pt.idx) + 8, plotRight - 60);
+                const avg = pt.avg;
+
+                // Inner zone label
+                const yInnerMid = (yScale(avg * (1 + innerPct)) + yScale(avg * (1 - innerPct))) / 2;
+                els.push(
+                  <text key={`vwap-inner-${pi}`} x={x} y={yInnerMid} dominantBaseline="middle" textAnchor="start" fontSize={labelFontSize} fontWeight={600} fill="#eab308" fillOpacity={0.65}>禁止买卖</text>
+                );
+                // Upper zone label
+                const yUpperMid = (yScale(avg * (1 + outerPct)) + yScale(avg * (1 + innerPct))) / 2;
+                els.push(
+                  <text key={`vwap-upper-${pi}`} x={x} y={yUpperMid} dominantBaseline="middle" textAnchor="start" fontSize={labelFontSize} fontWeight={600} fill="#22c55e" fillOpacity={0.6}>禁卖</text>
+                );
+                // Lower zone label
+                const yLowerMid = (yScale(avg * (1 - innerPct)) + yScale(avg * (1 - outerPct))) / 2;
+                els.push(
+                  <text key={`vwap-lower-${pi}`} x={x} y={yLowerMid} dominantBaseline="middle" textAnchor="start" fontSize={labelFontSize} fontWeight={600} fill="#ef4444" fillOpacity={0.6}>禁买</text>
+                );
+              }
+
+              return (
+                <g>
+                  <path d={innerPath} fill="#eab308" fillOpacity={0.10} stroke="none" />
+                  <path d={upperPath} fill="#22c55e" fillOpacity={0.07} stroke="none" />
+                  <path d={lowerPath} fill="#ef4444" fillOpacity={0.07} stroke="none" />
+                  {els}
+                </g>
+              );
+            }} />
             {/* Crosshair vertical line - shared across panels */}
             {deferredCrosshairIdx != null && crosshairItem?.hasData && (
               <ReferenceLine yAxisId="price" x={deferredCrosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
