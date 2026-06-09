@@ -1410,7 +1410,7 @@ export function generateTimelineSignals(
   openPrice?: number,
 ): (TSignal | null)[] {
   const signals: (TSignal | null)[] = new Array(timeline.length).fill(null);
-  if (timeline.length < 3) return signals;
+  if (timeline.length < 2) return signals;
 
   // Build MACD lookup
   const macdByTime = new Map<string, { dif: number; dea: number; macd: number }>();
@@ -1593,10 +1593,10 @@ export function generateTimelineSignals(
     return true;
   };
 
-  for (let i = 2; i < timeline.length; i++) {
+  for (let i = 1; i < timeline.length; i++) {
     const cur = timeline[i];
     const prev = timeline[i - 1];
-    const prev2 = timeline[i - 2];
+    const prev2 = i >= 2 ? timeline[i - 2] : prev;
     const macd = macdByTime.get(cur.time);
     const prevMacd = macdByTime.get(prev.time);
 
@@ -1631,15 +1631,15 @@ export function generateTimelineSignals(
     //   然后反弹，再回落形成第二个次低点(L2)。如果L2处成交量明显
     //   萎缩（比L1处低或低于均量），说明抛压衰竭，是高概率买入机会。
     //
-    // v6.1改进：
-    //   1. i>=20降到i>=10（更早开始检测）
+    // v6.2改进：
+    //   1. i>=10降到i>=5（更早开始检测，5根即可识别快速双底）
     //   2. L1/L2间隔从5根降到3根（更快识别双底）
     //   3. 缩量条件新增<80%均量档（更容易满足）
     //   4. L2距日内最低从≤0.5%放宽到≤0.8%
     //   5. 中间反弹要求从0.3%降到0.2%（微反弹也算）
     //   6. 新增L2处成交量低于近5根均值的方式D
     //
-    if (!isInNoBuyZone && isFactorEnabled("次低点缩量买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 10) {
+    if (!isInNoBuyZone && isFactorEnabled("次低点缩量买入", factorOverrides) && isBuyWindow(timeWindow) && regimeAdj.allowBuy && i >= 5) {
       // ── Step 1: 在回看窗口内找局部低点 ──
       const lookback = Math.min(i + 1, 60);
       const recentSlice = timeline.slice(i - lookback + 1, i + 1);

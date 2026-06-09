@@ -681,7 +681,8 @@ function computeTimelineSignalElements(
   if (allSignals.length === 0) return null;
 
   // ── Step 2: Smart merge - same direction (buy/sell), wider distance ──
-  const MERGE_DISTANCE_X = 30;
+  // Adaptive merge distance: fewer data points = tighter merge to avoid swallowing early signals
+  const MERGE_DISTANCE_X = priceLineData.length <= 20 ? 15 : 30;
   const strengthOrder: Record<string, number> = { strong: 3, medium: 2, weak: 1 };
   const merged: MergedSignal[] = [];
   const used = new Set<number>();

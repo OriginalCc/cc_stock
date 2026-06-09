@@ -684,7 +684,7 @@ export function detectPulseVolumeMarkers(
   timeStart: string = "09:30",
   timeEnd: string = "15:00",
 ): PulseVolumeMarker[] {
-  if (!timeline || timeline.length < 10 || prevClose <= 0) return [];
+  if (!timeline || timeline.length < 5 || prevClose <= 0) return [];
 
   const markers: PulseVolumeMarker[] = [];
   const startMin = pvParseTime(timeStart);
@@ -695,7 +695,7 @@ export function detectPulseVolumeMarkers(
     return totalMin >= startMin && totalMin <= endMin;
   });
 
-  if (session.length < 5) return [];
+  if (session.length < 3) return [];
 
   // ── Pulse Surge Detection ──
   {

@@ -709,7 +709,7 @@ export default function StockTAssistant() {
     if (!isTimelineActive) return [] as (TSignal | null)[];
     // Fingerprint: skip if inputs haven't changed
     // Include signal engine version to invalidate cache when signal logic changes
-    const SIGNAL_ENGINE_VERSION = 'v6.1';
+    const SIGNAL_ENGINE_VERSION = 'v6.2';
     const fp = `${SIGNAL_ENGINE_VERSION}:${liveTimelineForSignals.length}:${timelineMACDData.length}:${liveTimelineForSignals.slice(-3).map(d => (d.price ?? 0).toFixed(2)).join(',')}:${timelinePrevClose}:${factorOverrides.length}:${szIndexRegime?.regime}:${sectorRegime?.regime}:${customFactors.length}:${quote?.open ?? 0}`;
     return signalFingerprintCache.compute(fp, () =>
       generateTimelineSignals(liveTimelineForSignals, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, quote?.open)
@@ -719,7 +719,7 @@ export default function StockTAssistant() {
   // The fingerprint caching above makes recomputation cheap when data hasn't changed,
   // so deferred rendering is no longer needed and directly using values is faster.
   const pvMarkers = useMemo(() => {
-    if (!isTimelineActive || liveTimeline.length < 10 || timelinePrevClose <= 0) return [];
+    if (!isTimelineActive || liveTimeline.length < 5 || timelinePrevClose <= 0) return [];
     // Fingerprint includes volume data to avoid stale results when algorithm changes
     const fp = `${liveTimeline.length}:${liveTimeline.slice(-5).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',')}:${timelinePrevClose}`;
     return pvFingerprintCache.compute(fp, () => detectPulseVolumeMarkers(liveTimeline, timelinePrevClose));
