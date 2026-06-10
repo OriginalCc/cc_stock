@@ -291,8 +291,6 @@ export function MarketBreadthChart({
 
   const cardCls = `bg-card rounded-lg border border-border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`;
 
-  // ── Label interval for pill labels ──
-  const labelInterval = data.length <= 10 ? Math.max(1, Math.floor(data.length / 2)) : Math.max(1, Math.floor(data.length / 8));
 
   return (
     <div className={cardCls}>
@@ -379,7 +377,7 @@ export function MarketBreadthChart({
               return null;
             }} />
             {/* Main chart overlay: curves, fills, dots, labels, pulse */}
-            <Customized component={BreadthChartOverlay} breadthData={data} labelInterval={labelInterval} yNiceMax={yNiceMax} />
+            <Customized component={BreadthChartOverlay} breadthData={data} yNiceMax={yNiceMax} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -409,12 +407,11 @@ interface BreadthOverlayProps {
   yAxisMap?: any;
   offset?: { left: number; top: number; width: number; height: number };
   breadthData?: BreadthHistoryPoint[];
-  labelInterval?: number;
   yNiceMax?: number;
 }
 
 function BreadthChartOverlay(props: BreadthOverlayProps) {
-  const { xAxisMap, yAxisMap, breadthData, labelInterval = 8, yNiceMax = 500 } = props;
+  const { xAxisMap, yAxisMap, breadthData, yNiceMax = 500 } = props;
 
   if (!xAxisMap || !yAxisMap || !breadthData || breadthData.length === 0) return null;
 
@@ -487,14 +484,19 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
       {/* Down line with glow */}
       {downSmooth && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
 
-      {/* Data point dots & pill labels — 每个标签永远朝对方相反方向 */}
+      {/* Data point dots & pill labels — 相同数字只显示一次，标签永远朝对方相反方向 */}
       {data.map((d, i) => {
         const x = toX(i);
         const yUp = toY(d.totalUp);
         const yDown = toY(d.totalDown);
         const isLast = i === data.length - 1;
         const isFirst = i === 0;
-        const showLabel = isFirst || isLast || i % labelInterval === 0;
+
+        // 相同数字只显示一次：与上一个数据点不同时才显示
+        const prevUp = i > 0 ? data[i - 1].totalUp : -1;
+        const prevDown = i > 0 ? data[i - 1].totalDown : -1;
+        const showUpLabel = isFirst || isLast || d.totalUp !== prevUp;
+        const showDownLabel = isFirst || isLast || d.totalDown !== prevDown;
 
         const pillH = 11;
         const pillGap = 4;
@@ -504,14 +506,14 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
 
         // 红色药丸：永远远离绿线方向
         const upPillY = redIsAbove
-          ? yUp - pillGap - pillH    // 红在绿上方 → 红标签继续往上
-          : yUp + pillGap;           // 红在绿下方 → 红标签继续往下
+          ? yUp - pillGap - pillH
+          : yUp + pillGap;
         const upTextY = upPillY + pillH / 2;
 
         // 绿色药丸：永远远离红线方向
         const downPillY = redIsAbove
-          ? yDown + pillGap          // 绿在红下方 → 绿标签继续往下
-          : yDown - pillGap - pillH; // 绿在红上方 → 绿标签继续往上
+          ? yDown + pillGap
+          : yDown - pillGap - pillH;
         const downTextY = downPillY + pillH / 2;
 
         // 计算药丸宽度（根据数字位数）
@@ -530,15 +532,17 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
               </>
             )}
 
-            {showLabel && (
+            {showUpLabel && (
               <>
-                {/* 红色药丸：远离绿线方向 */}
                 <rect x={x - upPillW / 2} y={upPillY}
                   width={upPillW} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
                 <text x={x} y={upTextY}
                   textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                {/* 绿色药丸：远离红线方向 */}
+              </>
+            )}
+            {showDownLabel && (
+              <>
                 <rect x={x - downPillW / 2} y={downPillY}
                   width={downPillW} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
                 <text x={x} y={downTextY}
