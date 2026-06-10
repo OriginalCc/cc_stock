@@ -241,3 +241,29 @@ Stage Summary:
 - Smooth curves only appear when ≥2 points (graceful degradation)
 - X-axis always shows standard A-share trading times
 ---
+---
+Task ID: 1
+Agent: main
+Task: 市场涨跌家数分时图开始和结束时间与股票分时图对齐
+
+Work Log:
+- 读取了 market-breadth-chart.tsx (自定义SVG实现)、time-sharing-panel.tsx (recharts实现)、trading-times.ts (242格时间框架)
+- 分析发现：原自定义SVG使用固定viewBox(640x280)和独立padding(px=46,pr=10)，与recharts分时图的margin({left:2,right:82})+YAxis(width:55)不对齐
+- 决定方案：将市场涨跌家数分时图从自定义SVG改写为recharts ComposedChart，使用与股票分时图相同的margin和XAxis配置
+- 重写了 market-breadth-chart.tsx：
+  - 使用 recharts ComposedChart + ResponsiveContainer 替代自定义SVG
+  - margin={{ top: 20, right: 82, left: 2, bottom: 20 }} (left/right与分时图一致)
+  - XAxis: dataKey="idx" type="number" domain={[0,241]} 与分时图相同
+  - YAxis: width={55} 与分时图左YAxis一致
+  - buildFullDayData() 构建242格全日模板数据
+  - BreadthChartOverlay (Customized组件) 渲染自定义曲线/填充/标记
+  - 保留了Catmull-Rom平滑曲线、涨跌线间渐变填充、发光效果、药丸标签、脉冲动画
+  - 保留了客户端数据积累逻辑
+- 修复了lint错误(移除了不必要的useRef渲染时赋值)
+- 通过agent-browser验证：图表正确渲染，时间轴与分时图对齐，所有视觉特性正常
+
+Stage Summary:
+- 市场涨跌家数分时图改用recharts渲染，与股票分时图使用相同的margin和XAxis配置
+- 时间轴完美对齐(09:30-15:00)，数据点位置与分时图一致
+- 图表始终显示(即使无数据也显示坐标轴和网格)
+- 所有视觉效果保留：Catmull-Rom曲线、渐变填充、发光、药丸标签、脉冲动画

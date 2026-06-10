@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  ComposedChart,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+  Customized,
+} from "recharts";
 import { ALL_TRADE_TIMES } from "@/lib/trading-times";
 
 interface BreadthHistoryPoint {
@@ -163,6 +170,22 @@ function buildBetweenArea(
   return segments.join(" ");
 }
 
+/** Build full-day template data (242 slots) for recharts */
+function buildFullDayData(data: BreadthHistoryPoint[]) {
+  const dataMap = new Map(data.map(d => [d.time, d]));
+  return ALL_TRADE_TIMES.map((time, idx) => {
+    const d = dataMap.get(time);
+    return {
+      idx,
+      time,
+      hasData: !!d,
+      totalUp: d?.totalUp ?? 0,
+      totalDown: d?.totalDown ?? 0,
+      totalFlat: d?.totalFlat ?? 0,
+    };
+  });
+}
+
 export function MarketBreadthChart({
   history, currentUp, currentDown, currentFlat,
   limitUp = 0, limitDown = 0,
@@ -235,63 +258,31 @@ export function MarketBreadthChart({
 
   const data = timeline;
 
-  // ── Chart computations — ALWAYS show time-sharing chart when data.length >= 1 ──
-  const chart = useMemo(() => {
-    if (data.length === 0) return null;
+  // ── Build full-day template data for recharts ──
+  const fullDayData = useMemo(() => buildFullDayData(data), [data]);
 
-    const w = 640, h = 280;
-    const px = 46, pr = 10, pt = 20, pb = 28;
-    const chartW = w - px - pr;
-    const chartH = h - pt - pb;
-
-    // ── Time-based X-axis: same as stock time-sharing chart ──
-    const slots = data.map(d => timeToSlot(d.time));
-    const toXSlot = (slot: number) => px + (slot / MAX_SLOT_IDX) * chartW;
-    const toX = (i: number) => toXSlot(slots[i]);
-
-    // ── Y-axis computation ──
+  // ── Y-axis domain ──
+  const yNiceMax = useMemo(() => {
+    if (data.length === 0) return 500;
     const allValues = data.flatMap(d => [d.totalUp, d.totalDown]);
-    const yMax = Math.max(...allValues, 100);
-    const yNiceMax = Math.ceil(yMax / 500) * 500 || 500;
-    const yPad = yNiceMax * 0.08;
-    const yTop = yNiceMax + yPad;
-    const yBottom = -yPad;
-    const yRange = yTop - yBottom;
-
-    const toY = (v: number) => pt + (1 - (v - yBottom) / yRange) * chartH;
-
-    // ── Smooth curves (only when ≥2 data points) ──
-    const upSmooth = data.length >= 2 ? smoothCurvePath(data.map(d => d.totalUp), toX, toY) : "";
-    const downSmooth = data.length >= 2 ? smoothCurvePath(data.map(d => d.totalDown), toX, toY) : "";
-
-    // Between-lines area fills
-    const betweenRed = data.length >= 2 ? buildBetweenArea(data, toX, toY, "upDominant") : "";
-    const betweenGreen = data.length >= 2 ? buildBetweenArea(data, toX, toY, "downDominant") : "";
-
-    // ── X-axis ticks: same as stock time-sharing chart ──
-    const keyTimes = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
-    const xTicks = keyTimes.map(t => ({ x: toXSlot(timeToSlot(t)), label: t }));
-
-    // ── Lunch break separator ──
-    const lunchBreakX = toXSlot(120.5);
-
-    // ── Y-axis ticks ──
-    const yStep = Math.ceil(yNiceMax / 4 / 500) * 500 || 500;
-    const yTicks: { y: number; label: string }[] = [];
-    for (let v = 0; v <= yNiceMax; v += yStep) yTicks.push({ y: toY(v), label: v === 0 ? "0" : `${v}` });
-
-    // Label interval
-    const labelInterval = data.length <= 10 ? Math.max(1, Math.floor(data.length / 2)) : Math.max(1, Math.floor(data.length / 8));
-
-    return {
-      w, h, px, pr, pt, pb, chartW, chartH,
-      toX, toY, toXSlot, slots,
-      upSmooth, downSmooth,
-      betweenRed, betweenGreen,
-      xTicks, yTicks, lunchBreakX, labelInterval,
-    };
+    const max = Math.max(...allValues, 100);
+    return Math.ceil(max / 500) * 500 || 500;
   }, [data]);
 
+  const yStep = useMemo(() => Math.ceil(yNiceMax / 4 / 500) * 500 || 500, [yNiceMax]);
+  const yTicks = useMemo(() => {
+    const ticks: number[] = [];
+    for (let v = 0; v <= yNiceMax; v += yStep) ticks.push(v);
+    return ticks;
+  }, [yNiceMax, yStep]);
+
+  // ── Time ticks (same as time-sharing chart) ──
+  const keyTimes = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
+  const timeTicks = useMemo(() =>
+    keyTimes.map(t => ALL_TRADE_TIMES.indexOf(t)).filter(i => i >= 0),
+  []);
+
+  // ── Stats ──
   const lastPt = data[data.length - 1];
   const diff = lastPt ? lastPt.totalUp - lastPt.totalDown : 0;
   const total = lastPt ? lastPt.totalUp + lastPt.totalDown + currentFlat || 1 : 1;
@@ -300,27 +291,8 @@ export function MarketBreadthChart({
 
   const cardCls = `bg-card rounded-lg border border-border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`;
 
-  // ── No data at all ──
-  if (data.length === 0 || !chart) {
-    return (
-      <Card className="border overflow-hidden">
-        <CardContent className="p-2 sm:p-2.5">
-          <div className="text-xs text-muted-foreground text-center py-4">等待涨跌家数数据...</div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // ── ALWAYS show time-sharing chart (even with 1 data point) ──
-  const {
-    w, h, px: cPx, pt: cPt, pb: cPb, chartW: cW,
-    toX, toY, toXSlot, slots,
-    upSmooth, downSmooth,
-    betweenRed, betweenGreen,
-    xTicks, yTicks, lunchBreakX, labelInterval,
-  } = chart;
-  const lastSlot = slots[slots.length - 1];
-  const lastX = toXSlot(lastSlot);
+  // ── Label interval for pill labels ──
+  const labelInterval = data.length <= 10 ? Math.max(1, Math.floor(data.length / 2)) : Math.max(1, Math.floor(data.length / 8));
 
   return (
     <div className={cardCls}>
@@ -332,12 +304,12 @@ export function MarketBreadthChart({
             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
               style={{ backgroundColor: `${UP_COLOR}18`, color: UP_COLOR }}>
               <span className="inline-block w-2.5 h-1 rounded-full" style={{ backgroundColor: UP_COLOR }} />
-              涨 {lastPt.totalUp}
+              涨 {lastPt?.totalUp ?? currentUp}
             </span>
             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
               style={{ backgroundColor: `${DOWN_COLOR}18`, color: DOWN_COLOR }}>
               <span className="inline-block w-2.5 h-1 rounded-full" style={{ backgroundColor: DOWN_COLOR }} />
-              跌 {lastPt.totalDown}
+              跌 {lastPt?.totalDown ?? currentDown}
             </span>
             <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded"
               style={{ backgroundColor: diff >= 0 ? `${UP_COLOR}12` : `${DOWN_COLOR}12`, color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>
@@ -368,135 +340,48 @@ export function MarketBreadthChart({
         </div>
       </div>
 
-      {/* SVG Chart — ALWAYS show time-sharing chart */}
+      {/* Chart — using recharts for axis alignment with time-sharing chart */}
       <div className="px-2">
-        <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 280 }}>
-          <defs>
-            <linearGradient id="betweenRed" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={UP_COLOR} stopOpacity="0.28" />
-              <stop offset="100%" stopColor={UP_COLOR} stopOpacity="0.04" />
-            </linearGradient>
-            <linearGradient id="betweenGreen" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={DOWN_COLOR} stopOpacity="0.28" />
-              <stop offset="100%" stopColor={DOWN_COLOR} stopOpacity="0.04" />
-            </linearGradient>
-            <filter id="upGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="1.5" result="blur" />
-              <feFlood floodColor={UP_COLOR} floodOpacity="0.25" />
-              <feComposite in2="blur" operator="in" />
-              <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
-            </filter>
-            <filter id="downGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="1.5" result="blur" />
-              <feFlood floodColor={DOWN_COLOR} floodOpacity="0.25" />
-              <feComposite in2="blur" operator="in" />
-              <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
-            </filter>
-          </defs>
-
-          {/* Background grid — horizontal Y lines */}
-          {yTicks.map((t, i) => (
-            <line key={`yg-${i}`} x1={cPx} y1={t.y} x2={cPx + cW} y2={t.y}
-              stroke="currentColor" className="text-border" strokeWidth={0.3}
-              strokeDasharray={t.label === "0" ? "none" : "3,4"} />
-          ))}
-
-          {/* Background grid — vertical X lines at key times */}
-          {xTicks.map((t, i) => (
-            <line key={`xg-${i}`} x1={t.x} y1={cPt} x2={t.x} y2={h - cPb}
-              stroke="currentColor" className="text-border" strokeWidth={0.3}
-              strokeDasharray="3,4" />
-          ))}
-
-          {/* Lunch break separator — dashed vertical line between 11:30 and 13:00 */}
-          <line x1={lunchBreakX} y1={cPt} x2={lunchBreakX} y2={h - cPb}
-            stroke="currentColor" className="text-muted-foreground/30" strokeWidth={0.5}
-            strokeDasharray="4,3" />
-
-          {/* Between-lines area fills (only when ≥2 points) */}
-          {betweenRed && <path d={betweenRed} fill="url(#betweenRed)" />}
-          {betweenGreen && <path d={betweenGreen} fill="url(#betweenGreen)" />}
-
-          {/* Up line with glow (only when ≥2 points) */}
-          {upSmooth && <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />}
-          {/* Down line with glow (only when ≥2 points) */}
-          {downSmooth && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
-
-          {/* Data point dots & pill labels */}
-          {data.map((d, i) => {
-            const x = toX(i);
-            const yUp = toY(d.totalUp);
-            const yDown = toY(d.totalDown);
-            const isLast = i === data.length - 1;
-            const isFirst = i === 0;
-            const showLabel = isFirst || isLast || i % labelInterval === 0;
-            const linesClose = Math.abs(yUp - yDown) < 20;
-
-            return (
-              <g key={`pt-${i}`}>
-                <circle cx={x} cy={yUp} r={isLast ? 3 : 1} fill={UP_COLOR} opacity={isLast ? 1 : 0.4} />
-                <circle cx={x} cy={yDown} r={isLast ? 3 : 1} fill={DOWN_COLOR} opacity={isLast ? 1 : 0.4} />
-
-                {isLast && (
-                  <>
-                    <circle cx={x} cy={yUp} r={1.5} fill="#fff" opacity={0.6} />
-                    <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />
-                  </>
-                )}
-
-                {showLabel && (
-                  <>
-                    <rect x={x - 15} y={yUp - (linesClose ? 17 : 13) - 10}
-                      width={30} height={11} rx={3} fill={UP_COLOR} opacity={0.92} />
-                    <text x={x} y={yUp - (linesClose ? 17 : 13) - 4.5}
-                      textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
-                      fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                    <rect x={x - 15} y={yDown + (linesClose ? 6 : 6)}
-                      width={30} height={11} rx={3} fill={DOWN_COLOR} opacity={0.92} />
-                    <text x={x} y={yDown + (linesClose ? 6 : 6) + 5.5}
-                      textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
-                      fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
-                  </>
-                )}
-              </g>
-            );
-          })}
-
-          {/* End pulse — Up */}
-          <circle cx={lastX} cy={toY(lastPt.totalUp)} r={4} fill={UP_COLOR} opacity={0.2}>
-            <animate attributeName="r" values="4;10;4" dur="2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.2;0.05;0.2" dur="2s" repeatCount="indefinite" />
-          </circle>
-          {/* End pulse — Down */}
-          <circle cx={lastX} cy={toY(lastPt.totalDown)} r={4} fill={DOWN_COLOR} opacity={0.2}>
-            <animate attributeName="r" values="4;10;4" dur="2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.2;0.05;0.2" dur="2s" repeatCount="indefinite" />
-          </circle>
-
-          {/* Y-axis labels */}
-          {yTicks.map((t, i) => (
-            <text key={`yl-${i}`} x={cPx - 5} y={t.y} textAnchor="end" dominantBaseline="middle"
-              fontSize={7.5} fontFamily="monospace" fill="currentColor" className="text-muted-foreground/70">
-              {t.label}
-            </text>
-          ))}
-
-          {/* X-axis with tick marks — standard A-share trading times */}
-          {xTicks.map((t, i) => (
-            <g key={`xl-${i}`}>
-              <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 3}
-                stroke="currentColor" className="text-muted-foreground/40" strokeWidth={0.5} />
-              <text x={t.x} y={h - 6} textAnchor="middle"
-                fontSize={7.5} fontFamily="monospace" fill="currentColor" className="text-muted-foreground/70">
-                {t.label}
-              </text>
-            </g>
-          ))}
-
-          {/* Axes */}
-          <line x1={cPx} y1={cPt} x2={cPx} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.5} />
-          <line x1={cPx} y1={h - cPb} x2={cPx + cW} y2={h - cPb} stroke="currentColor" className="text-border" strokeWidth={0.5} />
-        </svg>
+        <ResponsiveContainer width="100%" height={280}>
+          <ComposedChart
+            data={fullDayData}
+            margin={{ top: 20, right: 82, left: 2, bottom: 20 }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="hsl(var(--border))"
+              opacity={0.15}
+              vertical={false}
+            />
+            <XAxis
+              dataKey="idx"
+              type="number"
+              domain={[0, MAX_SLOT_IDX]}
+              ticks={timeTicks}
+              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 0.5 }}
+              interval={0}
+              tickFormatter={(idx: number) => ALL_TRADE_TIMES[idx] || ""}
+            />
+            <YAxis
+              domain={[0, yNiceMax]}
+              ticks={yTicks}
+              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={false}
+              width={55}
+              tickFormatter={(v: number) => v === 0 ? "0" : `${v}`}
+            />
+            {/* Lunch break separator line */}
+            <Customized component={() => {
+              // This renders nothing visible but ensures recharts sets up the axes properly
+              return null;
+            }} />
+            {/* Main chart overlay: curves, fills, dots, labels, pulse */}
+            <Customized component={BreadthChartOverlay} breadthData={data} labelInterval={labelInterval} yNiceMax={yNiceMax} />
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Bottom ratio bar */}
@@ -512,5 +397,146 @@ export function MarketBreadthChart({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Customized component for the breadth chart overlay ──
+// Renders Catmull-Rom curves, gradient fills, glow effects, data dots, pill labels, and pulse animations
+// Uses recharts' xAxisMap/yAxisMap for coordinate mapping to ensure alignment with the time-sharing chart
+
+interface BreadthOverlayProps {
+  xAxisMap?: any;
+  yAxisMap?: any;
+  offset?: { left: number; top: number; width: number; height: number };
+  breadthData?: BreadthHistoryPoint[];
+  labelInterval?: number;
+  yNiceMax?: number;
+}
+
+function BreadthChartOverlay(props: BreadthOverlayProps) {
+  const { xAxisMap, yAxisMap, breadthData, labelInterval = 8, yNiceMax = 500 } = props;
+
+  if (!xAxisMap || !yAxisMap || !breadthData || breadthData.length === 0) return null;
+
+  const xAxis = Object.values(xAxisMap)[0] as any;
+  const yAxis = Object.values(yAxisMap)[0] as any;
+  if (!xAxis?.scale || !yAxis?.scale) return null;
+
+  const xScale = xAxis.scale;
+  const yScale = yAxis.scale;
+
+  const data = breadthData;
+  const toX = (i: number) => xScale(timeToSlot(data[i].time));
+  const toY = (v: number) => yScale(v);
+
+  // ── Smooth curves ──
+  const upSmooth = data.length >= 2 ? smoothCurvePath(data.map(d => d.totalUp), toX, toY) : "";
+  const downSmooth = data.length >= 2 ? smoothCurvePath(data.map(d => d.totalDown), toX, toY) : "";
+
+  // ── Between-lines area fills ──
+  const betweenRed = data.length >= 2 ? buildBetweenArea(data, toX, toY, "upDominant") : "";
+  const betweenGreen = data.length >= 2 ? buildBetweenArea(data, toX, toY, "downDominant") : "";
+
+  // ── Lunch break separator ──
+  const lunchSlot = 120.5;
+  const lunchX = xScale(lunchSlot);
+  const plotTop = yScale(yNiceMax);
+  const plotBottom = yScale(0);
+
+  // ── Last point ──
+  const lastPt = data[data.length - 1];
+  const lastX = toX(data.length - 1);
+
+  return (
+    <g>
+      {/* SVG Defs: gradients & filters */}
+      <defs>
+        <linearGradient id="betweenRed" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={UP_COLOR} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={UP_COLOR} stopOpacity="0.04" />
+        </linearGradient>
+        <linearGradient id="betweenGreen" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={DOWN_COLOR} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={DOWN_COLOR} stopOpacity="0.04" />
+        </linearGradient>
+        <filter id="upGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="1.5" result="blur" />
+          <feFlood floodColor={UP_COLOR} floodOpacity="0.25" />
+          <feComposite in2="blur" operator="in" />
+          <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <filter id="downGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="1.5" result="blur" />
+          <feFlood floodColor={DOWN_COLOR} floodOpacity="0.25" />
+          <feComposite in2="blur" operator="in" />
+          <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+
+      {/* Lunch break separator — dashed vertical line between 11:30 and 13:00 */}
+      <line x1={lunchX} y1={plotTop} x2={lunchX} y2={plotBottom}
+        stroke="currentColor" className="text-muted-foreground/30" strokeWidth={0.5}
+        strokeDasharray="4,3" />
+
+      {/* Between-lines area fills */}
+      {betweenRed && <path d={betweenRed} fill="url(#betweenRed)" />}
+      {betweenGreen && <path d={betweenGreen} fill="url(#betweenGreen)" />}
+
+      {/* Up line with glow */}
+      {upSmooth && <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />}
+      {/* Down line with glow */}
+      {downSmooth && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
+
+      {/* Data point dots & pill labels */}
+      {data.map((d, i) => {
+        const x = toX(i);
+        const yUp = toY(d.totalUp);
+        const yDown = toY(d.totalDown);
+        const isLast = i === data.length - 1;
+        const isFirst = i === 0;
+        const showLabel = isFirst || isLast || i % labelInterval === 0;
+        const linesClose = Math.abs(yUp - yDown) < 20;
+
+        return (
+          <g key={`pt-${i}`}>
+            <circle cx={x} cy={yUp} r={isLast ? 3 : 1} fill={UP_COLOR} opacity={isLast ? 1 : 0.4} />
+            <circle cx={x} cy={yDown} r={isLast ? 3 : 1} fill={DOWN_COLOR} opacity={isLast ? 1 : 0.4} />
+
+            {isLast && (
+              <>
+                <circle cx={x} cy={yUp} r={1.5} fill="#fff" opacity={0.6} />
+                <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />
+              </>
+            )}
+
+            {showLabel && (
+              <>
+                <rect x={x - 15} y={yUp - (linesClose ? 17 : 13) - 10}
+                  width={30} height={11} rx={3} fill={UP_COLOR} opacity={0.92} />
+                <text x={x} y={yUp - (linesClose ? 17 : 13) - 4.5}
+                  textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
+                  fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
+                <rect x={x - 15} y={yDown + (linesClose ? 6 : 6)}
+                  width={30} height={11} rx={3} fill={DOWN_COLOR} opacity={0.92} />
+                <text x={x} y={yDown + (linesClose ? 6 : 6) + 5.5}
+                  textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
+                  fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
+              </>
+            )}
+          </g>
+        );
+      })}
+
+      {/* End pulse — Up */}
+      <circle cx={lastX} cy={toY(lastPt.totalUp)} r={4} fill={UP_COLOR} opacity={0.2}>
+        <animate attributeName="r" values="4;10;4" dur="2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.2;0.05;0.2" dur="2s" repeatCount="indefinite" />
+      </circle>
+      {/* End pulse — Down */}
+      <circle cx={lastX} cy={toY(lastPt.totalDown)} r={4} fill={DOWN_COLOR} opacity={0.2}>
+        <animate attributeName="r" values="4;10;4" dur="2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.2;0.05;0.2" dur="2s" repeatCount="indefinite" />
+      </circle>
+    </g>
   );
 }
