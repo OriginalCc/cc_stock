@@ -221,3 +221,23 @@ Stage Summary:
 - Critical bug fixed: timeToSlot() now uses Number.isNaN() instead of || for parseInt fallback
 - Chart renders with smooth curves, gradient fills, glow effects, and pulse animations
 ---
+---
+Task ID: 1
+Agent: main
+Task: Fix market breadth chart to always show time-sharing format
+
+Work Log:
+- Identified root cause: chart computation returned null when data.length < 2, causing fallback to static card view
+- Changed chart computation to work with data.length >= 1 instead of data.length >= 2
+- Removed the single-data-point static card fallback entirely
+- When only 1 data point: shows full time-sharing chart with X/Y axes, grid, single data point dot with pill labels, pulse animation
+- When ≥2 data points: shows smooth curves, area fills, all labels as before
+- Browser verified: chart always shows time-sharing format with correct A-share trading time X-axis
+- Browser verified: chart persists after page reload
+
+Stage Summary:
+- Market breadth chart now ALWAYS shows time-sharing format when any data is available
+- No more static card view for single data points
+- Smooth curves only appear when ≥2 points (graceful degradation)
+- X-axis always shows standard A-share trading times
+---

@@ -31,19 +31,12 @@ const UP_COLOR = "#dc2626";
 const DOWN_COLOR = "#059669";
 
 // ── A-share trading day constants ──
-// ALL_TRADE_TIMES: 09:30-11:30 (121 slots, idx 0-120) + 13:00-15:00 (121 slots, idx 121-241) = 242 total
 const TOTAL_SLOTS = ALL_TRADE_TIMES.length; // 242
 const MAX_SLOT_IDX = TOTAL_SLOTS - 1;       // 241
 
-/** Map time string (HH:MM or HH:MM:SS) to a continuous slot position in A-share trading day
- *  Morning: 09:30 → slot 0, 11:30 → slot 120
- *  Afternoon: 13:00 → slot 121, 15:00 → slot 241
- *  Sub-second precision: 09:30:30 → slot 0.5
- */
+/** Map time string (HH:MM or HH:MM:SS) to a continuous slot position in A-share trading day */
 function timeToSlot(timeStr: string): number {
   const parts = timeStr.split(":");
-  // Use NaN check instead of || — parseInt("00") returns 0 which is falsy,
-  // causing "10:00" to be treated as "10:30" with the old `|| 30` fallback.
   const hRaw = parseInt(parts[0]);
   const mRaw = parseInt(parts[1]);
   const sRaw = parts.length > 2 ? parseInt(parts[2]) : 0;
@@ -53,23 +46,18 @@ function timeToSlot(timeStr: string): number {
 
   const totalMin = h * 60 + m;
 
-  // Before market open
   if (totalMin < 570) return 0;
-  // Morning session: 09:30 (570) – 11:30 (690) → slots 0-120
   if (totalMin <= 690) {
     return (totalMin - 570) + s / 60;
   }
-  // Lunch break → end of morning
   if (totalMin < 780) return 120;
-  // Afternoon session: 13:00 (780) – 15:00 (900) → slots 121-241
   if (totalMin <= 900) {
     return 121 + (totalMin - 780) + s / 60;
   }
-  // After market close
   return MAX_SLOT_IDX;
 }
 
-/** Format current time as HH:MM (China timezone) — matches server 1-min resolution */
+/** Format current time as HH:MM (China timezone) */
 function formatTimeHM(): string {
   const now = new Date();
   const h = (now.getUTCHours() + 8) % 24;
@@ -181,7 +169,6 @@ export function MarketBreadthChart({
   shUp = 0, shDown = 0, szUp = 0, szDown = 0,
 }: MarketBreadthChartProps) {
   // ── Client-side accumulation: merge server 1-min history with live data ──
-  // Server provides HH:MM snapshots; we keep the latest point updated on each poll
   const [timeline, setTimeline] = useState<BreadthHistoryPoint[]>([]);
   const lastDateRef = useRef("");
 
@@ -202,14 +189,12 @@ export function MarketBreadthChart({
       // Step 1: Initialize from server history if empty
       if (prev.length === 0 && history.length > 0) {
         const base = history.map(p => ({ ...p }));
-        // Also add current live point if newer than last history point
         if (currentUp > 0 || currentDown > 0) {
           const nowHM = formatTimeHM();
           const last = base[base.length - 1];
           if (!last || nowHM > last.time) {
             return [...base, { time: nowHM, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
           }
-          // Update last point with live values
           if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
             return [...base.slice(0, -1), { ...last, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat }];
           }
@@ -234,10 +219,8 @@ export function MarketBreadthChart({
         const last = merged[merged.length - 1];
 
         if (!last || nowHM > last.time) {
-          // New minute → append
           merged.push({ time: nowHM, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 });
         } else if (nowHM === last.time) {
-          // Same minute → update with latest values
           if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
             merged = [...merged.slice(0, -1), { ...last, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat }];
           }
@@ -252,9 +235,9 @@ export function MarketBreadthChart({
 
   const data = timeline;
 
-  // ── Chart computations ──
+  // ── Chart computations — ALWAYS show time-sharing chart when data.length >= 1 ──
   const chart = useMemo(() => {
-    if (data.length < 2) return null;
+    if (data.length === 0) return null;
 
     const w = 640, h = 280;
     const px = 46, pr = 10, pt = 20, pb = 28;
@@ -262,10 +245,7 @@ export function MarketBreadthChart({
     const chartH = h - pt - pb;
 
     // ── Time-based X-axis: same as stock time-sharing chart ──
-    // Each data point is mapped to its slot position in the 242-slot trading day
     const slots = data.map(d => timeToSlot(d.time));
-
-    // X position from slot: linear mapping over the full trading day
     const toXSlot = (slot: number) => px + (slot / MAX_SLOT_IDX) * chartW;
     const toX = (i: number) => toXSlot(slots[i]);
 
@@ -280,28 +260,27 @@ export function MarketBreadthChart({
 
     const toY = (v: number) => pt + (1 - (v - yBottom) / yRange) * chartH;
 
-    // ── Smooth curves through all data points ──
-    // Lunch break gap (11:30→13:00) is only 1 slot (~2.4px), so no need to split curves
-    const upSmooth = smoothCurvePath(data.map(d => d.totalUp), toX, toY);
-    const downSmooth = smoothCurvePath(data.map(d => d.totalDown), toX, toY);
+    // ── Smooth curves (only when ≥2 data points) ──
+    const upSmooth = data.length >= 2 ? smoothCurvePath(data.map(d => d.totalUp), toX, toY) : "";
+    const downSmooth = data.length >= 2 ? smoothCurvePath(data.map(d => d.totalDown), toX, toY) : "";
 
-    // Between-lines area fills — use full data with slot-based X
-    const betweenRed = buildBetweenArea(data, toX, toY, "upDominant");
-    const betweenGreen = buildBetweenArea(data, toX, toY, "downDominant");
+    // Between-lines area fills
+    const betweenRed = data.length >= 2 ? buildBetweenArea(data, toX, toY, "upDominant") : "";
+    const betweenGreen = data.length >= 2 ? buildBetweenArea(data, toX, toY, "downDominant") : "";
 
     // ── X-axis ticks: same as stock time-sharing chart ──
     const keyTimes = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
     const xTicks = keyTimes.map(t => ({ x: toXSlot(timeToSlot(t)), label: t }));
 
-    // ── Lunch break separator line ──
-    const lunchBreakX = toXSlot(120.5); // Midpoint between 11:30 (slot 120) and 13:00 (slot 121)
+    // ── Lunch break separator ──
+    const lunchBreakX = toXSlot(120.5);
 
     // ── Y-axis ticks ──
     const yStep = Math.ceil(yNiceMax / 4 / 500) * 500 || 500;
     const yTicks: { y: number; label: string }[] = [];
     for (let v = 0; v <= yNiceMax; v += yStep) yTicks.push({ y: toY(v), label: v === 0 ? "0" : `${v}` });
 
-    // Label interval for data point pill labels (show labels at ~6-8 key positions)
+    // Label interval
     const labelInterval = data.length <= 10 ? Math.max(1, Math.floor(data.length / 2)) : Math.max(1, Math.floor(data.length / 8));
 
     return {
@@ -322,7 +301,7 @@ export function MarketBreadthChart({
   const cardCls = `bg-card rounded-lg border border-border overflow-hidden ${isBullish ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`;
 
   // ── No data at all ──
-  if (data.length === 0) {
+  if (data.length === 0 || !chart) {
     return (
       <Card className="border overflow-hidden">
         <CardContent className="p-2 sm:p-2.5">
@@ -332,54 +311,7 @@ export function MarketBreadthChart({
     );
   }
 
-  // ── Single data point (waiting for more) ──
-  if (data.length === 1 || !chart) {
-    const pt0 = data[0];
-    const sDiff = pt0.totalUp - pt0.totalDown;
-    const sTotal = pt0.totalUp + pt0.totalDown + pt0.totalFlat || 1;
-    const sRatio = ((pt0.totalUp / sTotal) * 100).toFixed(1);
-
-    return (
-      <div className={cardCls}>
-        <div className="px-2 pt-2 pb-1">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-semibold text-foreground/80">市场涨跌家数</span>
-            <span className="text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full animate-pulse">采集数据中...</span>
-          </div>
-          <div className="flex items-center justify-center gap-6 py-4">
-            <div className="text-center">
-              <div className="text-2xl font-extrabold tabular-nums" style={{ color: UP_COLOR }}>{pt0.totalUp}</div>
-              <div className="text-[10px] font-medium mt-0.5" style={{ color: UP_COLOR, opacity: 0.7 }}>上涨</div>
-            </div>
-            <div className="text-muted-foreground/30 text-xl font-light">:</div>
-            <div className="text-center">
-              <div className="text-2xl font-extrabold tabular-nums" style={{ color: DOWN_COLOR }}>{pt0.totalDown}</div>
-              <div className="text-[10px] font-medium mt-0.5" style={{ color: DOWN_COLOR, opacity: 0.7 }}>下跌</div>
-            </div>
-            <div className="ml-4 pl-4 border-l border-border/60">
-              <div className="text-2xl font-extrabold tabular-nums" style={{ color: sDiff >= 0 ? UP_COLOR : DOWN_COLOR }}>
-                {sDiff >= 0 ? "+" : ""}{sDiff}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">涨跌差</div>
-            </div>
-          </div>
-        </div>
-        <div className="px-2 pb-2 pt-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-bold tabular-nums w-8 text-right" style={{ color: UP_COLOR }}>{sRatio}%</span>
-            <div className="flex-1 h-3 rounded-full overflow-hidden flex bg-muted/30 relative">
-              <div className="h-full rounded-l-full transition-all duration-500" style={{ width: `${sRatio}%`, backgroundColor: UP_COLOR, opacity: 0.8 }} />
-              <div className="h-full rounded-r-full transition-all duration-500" style={{ width: `${100 - parseFloat(sRatio)}%`, backgroundColor: DOWN_COLOR, opacity: 0.8 }} />
-              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-muted-foreground/20 -translate-x-1/2" />
-            </div>
-            <span className="text-[9px] font-bold tabular-nums w-8" style={{ color: DOWN_COLOR }}>{(100 - parseFloat(sRatio)).toFixed(1)}%</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Multi-point chart (real-time time-sharing aligned with stock chart) ──
+  // ── ALWAYS show time-sharing chart (even with 1 data point) ──
   const {
     w, h, px: cPx, pt: cPt, pb: cPb, chartW: cW,
     toX, toY, toXSlot, slots,
@@ -436,7 +368,7 @@ export function MarketBreadthChart({
         </div>
       </div>
 
-      {/* SVG Chart — X-axis aligned with stock time-sharing chart */}
+      {/* SVG Chart — ALWAYS show time-sharing chart */}
       <div className="px-2">
         <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 280 }}>
           <defs>
@@ -481,13 +413,13 @@ export function MarketBreadthChart({
             stroke="currentColor" className="text-muted-foreground/30" strokeWidth={0.5}
             strokeDasharray="4,3" />
 
-          {/* Between-lines area fills */}
+          {/* Between-lines area fills (only when ≥2 points) */}
           {betweenRed && <path d={betweenRed} fill="url(#betweenRed)" />}
           {betweenGreen && <path d={betweenGreen} fill="url(#betweenGreen)" />}
 
-          {/* Up line with glow */}
+          {/* Up line with glow (only when ≥2 points) */}
           {upSmooth && <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />}
-          {/* Down line with glow */}
+          {/* Down line with glow (only when ≥2 points) */}
           {downSmooth && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
 
           {/* Data point dots & pill labels */}
