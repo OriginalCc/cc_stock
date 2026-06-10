@@ -487,7 +487,7 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
       {/* Down line with glow */}
       {downSmooth && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
 
-      {/* Data point dots & pill labels */}
+      {/* Data point dots & pill labels — 每个标签永远朝对方相反方向 */}
       {data.map((d, i) => {
         const x = toX(i);
         const yUp = toY(d.totalUp);
@@ -495,7 +495,28 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
         const isLast = i === data.length - 1;
         const isFirst = i === 0;
         const showLabel = isFirst || isLast || i % labelInterval === 0;
-        const linesClose = Math.abs(yUp - yDown) < 20;
+
+        const pillH = 11;
+        const pillGap = 4;
+
+        // 判断红线是否在绿线上方（SVG坐标系：y值小=视觉上方）
+        const redIsAbove = yUp < yDown;
+
+        // 红色药丸：永远远离绿线方向
+        const upPillY = redIsAbove
+          ? yUp - pillGap - pillH    // 红在绿上方 → 红标签继续往上
+          : yUp + pillGap;           // 红在绿下方 → 红标签继续往下
+        const upTextY = upPillY + pillH / 2;
+
+        // 绿色药丸：永远远离红线方向
+        const downPillY = redIsAbove
+          ? yDown + pillGap          // 绿在红下方 → 绿标签继续往下
+          : yDown - pillGap - pillH; // 绿在红上方 → 绿标签继续往上
+        const downTextY = downPillY + pillH / 2;
+
+        // 计算药丸宽度（根据数字位数）
+        const upPillW = Math.max(26, `${d.totalUp}`.length * 6 + 8);
+        const downPillW = Math.max(26, `${d.totalDown}`.length * 6 + 8);
 
         return (
           <g key={`pt-${i}`}>
@@ -511,14 +532,16 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
 
             {showLabel && (
               <>
-                <rect x={x - 15} y={yUp - (linesClose ? 17 : 13) - 10}
-                  width={30} height={11} rx={3} fill={UP_COLOR} opacity={0.92} />
-                <text x={x} y={yUp - (linesClose ? 17 : 13) - 4.5}
+                {/* 红色药丸：远离绿线方向 */}
+                <rect x={x - upPillW / 2} y={upPillY}
+                  width={upPillW} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
+                <text x={x} y={upTextY}
                   textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                <rect x={x - 15} y={yDown + (linesClose ? 6 : 6)}
-                  width={30} height={11} rx={3} fill={DOWN_COLOR} opacity={0.92} />
-                <text x={x} y={yDown + (linesClose ? 6 : 6) + 5.5}
+                {/* 绿色药丸：远离红线方向 */}
+                <rect x={x - downPillW / 2} y={downPillY}
+                  width={downPillW} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
+                <text x={x} y={downTextY}
                   textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
                   fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
               </>
