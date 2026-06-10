@@ -3564,7 +3564,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       )}
 
       {/* ─── Panel 1: Price Chart ─── */}
-      <div className="relative">
+      <div className="relative overflow-visible">
         <ResponsiveContainer width="100%" height={isZoomed ? 620 : 530}>
           <ComposedChart
             data={zoomData}
@@ -3770,27 +3770,43 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                           strokeWidth={3}
                           strokeLinecap="round"
                         />
-                        {/* Label pill on left side */}
-                        <rect
-                          x={x1 - 2}
-                          y={y - 10}
-                          width={110}
-                          height={20}
-                          rx={10}
-                          fill="#dc2626"
-                          fillOpacity={0.92}
-                        />
-                        <text
-                          x={x1 + 53}
-                          y={y + 1}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          fill="white"
-                          fontSize={9}
-                          fontWeight="800"
-                        >
-                          {`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}
-                        </text>
+                        {/* Label pill on left side — outside chart area, rotated vertical */}
+                        {(() => {
+                          const pillW = 110;
+                          const pillH = 20;
+                          const pillX = x1 - pillW - 6;
+                          return (
+                            <>
+                              {/* Connector line from pill to chart edge */}
+                              <line
+                                x1={x1 - 2} y1={y} x2={pillX + pillW} y2={y}
+                                stroke="#dc2626"
+                                strokeWidth={1}
+                                strokeOpacity={0.5}
+                              />
+                              <rect
+                                x={pillX}
+                                y={y - pillH / 2}
+                                width={pillW}
+                                height={pillH}
+                                rx={10}
+                                fill="#dc2626"
+                                fillOpacity={0.92}
+                              />
+                              <text
+                                x={pillX + pillW / 2}
+                                y={y + 1}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fill="white"
+                                fontSize={9}
+                                fontWeight="800"
+                              >
+                                {`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}
+                              </text>
+                            </>
+                          );
+                        })()}
                       </g>
                     );
                   }} />
