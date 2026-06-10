@@ -3784,20 +3784,14 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                           strokeWidth={1}
                           strokeOpacity={0.25}
                         />
-                        {/* Label pill on left side — outside chart area */}
+                        {/* Label pill inside left edge of chart area */}
                         {(() => {
                           const pillW = 116;
                           const pillH = 24;
-                          const pillX = x1 - pillW - 6;
+                          // Place pill just inside the left chart edge so it's never clipped
+                          const pillX = x1 + 4;
                           return (
                             <>
-                              {/* Connector line from pill to chart edge */}
-                              <line
-                                x1={x1 - 2} y1={y} x2={pillX + pillW} y2={y}
-                                stroke="#dc2626"
-                                strokeWidth={1.5}
-                                strokeOpacity={0.6}
-                              />
                               {/* Pill glow */}
                               <rect
                                 x={pillX - 2}
