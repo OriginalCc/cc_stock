@@ -3982,6 +3982,190 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {deferredCrosshairIdx != null && crosshairItem?.hasData && (
               <ReferenceLine yAxisId="price" x={deferredCrosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
             )}
+            {/* ── Best Buy Period Overlay (10:30-11:30) for declining stocks ── */}
+            {lastItem && lastItem.price > 0 && safePrevClose > 0 && lastItem.price < safePrevClose && (() => {
+              // Find 10:30 and 11:30 indices in zoomData
+              const startItem = zoomData.find(d => d.time === "10:30");
+              const endItem = zoomData.find(d => d.time === "11:30");
+              if (startItem == null || endItem == null) return null;
+              return (
+                <Customized component={(props: any) => {
+                  const { xAxisMap, yAxisMap, offset } = props;
+                  if (!xAxisMap || !yAxisMap || !offset) return null;
+                  const xAxis = Object.values(xAxisMap)[0] as any;
+                  const yAxis = Object.values(yAxisMap)[0] as any;
+                  if (!xAxis?.scale || !yAxis?.scale) return null;
+
+                  const xStart = xAxis.scale(startItem.idx);
+                  const xEnd = xAxis.scale(endItem.idx);
+                  const plotTop = offset.top;
+                  const plotHeight = offset.height;
+
+                  if (xEnd - xStart < 5) return null; // Too narrow to show
+
+                  const midX = (xStart + xEnd) / 2;
+                  const midY = plotTop + plotHeight / 2;
+
+                  return (
+                    <g>
+                      {/* Semi-transparent green mask (A股：买入=绿色) */}
+                      <defs>
+                        <linearGradient id="bestBuyGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#16a34a" stopOpacity="0.12" />
+                          <stop offset="50%" stopColor="#22c55e" stopOpacity="0.18" />
+                          <stop offset="100%" stopColor="#16a34a" stopOpacity="0.08" />
+                        </linearGradient>
+                        {/* Animated dash for border */}
+                        <filter id="bestBuyGlow">
+                          <feGaussianBlur stdDeviation="2" result="blur" />
+                          <feMerge>
+                            <feMergeNode in="blur" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                      </defs>
+                      {/* Main overlay rectangle */}
+                      <rect
+                        x={xStart}
+                        y={plotTop}
+                        width={xEnd - xStart}
+                        height={plotHeight}
+                        fill="url(#bestBuyGrad)"
+                        stroke="#22c55e"
+                        strokeWidth={1.5}
+                        strokeDasharray="6 3"
+                        strokeOpacity={0.7}
+                        rx={3}
+                      />
+                      {/* Left boundary label */}
+                      <g>
+                        <rect
+                          x={xStart - 1}
+                          y={plotTop + 4}
+                          width={32}
+                          height={14}
+                          rx={3}
+                          fill="#16a34a"
+                          fillOpacity={0.9}
+                        />
+                        <text
+                          x={xStart + 15}
+                          y={plotTop + 11}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fill="white"
+                          fontSize={8}
+                          fontWeight="700"
+                        >
+                          10:30
+                        </text>
+                      </g>
+                      {/* Right boundary label */}
+                      <g>
+                        <rect
+                          x={xEnd - 31}
+                          y={plotTop + 4}
+                          width={32}
+                          height={14}
+                          rx={3}
+                          fill="#16a34a"
+                          fillOpacity={0.9}
+                        />
+                        <text
+                          x={xEnd - 15}
+                          y={plotTop + 11}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fill="white"
+                          fontSize={8}
+                          fontWeight="700"
+                        >
+                          11:30
+                        </text>
+                      </g>
+                      {/* Central prominent reminder badge */}
+                      <g filter="url(#bestBuyGlow)">
+                        {/* Badge background */}
+                        <rect
+                          x={midX - 62}
+                          y={midY - 14}
+                          width={124}
+                          height={28}
+                          rx={14}
+                          fill="#16a34a"
+                          fillOpacity={0.92}
+                          stroke="#bbf7d0"
+                          strokeWidth={1.5}
+                        />
+                        {/* Pulsing ring around badge */}
+                        <rect
+                          x={midX - 66}
+                          y={midY - 18}
+                          width={132}
+                          height={36}
+                          rx={18}
+                          fill="none"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                          opacity={0.6}
+                        >
+                          <animate
+                            attributeName="stroke-dashoffset"
+                            from="0"
+                            to="16"
+                            dur="1.5s"
+                            repeatCount="indefinite"
+                          />
+                          <animate
+                            attributeName="opacity"
+                            values="0.6;0.2;0.6"
+                            dur="2s"
+                            repeatCount="indefinite"
+                          />
+                        </rect>
+                        {/* Icon */}
+                        <text
+                          x={midX - 48}
+                          y={midY + 1}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize={13}
+                        >
+                          🟢
+                        </text>
+                        {/* Main text */}
+                        <text
+                          x={midX + 6}
+                          y={midY + 1}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fill="white"
+                          fontSize={12}
+                          fontWeight="800"
+                          letterSpacing="0.5"
+                        >
+                          买入最佳时期
+                        </text>
+                      </g>
+                      {/* Secondary hint text below badge */}
+                      <text
+                        x={midX}
+                        y={midY + 26}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill="#166534"
+                        fontSize={9}
+                        fontWeight="600"
+                        opacity={0.8}
+                      >
+                        下跌股10:30~11:30易现低点，关注买入时机
+                      </text>
+                    </g>
+                  );
+                }} />
+              );
+            })()}
             <Customized component={CombinedChartOverlay} />
           </ComposedChart>
         </ResponsiveContainer>
