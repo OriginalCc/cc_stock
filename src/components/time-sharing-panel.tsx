@@ -3740,40 +3740,54 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                         {/* Gradient definition */}
                         <defs>
                           <linearGradient id="recentLowGrad" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.3" />
-                            <stop offset="25%" stopColor="#f97316" stopOpacity="0.7" />
+                            <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
+                            <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
                             <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
-                            <stop offset="75%" stopColor="#dc2626" stopOpacity="1" />
-                            <stop offset="100%" stopColor="#b91c1c" stopOpacity="0.9" />
+                            <stop offset="80%" stopColor="#dc2626" stopOpacity="1" />
+                            <stop offset="100%" stopColor="#b91c1c" stopOpacity="1" />
                           </linearGradient>
-                          {/* Glow filter */}
-                          <filter id="recentLowGlow" x="-5%" y="-50%" width="110%" height="200%">
-                            <feGaussianBlur stdDeviation="3" result="blur" />
+                          {/* Glow filter — stronger blur */}
+                          <filter id="recentLowGlow" x="-5%" y="-100%" width="110%" height="300%">
+                            <feGaussianBlur stdDeviation="5" result="blur" />
                             <feMerge>
                               <feMergeNode in="blur" />
                               <feMergeNode in="SourceGraphic" />
                             </feMerge>
                           </filter>
                         </defs>
-                        {/* Glow layer (wider, semi-transparent) */}
+                        {/* Wide glow layer — soft halo */}
+                        <line
+                          x1={x1} y1={y} x2={x2} y2={y}
+                          stroke="url(#recentLowGrad)"
+                          strokeWidth={12}
+                          strokeOpacity={0.15}
+                          filter="url(#recentLowGlow)"
+                        />
+                        {/* Medium glow layer */}
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="url(#recentLowGrad)"
                           strokeWidth={6}
-                          strokeOpacity={0.2}
-                          filter="url(#recentLowGlow)"
+                          strokeOpacity={0.3}
                         />
-                        {/* Main gradient line — thick & solid */}
+                        {/* Main gradient line — thick & bold */}
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="url(#recentLowGrad)"
-                          strokeWidth={3}
+                          strokeWidth={4}
                           strokeLinecap="round"
                         />
-                        {/* Label pill on left side — outside chart area, rotated vertical */}
+                        {/* Bright core line — thin white-hot center */}
+                        <line
+                          x1={x1} y1={y} x2={x2} y2={y}
+                          stroke="white"
+                          strokeWidth={1}
+                          strokeOpacity={0.25}
+                        />
+                        {/* Label pill on left side — outside chart area */}
                         {(() => {
-                          const pillW = 110;
-                          const pillH = 20;
+                          const pillW = 116;
+                          const pillH = 24;
                           const pillX = x1 - pillW - 6;
                           return (
                             <>
@@ -3781,17 +3795,31 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                               <line
                                 x1={x1 - 2} y1={y} x2={pillX + pillW} y2={y}
                                 stroke="#dc2626"
-                                strokeWidth={1}
-                                strokeOpacity={0.5}
+                                strokeWidth={1.5}
+                                strokeOpacity={0.6}
                               />
+                              {/* Pill glow */}
+                              <rect
+                                x={pillX - 2}
+                                y={y - pillH / 2 - 2}
+                                width={pillW + 4}
+                                height={pillH + 4}
+                                rx={14}
+                                fill="#dc2626"
+                                fillOpacity={0.25}
+                                filter="url(#recentLowGlow)"
+                              />
+                              {/* Pill background */}
                               <rect
                                 x={pillX}
                                 y={y - pillH / 2}
                                 width={pillW}
                                 height={pillH}
-                                rx={10}
+                                rx={12}
                                 fill="#dc2626"
-                                fillOpacity={0.92}
+                                fillOpacity={0.95}
+                                stroke="#fca5a5"
+                                strokeWidth={1}
                               />
                               <text
                                 x={pillX + pillW / 2}
@@ -3799,8 +3827,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                                 textAnchor="middle"
                                 dominantBaseline="middle"
                                 fill="white"
-                                fontSize={9}
-                                fontWeight="800"
+                                fontSize={10}
+                                fontWeight="900"
                               >
                                 {`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}
                               </text>
