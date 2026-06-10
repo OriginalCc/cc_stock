@@ -172,3 +172,27 @@ Stage Summary:
 - 移除了ResizeObserver、ALL_TRADE_TIMES依赖、Catmull-Rom曲线、脉冲动画等复杂特性
 - 保留了额外props支持(涨停/跌停/沪深分开)和比例条显示
 - 图表在浏览器中正确渲染和显示
+
+---
+Task ID: 6
+Agent: main
+Task: 修复选股页面切换时空白问题 - 切换到选股页面时内容为空需要刷新
+
+Work Log:
+- 分析问题根因：dynamic import + 条件渲染导致组件每次切换都全新挂载，state初始化为null
+- fetchScreenerData虽然会检查缓存，但async函数需要等待resolve，导致短暂空白期
+- 更关键的是：初始result=null，即使缓存命中也需要等待useEffect触发fetchScreenerData才能设置数据
+- 修复方案：在useState初始化时从client-cache读取缓存数据，确保组件首次渲染就有数据
+- 修复StockScreener：useState(() => getCachedData(cacheKey))初始化result
+- 修复IntradayScreener：同样添加缓存初始化
+- 修复EarlyTradingScreener：同样添加缓存初始化
+- 修复LimitUpAnalysis：同样添加缓存初始化
+- 修复SectorRotationPanel：同样添加缓存初始化，loading初始值从true改为false
+- 移除所有fetchScreenerData/fetchData中多余的setIsFromCache(false)（紧跟在setIsFromCache(true)之后，会覆盖缓存标记）
+- Lint检查通过
+- Agent Browser验证：所有5个选股页面切换时数据即时显示，不再需要刷新
+
+Stage Summary:
+- 根因：组件卸载后重新挂载，useState初始值null导致空白，需要等异步fetchScreenerData完成
+- 修复：5个screener组件（StockScreener/IntradayScreener/EarlyTradingScreener/LimitUpAnalysis/SectorRotationPanel）添加缓存初始化
+- 效果：切换页面时数据从内存缓存立即渲染，0延迟显示

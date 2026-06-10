@@ -275,7 +275,25 @@ interface EarlyTradingScreenerProps {
 }
 
 export const EarlyTradingScreener = React.memo(function EarlyTradingScreener({ onSelectStock }: EarlyTradingScreenerProps) {
-  const [result, setResult] = useState<EarlyScreenResult | null>(null);
+  // ── Initialize from cache on mount (instant display on tab switch) ──
+  const [initialCache] = useState(() => {
+    const params = new URLSearchParams({
+      strategy: DEFAULT_FILTERS.strategy,
+      minChange: String(DEFAULT_FILTERS.minChange),
+      maxChange: String(DEFAULT_FILTERS.maxChange),
+      maxMarketCap: String(DEFAULT_FILTERS.maxMarketCap),
+      minTurnover: String(DEFAULT_FILTERS.minTurnover),
+      minVolumeRatio: String(DEFAULT_FILTERS.minVolumeRatio),
+      minCompositeScore: String(DEFAULT_FILTERS.minCompositeScore),
+      maxResults: String(DEFAULT_FILTERS.maxResults),
+    });
+    if (DEFAULT_FILTERS.enableChiNext) params.set("chiNext", "true");
+    if (DEFAULT_FILTERS.enableSTAR) params.set("star", "true");
+    const cacheKey = `early-screen:${params.toString()}`;
+    return getCachedData<EarlyScreenResult>(cacheKey);
+  });
+
+  const [result, setResult] = useState<EarlyScreenResult | null>(initialCache);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("earlyCompositeScore");
@@ -368,7 +386,6 @@ export const EarlyTradingScreener = React.memo(function EarlyTradingScreener({ o
     }
 
     setError(null);
-    setIsFromCache(false);
     try {
       const { data, fromCache } = await fetchWithSWR<EarlyScreenResult>(
         cacheKey,

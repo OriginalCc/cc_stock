@@ -540,7 +540,35 @@ interface StockScreenerProps {
 }
 
 export const StockScreener = React.memo(function StockScreener({ onSelectStock }: StockScreenerProps) {
-  const [result, setResult] = useState<ScreenerResult | null>(null);
+  // ── Initialize from cache on mount (instant display on tab switch) ──
+  const [initialCache] = useState(() => {
+    const params = new URLSearchParams({
+      minChange: String(DEFAULT_FILTERS.minChange),
+      maxChange: String(DEFAULT_FILTERS.maxChange),
+      maxMarketCap: String(DEFAULT_FILTERS.maxMarketCap),
+      pulseThreshold: String(DEFAULT_FILTERS.pulseThreshold),
+      sector: DEFAULT_FILTERS.sector,
+      pulseTimeStart: DEFAULT_FILTERS.pulseTimeStart,
+      pulseTimeEnd: DEFAULT_FILTERS.pulseTimeEnd,
+      volumeSurgeThreshold: String(DEFAULT_FILTERS.volumeSurgeThreshold),
+      progressiveVolThreshold: String(DEFAULT_FILTERS.progressiveVolThreshold),
+      minTurnover: String(DEFAULT_FILTERS.minTurnover),
+      maxTurnover: String(DEFAULT_FILTERS.maxTurnover),
+      minPE: String(DEFAULT_FILTERS.minPE),
+      maxPE: String(DEFAULT_FILTERS.maxPE),
+      minVolumeRatio: String(DEFAULT_FILTERS.minVolumeRatio),
+      minAmplitude: String(DEFAULT_FILTERS.minAmplitude),
+      maxAmplitude: String(DEFAULT_FILTERS.maxAmplitude),
+      maTrendType: DEFAULT_FILTERS.maTrendType,
+    });
+    if (!DEFAULT_FILTERS.enablePulse) params.set("pulse", "false");
+    if (!DEFAULT_FILTERS.enableVolumeSurge) params.set("volumeSurge", "false");
+    if (!DEFAULT_FILTERS.enableProgressiveVol) params.set("progressiveVol", "false");
+    const cacheKey = `screener:${params.toString()}`;
+    return getCachedData<ScreenerResult>(cacheKey);
+  });
+
+  const [result, setResult] = useState<ScreenerResult | null>(initialCache);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("compositeScore");
@@ -672,7 +700,6 @@ export const StockScreener = React.memo(function StockScreener({ onSelectStock }
     }
 
     setError(null);
-    setIsFromCache(false);
     try {
       const { data, fromCache } = await fetchWithSWR<ScreenerResult>(
         cacheKey,

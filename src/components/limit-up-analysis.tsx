@@ -371,7 +371,10 @@ function StockDetailPanel({ stock }: { stock: PullbackStock }) {
 // ── Main Component ─────────────────────────────────────
 
 export const LimitUpAnalysis = React.memo(function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
-  const [result, setResult] = useState<PullbackResult | null>(null);
+  // ── Initialize from cache on mount (instant display on tab switch) ──
+  const [initialCache] = useState(() => getCachedData<PullbackResult>("pullback:default"));
+
+  const [result, setResult] = useState<PullbackResult | null>(initialCache);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<string>("");

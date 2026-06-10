@@ -227,7 +227,25 @@ interface IntradayScreenerProps {
 }
 
 export const IntradayScreener = React.memo(function IntradayScreener({ onSelectStock }: IntradayScreenerProps) {
-  const [result, setResult] = useState<IntradayScreenerResult | null>(null);
+  // ── Initialize from cache on mount (instant display on tab switch) ──
+  const [initialCache] = useState(() => {
+    const params = new URLSearchParams({
+      strategy: DEFAULT_FILTERS.strategy,
+      minChange: String(DEFAULT_FILTERS.minChange),
+      maxChange: String(DEFAULT_FILTERS.maxChange),
+      maxMarketCap: String(DEFAULT_FILTERS.maxMarketCap),
+      minTurnover: String(DEFAULT_FILTERS.minTurnover),
+      minVolumeRatio: String(DEFAULT_FILTERS.minVolumeRatio),
+      minCompositeScore: String(DEFAULT_FILTERS.minCompositeScore),
+      maxResults: String(DEFAULT_FILTERS.maxResults),
+    });
+    if (DEFAULT_FILTERS.enableChiNext) params.set("enableChiNext", "true");
+    if (DEFAULT_FILTERS.enableSTAR) params.set("enableSTAR", "true");
+    const cacheKey = `intraday-screener:${params.toString()}`;
+    return getCachedData<IntradayScreenerResult>(cacheKey);
+  });
+
+  const [result, setResult] = useState<IntradayScreenerResult | null>(initialCache);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("compositeScore");
@@ -294,7 +312,6 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
     }
 
     setError(null);
-    setIsFromCache(false);
     try {
       const { data, fromCache } = await fetchWithSWR<IntradayScreenerResult>(
         cacheKey,

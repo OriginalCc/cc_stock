@@ -1007,8 +1007,11 @@ interface SectorRotationPanelProps {
 }
 
 export const SectorRotationPanel = React.memo(function SectorRotationPanel({ onSelectStock }: SectorRotationPanelProps) {
-  const [data, setData] = useState<SectorRotationData | null>(null);
-  const [loading, setLoading] = useState(true);
+  // ── Initialize from cache on mount (instant display on tab switch) ──
+  const [initialCache] = useState(() => getCachedData<SectorRotationData>("sector-rotation:default"));
+
+  const [data, setData] = useState<SectorRotationData | null>(initialCache);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"hot" | "rotation" | "prediction" | "concept" | "history">("hot");
   const [subTab, setSubTab] = useState<"change" | "capital" | "volume">("change");
