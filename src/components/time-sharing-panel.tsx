@@ -3720,30 +3720,81 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 />
               );
             })}
-            {/* Lowest price among last 5 trading days as red thick dashed line */}
+            {/* Lowest price among last 5 trading days — thick gradient line */}
             {recentDayLows && recentDayLows.length > 0 && recentDayLows
               .filter(d => d.low >= yMin && d.low <= yMax)
               .map((item, i) => {
                 const parts = item.date.split("-");
                 const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
                 return (
-                  <ReferenceLine
-                    key={`recentlow-${i}`}
-                    yAxisId="price"
-                    y={item.low}
-                    stroke="#dc2626"
-                    strokeDasharray="10 5"
-                    strokeWidth={2.2}
-                    strokeOpacity={0.85}
-                    label={{
-                      value: `▼5日最低 ${dateLabel} ${formatPrice(item.low)}`,
-                      position: "right" as const,
-                      fill: "#dc2626",
-                      fontSize: 9,
-                      fontWeight: 700,
-                      fillOpacity: 1,
-                    }}
-                  />
+                  <Customized key={`recentlow-${i}`} component={(props: any) => {
+                    const { xAxisMap, yAxisMap, offset } = props;
+                    if (!xAxisMap || !yAxisMap || !offset) return null;
+                    const yAxis = Object.values(yAxisMap)[0] as any;
+                    if (!yAxis?.scale) return null;
+                    const y = yAxis.scale(item.low);
+                    const x1 = offset.left;
+                    const x2 = offset.left + offset.width;
+                    const labelX = x2 + 5;
+                    return (
+                      <g>
+                        {/* Gradient definition */}
+                        <defs>
+                          <linearGradient id="recentLowGrad" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.3" />
+                            <stop offset="25%" stopColor="#f97316" stopOpacity="0.7" />
+                            <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
+                            <stop offset="75%" stopColor="#dc2626" stopOpacity="1" />
+                            <stop offset="100%" stopColor="#b91c1c" stopOpacity="0.9" />
+                          </linearGradient>
+                          {/* Glow filter */}
+                          <filter id="recentLowGlow" x="-5%" y="-50%" width="110%" height="200%">
+                            <feGaussianBlur stdDeviation="3" result="blur" />
+                            <feMerge>
+                              <feMergeNode in="blur" />
+                              <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                          </filter>
+                        </defs>
+                        {/* Glow layer (wider, semi-transparent) */}
+                        <line
+                          x1={x1} y1={y} x2={x2} y2={y}
+                          stroke="url(#recentLowGrad)"
+                          strokeWidth={6}
+                          strokeOpacity={0.2}
+                          filter="url(#recentLowGlow)"
+                        />
+                        {/* Main gradient line — thick & solid */}
+                        <line
+                          x1={x1} y1={y} x2={x2} y2={y}
+                          stroke="url(#recentLowGrad)"
+                          strokeWidth={3}
+                          strokeLinecap="round"
+                        />
+                        {/* Label pill on right side */}
+                        <rect
+                          x={labelX - 2}
+                          y={y - 10}
+                          width={110}
+                          height={20}
+                          rx={10}
+                          fill="#dc2626"
+                          fillOpacity={0.92}
+                        />
+                        <text
+                          x={labelX + 53}
+                          y={y + 1}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fill="white"
+                          fontSize={9}
+                          fontWeight="800"
+                        >
+                          {`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}
+                        </text>
+                      </g>
+                    );
+                  }} />
                 );
               })
             }
