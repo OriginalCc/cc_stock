@@ -484,75 +484,104 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
       {/* Down line with glow */}
       {downSmooth && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
 
-      {/* Data point dots & pill labels — 相同数字只显示一次，标签永远朝对方相反方向 */}
-      {data.map((d, i) => {
-        const x = toX(i);
-        const yUp = toY(d.totalUp);
-        const yDown = toY(d.totalDown);
-        const isLast = i === data.length - 1;
-        const isFirst = i === 0;
+      {/* Data point dots & pill labels — 只在关键时间点+显著变化时显示，标签永远朝对方相反方向 */}
+      {(() => {
+        // ── 预计算哪些点需要显示标签 ──
+        const KEY_TIMES = new Set(["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"]);
+        // 显著变化阈值：变化量超过上次显示值的5%，且绝对变化≥50
+        const CHANGE_RATIO = 0.05;
+        const CHANGE_MIN = 50;
 
-        // 相同数字只显示一次：与上一个数据点不同时才显示
-        const prevUp = i > 0 ? data[i - 1].totalUp : -1;
-        const prevDown = i > 0 ? data[i - 1].totalDown : -1;
-        const showUpLabel = isFirst || isLast || d.totalUp !== prevUp;
-        const showDownLabel = isFirst || isLast || d.totalDown !== prevDown;
+        const upShow: boolean[] = new Array(data.length).fill(false);
+        const downShow: boolean[] = new Array(data.length).fill(false);
 
-        const pillH = 11;
-        const pillGap = 4;
+        let lastShownUp = -1;
+        let lastShownDown = -1;
 
-        // 判断红线是否在绿线上方（SVG坐标系：y值小=视觉上方）
-        const redIsAbove = yUp < yDown;
+        for (let i = 0; i < data.length; i++) {
+          const isLast = i === data.length - 1;
+          const isFirst = i === 0;
+          const isKeyTime = KEY_TIMES.has(data[i].time);
 
-        // 红色药丸：永远远离绿线方向
-        const upPillY = redIsAbove
-          ? yUp - pillGap - pillH
-          : yUp + pillGap;
-        const upTextY = upPillY + pillH / 2;
+          // 涨标签：首点、末点、关键时间点、或显著变化
+          const upChangedEnough = lastShownUp < 0
+            || Math.abs(data[i].totalUp - lastShownUp) >= Math.max(CHANGE_MIN, lastShownUp * CHANGE_RATIO);
+          if (isFirst || isLast || (isKeyTime && data[i].totalUp !== lastShownUp) || upChangedEnough) {
+            upShow[i] = true;
+            lastShownUp = data[i].totalUp;
+          }
 
-        // 绿色药丸：永远远离红线方向
-        const downPillY = redIsAbove
-          ? yDown + pillGap
-          : yDown - pillGap - pillH;
-        const downTextY = downPillY + pillH / 2;
+          // 跌标签：首点、末点、关键时间点、或显著变化
+          const downChangedEnough = lastShownDown < 0
+            || Math.abs(data[i].totalDown - lastShownDown) >= Math.max(CHANGE_MIN, lastShownDown * CHANGE_RATIO);
+          if (isFirst || isLast || (isKeyTime && data[i].totalDown !== lastShownDown) || downChangedEnough) {
+            downShow[i] = true;
+            lastShownDown = data[i].totalDown;
+          }
+        }
 
-        // 计算药丸宽度（根据数字位数）
-        const upPillW = Math.max(26, `${d.totalUp}`.length * 6 + 8);
-        const downPillW = Math.max(26, `${d.totalDown}`.length * 6 + 8);
+        return data.map((d, i) => {
+          const x = toX(i);
+          const yUp = toY(d.totalUp);
+          const yDown = toY(d.totalDown);
+          const isLast = i === data.length - 1;
 
-        return (
-          <g key={`pt-${i}`}>
-            <circle cx={x} cy={yUp} r={isLast ? 3 : 1} fill={UP_COLOR} opacity={isLast ? 1 : 0.4} />
-            <circle cx={x} cy={yDown} r={isLast ? 3 : 1} fill={DOWN_COLOR} opacity={isLast ? 1 : 0.4} />
+          const pillH = 11;
+          const pillGap = 4;
 
-            {isLast && (
-              <>
-                <circle cx={x} cy={yUp} r={1.5} fill="#fff" opacity={0.6} />
-                <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />
-              </>
-            )}
+          // 判断红线是否在绿线上方（SVG坐标系：y值小=视觉上方）
+          const redIsAbove = yUp < yDown;
 
-            {showUpLabel && (
-              <>
-                <rect x={x - upPillW / 2} y={upPillY}
-                  width={upPillW} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
-                <text x={x} y={upTextY}
-                  textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
-                  fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-              </>
-            )}
-            {showDownLabel && (
-              <>
-                <rect x={x - downPillW / 2} y={downPillY}
-                  width={downPillW} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
-                <text x={x} y={downTextY}
-                  textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
-                  fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
-              </>
-            )}
-          </g>
-        );
-      })}
+          // 红色药丸：永远远离绿线方向
+          const upPillY = redIsAbove
+            ? yUp - pillGap - pillH
+            : yUp + pillGap;
+          const upTextY = upPillY + pillH / 2;
+
+          // 绿色药丸：永远远离红线方向
+          const downPillY = redIsAbove
+            ? yDown + pillGap
+            : yDown - pillGap - pillH;
+          const downTextY = downPillY + pillH / 2;
+
+          // 计算药丸宽度（根据数字位数）
+          const upPillW = Math.max(26, `${d.totalUp}`.length * 6 + 8);
+          const downPillW = Math.max(26, `${d.totalDown}`.length * 6 + 8);
+
+          return (
+            <g key={`pt-${i}`}>
+              <circle cx={x} cy={yUp} r={isLast ? 3 : 1} fill={UP_COLOR} opacity={isLast ? 1 : 0.4} />
+              <circle cx={x} cy={yDown} r={isLast ? 3 : 1} fill={DOWN_COLOR} opacity={isLast ? 1 : 0.4} />
+
+              {isLast && (
+                <>
+                  <circle cx={x} cy={yUp} r={1.5} fill="#fff" opacity={0.6} />
+                  <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />
+                </>
+              )}
+
+              {upShow[i] && (
+                <>
+                  <rect x={x - upPillW / 2} y={upPillY}
+                    width={upPillW} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
+                  <text x={x} y={upTextY}
+                    textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
+                    fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
+                </>
+              )}
+              {downShow[i] && (
+                <>
+                  <rect x={x - downPillW / 2} y={downPillY}
+                    width={downPillW} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
+                  <text x={x} y={downTextY}
+                    textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
+                    fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
+                </>
+              )}
+            </g>
+          );
+        });
+      })()}
 
       {/* End pulse — Up */}
       <circle cx={lastX} cy={toY(lastPt.totalUp)} r={4} fill={UP_COLOR} opacity={0.2}>
