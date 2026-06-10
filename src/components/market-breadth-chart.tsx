@@ -526,8 +526,8 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
           const yDown = toY(d.totalDown);
           const isLast = i === data.length - 1;
 
-          const pillH = 11;
-          const pillGap = 4;
+          const pillH = 14;
+          const pillGap = 5;
 
           // 判断红线是否在绿线上方（SVG坐标系：y值小=视觉上方）
           const redIsAbove = yUp < yDown;
@@ -545,8 +545,8 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
           const downTextY = downPillY + pillH / 2;
 
           // 计算药丸宽度（根据数字位数）
-          const upPillW = Math.max(26, `${d.totalUp}`.length * 6 + 8);
-          const downPillW = Math.max(26, `${d.totalDown}`.length * 6 + 8);
+          const upPillW = Math.max(30, `${d.totalUp}`.length * 7.5 + 10);
+          const downPillW = Math.max(30, `${d.totalDown}`.length * 7.5 + 10);
 
           return (
             <g key={`pt-${i}`}>
@@ -563,18 +563,18 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
               {upShow[i] && (
                 <>
                   <rect x={x - upPillW / 2} y={upPillY}
-                    width={upPillW} height={pillH} rx={3} fill={UP_COLOR} opacity={0.92} />
+                    width={upPillW} height={pillH} rx={3.5} fill={UP_COLOR} opacity={0.92} />
                   <text x={x} y={upTextY}
-                    textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
+                    textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                     fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
                 </>
               )}
               {downShow[i] && (
                 <>
                   <rect x={x - downPillW / 2} y={downPillY}
-                    width={downPillW} height={pillH} rx={3} fill={DOWN_COLOR} opacity={0.92} />
+                    width={downPillW} height={pillH} rx={3.5} fill={DOWN_COLOR} opacity={0.92} />
                   <text x={x} y={downTextY}
-                    textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
+                    textAnchor="middle" fontSize={9} fontFamily="monospace" fontWeight={800}
                     fill="#fff" dominantBaseline="middle">{d.totalDown}</text>
                 </>
               )}
