@@ -1988,6 +1988,15 @@ function timeSharingPropsEqual(
   }
 
   // Callbacks and config are stable refs (useCallback in parent)
+
+  // Recent day lows: compare length + each low value
+  if ((prev.recentDayLows?.length || 0) !== (next.recentDayLows?.length || 0)) return false;
+  if (prev.recentDayLows && next.recentDayLows) {
+    for (let i = 0; i < prev.recentDayLows.length; i++) {
+      if (prev.recentDayLows[i].low !== next.recentDayLows[i].low) return false;
+    }
+  }
+
   return true;
 }
 
@@ -2021,6 +2030,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   sectorTimelineData,
   indexLoading,
   onRetryIndex,
+  recentDayLows,
 }: {
   data: TimelineItem[];
   prevClose: number;
@@ -2051,6 +2061,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   sectorTimelineData?: { items: TimelineItem[]; prevClose: number };
   indexLoading?: boolean;
   onRetryIndex?: () => void;
+  recentDayLows?: { date: string; low: number }[];
 }) {
   // v5.8: 低价股/ETF（昨收<5元）价格显示3位小数，避免分时线变平线
   const priceDps = (prevClose > 0 && prevClose < 5) ? 3 : 2;
@@ -3709,6 +3720,46 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 />
               );
             })}
+            {/* Recent 5 trading days' lowest prices as red thick dashed lines */}
+            {recentDayLows && recentDayLows.length > 0 && recentDayLows
+              .filter(d => d.low >= yMin && d.low <= yMax)
+              // Deduplicate: group by same low price and merge dates
+              .reduce((acc: { low: number; dates: string[] }[], cur) => {
+                const existing = acc.find(a => Math.abs(a.low - cur.low) < 0.005);
+                if (existing) {
+                  existing.dates.push(cur.date);
+                } else {
+                  acc.push({ low: cur.low, dates: [cur.date] });
+                }
+                return acc;
+              }, [])
+              .map((item, i) => {
+                // Show abbreviated date labels
+                const dateLabels = item.dates.map(d => {
+                  const parts = d.split("-");
+                  return parts.length >= 3 ? `${parts[1]}/${parts[2]}` : d;
+                }).join(" ");
+                return (
+                  <ReferenceLine
+                    key={`recentlow-${i}`}
+                    yAxisId="price"
+                    y={item.low}
+                    stroke="#dc2626"
+                    strokeDasharray="10 5"
+                    strokeWidth={2.2}
+                    strokeOpacity={0.85}
+                    label={{
+                      value: `▼${dateLabels} ${formatPrice(item.low)}`,
+                      position: "right" as const,
+                      fill: "#dc2626",
+                      fontSize: 9,
+                      fontWeight: 700,
+                      fillOpacity: 1,
+                    }}
+                  />
+                );
+              })
+            }
             {/* Lunch break vertical divider between 11:30 and 13:00 */}
             {!isZoomed && (() => {
               const lunchIdx = Math.floor(zoomData.length / 2);

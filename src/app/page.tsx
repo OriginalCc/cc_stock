@@ -791,6 +791,21 @@ export default function StockTAssistant() {
     return computeKeyPriceLevels(timelinePrevClose, liveTimeline);
   }, [liveTimeline, timelinePrevClose, isTimelineActive]);
 
+  // ── Last 5 trading days' lowest prices ──
+  const recentDayLows = useMemo(() => {
+    if (!isAShareStock || allChartData.length < 2) return [];
+    // allChartData is sorted by date ascending; take the last 5 bars that have valid low > 0
+    const result: { date: string; low: number }[] = [];
+    for (let i = allChartData.length - 1; i >= 0 && result.length < 5; i--) {
+      const bar = allChartData[i];
+      if (bar.low > 0) {
+        result.push({ date: bar.date, low: bar.low });
+      }
+    }
+    // Reverse to chronological order
+    return result.reverse();
+  }, [allChartData, isAShareStock]);
+
   const isUp = quote ? quote.change >= 0 : true;
   const priceColor = isUp ? "text-red-500" : "text-green-500";
 
@@ -954,7 +969,7 @@ export default function StockTAssistant() {
           <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
-            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} />
+            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} recentDayLows={recentDayLows} />
             {/* 涨跌家数 + 市场情绪指数 — 放在深证成指分时图后面 */}
             {marketBreadth && (() => {
               const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;
