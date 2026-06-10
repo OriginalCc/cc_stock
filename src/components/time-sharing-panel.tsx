@@ -3735,7 +3735,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                     const y = yAxis.scale(item.low);
                     const x1 = offset.left;
                     const x2 = offset.left + offset.width;
-                    const labelX = x2 + 5;
                     return (
                       <g>
                         {/* Gradient definition */}
@@ -3771,9 +3770,9 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                           strokeWidth={3}
                           strokeLinecap="round"
                         />
-                        {/* Label pill on right side */}
+                        {/* Label pill on left side */}
                         <rect
-                          x={labelX - 2}
+                          x={x1 - 2}
                           y={y - 10}
                           width={110}
                           height={20}
@@ -3782,7 +3781,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                           fillOpacity={0.92}
                         />
                         <text
-                          x={labelX + 53}
+                          x={x1 + 53}
                           y={y + 1}
                           textAnchor="middle"
                           dominantBaseline="middle"
