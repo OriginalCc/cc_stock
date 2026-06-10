@@ -3720,25 +3720,12 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 />
               );
             })}
-            {/* Recent 5 trading days' lowest prices as red thick dashed lines */}
+            {/* Lowest price among last 5 trading days as red thick dashed line */}
             {recentDayLows && recentDayLows.length > 0 && recentDayLows
               .filter(d => d.low >= yMin && d.low <= yMax)
-              // Deduplicate: group by same low price and merge dates
-              .reduce((acc: { low: number; dates: string[] }[], cur) => {
-                const existing = acc.find(a => Math.abs(a.low - cur.low) < 0.005);
-                if (existing) {
-                  existing.dates.push(cur.date);
-                } else {
-                  acc.push({ low: cur.low, dates: [cur.date] });
-                }
-                return acc;
-              }, [])
               .map((item, i) => {
-                // Show abbreviated date labels
-                const dateLabels = item.dates.map(d => {
-                  const parts = d.split("-");
-                  return parts.length >= 3 ? `${parts[1]}/${parts[2]}` : d;
-                }).join(" ");
+                const parts = item.date.split("-");
+                const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
                 return (
                   <ReferenceLine
                     key={`recentlow-${i}`}
@@ -3749,7 +3736,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                     strokeWidth={2.2}
                     strokeOpacity={0.85}
                     label={{
-                      value: `▼${dateLabels} ${formatPrice(item.low)}`,
+                      value: `▼5日最低 ${dateLabel} ${formatPrice(item.low)}`,
                       position: "right" as const,
                       fill: "#dc2626",
                       fontSize: 9,

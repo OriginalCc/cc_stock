@@ -791,19 +791,21 @@ export default function StockTAssistant() {
     return computeKeyPriceLevels(timelinePrevClose, liveTimeline);
   }, [liveTimeline, timelinePrevClose, isTimelineActive]);
 
-  // ── Last 5 trading days' lowest prices ──
+  // ── Lowest price among last 5 trading days ──
   const recentDayLows = useMemo(() => {
     if (!isAShareStock || allChartData.length < 2) return [];
     // allChartData is sorted by date ascending; take the last 5 bars that have valid low > 0
-    const result: { date: string; low: number }[] = [];
-    for (let i = allChartData.length - 1; i >= 0 && result.length < 5; i--) {
+    const last5: { date: string; low: number }[] = [];
+    for (let i = allChartData.length - 1; i >= 0 && last5.length < 5; i--) {
       const bar = allChartData[i];
       if (bar.low > 0) {
-        result.push({ date: bar.date, low: bar.low });
+        last5.push({ date: bar.date, low: bar.low });
       }
     }
-    // Reverse to chronological order
-    return result.reverse();
+    if (last5.length === 0) return [];
+    // Find the single lowest price among the 5 days
+    const minItem = last5.reduce((min, cur) => cur.low < min.low ? cur : min, last5[0]);
+    return [{ date: minItem.date, low: minItem.low }];
   }, [allChartData, isAShareStock]);
 
   const isUp = quote ? quote.change >= 0 : true;
