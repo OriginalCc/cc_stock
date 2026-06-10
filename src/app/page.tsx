@@ -791,22 +791,27 @@ export default function StockTAssistant() {
     return computeKeyPriceLevels(timelinePrevClose, liveTimeline);
   }, [liveTimeline, timelinePrevClose, isTimelineActive]);
 
-  // ── Lowest price among last 5 trading days ──
-  const recentDayLows = useMemo(() => {
-    if (!isAShareStock || allChartData.length < 2) return [];
-    // allChartData is sorted by date ascending; take the last 5 bars that have valid low > 0
-    const last5: { date: string; low: number }[] = [];
-    for (let i = allChartData.length - 1; i >= 0 && last5.length < 5; i--) {
-      const bar = allChartData[i];
-      if (bar.low > 0) {
-        last5.push({ date: bar.date, low: bar.low });
-      }
-    }
-    if (last5.length === 0) return [];
-    // Find the single lowest price among the 5 days
-    const minItem = last5.reduce((min, cur) => cur.low < min.low ? cur : min, last5[0]);
-    return [{ date: minItem.date, low: minItem.low }];
-  }, [allChartData, isAShareStock]);
+  // ── Lowest price among last 5 trading days (independent fast fetch) ──
+  const [recentDayLows, setRecentDayLows] = useState<{ date: string; low: number }[]>([]);
+  useEffect(() => {
+    if (!isAShareStock || !symbol) { setRecentDayLows([]); return; }
+    let cancelled = false;
+    const fetchDayLows = async () => {
+      try {
+        // Use the same ashare-history API but only need last 5 bars — request with limit=5
+        const res = await fetch(`/api/stock/ashare-history?symbol=${encodeURIComponent(symbol)}&interval=1d&limit=5`, { signal: AbortSignal.timeout(10000) });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (data.error || cancelled) return;
+        const bars: KLineItem[] = data.data || [];
+        const valid = bars.filter((b: KLineItem) => b.low > 0);
+        if (valid.length === 0 || cancelled) return;
+        const minItem = valid.reduce((min: KLineItem, cur: KLineItem) => cur.low < min.low ? cur : min, valid[0]);
+        setRecentDayLows([{ date: minItem.date, low: minItem.low }]);
+      } catch { /* ignore */ }
+    };
+    fetchDayLows();
+  }, [symbol, isAShareStock]);
 
   const isUp = quote ? quote.change >= 0 : true;
   const priceColor = isUp ? "text-red-500" : "text-green-500";
