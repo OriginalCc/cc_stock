@@ -196,3 +196,28 @@ Stage Summary:
 - 根因：组件卸载后重新挂载，useState初始值null导致空白，需要等异步fetchScreenerData完成
 - 修复：5个screener组件（StockScreener/IntradayScreener/EarlyTradingScreener/LimitUpAnalysis/SectorRotationPanel）添加缓存初始化
 - 效果：切换页面时数据从内存缓存立即渲染，0延迟显示
+---
+Task ID: 2
+Agent: main
+Task: Align market breadth chart X-axis with stock time-sharing chart
+
+Work Log:
+- Analyzed the current market-breadth-chart.tsx which used proportional X-axis (index-based spacing)
+- Analyzed the stock time-sharing chart (time-sharing-panel.tsx) which uses ALL_TRADE_TIMES (242 slots)
+- Added timeToSlot() function to map time strings to A-share trading day slots (0-241)
+- Changed chart computation to use slot-based X positioning instead of index-based
+- Added standard A-share time ticks (09:30, 10:00, ..., 15:00) matching the stock chart
+- Added vertical grid lines at key times and lunch break separator
+- Simplified accumulation logic (removed sub-minute HH:MM:SS, now uses HH:MM matching server resolution)
+- Fixed critical bug: parseInt("00") returns 0 (falsy) causing || 30 fallback to treat "10:00" as "10:30"
+- Simplified curve splitting (removed complex morning/afternoon split, just draw through all points)
+- Verified via browser: X-axis shows correct 10 A-share time labels at correct positions
+- Verified alignment: stock chart and breadth chart use identical time labels
+
+Stage Summary:
+- Market breadth chart X-axis now aligns with stock time-sharing chart
+- Both charts show identical 10 A-share trading time labels: 09:30-15:00
+- Lunch break gap (11:30→13:00) is ~2.4px, consistent with stock chart behavior
+- Critical bug fixed: timeToSlot() now uses Number.isNaN() instead of || for parseInt fallback
+- Chart renders with smooth curves, gradient fills, glow effects, and pulse animations
+---

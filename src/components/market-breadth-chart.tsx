@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { ALL_TRADE_TIMES } from "@/lib/trading-times";
 
 interface BreadthHistoryPoint {
   time: string;
@@ -29,13 +30,51 @@ interface MarketBreadthChartProps {
 const UP_COLOR = "#dc2626";
 const DOWN_COLOR = "#059669";
 
-/** Format current time as HH:MM:SS (China timezone) */
-function formatTimeHMS(): string {
+// ── A-share trading day constants ──
+// ALL_TRADE_TIMES: 09:30-11:30 (121 slots, idx 0-120) + 13:00-15:00 (121 slots, idx 121-241) = 242 total
+const TOTAL_SLOTS = ALL_TRADE_TIMES.length; // 242
+const MAX_SLOT_IDX = TOTAL_SLOTS - 1;       // 241
+
+/** Map time string (HH:MM or HH:MM:SS) to a continuous slot position in A-share trading day
+ *  Morning: 09:30 → slot 0, 11:30 → slot 120
+ *  Afternoon: 13:00 → slot 121, 15:00 → slot 241
+ *  Sub-second precision: 09:30:30 → slot 0.5
+ */
+function timeToSlot(timeStr: string): number {
+  const parts = timeStr.split(":");
+  // Use NaN check instead of || — parseInt("00") returns 0 which is falsy,
+  // causing "10:00" to be treated as "10:30" with the old `|| 30` fallback.
+  const hRaw = parseInt(parts[0]);
+  const mRaw = parseInt(parts[1]);
+  const sRaw = parts.length > 2 ? parseInt(parts[2]) : 0;
+  const h = Number.isNaN(hRaw) ? 9 : hRaw;
+  const m = Number.isNaN(mRaw) ? 30 : mRaw;
+  const s = Number.isNaN(sRaw) ? 0 : sRaw;
+
+  const totalMin = h * 60 + m;
+
+  // Before market open
+  if (totalMin < 570) return 0;
+  // Morning session: 09:30 (570) – 11:30 (690) → slots 0-120
+  if (totalMin <= 690) {
+    return (totalMin - 570) + s / 60;
+  }
+  // Lunch break → end of morning
+  if (totalMin < 780) return 120;
+  // Afternoon session: 13:00 (780) – 15:00 (900) → slots 121-241
+  if (totalMin <= 900) {
+    return 121 + (totalMin - 780) + s / 60;
+  }
+  // After market close
+  return MAX_SLOT_IDX;
+}
+
+/** Format current time as HH:MM (China timezone) — matches server 1-min resolution */
+function formatTimeHM(): string {
   const now = new Date();
   const h = (now.getUTCHours() + 8) % 24;
   const m = now.getUTCMinutes();
-  const s = now.getUTCSeconds();
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 /** Get today's date string (China timezone) */
@@ -47,23 +86,16 @@ function getTodayStr(): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-/** Normalize server time (HH:MM) to HH:MM:SS for consistent comparison */
-function normalizeTime(time: string): string {
-  const parts = time.split(":");
-  if (parts.length === 2) return time + ":00";
-  return time;
-}
-
-/** Strip seconds for display: HH:MM:SS → HH:MM */
-function displayTime(time: string): string {
-  return time.length > 5 ? time.slice(0, 5) : time;
-}
-
-/** Catmull-Rom smooth curve through points */
-function smoothCurvePath(values: number[], toX: (i: number) => number, toY: (v: number) => number): string {
+/** Catmull-Rom smooth curve through points with custom X positions */
+function smoothCurvePath(
+  values: number[],
+  getX: (i: number) => number,
+  toY: (v: number) => number,
+): string {
   if (values.length < 2) return "";
-  const points = values.map((v, i) => ({ x: toX(i), y: toY(v) }));
-  if (points.length === 2) return `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)} L${points[1].x.toFixed(1)},${points[1].y.toFixed(1)}`;
+  const points = values.map((v, i) => ({ x: getX(i), y: toY(v) }));
+  if (points.length === 2)
+    return `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)} L${points[1].x.toFixed(1)},${points[1].y.toFixed(1)}`;
   let path = `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
   for (let i = 0; i < points.length - 1; i++) {
     const p0 = points[Math.max(0, i - 1)];
@@ -79,10 +111,10 @@ function smoothCurvePath(values: number[], toX: (i: number) => number, toY: (v: 
   return path;
 }
 
-/** Build between-lines area fill for one side (up>down or down>up) */
+/** Build between-lines area fill for one side */
 function buildBetweenArea(
   data: BreadthHistoryPoint[],
-  toX: (i: number) => number,
+  getX: (i: number) => number,
   toY: (v: number) => number,
   mode: "upDominant" | "downDominant",
 ): string {
@@ -101,28 +133,30 @@ function buildBetweenArea(
     const target = isTarget(i);
     if (target) {
       if (!inRegion && i > 0) {
-        const t = Math.abs(getTopVal(i - 1) - getBotVal(i - 1)) /
-          (Math.abs(getTopVal(i) - getBotVal(i)) + Math.abs(getTopVal(i - 1) - getBotVal(i - 1))) || 0.5;
-        const cx = toX(i - 1) + t * (toX(i) - toX(i - 1));
+        const t =
+          Math.abs(getTopVal(i - 1) - getBotVal(i - 1)) /
+            (Math.abs(getTopVal(i) - getBotVal(i)) + Math.abs(getTopVal(i - 1) - getBotVal(i - 1))) || 0.5;
+        const cx = getX(i - 1) + t * (getX(i) - getX(i - 1));
         const cy = toY(getTopVal(i - 1)) + t * (toY(getTopVal(i)) - toY(getTopVal(i - 1)));
         pathPts.push(`L${cx.toFixed(1)},${cy.toFixed(1)}`);
         inRegion = true;
       }
       if (!inRegion) { inRegion = true; }
-      pathPts.push(`${pathPts.length === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(getTopVal(i)).toFixed(1)}`);
+      pathPts.push(`${pathPts.length === 0 ? "M" : "L"}${getX(i).toFixed(1)},${toY(getTopVal(i)).toFixed(1)}`);
     } else {
       if (inRegion) {
         if (i > 0) {
-          const t = Math.abs(getTopVal(i - 1) - getBotVal(i - 1)) /
-            (Math.abs(getTopVal(i) - getBotVal(i)) + Math.abs(getTopVal(i - 1) - getBotVal(i - 1))) || 0.5;
-          const cx = toX(i - 1) + t * (toX(i) - toX(i - 1));
+          const t =
+            Math.abs(getTopVal(i - 1) - getBotVal(i - 1)) /
+              (Math.abs(getTopVal(i) - getBotVal(i)) + Math.abs(getTopVal(i - 1) - getBotVal(i - 1))) || 0.5;
+          const cx = getX(i - 1) + t * (getX(i) - getX(i - 1));
           const cy = toY(getTopVal(i - 1)) + t * (toY(getTopVal(i)) - toY(getTopVal(i - 1)));
           pathPts.push(`L${cx.toFixed(1)},${cy.toFixed(1)}`);
         }
         const closePts: string[] = [];
         for (let j = i - 1; j >= 0; j--) {
           if (j < i - 1 && !isTarget(j)) break;
-          closePts.push(`L${toX(j).toFixed(1)},${toY(getBotVal(j)).toFixed(1)}`);
+          closePts.push(`L${getX(j).toFixed(1)},${toY(getBotVal(j)).toFixed(1)}`);
         }
         if (closePts.length > 0) segments.push(pathPts.join(" ") + " " + closePts.join(" ") + " Z");
         pathPts = [];
@@ -134,16 +168,20 @@ function buildBetweenArea(
     const closePts: string[] = [];
     for (let j = n - 1; j >= 0; j--) {
       if (!isTarget(j)) break;
-      closePts.push(`L${toX(j).toFixed(1)},${toY(getBotVal(j)).toFixed(1)}`);
+      closePts.push(`L${getX(j).toFixed(1)},${toY(getBotVal(j)).toFixed(1)}`);
     }
     if (closePts.length > 0) segments.push(pathPts.join(" ") + " " + closePts.join(" ") + " Z");
   }
   return segments.join(" ");
 }
 
-export function MarketBreadthChart({ history, currentUp, currentDown, currentFlat, limitUp = 0, limitDown = 0, shUp = 0, shDown = 0, szUp = 0, szDown = 0 }: MarketBreadthChartProps) {
-  // ── Client-side accumulation for real-time time-sharing chart ──
-  // Server provides 1-min snapshots (HH:MM); we accumulate sub-minute points (HH:MM:SS) from each 15s poll
+export function MarketBreadthChart({
+  history, currentUp, currentDown, currentFlat,
+  limitUp = 0, limitDown = 0,
+  shUp = 0, shDown = 0, szUp = 0, szDown = 0,
+}: MarketBreadthChartProps) {
+  // ── Client-side accumulation: merge server 1-min history with live data ──
+  // Server provides HH:MM snapshots; we keep the latest point updated on each poll
   const [timeline, setTimeline] = useState<BreadthHistoryPoint[]>([]);
   const lastDateRef = useRef("");
 
@@ -155,22 +193,23 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
       if (lastDateRef.current && lastDateRef.current !== todayStr) {
         lastDateRef.current = todayStr;
         if (history.length > 0) {
-          return history.map(p => ({ ...p, time: normalizeTime(p.time) }));
+          return history.map(p => ({ ...p }));
         }
         return [];
       }
       lastDateRef.current = todayStr;
 
-      // Step 1: Initialize from server history if client timeline is empty
+      // Step 1: Initialize from server history if empty
       if (prev.length === 0 && history.length > 0) {
-        const base = history.map(p => ({ ...p, time: normalizeTime(p.time) }));
-        // Also add current live point
+        const base = history.map(p => ({ ...p }));
+        // Also add current live point if newer than last history point
         if (currentUp > 0 || currentDown > 0) {
-          const nowTime = formatTimeHMS();
+          const nowHM = formatTimeHM();
           const last = base[base.length - 1];
-          if (!last || nowTime > last.time) {
-            return [...base, { time: nowTime, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
+          if (!last || nowHM > last.time) {
+            return [...base, { time: nowHM, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
           }
+          // Update last point with live values
           if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
             return [...base.slice(0, -1), { ...last, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat }];
           }
@@ -178,33 +217,30 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         return base;
       }
 
-      // Step 2: Merge new server points into client timeline
-      let merged = prev;
+      // Step 2: Merge new server history points (new minutes)
+      let merged = [...prev];
       if (history.length > 0) {
-        const normalizedHistory = history.map(p => ({ ...p, time: normalizeTime(p.time) }));
         const prevTimeSet = new Set(prev.map(p => p.time));
-        const newServerPts = normalizedHistory.filter(sp => !prevTimeSet.has(sp.time));
-
-        if (newServerPts.length > 0) {
-          // Insert new server points at correct positions
-          const combined = [...prev, ...newServerPts];
-          combined.sort((a, b) => a.time.localeCompare(b.time));
-          merged = combined;
+        const newPts = history.filter(sp => !prevTimeSet.has(sp.time));
+        if (newPts.length > 0) {
+          merged = [...merged, ...newPts];
+          merged.sort((a, b) => a.time.localeCompare(b.time));
         }
       }
 
-      // Step 3: Add current live data point (sub-minute resolution)
+      // Step 3: Update/add current live point
       if (currentUp > 0 || currentDown > 0) {
-        const nowTime = formatTimeHMS();
+        const nowHM = formatTimeHM();
         const last = merged[merged.length - 1];
 
-        if (!last || nowTime > last.time) {
-          // Time advanced → append new point (sub-minute resolution!)
-          return [...merged, { time: nowTime, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
-        }
-        if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
-          // Same second but values changed → update last point
-          return [...merged.slice(0, -1), { ...last, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat }];
+        if (!last || nowHM > last.time) {
+          // New minute → append
+          merged.push({ time: nowHM, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 });
+        } else if (nowHM === last.time) {
+          // Same minute → update with latest values
+          if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
+            merged = [...merged.slice(0, -1), { ...last, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat }];
+          }
         }
       } else if (currentUp === 0 && currentDown === 0 && history.length === 0) {
         return [];
@@ -221,10 +257,19 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     if (data.length < 2) return null;
 
     const w = 640, h = 280;
-    const px = 46, pr = 10, pt = 20, pb = 26;
+    const px = 46, pr = 10, pt = 20, pb = 28;
     const chartW = w - px - pr;
     const chartH = h - pt - pb;
 
+    // ── Time-based X-axis: same as stock time-sharing chart ──
+    // Each data point is mapped to its slot position in the 242-slot trading day
+    const slots = data.map(d => timeToSlot(d.time));
+
+    // X position from slot: linear mapping over the full trading day
+    const toXSlot = (slot: number) => px + (slot / MAX_SLOT_IDX) * chartW;
+    const toX = (i: number) => toXSlot(slots[i]);
+
+    // ── Y-axis computation ──
     const allValues = data.flatMap(d => [d.totalUp, d.totalDown]);
     const yMax = Math.max(...allValues, 100);
     const yNiceMax = Math.ceil(yMax / 500) * 500 || 500;
@@ -233,44 +278,43 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     const yBottom = -yPad;
     const yRange = yTop - yBottom;
 
-    const toX = (i: number) => px + (i / (data.length - 1)) * chartW;
     const toY = (v: number) => pt + (1 - (v - yBottom) / yRange) * chartH;
 
+    // ── Smooth curves through all data points ──
+    // Lunch break gap (11:30→13:00) is only 1 slot (~2.4px), so no need to split curves
     const upSmooth = smoothCurvePath(data.map(d => d.totalUp), toX, toY);
     const downSmooth = smoothCurvePath(data.map(d => d.totalDown), toX, toY);
+
+    // Between-lines area fills — use full data with slot-based X
     const betweenRed = buildBetweenArea(data, toX, toY, "upDominant");
     const betweenGreen = buildBetweenArea(data, toX, toY, "downDominant");
 
-    // X ticks: show HH:MM labels at regular intervals
-    const minutes = [...new Set(data.map(d => displayTime(d.time)))];
-    const tickInterval = Math.max(1, Math.floor(minutes.length / 6));
-    const xTicks: { x: number; label: string }[] = [];
-    const selectedMinutes = minutes.filter((_, i) => i % tickInterval === 0 || i === minutes.length - 1);
-    for (const min of selectedMinutes) {
-      const idx = data.findIndex(d => displayTime(d.time) === min);
-      if (idx >= 0) {
-        xTicks.push({ x: toX(idx), label: min });
-      }
-    }
+    // ── X-axis ticks: same as stock time-sharing chart ──
+    const keyTimes = ["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"];
+    const xTicks = keyTimes.map(t => ({ x: toXSlot(timeToSlot(t)), label: t }));
 
-    // Y ticks
+    // ── Lunch break separator line ──
+    const lunchBreakX = toXSlot(120.5); // Midpoint between 11:30 (slot 120) and 13:00 (slot 121)
+
+    // ── Y-axis ticks ──
     const yStep = Math.ceil(yNiceMax / 4 / 500) * 500 || 500;
     const yTicks: { y: number; label: string }[] = [];
     for (let v = 0; v <= yNiceMax; v += yStep) yTicks.push({ y: toY(v), label: v === 0 ? "0" : `${v}` });
 
-    const labelInterval = data.length <= 6 ? 1 : Math.max(1, Math.floor(data.length / 6));
+    // Label interval for data point pill labels (show labels at ~6-8 key positions)
+    const labelInterval = data.length <= 10 ? Math.max(1, Math.floor(data.length / 2)) : Math.max(1, Math.floor(data.length / 8));
 
     return {
       w, h, px, pr, pt, pb, chartW, chartH,
-      toX, toY, upSmooth, downSmooth,
+      toX, toY, toXSlot, slots,
+      upSmooth, downSmooth,
       betweenRed, betweenGreen,
-      xTicks, yTicks, labelInterval,
+      xTicks, yTicks, lunchBreakX, labelInterval,
     };
   }, [data]);
 
   const lastPt = data[data.length - 1];
   const diff = lastPt ? lastPt.totalUp - lastPt.totalDown : 0;
-  const diffColor = diff >= 0 ? UP_COLOR : DOWN_COLOR;
   const total = lastPt ? lastPt.totalUp + lastPt.totalDown + currentFlat || 1 : 1;
   const ratio = lastPt ? ((lastPt.totalUp / total) * 100).toFixed(1) : "50.0";
   const isBullish = currentUp > currentDown;
@@ -288,7 +332,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     );
   }
 
-  // ── Single data point ──
+  // ── Single data point (waiting for more) ──
   if (data.length === 1 || !chart) {
     const pt0 = data[0];
     const sDiff = pt0.totalUp - pt0.totalDown;
@@ -335,12 +379,16 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     );
   }
 
-  // ── Multi-point chart (real-time time-sharing) ──
-  const { w, h, px: cPx, pt: cPt, pb: cPb, chartW: cW,
-    toX, toY, upSmooth, downSmooth,
+  // ── Multi-point chart (real-time time-sharing aligned with stock chart) ──
+  const {
+    w, h, px: cPx, pt: cPt, pb: cPb, chartW: cW,
+    toX, toY, toXSlot, slots,
+    upSmooth, downSmooth,
     betweenRed, betweenGreen,
-    xTicks, yTicks, labelInterval } = chart;
-  const lastX = toX(data.length - 1);
+    xTicks, yTicks, lunchBreakX, labelInterval,
+  } = chart;
+  const lastSlot = slots[slots.length - 1];
+  const lastX = toXSlot(lastSlot);
 
   return (
     <div className={cardCls}>
@@ -363,7 +411,6 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
               style={{ backgroundColor: diff >= 0 ? `${UP_COLOR}12` : `${DOWN_COLOR}12`, color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>
               差{diff >= 0 ? "+" : ""}{diff}
             </span>
-            <span className="text-[9px] text-muted-foreground tabular-nums">{data.length}点</span>
           </div>
         </div>
         {/* Extra stats row */}
@@ -389,7 +436,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         </div>
       </div>
 
-      {/* SVG Chart */}
+      {/* SVG Chart — X-axis aligned with stock time-sharing chart */}
       <div className="px-2">
         <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 280 }}>
           <defs>
@@ -415,21 +462,33 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             </filter>
           </defs>
 
-          {/* Background grid */}
+          {/* Background grid — horizontal Y lines */}
           {yTicks.map((t, i) => (
             <line key={`yg-${i}`} x1={cPx} y1={t.y} x2={cPx + cW} y2={t.y}
               stroke="currentColor" className="text-border" strokeWidth={0.3}
               strokeDasharray={t.label === "0" ? "none" : "3,4"} />
           ))}
 
+          {/* Background grid — vertical X lines at key times */}
+          {xTicks.map((t, i) => (
+            <line key={`xg-${i}`} x1={t.x} y1={cPt} x2={t.x} y2={h - cPb}
+              stroke="currentColor" className="text-border" strokeWidth={0.3}
+              strokeDasharray="3,4" />
+          ))}
+
+          {/* Lunch break separator — dashed vertical line between 11:30 and 13:00 */}
+          <line x1={lunchBreakX} y1={cPt} x2={lunchBreakX} y2={h - cPb}
+            stroke="currentColor" className="text-muted-foreground/30" strokeWidth={0.5}
+            strokeDasharray="4,3" />
+
           {/* Between-lines area fills */}
           {betweenRed && <path d={betweenRed} fill="url(#betweenRed)" />}
           {betweenGreen && <path d={betweenGreen} fill="url(#betweenGreen)" />}
 
           {/* Up line with glow */}
-          <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />
+          {upSmooth && <path d={upSmooth} fill="none" stroke={UP_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#upGlow)" />}
           {/* Down line with glow */}
-          <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />
+          {downSmooth && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
 
           {/* Data point dots & pill labels */}
           {data.map((d, i) => {
@@ -490,7 +549,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
             </text>
           ))}
 
-          {/* X-axis with tick marks */}
+          {/* X-axis with tick marks — standard A-share trading times */}
           {xTicks.map((t, i) => (
             <g key={`xl-${i}`}>
               <line x1={t.x} y1={h - cPb} x2={t.x} y2={h - cPb + 3}
