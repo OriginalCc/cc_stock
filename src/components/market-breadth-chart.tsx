@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface BreadthHistoryPoint {
@@ -29,11 +29,34 @@ interface MarketBreadthChartProps {
 const UP_COLOR = "#dc2626";
 const DOWN_COLOR = "#059669";
 
-function formatNowTime(): string {
+/** Format current time as HH:MM:SS (China timezone) */
+function formatTimeHMS(): string {
   const now = new Date();
   const h = (now.getUTCHours() + 8) % 24;
   const m = now.getUTCMinutes();
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const s = now.getUTCSeconds();
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+/** Get today's date string (China timezone) */
+function getTodayStr(): string {
+  const now = new Date();
+  const utcNow = now.getTime();
+  const chinaOffset = 8 * 60 * 60 * 1000;
+  const d = new Date(utcNow + chinaOffset);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** Normalize server time (HH:MM) to HH:MM:SS for consistent comparison */
+function normalizeTime(time: string): string {
+  const parts = time.split(":");
+  if (parts.length === 2) return time + ":00";
+  return time;
+}
+
+/** Strip seconds for display: HH:MM:SS → HH:MM */
+function displayTime(time: string): string {
+  return time.length > 5 ? time.slice(0, 5) : time;
 }
 
 /** Catmull-Rom smooth curve through points */
@@ -119,20 +142,81 @@ function buildBetweenArea(
 }
 
 export function MarketBreadthChart({ history, currentUp, currentDown, currentFlat, limitUp = 0, limitDown = 0, shUp = 0, shDown = 0, szUp = 0, szDown = 0 }: MarketBreadthChartProps) {
-  // Merge current live data
-  const data = useMemo(() => {
-    if (currentUp === 0 && currentDown === 0 && history.length === 0) return [];
-    if (history.length === 0) {
-      return [{ time: formatNowTime(), totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
-    }
-    const last = history[history.length - 1];
-    if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
-      return [...history, { time: formatNowTime(), totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
-    }
-    return history;
+  // ── Client-side accumulation for real-time time-sharing chart ──
+  // Server provides 1-min snapshots (HH:MM); we accumulate sub-minute points (HH:MM:SS) from each 15s poll
+  const [timeline, setTimeline] = useState<BreadthHistoryPoint[]>([]);
+  const lastDateRef = useRef("");
+
+  useEffect(() => {
+    const todayStr = getTodayStr();
+
+    setTimeline(prev => {
+      // Reset on new day
+      if (lastDateRef.current && lastDateRef.current !== todayStr) {
+        lastDateRef.current = todayStr;
+        if (history.length > 0) {
+          return history.map(p => ({ ...p, time: normalizeTime(p.time) }));
+        }
+        return [];
+      }
+      lastDateRef.current = todayStr;
+
+      // Step 1: Initialize from server history if client timeline is empty
+      if (prev.length === 0 && history.length > 0) {
+        const base = history.map(p => ({ ...p, time: normalizeTime(p.time) }));
+        // Also add current live point
+        if (currentUp > 0 || currentDown > 0) {
+          const nowTime = formatTimeHMS();
+          const last = base[base.length - 1];
+          if (!last || nowTime > last.time) {
+            return [...base, { time: nowTime, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
+          }
+          if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
+            return [...base.slice(0, -1), { ...last, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat }];
+          }
+        }
+        return base;
+      }
+
+      // Step 2: Merge new server points into client timeline
+      let merged = prev;
+      if (history.length > 0) {
+        const normalizedHistory = history.map(p => ({ ...p, time: normalizeTime(p.time) }));
+        const prevTimeSet = new Set(prev.map(p => p.time));
+        const newServerPts = normalizedHistory.filter(sp => !prevTimeSet.has(sp.time));
+
+        if (newServerPts.length > 0) {
+          // Insert new server points at correct positions
+          const combined = [...prev, ...newServerPts];
+          combined.sort((a, b) => a.time.localeCompare(b.time));
+          merged = combined;
+        }
+      }
+
+      // Step 3: Add current live data point (sub-minute resolution)
+      if (currentUp > 0 || currentDown > 0) {
+        const nowTime = formatTimeHMS();
+        const last = merged[merged.length - 1];
+
+        if (!last || nowTime > last.time) {
+          // Time advanced → append new point (sub-minute resolution!)
+          return [...merged, { time: nowTime, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat, limitUp: 0, limitDown: 0 }];
+        }
+        if (last.totalUp !== currentUp || last.totalDown !== currentDown) {
+          // Same second but values changed → update last point
+          return [...merged.slice(0, -1), { ...last, totalUp: currentUp, totalDown: currentDown, totalFlat: currentFlat }];
+        }
+      } else if (currentUp === 0 && currentDown === 0 && history.length === 0) {
+        return [];
+      }
+
+      return merged;
+    });
   }, [history, currentUp, currentDown, currentFlat]);
 
-  // ── All chart computations in a single useMemo (before early returns) ──
+  const data = timeline;
+
+  // ── Chart computations ──
   const chart = useMemo(() => {
     if (data.length < 2) return null;
 
@@ -157,11 +241,16 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     const betweenRed = buildBetweenArea(data, toX, toY, "upDominant");
     const betweenGreen = buildBetweenArea(data, toX, toY, "downDominant");
 
-    // X ticks
-    const tickInterval = Math.max(1, Math.floor(data.length / 6));
+    // X ticks: show HH:MM labels at regular intervals
+    const minutes = [...new Set(data.map(d => displayTime(d.time)))];
+    const tickInterval = Math.max(1, Math.floor(minutes.length / 6));
     const xTicks: { x: number; label: string }[] = [];
-    for (let i = 0; i < data.length; i++) {
-      if (i % tickInterval === 0 || i === data.length - 1) xTicks.push({ x: toX(i), label: data[i].time });
+    const selectedMinutes = minutes.filter((_, i) => i % tickInterval === 0 || i === minutes.length - 1);
+    for (const min of selectedMinutes) {
+      const idx = data.findIndex(d => displayTime(d.time) === min);
+      if (idx >= 0) {
+        xTicks.push({ x: toX(idx), label: min });
+      }
     }
 
     // Y ticks
@@ -211,7 +300,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
         <div className="px-2 pt-2 pb-1">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-semibold text-foreground/80">市场涨跌家数</span>
-            <span className="text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">第1个数据点</span>
+            <span className="text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full animate-pulse">采集数据中...</span>
           </div>
           <div className="flex items-center justify-center gap-6 py-4">
             <div className="text-center">
@@ -246,7 +335,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
     );
   }
 
-  // ── Multi-point chart (historical display style) ──
+  // ── Multi-point chart (real-time time-sharing) ──
   const { w, h, px: cPx, pt: cPt, pb: cPb, chartW: cW,
     toX, toY, upSmooth, downSmooth,
     betweenRed, betweenGreen,
@@ -274,6 +363,7 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
               style={{ backgroundColor: diff >= 0 ? `${UP_COLOR}12` : `${DOWN_COLOR}12`, color: diff >= 0 ? UP_COLOR : DOWN_COLOR }}>
               差{diff >= 0 ? "+" : ""}{diff}
             </span>
+            <span className="text-[9px] text-muted-foreground tabular-nums">{data.length}点</span>
           </div>
         </div>
         {/* Extra stats row */}
@@ -353,20 +443,23 @@ export function MarketBreadthChart({ history, currentUp, currentDown, currentFla
 
             return (
               <g key={`pt-${i}`}>
-                <circle cx={x} cy={yUp} r={isLast ? 3 : 1.8} fill={UP_COLOR} />
-                {isLast && <circle cx={x} cy={yUp} r={1.5} fill="#fff" opacity={0.6} />}
-                <circle cx={x} cy={yDown} r={isLast ? 3 : 1.8} fill={DOWN_COLOR} />
-                {isLast && <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />}
+                <circle cx={x} cy={yUp} r={isLast ? 3 : 1} fill={UP_COLOR} opacity={isLast ? 1 : 0.4} />
+                <circle cx={x} cy={yDown} r={isLast ? 3 : 1} fill={DOWN_COLOR} opacity={isLast ? 1 : 0.4} />
+
+                {isLast && (
+                  <>
+                    <circle cx={x} cy={yUp} r={1.5} fill="#fff" opacity={0.6} />
+                    <circle cx={x} cy={yDown} r={1.5} fill="#fff" opacity={0.6} />
+                  </>
+                )}
 
                 {showLabel && (
                   <>
-                    {/* Up pill */}
                     <rect x={x - 15} y={yUp - (linesClose ? 17 : 13) - 10}
                       width={30} height={11} rx={3} fill={UP_COLOR} opacity={0.92} />
                     <text x={x} y={yUp - (linesClose ? 17 : 13) - 4.5}
                       textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight={800}
                       fill="#fff" dominantBaseline="middle">{d.totalUp}</text>
-                    {/* Down pill */}
                     <rect x={x - 15} y={yDown + (linesClose ? 6 : 6)}
                       width={30} height={11} rx={3} fill={DOWN_COLOR} opacity={0.92} />
                     <text x={x} y={yDown + (linesClose ? 6 : 6) + 5.5}
