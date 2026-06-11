@@ -37,6 +37,7 @@ interface FiveDayTimelinePanelProps {
   quote: any;
   timeline: TimelineItem[];
   timelinePrevClose: number;
+  recentDayLows?: { date: string; low: number }[];
 }
 
 // ── Constants ──
@@ -652,7 +653,7 @@ function IntentExplanationPanel() {
 const MIN_VISIBLE_POINTS = 60;  // ~1 hour of 1-min data
 const ZOOM_STEP = 0.15;         // 15% zoom per scroll tick
 
-export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClose }: FiveDayTimelinePanelProps) {
+export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClose, recentDayLows }: FiveDayTimelinePanelProps) {
   const [kline5Min, setKline5Min] = useState<KLine5Min[]>([]);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -831,12 +832,18 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
       if (dev > maxDeviation) maxDeviation = dev;
     }
     const padding = maxDeviation * 0.2 || refP * 0.02;
-    const minP = refP - maxDeviation - padding;
-    const maxP = refP + maxDeviation + padding;
+    let minP = refP - maxDeviation - padding;
+    let maxP = refP + maxDeviation + padding;
+    // Ensure 5-day low line is always within Y-axis domain
+    if (recentDayLows && recentDayLows.length > 0) {
+      for (const dl of recentDayLows) {
+        if (dl.low > 0 && dl.low < minP) minP = dl.low - (refP * 0.002);
+      }
+    }
     const range = maxP - minP;
     const step = range / 4;
     return { minPrice: minP, maxPrice: maxP, refClose: refP, yTicks: [refP - 2 * step, refP - step, refP, refP + step, refP + 2 * step] };
-  }, [visibleItems, firstDayRefClose]);
+  }, [visibleItems, firstDayRefClose, recentDayLows]);
 
   const maxVolume = useMemo(() => visibleItems.reduce((mx, d) => Math.max(mx, d.displayVolume), 1), [visibleItems]);
 
@@ -1055,6 +1062,66 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                   }
                   return els.length > 0 ? <g>{els}</g> : null;
                 }} />
+                {/* 5-day low line — gradient highlight */}
+                {recentDayLows && recentDayLows.length > 0 && recentDayLows
+                  .map((item, i) => {
+                    const parts = item.date.split("-");
+                    const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
+                    return (
+                      <Customized key={`recentlow-${i}`} component={(props: any) => {
+                        const { yAxisMap, offset } = props;
+                        if (!yAxisMap || !offset) return null;
+                        const yAxis = (yAxisMap as any).price ?? Object.values(yAxisMap)[0] as any;
+                        if (!yAxis?.scale) return null;
+                        const y = yAxis.scale(item.low);
+                        const x1 = offset.left;
+                        const x2 = offset.left + offset.width;
+                        if (y == null || isNaN(y)) return null;
+                        return (
+                          <g>
+                            <defs>
+                              <linearGradient id="recentLowGrad5d" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
+                                <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
+                                <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
+                                <stop offset="80%" stopColor="#dc2626" stopOpacity="1" />
+                                <stop offset="100%" stopColor="#b91c1c" stopOpacity="1" />
+                              </linearGradient>
+                              <filter id="recentLowGlow5d" x="-5%" y="-100%" width="110%" height="300%">
+                                <feGaussianBlur stdDeviation="5" result="blur" />
+                                <feMerge>
+                                  <feMergeNode in="blur" />
+                                  <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                              </filter>
+                            </defs>
+                            {/* Wide glow layer */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={12} strokeOpacity={0.15} filter="url(#recentLowGlow5d)" />
+                            {/* Medium glow layer */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={6} strokeOpacity={0.3} />
+                            {/* Main gradient line */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={4} strokeLinecap="round" />
+                            {/* Bright core line */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={1} strokeOpacity={0.25} />
+                            {/* Label pill */}
+                            {(() => {
+                              const pillW = 116;
+                              const pillH = 24;
+                              const pillX = x1 + 4;
+                              return (
+                                <>
+                                  <rect x={pillX - 2} y={y - pillH / 2 - 2} width={pillW + 4} height={pillH + 4} rx={14} fill="#dc2626" fillOpacity={0.25} filter="url(#recentLowGlow5d)" />
+                                  <rect x={pillX} y={y - pillH / 2} width={pillW} height={pillH} rx={12} fill="#dc2626" fillOpacity={0.95} stroke="#fca5a5" strokeWidth={1} />
+                                  <text x={pillX + pillW / 2} y={y + 1} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={10} fontWeight={900}>{`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}</text>
+                                </>
+                              );
+                            })()}
+                          </g>
+                        );
+                      }} />
+                    );
+                  })
+                }
               </ComposedChart>
             </ResponsiveContainer>
           </CardContent>

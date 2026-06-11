@@ -791,26 +791,47 @@ export default function StockTAssistant() {
     return computeKeyPriceLevels(timelinePrevClose, liveTimeline);
   }, [liveTimeline, timelinePrevClose, isTimelineActive]);
 
-  // ── Lowest price among last 5 trading days (independent fast fetch) ──
+  // ── Lowest price among last 5 trading days (independent fast fetch with retry) ──
   const [recentDayLows, setRecentDayLows] = useState<{ date: string; low: number }[]>([]);
   useEffect(() => {
     if (!isAShareStock || !symbol) { setRecentDayLows([]); return; }
     let cancelled = false;
-    const fetchDayLows = async () => {
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const fetchDayLows = async (attempt = 0) => {
       try {
         // Use the same ashare-history API but only need last 5 bars — request with limit=5
         const res = await fetch(`/api/stock/ashare-history?symbol=${encodeURIComponent(symbol)}&interval=1d&limit=5`, { signal: AbortSignal.timeout(10000) });
-        if (!res.ok || cancelled) return;
+        if (!res.ok || cancelled) {
+          // Retry up to 3 times with 5s delay
+          if (attempt < 3 && !cancelled) {
+            retryTimer = setTimeout(() => { if (!cancelled) fetchDayLows(attempt + 1); }, 5000);
+          }
+          return;
+        }
         const data = await res.json();
-        if (data.error || cancelled) return;
+        if (data.error || cancelled) {
+          if (attempt < 3 && !cancelled) {
+            retryTimer = setTimeout(() => { if (!cancelled) fetchDayLows(attempt + 1); }, 5000);
+          }
+          return;
+        }
         const bars: KLineItem[] = data.data || [];
         const valid = bars.filter((b: KLineItem) => b.low > 0);
         if (valid.length === 0 || cancelled) return;
         const minItem = valid.reduce((min: KLineItem, cur: KLineItem) => cur.low < min.low ? cur : min, valid[0]);
         setRecentDayLows([{ date: minItem.date, low: minItem.low }]);
-      } catch { /* ignore */ }
+      } catch {
+        // Retry up to 3 times with 5s delay on network/timeout errors
+        if (attempt < 3 && !cancelled) {
+          retryTimer = setTimeout(() => { if (!cancelled) fetchDayLows(attempt + 1); }, 5000);
+        }
+      }
     };
     fetchDayLows();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [symbol, isAShareStock]);
 
   const isUp = quote ? quote.change >= 0 : true;
@@ -973,7 +994,7 @@ export default function StockTAssistant() {
         {(chartMode === "timeline" || chartMode === "5d-timeline") && liveTimeline.length === 0 && timelineLoading ? (
           <div className="space-y-4"><Skeleton className="h-[400px] w-full" /><Skeleton className="h-[150px] w-full" /><Skeleton className="h-[100px] w-full" /></div>
         ) : chartMode === "5d-timeline" ? (
-          <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} />
+          <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} recentDayLows={recentDayLows} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
             <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} recentDayLows={recentDayLows} />

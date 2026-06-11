@@ -3729,7 +3729,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             })}
             {/* Lowest price among last 5 trading days — thick gradient line */}
             {recentDayLows && recentDayLows.length > 0 && recentDayLows
-              .filter(d => d.low >= yMin && d.low <= yMax)
               .map((item, i) => {
                 const parts = item.date.split("-");
                 const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
@@ -3737,7 +3736,9 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   <Customized key={`recentlow-${i}`} component={(props: any) => {
                     const { xAxisMap, yAxisMap, offset } = props;
                     if (!xAxisMap || !yAxisMap || !offset) return null;
-                    const yAxis = Object.values(yAxisMap)[0] as any;
+                    // Use explicit 'price' axis key instead of Object.values()[0]
+                    // to avoid accidentally using the 'percent' axis
+                    const yAxis = (yAxisMap as any).price ?? Object.values(yAxisMap)[0] as any;
                     if (!yAxis?.scale) return null;
                     const y = yAxis.scale(item.low);
                     const x1 = offset.left;
