@@ -3945,7 +3945,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="url(#recentLowGrad)"
-                          strokeWidth={2.5}
+                          strokeWidth={1.5}
                           strokeLinecap="round"
                         />
                         {/* Bright core line */}

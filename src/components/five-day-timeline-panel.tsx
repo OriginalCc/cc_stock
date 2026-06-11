@@ -1100,7 +1100,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                             {/* Medium glow layer */}
                             <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={4} strokeOpacity={0.3} />
                             {/* Main gradient line */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={2.5} strokeLinecap="round" />
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={1.5} strokeLinecap="round" />
                             {/* Bright core line */}
                             <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} />
                             {/* Label pill */}
