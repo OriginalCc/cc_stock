@@ -4138,16 +4138,17 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   if (xEnd - xStart < 5) return null; // Too narrow to show
 
                   const midX = (xStart + xEnd) / 2;
-                  const midY = plotTop + plotHeight / 2;
+                  // Place badge at the top of the overlay area
+                  const badgeY = plotTop + 22;
 
                   return (
                     <g>
                       {/* Semi-transparent green mask (A股：买入=绿色) */}
                       <defs>
                         <linearGradient id="bestBuyGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#16a34a" stopOpacity="0.12" />
-                          <stop offset="50%" stopColor="#22c55e" stopOpacity="0.18" />
-                          <stop offset="100%" stopColor="#16a34a" stopOpacity="0.08" />
+                          <stop offset="0%" stopColor="#16a34a" stopOpacity="0.18" />
+                          <stop offset="30%" stopColor="#22c55e" stopOpacity="0.10" />
+                          <stop offset="100%" stopColor="#16a34a" stopOpacity="0.04" />
                         </linearGradient>
                         {/* Animated dash for border */}
                         <filter id="bestBuyGlow">
@@ -4169,6 +4170,16 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                         strokeWidth={1.5}
                         strokeDasharray="6 3"
                         strokeOpacity={0.7}
+                        rx={3}
+                      />
+                      {/* Top banner bar — solid green strip */}
+                      <rect
+                        x={xStart}
+                        y={plotTop}
+                        width={xEnd - xStart}
+                        height={38}
+                        fill="#16a34a"
+                        fillOpacity={0.10}
                         rx={3}
                       />
                       {/* Left boundary label */}
@@ -4217,15 +4228,15 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                           11:30
                         </text>
                       </g>
-                      {/* Central prominent reminder badge */}
+                      {/* Prominent reminder badge — positioned at top of overlay */}
                       <g filter="url(#bestBuyGlow)">
                         {/* Badge background */}
                         <rect
-                          x={midX - 62}
-                          y={midY - 14}
-                          width={124}
-                          height={28}
-                          rx={14}
+                          x={midX - 70}
+                          y={badgeY - 13}
+                          width={140}
+                          height={26}
+                          rx={13}
                           fill="#16a34a"
                           fillOpacity={0.92}
                           stroke="#bbf7d0"
@@ -4233,11 +4244,11 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                         />
                         {/* Pulsing ring around badge */}
                         <rect
-                          x={midX - 66}
-                          y={midY - 18}
-                          width={132}
-                          height={36}
-                          rx={18}
+                          x={midX - 74}
+                          y={badgeY - 17}
+                          width={148}
+                          height={34}
+                          rx={17}
                           fill="none"
                           stroke="#22c55e"
                           strokeWidth={2}
@@ -4258,20 +4269,10 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                             repeatCount="indefinite"
                           />
                         </rect>
-                        {/* Icon */}
-                        <text
-                          x={midX - 48}
-                          y={midY + 1}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          fontSize={13}
-                        >
-                          🟢
-                        </text>
                         {/* Main text */}
                         <text
-                          x={midX + 6}
-                          y={midY + 1}
+                          x={midX}
+                          y={badgeY + 1}
                           textAnchor="middle"
                           dominantBaseline="middle"
                           fill="white"
@@ -4285,7 +4286,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                       {/* Secondary hint text below badge */}
                       <text
                         x={midX}
-                        y={midY + 26}
+                        y={badgeY + 20}
                         textAnchor="middle"
                         dominantBaseline="middle"
                         fill="#166534"
