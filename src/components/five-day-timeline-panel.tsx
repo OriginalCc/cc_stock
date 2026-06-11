@@ -1080,7 +1080,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                         return (
                           <g>
                             <defs>
-                              <linearGradient id="recentLowGrad5d" x1="0" y1="0" x2="1" y2="0">
+                              <linearGradient id="recentLowGrad5d" x1={x1} y1={y} x2={x2} y2={y} gradientUnits="userSpaceOnUse">
                                 <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
                                 <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
                                 <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />

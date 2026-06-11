@@ -3727,122 +3727,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 />
               );
             })}
-            {/* Lowest price among last 5 trading days — thick gradient line */}
-            {recentDayLows && recentDayLows.length > 0 && recentDayLows
-              .map((item, i) => {
-                const parts = item.date.split("-");
-                const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
-                return (
-                  <Customized key={`recentlow-${i}`} component={(props: any) => {
-                    const { xAxisMap, yAxisMap, offset } = props;
-                    if (!xAxisMap || !yAxisMap || !offset) return null;
-                    // Use explicit 'price' axis key instead of Object.values()[0]
-                    // to avoid accidentally using the 'percent' axis
-                    const yAxis = (yAxisMap as any).price ?? Object.values(yAxisMap)[0] as any;
-                    if (!yAxis?.scale) return null;
-                    const y = yAxis.scale(item.low);
-                    const x1 = offset.left;
-                    const x2 = offset.left + offset.width;
-                    return (
-                      <g>
-                        {/* Gradient definition */}
-                        <defs>
-                          <linearGradient id="recentLowGrad" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
-                            <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
-                            <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
-                            <stop offset="80%" stopColor="#dc2626" stopOpacity="1" />
-                            <stop offset="100%" stopColor="#b91c1c" stopOpacity="1" />
-                          </linearGradient>
-                          {/* Glow filter — stronger blur */}
-                          <filter id="recentLowGlow" x="-5%" y="-100%" width="110%" height="300%">
-                            <feGaussianBlur stdDeviation="5" result="blur" />
-                            <feMerge>
-                              <feMergeNode in="blur" />
-                              <feMergeNode in="SourceGraphic" />
-                            </feMerge>
-                          </filter>
-                        </defs>
-                        {/* Wide glow layer — soft halo */}
-                        <line
-                          x1={x1} y1={y} x2={x2} y2={y}
-                          stroke="url(#recentLowGrad)"
-                          strokeWidth={12}
-                          strokeOpacity={0.15}
-                          filter="url(#recentLowGlow)"
-                        />
-                        {/* Medium glow layer */}
-                        <line
-                          x1={x1} y1={y} x2={x2} y2={y}
-                          stroke="url(#recentLowGrad)"
-                          strokeWidth={6}
-                          strokeOpacity={0.3}
-                        />
-                        {/* Main gradient line — thick & bold */}
-                        <line
-                          x1={x1} y1={y} x2={x2} y2={y}
-                          stroke="url(#recentLowGrad)"
-                          strokeWidth={4}
-                          strokeLinecap="round"
-                        />
-                        {/* Bright core line — thin white-hot center */}
-                        <line
-                          x1={x1} y1={y} x2={x2} y2={y}
-                          stroke="white"
-                          strokeWidth={1}
-                          strokeOpacity={0.25}
-                        />
-                        {/* Label pill inside left edge of chart area */}
-                        {(() => {
-                          const pillW = 116;
-                          const pillH = 24;
-                          // Place pill just inside the left chart edge so it's never clipped
-                          const pillX = x1 + 4;
-                          return (
-                            <>
-                              {/* Pill glow */}
-                              <rect
-                                x={pillX - 2}
-                                y={y - pillH / 2 - 2}
-                                width={pillW + 4}
-                                height={pillH + 4}
-                                rx={14}
-                                fill="#dc2626"
-                                fillOpacity={0.25}
-                                filter="url(#recentLowGlow)"
-                              />
-                              {/* Pill background */}
-                              <rect
-                                x={pillX}
-                                y={y - pillH / 2}
-                                width={pillW}
-                                height={pillH}
-                                rx={12}
-                                fill="#dc2626"
-                                fillOpacity={0.95}
-                                stroke="#fca5a5"
-                                strokeWidth={1}
-                              />
-                              <text
-                                x={pillX + pillW / 2}
-                                y={y + 1}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                fill="white"
-                                fontSize={10}
-                                fontWeight="900"
-                              >
-                                {`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}
-                              </text>
-                            </>
-                          );
-                        })()}
-                      </g>
-                    );
-                  }} />
-                );
-              })
-            }
             {/* Lunch break vertical divider between 11:30 and 13:00 */}
             {!isZoomed && (() => {
               const lunchIdx = Math.floor(zoomData.length / 2);
@@ -4006,6 +3890,122 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               strokeDasharray="5 3"
               isAnimationActive={false}
             />
+            {/* Lowest price among last 5 trading days — thick gradient line (after Area/Line so it renders on top) */}
+            {recentDayLows && recentDayLows.length > 0 && recentDayLows
+              .map((item, i) => {
+                const parts = item.date.split("-");
+                const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
+                return (
+                  <Customized key={`recentlow-${i}`} component={(props: any) => {
+                    const { xAxisMap, yAxisMap, offset } = props;
+                    if (!xAxisMap || !yAxisMap || !offset) return null;
+                    // Use explicit 'price' axis key instead of Object.values()[0]
+                    // to avoid accidentally using the 'percent' axis
+                    const yAxis = (yAxisMap as any).price ?? Object.values(yAxisMap)[0] as any;
+                    if (!yAxis?.scale) return null;
+                    const y = yAxis.scale(item.low);
+                    const x1 = offset.left;
+                    const x2 = offset.left + offset.width;
+                    return (
+                      <g>
+                        {/* Gradient definition — userSpaceOnUse for reliable rendering on horizontal lines */}
+                        <defs>
+                          <linearGradient id="recentLowGrad" x1={x1} y1={y} x2={x2} y2={y} gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
+                            <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
+                            <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
+                            <stop offset="80%" stopColor="#dc2626" stopOpacity="1" />
+                            <stop offset="100%" stopColor="#b91c1c" stopOpacity="1" />
+                          </linearGradient>
+                          {/* Glow filter — stronger blur */}
+                          <filter id="recentLowGlow" x="-5%" y="-100%" width="110%" height="300%">
+                            <feGaussianBlur stdDeviation="5" result="blur" />
+                            <feMerge>
+                              <feMergeNode in="blur" />
+                              <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                          </filter>
+                        </defs>
+                        {/* Wide glow layer — soft halo */}
+                        <line
+                          x1={x1} y1={y} x2={x2} y2={y}
+                          stroke="url(#recentLowGrad)"
+                          strokeWidth={12}
+                          strokeOpacity={0.15}
+                          filter="url(#recentLowGlow)"
+                        />
+                        {/* Medium glow layer */}
+                        <line
+                          x1={x1} y1={y} x2={x2} y2={y}
+                          stroke="url(#recentLowGrad)"
+                          strokeWidth={6}
+                          strokeOpacity={0.3}
+                        />
+                        {/* Main gradient line — thick & bold */}
+                        <line
+                          x1={x1} y1={y} x2={x2} y2={y}
+                          stroke="url(#recentLowGrad)"
+                          strokeWidth={4}
+                          strokeLinecap="round"
+                        />
+                        {/* Bright core line — thin white-hot center */}
+                        <line
+                          x1={x1} y1={y} x2={x2} y2={y}
+                          stroke="white"
+                          strokeWidth={1}
+                          strokeOpacity={0.25}
+                        />
+                        {/* Label pill inside left edge of chart area */}
+                        {(() => {
+                          const pillW = 116;
+                          const pillH = 24;
+                          // Place pill just inside the left chart edge so it's never clipped
+                          const pillX = x1 + 4;
+                          return (
+                            <>
+                              {/* Pill glow */}
+                              <rect
+                                x={pillX - 2}
+                                y={y - pillH / 2 - 2}
+                                width={pillW + 4}
+                                height={pillH + 4}
+                                rx={14}
+                                fill="#dc2626"
+                                fillOpacity={0.25}
+                                filter="url(#recentLowGlow)"
+                              />
+                              {/* Pill background */}
+                              <rect
+                                x={pillX}
+                                y={y - pillH / 2}
+                                width={pillW}
+                                height={pillH}
+                                rx={12}
+                                fill="#dc2626"
+                                fillOpacity={0.95}
+                                stroke="#fca5a5"
+                                strokeWidth={1}
+                              />
+                              <text
+                                x={pillX + pillW / 2}
+                                y={y + 1}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fill="white"
+                                fontSize={10}
+                                fontWeight="900"
+                              >
+                                {`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}
+                              </text>
+                            </>
+                          );
+                        })()}
+                      </g>
+                    );
+                  }} />
+                );
+              })
+            }
             {/* ── VWAP Ban Zone Annotations (均线±0.3%三层标注) ── */}
             <Customized component={(props: any) => {
               const { yAxisMap, xAxisMap, offset } = props;
