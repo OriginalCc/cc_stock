@@ -2458,6 +2458,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     if (spc < ymn) ymn = spc - pcm;
     else if (spc > ymx) ymx = spc + pcm;
 
+    // Ensure 5-day low line is always within Y-axis domain
+    if (recentDayLows && recentDayLows.length > 0) {
+      for (const dl of recentDayLows) {
+        if (dl.low > 0 && dl.low < ymn) ymn = dl.low - pcm;
+      }
+    }
+
     const pMin = ((ymn - spc) / spc) * 100;
     const pMax = ((ymx - spc) / spc) * 100;
 
@@ -2508,7 +2515,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       lastItem: li, lastSignal: ls, barSize: brs, lastDataIdx,
       highestPrice, lowestPrice,
     };
-  }, [fullDayData, data, visibleMinutes, panOffset, timeTicks, prevClose, signals, macdData]);
+  }, [fullDayData, data, visibleMinutes, panOffset, timeTicks, prevClose, signals, macdData, recentDayLows]);
 
   // ── Crosshair item (must be after zoomData is computed) ──
   const crosshairItem = deferredCrosshairIdx != null && deferredCrosshairIdx >= 0 && deferredCrosshairIdx < zoomData.length
