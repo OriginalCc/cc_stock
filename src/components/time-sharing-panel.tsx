@@ -3930,16 +3930,16 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="url(#recentLowGrad)"
-                          strokeWidth={8}
-                          strokeOpacity={0.15}
+                          strokeWidth={5}
+                          strokeOpacity={0.12}
                           filter="url(#recentLowGlow)"
                         />
                         {/* Medium glow layer */}
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="url(#recentLowGrad)"
-                          strokeWidth={4}
-                          strokeOpacity={0.3}
+                          strokeWidth={2.5}
+                          strokeOpacity={0.25}
                         />
                         {/* Main gradient line */}
                         <line
