@@ -3930,7 +3930,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="url(#recentLowGrad)"
-                          strokeWidth={12}
+                          strokeWidth={8}
                           strokeOpacity={0.15}
                           filter="url(#recentLowGlow)"
                         />
@@ -3938,21 +3938,21 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="url(#recentLowGrad)"
-                          strokeWidth={6}
+                          strokeWidth={4}
                           strokeOpacity={0.3}
                         />
-                        {/* Main gradient line — thick & bold */}
+                        {/* Main gradient line */}
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="url(#recentLowGrad)"
-                          strokeWidth={4}
+                          strokeWidth={2.5}
                           strokeLinecap="round"
                         />
-                        {/* Bright core line — thin white-hot center */}
+                        {/* Bright core line */}
                         <line
                           x1={x1} y1={y} x2={x2} y2={y}
                           stroke="white"
-                          strokeWidth={1}
+                          strokeWidth={0.8}
                           strokeOpacity={0.25}
                         />
                         {/* Label pill inside left edge of chart area */}

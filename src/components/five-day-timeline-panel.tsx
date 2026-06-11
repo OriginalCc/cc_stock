@@ -1096,13 +1096,13 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                               </filter>
                             </defs>
                             {/* Wide glow layer */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={12} strokeOpacity={0.15} filter="url(#recentLowGlow5d)" />
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={8} strokeOpacity={0.15} filter="url(#recentLowGlow5d)" />
                             {/* Medium glow layer */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={6} strokeOpacity={0.3} />
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={4} strokeOpacity={0.3} />
                             {/* Main gradient line */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={4} strokeLinecap="round" />
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={2.5} strokeLinecap="round" />
                             {/* Bright core line */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={1} strokeOpacity={0.25} />
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} />
                             {/* Label pill */}
                             {(() => {
                               const pillW = 116;
