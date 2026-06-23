@@ -188,9 +188,20 @@ function padLiveTimelineTo1Min(timelineData: TimelineItem[]): MinuteBar[] {
     }
   }
 
+  // Find the last slot that has actual trading data
+  let lastDataSlotIdx = -1;
+  for (let i = FULL_DAY_SLOTS.length - 1; i >= 0; i--) {
+    const bar = timeMap.get(FULL_DAY_SLOTS[i]);
+    if (bar && bar.price > 0) {
+      lastDataSlotIdx = i;
+      break;
+    }
+  }
+
   let lastPrice = 0;
   const result: MinuteBar[] = [];
-  for (const slot of FULL_DAY_SLOTS) {
+  for (let si = 0; si < FULL_DAY_SLOTS.length; si++) {
+    const slot = FULL_DAY_SLOTS[si];
     const bar = timeMap.get(slot);
     if (bar && bar.price > 0) {
       lastPrice = bar.price;
@@ -198,9 +209,11 @@ function padLiveTimelineTo1Min(timelineData: TimelineItem[]): MinuteBar[] {
       const totalMin = h * 60 + m;
       const is5MinBoundary = totalMin % 5 === 0;
       result.push({ time: slot, price: bar.price, volume: is5MinBoundary ? (vol5Min.get(slot) || 0) : 0 });
-    } else if (lastPrice > 0) {
+    } else if (si <= lastDataSlotIdx && lastPrice > 0) {
+      // Within the trading session but no data at this exact minute — interpolate
       result.push({ time: slot, price: lastPrice, volume: 0 });
     } else {
+      // Future time slots that haven't happened yet — leave as 0 so line breaks
       result.push({ time: slot, price: 0, volume: 0 });
     }
   }
@@ -251,12 +264,25 @@ function convertTo5DayTimeline(
     const refClose = prevClose > 0 ? prevClose : dayOpen;
     if (di === 0) firstDayRefClose = refClose;
     let cumVol = 0, cumAmt = 0;
+    let lastValidCumVol = 0, lastValidCumAmt = 0, lastValidAvg = 0;
     for (let ti = 0; ti < minuteBars.length; ti++) {
       const bar = minuteBars[ti];
+      // For the last day: price=0 & volume=0 means future time slot — break the line
+      const isFutureSlot = isLastDay && bar.price === 0 && bar.volume === 0;
+      if (isFutureSlot) {
+        items.push({
+          time: bar.time, price: null as any, avgPrice: null as any, volume: 0, displayVolume: 0,
+          changePercent: 0, date: dateStr, dayIndex: di, dayLabel, isDayStart: false,
+        });
+        continue;
+      }
       const price = bar.price || prevClose || refClose;
       cumVol += bar.volume;
       cumAmt += bar.volume * price;
       const avgPrice = cumVol > 0 ? cumAmt / cumVol : price;
+      lastValidCumVol = cumVol;
+      lastValidCumAmt = cumAmt;
+      lastValidAvg = avgPrice;
       const changePercent = refClose > 0 ? ((price - refClose) / refClose) * 100 : 0;
       items.push({
         time: bar.time, price, avgPrice, volume: bar.volume, displayVolume: bar.volume,
