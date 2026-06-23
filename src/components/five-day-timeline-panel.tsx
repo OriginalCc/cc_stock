@@ -854,6 +854,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
     const refP = firstDayRefClose || visibleItems[0]?.price || 100;
     let maxDeviation = 0;
     for (const item of visibleItems) {
+      if (item.price == null || item.price <= 0) continue;
       const dev = Math.abs(item.price - refP);
       if (dev > maxDeviation) maxDeviation = dev;
     }
@@ -876,7 +877,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
   const { highestPrice, lowestPrice } = useMemo(() => {
     if (visibleItems.length === 0) return { highestPrice: null, lowestPrice: null };
     let hi = -Infinity, lo = Infinity;
-    for (const d of visibleItems) { if (d.price > hi) hi = d.price; if (d.price < lo) lo = d.price; }
+    for (const d of visibleItems) { if (d.price != null && d.price > 0) { if (d.price > hi) hi = d.price; if (d.price < lo) lo = d.price; } }
     return { highestPrice: isFinite(hi) ? hi : null, lowestPrice: isFinite(lo) ? lo : null };
   }, [visibleItems]);
 
