@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import {
   ComposedChart,
   Bar,
@@ -15,12 +16,16 @@ import {
   Customized,
 } from "recharts";
 import type { TimelineItem } from "@/hooks/use-stock-data";
-import { formatVolume, formatAmount, formatPrice } from "@/lib/chart-shared";
+import { formatVolume, formatAmount, formatPrice, REGIME_CONFIG } from "@/lib/chart-shared";
 import { analyzeFiveDayIntent, type FiveDayIntentResult, type DayIntentResult } from "@/lib/institutional-intent";
+import type { RegimeDetail } from "@/lib/t-strategy";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, ZoomIn, ZoomOut, Maximize2, ShieldAlert, TrendingUp, TrendingDown, Activity, Eye, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
+import { RefreshCw, ZoomIn, ZoomOut, Maximize2, ShieldAlert, TrendingUp, TrendingDown, Activity, Eye, BookOpen, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+
+// Dynamic import for MiniTimelinePanel
+const MiniTimelinePanel = dynamic(() => import("@/components/mini-timeline-panel").then(m => ({ default: m.MiniTimelinePanel })), { ssr: false });
 
 // ── Types ──
 
@@ -38,6 +43,16 @@ interface FiveDayTimelinePanelProps {
   timeline: TimelineItem[];
   timelinePrevClose: number;
   recentDayLows?: { date: string; low: number }[];
+  indexTimelineData?: Record<string, { items: TimelineItem[]; prevClose: number }>;
+  sectorTimelineData?: { items: TimelineItem[]; prevClose: number };
+  sectorInfo?: { code: string; name: string } | null;
+  szIndexRegime?: RegimeDetail | null;
+  sectorRegime?: RegimeDetail | null;
+  indexLoading?: boolean;
+  onRetryIndex?: () => void;
+  activeIndexKey?: string;
+  indexConfig?: Record<string, { symbol: string; label: string; shortLabel: string }>;
+  onCycleIndex?: () => void;
 }
 
 // ── Constants ──
@@ -679,7 +694,7 @@ function IntentExplanationPanel() {
 const MIN_VISIBLE_POINTS = 60;  // ~1 hour of 1-min data
 const ZOOM_STEP = 0.15;         // 15% zoom per scroll tick
 
-export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClose, recentDayLows }: FiveDayTimelinePanelProps) {
+export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ symbol, quote, timeline, timelinePrevClose, recentDayLows, indexTimelineData, sectorTimelineData, sectorInfo, szIndexRegime, sectorRegime, indexLoading, onRetryIndex, activeIndexKey, indexConfig, onCycleIndex }: FiveDayTimelinePanelProps) {
   const [kline5Min, setKline5Min] = useState<KLine5Min[]>([]);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -1194,6 +1209,58 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
           </CardContent>
         </Card>
       </div>
+
+      {/* ─── Market Index & Sector Mini Timelines ─── */}
+      {(() => {
+        const szData = indexTimelineData?.[activeIndexKey || "sz"];
+        const idxInfo = indexConfig?.[activeIndexKey || "sz"];
+        const hasIdxData = szData && szData.items.length > 0;
+        const hasSectorData = sectorTimelineData && sectorTimelineData.items.length > 0 && sectorInfo;
+
+        const idxRetryPlaceholder = !hasIdxData && onRetryIndex ? (
+          <div className="rounded-lg border bg-card p-3 flex items-center justify-center gap-2 text-muted-foreground">
+            <span className="text-xs">{idxInfo?.label || "深证成指(骗人指数)"}分时数据未加载</span>
+            <button
+              onClick={onRetryIndex}
+              disabled={indexLoading}
+              className="inline-flex items-center gap-0.5 px-2 py-1 rounded border text-[9px] font-semibold bg-blue-500/10 border-blue-500/20 text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+              title="点击重新请求指数分时数据"
+            >
+              {indexLoading ? (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                  <span>加载中</span>
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>重新加载</span>
+                </>
+              )}
+            </button>
+          </div>
+        ) : null;
+
+        if (!hasIdxData && !hasSectorData) {
+          return idxRetryPlaceholder;
+        }
+
+        const regimeBadge = (regime: RegimeDetail | null) => {
+          if (!regime) return null;
+          const cfg = REGIME_CONFIG[regime.regime] || REGIME_CONFIG["震荡市"];
+          return <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold ${cfg.bg} ${cfg.text}`}><span>{cfg.icon}</span><span>{regime.regime}</span></span>;
+        };
+
+        return (
+          <div className="mt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {hasSectorData && <MiniTimelinePanel title={`${sectorInfo!.name}板块`} data={sectorTimelineData!.items} prevClose={sectorTimelineData!.prevClose} badge={<div className="ml-auto">{regimeBadge(sectorRegime ?? null)}</div>} />}
+              {hasIdxData && <MiniTimelinePanel title={idxInfo?.label || "深证成指(骗人指数)"} data={szData.items} prevClose={szData.prevClose} badge={<div className="flex items-center gap-1 ml-auto">{regimeBadge(szIndexRegime ?? null)}{onCycleIndex && <span className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none" onClick={onCycleIndex} title="点击切换指数">切换</span>}</div>} />}
+              {!hasIdxData && idxRetryPlaceholder}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Intent Explanation Panel — 底部说明 */}
       <IntentExplanationPanel />
