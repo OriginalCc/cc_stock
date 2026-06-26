@@ -77,7 +77,7 @@ export type ChartMode = "5d-timeline" | "timeline" | "kline";
 const LAST_STOCK_KEY = "lastSelectedStock";
 const LAST_CHART_MODE_KEY = "lastChartMode";
 const DEFAULT_SYMBOL = "600519";
-const DEFAULT_CHART_MODE: ChartMode = "timeline";
+const DEFAULT_CHART_MODE: ChartMode = "5d-timeline";
 
 // ── Cache TTL constants ──
 const QUOTE_CACHE_TTL = 1000; // 1s for quote data
