@@ -402,3 +402,31 @@ Stage Summary:
 - 首次进入页面（localStorage无lastMirrored记录）默认显示"分时倒影"
 - 用户操作过后（切换tab）选择持久化，刷新后尊重用户选择
 - 实现方式：mirrored初始化时检查localStorage是否为null，null则默认true
+
+---
+Task ID: 8
+Agent: main
+Task: 去掉分时页面的分时倒影图
+
+Work Log:
+- 查看time-sharing-panel.tsx结构，发现分时页面内嵌了一个独立的倒影图(Panel 0)：
+  * line 3576-3873: 用 CSS transform: scaleY(-1) 翻转的 ComposedChart
+  * line 3860-3863: "⇅ 分时倒影"标签
+  * line 3864-3865: 底部渐变遮罩
+- 这是早期实现的嵌入倒影图，现在已有独立的"分时倒影"tab（通过reversed={mirrored}实现），嵌入图多余
+- 删除 Panel 0 整块代码（line 3576-3873，约299行），保留 Panel 1（主图）
+- 删除后验证：
+  * grep确认无 scaleY/分时倒影/Inverted/Panel 0 残留代码
+  * ComposedChart数量从4个减为3个（主图+成交量+MACD）
+- Lint检查通过
+- Agent Browser验证：
+  * 正常"分时"tab：页面无"⇅"标签，无嵌入倒影图，只有一个主分时图 ✓
+  * "分时倒影"tab功能正常：价格Y轴翻转生效（1138.29低价在上y=549）✓
+  * VLM视觉确认：正常分时页面顶部没有小型倒影图，只有一个主分时图 ✓
+  * 浏览器控制台无错误 ✓
+- git commit + push 完成：commit 028b049
+
+Stage Summary:
+- 移除分时页面内嵌的倒影图(Panel 0)，约299行代码
+- 独立的"分时倒影"tab功能保留不受影响
+- 分时页面现在只有主图+成交量+MACD三个图表区域，更简洁
