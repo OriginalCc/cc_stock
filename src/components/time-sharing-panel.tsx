@@ -1836,11 +1836,14 @@ function CombinedChartOverlay(props: any) {
 
   if (!signalResult && pvPlacedLabels.length === 0 && !vwapAnnotations) return null;
 
-  // 分时倒影模式：只显示VWAP禁止买卖标注，不显示因子信号标签和选股标记
+  // 分时倒影模式：显示VWAP禁止买卖标注 + 核心买卖点，不显示常规因子标签和选股标记
   if (mirrored) {
     return (
       <g>
+        {/* Layer 0: 均线禁止买卖标注 */}
         {vwapAnnotations && <VwapBanAnnotations vwapPoints={vwapAnnotations.vwapPoints} pricePoints={vwapAnnotations.pricePoints} />}
+        {/* Layer 3: 核心买卖点（放量下跌买点/高开卖出/次低点缩量买入/放量上涨卖点等） */}
+        {signalResult?.prioritySignalElements}
       </g>
     );
   }
