@@ -650,7 +650,7 @@ function computeTimelineSignalElements(
   expandedIds: Set<string>,
   toggleExpand: (id: string) => void,
   mirrored: boolean = false,
-): { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null {
+): { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[]; labelRects: { x: number; y: number; width: number; height: number }[]; priceLineData: any[] } | null {
   if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
 
   const xAxis = Object.values(xAxisMap)[0] as any;
@@ -1622,10 +1622,184 @@ function computeTimelineSignalElements(
     }
   });
 
-  return { signalElements, prioritySignalElements, bubbleElements };
+  return { signalElements, prioritySignalElements, bubbleElements, labelRects, priceLineData };
 }
 
-// ── Intent segment overlay removed — intent segments now rendered as an external bar outside the chart ──
+// ── 5日最低点标签（带重叠避让 + 虚线连接线）──
+// 在 CombinedChartOverlay 中渲染，可访问所有信号标签位置 (labelRects) 与分时曲线 (priceLineData)。
+// 默认位置：标签居中贴在5日最低线上 (lineY)。若与信号标签或曲线重叠，则上下偏移并添加虚线连接线指向5日最低线。
+function computeRecentLowPill(
+  recentDayLows: { date: string; low: number }[] | undefined,
+  offset: any,
+  yAxisMap: any,
+  labelRects: { x: number; y: number; width: number; height: number }[],
+  priceLineData: any[],
+): React.ReactNode {
+  if (!recentDayLows || recentDayLows.length === 0 || !offset) return null;
+  const yAxis = (yAxisMap as any)?.price ?? Object.values(yAxisMap || {})[0];
+  if (!yAxis?.scale) return null;
+
+  const PILL_W = 116;
+  const PILL_H = 24;
+  const PILL_X = offset.left + 4;
+  const LABEL_GAP = 2;
+  const CURVE_PAD = 4;
+
+  // 标签重叠检测
+  const overlapsAny = (rect: { x: number; y: number; width: number; height: number }) => {
+    for (const r of labelRects) {
+      if (rect.x - LABEL_GAP < r.x + r.width && rect.x + rect.width + LABEL_GAP > r.x &&
+          rect.y - LABEL_GAP < r.y + r.height && rect.y + rect.height + LABEL_GAP > r.y) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // 曲线重叠检测（与 computeTimelineSignalElements 内的 overlapsCurve 逻辑一致）
+  const overlapsCurve = (rect: { x: number; y: number; width: number; height: number }) => {
+    if (priceLineData.length < 2) return false;
+    const rx0 = rect.x;
+    const rx1 = rect.x + rect.width;
+    for (let i = 0; i < priceLineData.length; i++) {
+      const p = priceLineData[i];
+      if (p.x < rx0) continue;
+      if (p.x > rx1) break;
+      const cy = p.y;
+      if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) return true;
+    }
+    const SAMPLES = Math.min(20, Math.max(5, Math.ceil(rect.width / 4)));
+    for (let s = 0; s <= SAMPLES; s++) {
+      const sx = rx0 + (rx1 - rx0) * (s / SAMPLES);
+      let lo = 0, hi = priceLineData.length - 1;
+      if (sx <= priceLineData[0].x) {
+        const cy = priceLineData[0].y;
+        if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) return true;
+        continue;
+      }
+      if (sx >= priceLineData[hi].x) {
+        const cy = priceLineData[hi].y;
+        if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) return true;
+        continue;
+      }
+      while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1;
+        if (priceLineData[mid].x <= sx) lo = mid; else hi = mid;
+      }
+      const p0 = priceLineData[lo], p1 = priceLineData[hi];
+      const t = (sx - p0.x) / (p1.x - p0.x || 1);
+      const cy = p0.y + (p1.y - p0.y) * t;
+      if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) return true;
+    }
+    return false;
+  };
+
+  const overlapsAnyOrCurve = (rect: { x: number; y: number; width: number; height: number }) =>
+    overlapsAny(rect) || overlapsCurve(rect);
+
+  const elements: React.ReactNode[] = [];
+  // 图表边界（用于防止标签越界）
+  const chartTop = offset.top ?? 0;
+  const chartBottom = offset.top != null ? offset.top + (offset.height ?? 0) : 9999;
+  for (let li = 0; li < recentDayLows.length; li++) {
+    const item = recentDayLows[li];
+    if (!item.low || item.low <= 0) continue;
+    const parts = item.date.split("-");
+    const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
+    const lineY = yAxis.scale(item.low);
+
+    // 始终把标签偏离5日最低线，并添加虚线连接线指向5日最低线。
+    // 偏离方向：优先选择空间更大的一侧（避免越界），然后避让信号标签和分时曲线。
+    const spaceAbove = lineY - chartTop;
+    const spaceBelow = chartBottom - lineY;
+    const preferAbove = spaceAbove >= spaceBelow;
+    const OFFSET = 12; // 标签与5日最低线的基础间距
+
+    // 候选位置（按优先级排序）：preferred小偏移 → other side小偏移 → preferred大偏移 → other side大偏移
+    const candidates: { y: number }[] = [
+      { y: preferAbove ? lineY - PILL_H - OFFSET : lineY + OFFSET },
+      { y: preferAbove ? lineY + OFFSET : lineY - PILL_H - OFFSET },
+      { y: preferAbove ? lineY - PILL_H * 2 - OFFSET * 2 : lineY + PILL_H + OFFSET * 2 },
+      { y: preferAbove ? lineY + PILL_H + OFFSET * 2 : lineY - PILL_H * 2 - OFFSET * 2 },
+      { y: preferAbove ? lineY - PILL_H / 2 - PILL_H - OFFSET : lineY + PILL_H / 2 + OFFSET },
+    ];
+
+    let pillRect: { x: number; y: number; width: number; height: number } | null = null;
+    for (const c of candidates) {
+      const rect = { x: PILL_X, y: c.y, width: PILL_W, height: PILL_H };
+      // 边界检查：标签需在图表可视区域内（允许少量越界）
+      if (rect.y < chartTop - 4 || rect.y + rect.height > chartBottom + 4) continue;
+      if (!overlapsAnyOrCurve(rect)) {
+        pillRect = rect;
+        break;
+      }
+    }
+    // 兜底：所有候选位置均失败，则放在空间更大的一侧（即便有重叠也保证标签可见）
+    if (!pillRect) {
+      const fallbackY = preferAbove ? Math.max(chartTop + 2, lineY - PILL_H - OFFSET) : Math.min(chartBottom - PILL_H - 2, lineY + OFFSET);
+      pillRect = { x: PILL_X, y: fallbackY, width: PILL_W, height: PILL_H };
+    }
+
+    // 标签始终偏离5日最低线，因此始终需要虚线连接线
+    const pillCenterY = pillRect.y + PILL_H / 2;
+    const pillIsAbove = pillCenterY < lineY;
+    const connectorX = PILL_X + PILL_W / 2;
+    // 连接线起点：标签靠5日最低线那一侧的边
+    const connectorY1 = pillIsAbove ? pillRect.y + PILL_H : pillRect.y;
+
+    elements.push(
+      <g key={`recent-low-pill-${li}`}>
+        {/* 虚线连接线：始终从标签连到5日最低线，指向5日最低线 */}
+        <line
+          x1={connectorX}
+          y1={connectorY1}
+          x2={connectorX}
+          y2={lineY}
+          stroke="#dc2626"
+          strokeWidth={1.3}
+          strokeDasharray="3 2"
+          opacity={0.85}
+        />
+        {/* 5日最低线上的连接点圆点（强调指向位置） */}
+        <circle cx={connectorX} cy={lineY} r={2.5} fill="#dc2626" stroke="white" strokeWidth={0.8} />
+        {/* 标签发光层 */}
+        <rect
+          x={pillRect.x - 2}
+          y={pillRect.y - 2}
+          width={PILL_W + 4}
+          height={PILL_H + 4}
+          rx={14}
+          fill="#dc2626"
+          fillOpacity={0.25}
+        />
+        {/* 标签背景 */}
+        <rect
+          x={pillRect.x}
+          y={pillRect.y}
+          width={PILL_W}
+          height={PILL_H}
+          rx={12}
+          fill="#dc2626"
+          fillOpacity={0.95}
+          stroke="#fca5a5"
+          strokeWidth={1}
+        />
+        <text
+          x={pillRect.x + PILL_W / 2}
+          y={pillRect.y + PILL_H / 2 + 1}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="white"
+          fontSize={10}
+          fontWeight="900"
+        >
+          {`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}
+        </text>
+      </g>
+    );
+  }
+  return elements.length > 0 ? <g>{elements}</g> : null;
+}
 
 // ── Build a lightweight fingerprint from formattedGraphicalItems ──
 // Only checks the price line's last point position and signal/marker counts.
@@ -1918,7 +2092,7 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
 //   Layer 3 (top):    Expanded bubbles (interactive, must be on top for usability)
 
 function CombinedChartOverlay(props: any) {
-  const { formattedGraphicalItems, xAxisMap, yAxisMap, mirrored } = props;
+  const { formattedGraphicalItems, xAxisMap, yAxisMap, mirrored, recentDayLows, offset } = props;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggleExpand = useCallback((id: string) => {
@@ -1990,11 +2164,14 @@ function CombinedChartOverlay(props: any) {
   // hasn't changed. The fingerprint is cheap to compute (one pass over points) and
   // lets us skip the heavy signal extraction + overlap resolution when data is the same.
   // OVERLAY_FP_VERSION: bump when placement/label logic changes to invalidate stale cache.
-  const OVERLAY_FP_VERSION = "v4-curve-avoid";
+  const OVERLAY_FP_VERSION = "v5-lowpill-dash";
+  const recentLowsKey = recentDayLows && recentDayLows.length > 0
+    ? recentDayLows.map(d => `${d.date}:${d.low}`).join("|")
+    : "none";
   const fp = buildOverlayFingerprint(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds)
-    + `:${OVERLAY_FP_VERSION}:${mirrored ? "m" : "n"}`;
+    + `:${OVERLAY_FP_VERSION}:${mirrored ? "m" : "n"}:rl=${recentLowsKey}`;
 
-  const { signalResult, pvPlacedLabels } = fp !== "empty"
+  const { signalResult, pvPlacedLabels, recentLowPill } = fp !== "empty"
     ? overlayCache.compute(fp, () => {
         // Compute signal elements (factor signals)
         const sr = computeTimelineSignalElements(
@@ -2007,13 +2184,31 @@ function CombinedChartOverlay(props: any) {
         // Resolve PV label overlaps
         const pvLabels = pvPoints.length > 0 ? resolvePvLabelOverlaps(pvPoints) : [];
 
-        return { signalResult: sr, pvPlacedLabels: pvLabels };
+        // Compute 5-day low pill with overlap avoidance (uses signal labelRects + priceLineData if available)
+        const pillLabelRects = sr?.labelRects ?? [];
+        let pillPriceLineData = sr?.priceLineData ?? [];
+        // 若 computeTimelineSignalElements 返回 null（无信号），则自行提取 priceLineData 用于曲线避让检测
+        if (pillPriceLineData.length === 0 && formattedGraphicalItems) {
+          for (const item of formattedGraphicalItems) {
+            if (item?.props?.points && Array.isArray(item.props.points)) {
+              const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+              if (stroke === "#eab308" || stroke === "#facc15" || stroke === "#ca8a04") continue;
+              if (pillPriceLineData.length === 0) {
+                pillPriceLineData = item.props.points;
+                break;
+              }
+            }
+          }
+        }
+        const pill = computeRecentLowPill(recentDayLows, offset, yAxisMap, pillLabelRects, pillPriceLineData);
+
+        return { signalResult: sr, pvPlacedLabels: pvLabels, recentLowPill: pill };
       })
-    : { signalResult: null, pvPlacedLabels: [] as PlacedLabel[] };
+    : { signalResult: null, pvPlacedLabels: [] as PlacedLabel[], recentLowPill: null as React.ReactNode };
 
-  if (!signalResult && pvPlacedLabels.length === 0 && !vwapAnnotations) return null;
+  if (!signalResult && pvPlacedLabels.length === 0 && !vwapAnnotations && !recentLowPill) return null;
 
-  // 分时倒影模式：显示VWAP禁止买卖标注 + 核心买卖点，不显示常规因子标签和选股标记
+  // 分时倒影模式：显示VWAP禁止买卖标注 + 核心买卖点 + 5日最低标签，不显示常规因子标签和选股标记
   if (mirrored) {
     return (
       <g>
@@ -2021,6 +2216,8 @@ function CombinedChartOverlay(props: any) {
         {vwapAnnotations && <VwapBanAnnotations vwapPoints={vwapAnnotations.vwapPoints} pricePoints={vwapAnnotations.pricePoints} />}
         {/* Layer 3: 核心买卖点（放量下跌买点/高开卖出/次低点缩量买入/放量上涨卖点等） */}
         {signalResult?.prioritySignalElements}
+        {/* Layer 5 (top): 5日最低标签 — 带虚线连接线，避让其他标签 */}
+        {recentLowPill}
       </g>
     );
   }
@@ -2039,8 +2236,10 @@ function CombinedChartOverlay(props: any) {
       )}
       {/* Layer 3: 优先信号（高开卖出/放量下跌买点）— 确保显示在最前面，不被PV标签遮挡 */}
       {signalResult?.prioritySignalElements}
-      {/* Layer 4 (top): Expanded bubbles — interactive, must be on top for usability */}
+      {/* Layer 4: Expanded bubbles — interactive, must be on top for usability */}
       {signalResult?.bubbleElements}
+      {/* Layer 5 (top): 5日最低标签 — 带虚线连接线，避让其他标签 */}
+      {recentLowPill}
     </g>
   );
 }
@@ -4087,8 +4286,6 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             {/* Lowest price among last 5 trading days — thick gradient line (after Area/Line so it renders on top) */}
             {recentDayLows && recentDayLows.length > 0 && recentDayLows
               .map((item, i) => {
-                const parts = item.date.split("-");
-                const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
                 return (
                   <Customized key={`recentlow-${i}`} component={(props: any) => {
                     const { xAxisMap, yAxisMap, offset } = props;
@@ -4149,51 +4346,8 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                           strokeWidth={0.8}
                           strokeOpacity={0.25}
                         />
-                        {/* Label pill inside left edge of chart area */}
-                        {(() => {
-                          const pillW = 116;
-                          const pillH = 24;
-                          // Place pill just inside the left chart edge so it's never clipped
-                          const pillX = x1 + 4;
-                          return (
-                            <>
-                              {/* Pill glow */}
-                              <rect
-                                x={pillX - 2}
-                                y={y - pillH / 2 - 2}
-                                width={pillW + 4}
-                                height={pillH + 4}
-                                rx={14}
-                                fill="#dc2626"
-                                fillOpacity={0.25}
-                                filter="url(#recentLowGlow)"
-                              />
-                              {/* Pill background */}
-                              <rect
-                                x={pillX}
-                                y={y - pillH / 2}
-                                width={pillW}
-                                height={pillH}
-                                rx={12}
-                                fill="#dc2626"
-                                fillOpacity={0.95}
-                                stroke="#fca5a5"
-                                strokeWidth={1}
-                              />
-                              <text
-                                x={pillX + pillW / 2}
-                                y={y + 1}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                fill="white"
-                                fontSize={10}
-                                fontWeight="900"
-                              >
-                                {`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}
-                              </text>
-                            </>
-                          );
-                        })()}
+                        {/* 5日最低标签 (pill + 虚线连接线) 由 CombinedChartOverlay 统一渲染，
+                            可访问所有信号标签位置进行重叠避让，避免与买卖点标签重合 */}
                       </g>
                     );
                   }} />
@@ -4495,7 +4649,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 }} />
               );
             })()}
-            <Customized component={CombinedChartOverlay} mirrored={mirrored} />
+            <Customized component={CombinedChartOverlay} mirrored={mirrored} recentDayLows={recentDayLows} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

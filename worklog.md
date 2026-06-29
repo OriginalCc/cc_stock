@@ -602,3 +602,51 @@ Stage Summary:
 - 修复模块级缓存污染问题（版本号+mirrored标记）
 - 连接线延长且基于实际位置智能连接，反方向标签用虚线区分
 - 标签间重叠完全消除（0对），曲线重叠从3个降到1个（剧烈波动区域）
+
+---
+Task ID: 14
+Agent: main
+Task: 分时倒影页面让5日最低点的标签新增虚线指向他，不要和其他标签重合
+
+Work Log:
+- 分析现有5日最低点渲染：recentDayLows Customized组件在line 4088-4202渲染5日最低水平线（渐变红）+ 红色pill标签"▼5日最低 MM/DD 价格"，pill直接贴在线上（y=lineY）
+- 问题：pill贴在线上，可能与附近的买卖点信号标签重叠；且用户要求新增虚线指向标签
+- 设计方案：将pill渲染从recentDayLows Customized移到CombinedChartOverlay（可访问所有信号标签位置labelRects和分时曲线priceLineData进行重叠避让），pill始终偏离5日最低线，并用虚线连接线指向5日最低线
+- 实现步骤：
+  1. 修改computeTimelineSignalElements返回值：新增labelRects和priceLineData字段，供外部使用
+  2. 新增computeRecentLowPill辅助函数：
+     - 接收recentDayLows, offset, yAxisMap, labelRects, priceLineData
+     - 始终把pill偏离5日最低线（不再贴在线上）
+     - 偏离方向：优先选择空间更大的一侧（lineY到图表顶部/底部的距离），避免越界
+     - 5级候选位置：preferred小偏移(±12px) → other side小偏移 → preferred大偏移(±2*PILL_H) → other side大偏移 → 兜底位置
+     - 每个候选位置用overlapsAnyOrCurve检测（标签重叠+曲线重叠），还要做边界检查
+     - 始终绘制虚线连接线（strokeDasharray="3 2", strokeWidth=1.3, #dc2626）从pill靠线侧边到5日最低线
+     - 在5日最低线连接点处绘制红色圆点（r=2.5, #dc2626, white stroke）强调指向位置
+  3. 修改CombinedChartOverlay：
+     - 接收recentDayLows和offset props
+     - 在overlayCache.compute回调内调用computeRecentLowPill（使用sr.labelRects和sr.priceLineData）
+     - 若sr为null（无信号），自行从formattedGraphicalItems提取priceLineData
+     - 在mirrored分支和normal分支都渲染recentLowPill（Layer 5顶层）
+     - 更新early-return条件：!signalResult && pvPlacedLabels.length===0 && !vwapAnnotations && !recentLowPill
+  4. 修改buildOverlayFingerprint：在fp末尾加`:rl=${recentLowsKey}`（recentDayLows的date+low），缓存失效
+  5. bump OVERLAY_FP_VERSION: "v4-curve-avoid" → "v5-lowpill-dash"
+  6. 修改<Customized component={CombinedChartOverlay}>：传recentDayLows={recentDayLows}
+  7. 修改recentDayLows Customized：移除pill渲染（rect+text+glow），只保留5日最低水平线渲染
+- Lint检查通过
+- Agent Browser验证（贵州茅台/比亚迪/中国平安三只股票 + 正常/倒影两种模式）：
+  * 贵州茅台（倒影）：5日最低线Y=102，pill在Y=121（线下方），虚线Y=114→102长12px ✓
+  * 比亚迪（倒影）：5日最低线Y=97，pill在Y=116（线下方），虚线Y=109→97长12px，12个信号标签0重叠 ✓
+  * 中国平安（倒影）：5日最低线Y=91，pill在Y=110（线下方），虚线Y=103→91长12px，14个信号标签0重叠 ✓
+  * 中国平安（正常）：5日最低线Y=445（底部），pill在Y=416（线上方），虚线Y=433→445长12px ✓
+  * VLM视觉确认：虚线连接线存在，标签不与其他标签重叠，布局清晰 ✓
+  * 浏览器控制台无错误 ✓
+- git commit + push 完成
+
+Stage Summary:
+- 5日最低点标签始终偏离5日最低线显示，新增红色虚线（strokeDasharray="3 2"）从标签指向5日最低线
+- 5日最低线上有红色圆点标记连接点位置，强调虚线指向
+- 标签避让所有买卖点信号标签（labelRects）和分时曲线（priceLineData），0重叠
+- 偏离方向智能选择空间更大的一侧，避免标签越出图表边界
+- 5级候选位置 + 兜底位置，保证标签始终可见
+- 正常模式和倒影模式均生效
+- OVERLAY_FP_VERSION升级到v5-lowpill-dash，缓存正确失效
