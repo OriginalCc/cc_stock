@@ -267,3 +267,42 @@ Stage Summary:
 - 时间轴完美对齐(09:30-15:00)，数据点位置与分时图一致
 - 图表始终显示(即使无数据也显示坐标轴和网格)
 - 所有视觉效果保留：Catmull-Rom曲线、渐变填充、发光、药丸标签、脉冲动画
+
+---
+Task ID: 1
+Agent: main
+Task: 分时图的功能，除了标签功能外，其他功能倒视图也要有
+
+Work Log:
+- 分析主图(time-sharing-panel.tsx line 3676-4407)的所有功能元素
+- 识别需要镜像到倒影图(line 3573-3860)的图形元素（不含纯文字标签）：
+  1. 均价线 avgPrice Line (黄色虚线 #ca8a04) - 倒影图缺失
+  2. 支撑/阻力位 keyPriceLevels (无label ReferenceLine) - 倒影图缺失
+  3. 5日最低线 recentDayLows (粗渐变线，无pill标签) - 倒影图缺失
+  4. 早盘禁买区蒙版 earlyVolDeclineBan (斜线条纹，无文字) - 倒影图缺失
+  5. VWAP三层色带 (红黄绿三色区域，无文字) - 倒影图缺失
+  6. 午休竖线 Lunch break divider - 倒影图缺失
+  7. 买入最佳时期绿色蒙版 (无badge文字) - 倒影图缺失
+  8. 十字光标竖线 Crosshair - 倒影图缺失
+- 倒影图已有保留元素：CartesianGrid、XAxis/YAxis、Area price、Line price、ReferenceLine(prevClose/MA5/highest/lowest)、最高/最低pill标签(用户之前要求)
+- 用Edit工具替换整个ComposedChart块(line 3577-3861)，按主图渲染顺序添加所有图形元素
+- 关键技术点：
+  * 倒影图整体被scaleY(-1)翻转，所有图形元素自动上下镜像
+  * 5日最低线渐变ID使用inv-recentLowGrad-${i}避免与主图冲突
+  * 禁买区蒙版clipPath ID使用inv-ban-clip避免冲突
+  * 买入最佳时期蒙版渐变ID使用inv-bestBuyGrad避免冲突
+  * pill标签保留scale(1,-1)反翻转保持文字可读
+- Lint检查通过
+- Agent Browser验证：
+  * 登录密码888888，切换到"分时"tab
+  * DOM检查确认倒影图包含6个path(Area+priceLine+avgPrice Line+3个VWAP色带)
+  * DOM检查确认倒影图包含10个line(网格+昨收+最高最低+5日最低线4层)
+  * 对比主图(6 path, 55 line)：核心图形元素完全匹配，主图多出的line都是CombinedChartOverlay信号标记/文字标签背景(用户要求除外的标签功能)
+  * VLM视觉分析确认倒影图与主图元素一一对应(黄色虚线均价线、红色水平线、彩色VWAP色带)
+  * 浏览器控制台无错误
+
+Stage Summary:
+- 倒影图新增8类图形元素：均价线、支撑/阻力位、5日最低线、早盘禁买区蒙版、VWAP三层色带、午休竖线、买入最佳时期蒙版、十字光标
+- 倒影图与主图pathCount完全相同(6 vs 6)，核心图形元素100%一一对应
+- 倒影图保留最高/最低pill标签(用户之前要求)，其他文字标签按用户要求不镜像
+- 条件渲染元素(买入最佳时期需股票下跌、禁买区需触发earlyVolDeclineBan)在满足条件时自动显示

@@ -3578,14 +3578,9 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               data={zoomData}
               margin={{ top: 36, right: 82, left: 2, bottom: 0 }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.10} vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.15} vertical={false} />
               {/* Hidden XAxis to enforce the same domain as the main chart */}
-              <XAxis
-                dataKey="idx"
-                type="number"
-                domain={xDomain}
-                hide
-              />
+              <XAxis dataKey="idx" type="number" domain={xDomain} hide />
               <YAxis
                 yAxisId="price"
                 domain={[yMin, yMax]}
@@ -3612,21 +3607,222 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                   <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <Area yAxisId="price" type="monotone" dataKey="price" stroke="none" fill="#3b82f6" fillOpacity={0.06} isAnimationActive={false} connectNulls />
-              <Line yAxisId="price" type="monotone" dataKey="price" stroke="#3b82f6" strokeWidth={1} dot={false} isAnimationActive={false} connectNulls />
+              {/* ── 昨收价线 (无label, 与主图对应) ── */}
+              <ReferenceLine yAxisId="price" y={safePrevClose} stroke="#64748b" strokeWidth={1.2} strokeOpacity={0.8} />
+              {/* ── 5日均线 prevDayMA5 (无label, 与主图对应) ── */}
               {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
-                <ReferenceLine yAxisId="price" y={prevDayMA5} stroke="#a855f7" strokeWidth={0.8} strokeDasharray="4 2" strokeOpacity={0.5} />
+                <ReferenceLine yAxisId="price" y={prevDayMA5} stroke="#eab308" strokeDasharray="8 4" strokeWidth={1.2} strokeOpacity={0.9} />
               )}
-              <ReferenceLine yAxisId="price" y={safePrevClose} stroke="#64748b" strokeWidth={0.6} strokeDasharray="2 2" strokeOpacity={0.4} />
-              {/* Highest price line in inverted chart */}
+              {/* ── 支撑/阻力位 keyPriceLevels (无label, 与主图对应) ── */}
+              {keyPriceLevels?.filter(l => l.price >= yMin && l.price <= yMax).map((level, li) => {
+                if (level.name === "昨收价") return null;
+                if (level.name.startsWith("涨停") || level.name.startsWith("跌停")) return null;
+                if (level.name.includes("整数关")) return null;
+                if (level.name.startsWith("Fib")) return null;
+                if (level.name.startsWith("日内高") || level.name.startsWith("日内低")) return null;
+                const isSupport = level.type === "support";
+                const lineColor = isSupport ? "#16a34a" : "#dc2626";
+                return (
+                  <ReferenceLine key={`inv-keylevel-${li}`} yAxisId="price" y={level.price} stroke={lineColor} strokeDasharray="6 4" strokeWidth={1.4} strokeOpacity={0.85} />
+                );
+              })}
+              {/* ── 午休竖线 Lunch break divider (与主图对应) ── */}
+              {!isZoomed && (() => {
+                const lunchIdx = Math.floor(zoomData.length / 2);
+                if (lunchIdx > 0) {
+                  return <ReferenceLine yAxisId="price" x={lunchIdx} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2 4" />;
+                }
+                return null;
+              })()}
+              {/* ── 早盘放量下跌禁买线 (无label, 与主图对应) ── */}
+              {earlyVolDeclineBan && (() => {
+                const ban = earlyVolDeclineBan;
+                const banIdx = banMaskIdx;
+                if (banIdx < 0) return null;
+                const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
+                return <ReferenceLine yAxisId="price" x={banIdx} stroke={tierColor} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.7} />;
+              })()}
+              {/* ── 早盘禁买区蒙版 (无文字, 与主图对应) ── */}
+              <Customized component={(props: any) => {
+                if (!earlyVolDeclineBan) return null;
+                const ban = earlyVolDeclineBan;
+                const banIdx = banMaskIdx;
+                if (banIdx < 0) return null;
+                const { xAxisMap, offset } = props;
+                if (!xAxisMap || !offset) return null;
+                const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
+                if (!xAxis || !xAxis.scale) return null;
+                const xScale = xAxis.scale;
+                const x1 = xScale(0);
+                const x2 = xScale(banIdx);
+                const y1 = offset.top;
+                const y2 = offset.top + offset.height;
+                const w = x2 - x1;
+                const h = y2 - y1;
+                if (w <= 0 || h <= 0) return null;
+                const tierColor = { mild: "#f59e0b", medium: "#ef4444", strong: "#dc2626", extreme: "#991b1b" }[ban.tier];
+                const bgOpacity = 0.06 + (ban.dangerIndex / 100) * 0.20;
+                const diagLines: React.ReactNode[] = [];
+                const gap = 14;
+                for (let i = -h; i < w + h; i += gap) {
+                  diagLines.push(<line key={i} x1={i} y1={0} x2={i - h} y2={h} stroke={tierColor} strokeWidth={1.2} strokeOpacity={0.30} />);
+                }
+                return (
+                  <g>
+                    <defs>
+                      <clipPath id="inv-ban-clip">
+                        <rect x={x1} y={y1} width={w} height={h} />
+                      </clipPath>
+                    </defs>
+                    <rect x={x1} y={y1} width={w} height={h} fill={tierColor} fillOpacity={bgOpacity} />
+                    <g clipPath="url(#inv-ban-clip)">
+                      <g transform={`translate(${x1},${y1})`}>{diagLines}</g>
+                    </g>
+                    <rect x={x1} y={y1} width={w} height={h} fill="none" stroke={tierColor} strokeWidth={1.0} strokeOpacity={0.45} />
+                  </g>
+                );
+              }} />
+              {/* ── 最高/最低价虚线 (无pill, 与主图对应) ── */}
               {highestPrice != null && highestPrice !== safePrevClose && (
-                <ReferenceLine yAxisId="price" y={highestPrice} stroke="#ef4444" strokeWidth={1} strokeDasharray="6 3" strokeOpacity={0.7} />
+                <ReferenceLine yAxisId="price" y={highestPrice} stroke="#ef4444" strokeDasharray="8 4" strokeWidth={1.8} />
               )}
-              {/* Lowest price line in inverted chart */}
               {lowestPrice != null && lowestPrice !== safePrevClose && (
-                <ReferenceLine yAxisId="price" y={lowestPrice} stroke="#22c55e" strokeWidth={1} strokeDasharray="6 3" strokeOpacity={0.7} />
+                <ReferenceLine yAxisId="price" y={lowestPrice} stroke="#22c55e" strokeDasharray="8 4" strokeWidth={1.8} />
               )}
-              {/* Highest/Lowest price labels via Customized (rendered flipped, so text is also flipped — but we counter-flip to keep readable) */}
+              {/* ── Area fill + Line price (与主图对应) ── */}
+              <Area yAxisId="price" type="monotone" dataKey="price" stroke="none" fill="#3b82f6" fillOpacity={0.06} isAnimationActive={false} connectNulls />
+              <Line yAxisId="price" type="monotone" dataKey="price" stroke="#3b82f6" strokeWidth={isZoomed ? 1.5 : 1} dot={false} isAnimationActive={false} connectNulls />
+              {/* ── 均价线 avgPrice (虚线, 与主图对应) ── */}
+              <Line yAxisId="price" type="monotone" dataKey="avgPrice" stroke="#ca8a04" dot={false} strokeWidth={isZoomed ? 1.8 : 1.3} strokeDasharray="5 3" isAnimationActive={false} />
+              {/* ── 5日最低线 recentDayLows (粗渐变线, 无pill, 与主图对应) ── */}
+              {recentDayLows && recentDayLows.length > 0 && recentDayLows.map((item, i) => (
+                <Customized key={`inv-recentlow-${i}`} component={(props: any) => {
+                  const { xAxisMap, yAxisMap, offset } = props;
+                  if (!xAxisMap || !yAxisMap || !offset) return null;
+                  const yAxis = (yAxisMap as any).price ?? Object.values(yAxisMap)[0] as any;
+                  if (!yAxis?.scale) return null;
+                  const y = yAxis.scale(item.low);
+                  const x1 = offset.left;
+                  const x2 = offset.left + offset.width;
+                  return (
+                    <g>
+                      <defs>
+                        <linearGradient id={`inv-recentLowGrad-${i}`} x1={x1} y1={y} x2={x2} y2={y} gradientUnits="userSpaceOnUse">
+                          <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.6} />
+                          <stop offset="20%" stopColor="#f97316" stopOpacity={0.9} />
+                          <stop offset="50%" stopColor="#ef4444" stopOpacity={1} />
+                          <stop offset="80%" stopColor="#dc2626" stopOpacity={1} />
+                          <stop offset="100%" stopColor="#b91c1c" stopOpacity={1} />
+                        </linearGradient>
+                        <filter id={`inv-recentLowGlow-${i}`} x="-5%" y="-100%" width="110%" height="300%">
+                          <feGaussianBlur stdDeviation="5" result="blur" />
+                          <feMerge>
+                            <feMergeNode in="blur" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                      </defs>
+                      <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#inv-recentLowGrad-${i})`} strokeWidth={5} strokeOpacity={0.12} filter={`url(#inv-recentLowGlow-${i})`} />
+                      <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#inv-recentLowGrad-${i})`} strokeWidth={2.5} strokeOpacity={0.25} />
+                      <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#inv-recentLowGrad-${i})`} strokeWidth={1.5} strokeLinecap="round" />
+                      <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} />
+                    </g>
+                  );
+                }} />
+              ))}
+              {/* ── VWAP三层色带 (无文字, 与主图对应) ── */}
+              <Customized component={(props: any) => {
+                const { yAxisMap, xAxisMap, offset } = props;
+                if (!yAxisMap || !xAxisMap || !offset) return null;
+                const yAxis = yAxisMap.price;
+                const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
+                if (!yAxis || !yAxis.scale || !xAxis || !xAxis.scale) return null;
+                const yScale = yAxis.scale;
+                const xScale = xAxis.scale;
+                const pts: { idx: number; avg: number }[] = [];
+                for (let i = 0; i < zoomData.length; i++) {
+                  const d = zoomData[i];
+                  if (d.hasData && d.avgPrice != null && d.avgPrice > 0) {
+                    pts.push({ idx: i, avg: d.avgPrice });
+                  }
+                }
+                if (pts.length < 2) return null;
+                const plotLeft = offset.left;
+                const plotRight = offset.left + offset.width;
+                const buildBandPath = (
+                  upperFn: (avg: number) => number,
+                  lowerFn: (avg: number) => number,
+                ) => {
+                  const fwd: string[] = [];
+                  const bwd: string[] = [];
+                  for (let i = 0; i < pts.length; i++) {
+                    const x = Math.max(Math.min(xScale(pts[i].idx), plotRight), plotLeft);
+                    const yU = upperFn(pts[i].avg);
+                    const yL = lowerFn(pts[i].avg);
+                    fwd.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${yU.toFixed(1)}`);
+                    bwd.push(`${x.toFixed(1)},${yL.toFixed(1)}`);
+                  }
+                  return fwd.join(' ') + ' ' + bwd.reverse().join(' ').replace(/^[ML]/, 'L') + ' Z';
+                };
+                const innerPct = 0.001;
+                const outerPct = 0.003;
+                const innerPath = buildBandPath(
+                  (avg) => yScale(avg * (1 + innerPct)),
+                  (avg) => yScale(avg * (1 - innerPct)),
+                );
+                const upperPath = buildBandPath(
+                  (avg) => yScale(avg * (1 + outerPct)),
+                  (avg) => yScale(avg * (1 + innerPct)),
+                );
+                const lowerPath = buildBandPath(
+                  (avg) => yScale(avg * (1 - innerPct)),
+                  (avg) => yScale(avg * (1 - outerPct)),
+                );
+                return (
+                  <g>
+                    <path d={innerPath} fill="#eab308" fillOpacity={0.10} stroke="none" />
+                    <path d={upperPath} fill="#22c55e" fillOpacity={0.07} stroke="none" />
+                    <path d={lowerPath} fill="#ef4444" fillOpacity={0.07} stroke="none" />
+                  </g>
+                );
+              }} />
+              {/* ── 十字光标竖线 Crosshair (与主图对应) ── */}
+              {deferredCrosshairIdx != null && crosshairItem?.hasData && (
+                <ReferenceLine yAxisId="price" x={deferredCrosshairIdx} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
+              )}
+              {/* ── 买入最佳时期绿色蒙版 (无badge文字, 与主图对应) ── */}
+              {lastItem && lastItem.price > 0 && safePrevClose > 0 && lastItem.price < safePrevClose && (() => {
+                const startItem = zoomData.find(d => d.time === "10:30");
+                const endItem = zoomData.find(d => d.time === "11:30");
+                if (startItem == null || endItem == null) return null;
+                return (
+                  <Customized component={(props: any) => {
+                    const { xAxisMap, offset } = props;
+                    if (!xAxisMap || !offset) return null;
+                    const xAxis = Object.values(xAxisMap)[0] as any;
+                    if (!xAxis?.scale) return null;
+                    const xStart = xAxis.scale(startItem.idx);
+                    const xEnd = xAxis.scale(endItem.idx);
+                    const plotTop = offset.top;
+                    const plotHeight = offset.height;
+                    if (xEnd - xStart < 5) return null;
+                    return (
+                      <g>
+                        <defs>
+                          <linearGradient id="inv-bestBuyGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#16a34a" stopOpacity={0.18} />
+                            <stop offset="30%" stopColor="#22c55e" stopOpacity={0.10} />
+                            <stop offset="100%" stopColor="#16a34a" stopOpacity={0.04} />
+                          </linearGradient>
+                        </defs>
+                        <rect x={xStart} y={plotTop} width={xEnd - xStart} height={plotHeight} fill="url(#inv-bestBuyGrad)" stroke="#22c55e" strokeWidth={1.5} strokeDasharray="6 3" strokeOpacity={0.7} rx={3} />
+                        <rect x={xStart} y={plotTop} width={xEnd - xStart} height={38} fill="#16a34a" fillOpacity={0.10} rx={3} />
+                      </g>
+                    );
+                  }} />
+                );
+              })()}
+              {/* ── 最高/最低价pill标签 (用户之前要求保留, 用scale(1,-1)反翻转保持可读) ── */}
               <Customized component={(props: any) => {
                 const { yAxisMap, offset } = props;
                 if (!yAxisMap || !offset) return null;
