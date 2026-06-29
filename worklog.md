@@ -306,3 +306,30 @@ Stage Summary:
 - 倒影图与主图pathCount完全相同(6 vs 6)，核心图形元素100%一一对应
 - 倒影图保留最高/最低pill标签(用户之前要求)，其他文字标签按用户要求不镜像
 - 条件渲染元素(买入最佳时期需股票下跌、禁买区需触发earlyVolDeclineBan)在满足条件时自动显示
+
+---
+Task ID: 2
+Agent: main
+Task: 第一次进页面，默认显示分时图
+
+Work Log:
+- 读取 /home/z/my-project/src/hooks/use-stock-data.ts line 71-142
+- 找到 DEFAULT_CHART_MODE 常量定义在 line 80: `const DEFAULT_CHART_MODE: ChartMode = "5d-timeline"`
+- 将 DEFAULT_CHART_MODE 从 "5d-timeline" 改为 "timeline"（分时图）
+- 发现 line 139 的 localStorage 恢复逻辑只接受 "kline" 和 "5d-timeline"，遗漏了 "timeline"
+  原代码: `if (saved === "kline" || saved === "5d-timeline") return saved as ChartMode;`
+  修复为: `if (saved === "kline" || saved === "5d-timeline" || saved === "timeline") return saved as ChartMode;`
+  （修复前：用户选过"分时"后刷新会回到5d-timeline默认值，无法恢复分时模式）
+- Lint检查通过
+- Agent Browser验证：
+  * 清除 localStorage 的 lastChartMode 键，模拟首次进入
+  * reload 页面
+  * DOM检查确认"分时"tab selected="true"，"五日"tab selected="false"
+  * DOM检查确认页面显示"分时倒影"和"VOL"内容
+  * VLM视觉分析确认：当前选中"分时"tab，显示倒影图和VOL成交量图表
+  * 浏览器控制台无致命错误（仅recharts容器宽高警告，非阻塞）
+
+Stage Summary:
+- DEFAULT_CHART_MODE 从 "5d-timeline" 改为 "timeline"，首次进页面默认显示分时图
+- 修复 localStorage 恢复逻辑遗漏 "timeline" 的bug，用户选择分时图后刷新能正确恢复
+- 验证通过：清除缓存后reload，默认选中"分时"tab，显示倒影图+VOL
