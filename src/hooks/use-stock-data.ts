@@ -76,6 +76,7 @@ export type ChartMode = "5d-timeline" | "timeline" | "kline";
 
 const LAST_STOCK_KEY = "lastSelectedStock";
 const LAST_CHART_MODE_KEY = "lastChartMode";
+const LAST_MIRRORED_KEY = "lastMirrored";
 const DEFAULT_SYMBOL = "600519";
 const DEFAULT_CHART_MODE: ChartMode = "timeline";
 
@@ -139,6 +140,11 @@ export function useStockData() {
       if (saved === "kline" || saved === "5d-timeline" || saved === "timeline") return saved as ChartMode;
     } catch {}
     return DEFAULT_CHART_MODE;
+  });
+  // 分时图倒影：独立的镜像翻转状态，复用 timeline 数据，仅 UI 层翻转
+  const [mirrored, setMirroredState] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try { return localStorage.getItem(LAST_MIRRORED_KEY) === "1"; } catch { return false; }
   });
   const [loading, setLoading] = useState(false);
   const [timelineLoading, setTimelineLoading] = useState(() => {
@@ -396,6 +402,12 @@ export function useStockData() {
     [fetchTimelineWithQuote, fetchHistory, symbol, checkAShare]
   );
 
+  // ── Toggle mirrored (分时图倒影) ──
+  const setMirrored = useCallback((v: boolean) => {
+    setMirroredState(v);
+    try { localStorage.setItem(LAST_MIRRORED_KEY, v ? "1" : "0"); } catch {}
+  }, []);
+
   // ── Initial load: fetch immediately on mount (no mounted gate) ──
   useEffect(() => {
     if (initialFetchDone.current) return;
@@ -466,6 +478,8 @@ export function useStockData() {
     timelinePrevClose,
     interval,
     chartMode,
+    mirrored,
+    setMirrored,
     loading,
     timelineLoading,
     error,

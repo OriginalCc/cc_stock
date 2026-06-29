@@ -1920,7 +1920,8 @@ function timeSharingPropsEqual(
     prev.maxZoomIdx !== next.maxZoomIdx ||
     prev.panOffset !== next.panOffset ||
     prev.prevDayMA5 !== next.prevDayMA5 ||
-    prev.activeIndexKey !== next.activeIndexKey
+    prev.activeIndexKey !== next.activeIndexKey ||
+    prev.mirrored !== next.mirrored
   ) return false;
 
   // Data array: compare length + last item fingerprint (most frequent change)
@@ -2031,6 +2032,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   indexLoading,
   onRetryIndex,
   recentDayLows,
+  mirrored = false,
 }: {
   data: TimelineItem[];
   prevClose: number;
@@ -2062,6 +2064,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   indexLoading?: boolean;
   onRetryIndex?: () => void;
   recentDayLows?: { date: string; low: number }[];
+  mirrored?: boolean;
 }) {
   // v5.8: 低价股/ETF（昨收<5元）价格显示3位小数，避免分时线变平线
   const priceDps = (prevClose > 0 && prevClose < 5) ? 3 : 2;
@@ -3901,6 +3904,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
             <YAxis
               yAxisId="price"
               domain={[yMin, yMax]}
+              reversed={mirrored}
               tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
               tickLine={false}
               axisLine={false}
@@ -3911,6 +3915,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               yAxisId="percent"
               orientation="right"
               domain={[percentMin, percentMax]}
+              reversed={mirrored}
               tick={false}
               tickLine={false}
               axisLine={false}

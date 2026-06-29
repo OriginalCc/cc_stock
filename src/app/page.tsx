@@ -55,12 +55,13 @@ import {
   Search, TrendingUp, TrendingDown, Activity, ArrowUpRight, ArrowDownRight,
   X, Clock, Zap, LineChart, CandlestickChart, Filter,
   Star, Bell, BellOff, Volume2, Newspaper, CalendarDays, Flame,
-  History, ShieldCheck, Server, Scale, AlertTriangle, BookOpen, Info,
+  History, ShieldCheck, Server, Scale, AlertTriangle, BookOpen, Info, FlipVertical2,
 } from "lucide-react";
 
 export default function StockTAssistant() {
   const {
     symbol, quote, history, timeline, timelinePrevClose, interval, chartMode,
+    mirrored, setMirrored,
     loading, timelineLoading, error, latestSignal, selectStock, changeInterval, changeChartMode,
     searchStocks, isAShare: isAShareStock,
   } = useStockData();
@@ -978,7 +979,7 @@ export default function StockTAssistant() {
 
         {/* Chart Mode & Interval Selector */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {isAShareStock && (<Tabs value={chartMode} onValueChange={(v) => changeChartMode(v as ChartMode)}><TabsList className="h-8"><TabsTrigger value="5d-timeline" className="text-xs px-2 h-6"><CalendarDays className="h-3.5 w-3.5 mr-1" />五日</TabsTrigger><TabsTrigger value="timeline" className="text-xs px-3 h-6"><LineChart className="h-3.5 w-3.5 mr-1" />分时</TabsTrigger><TabsTrigger value="kline" className="text-xs px-3 h-6"><CandlestickChart className="h-3.5 w-3.5 mr-1" />K线</TabsTrigger></TabsList></Tabs>)}
+          {isAShareStock && (<Tabs value={mirrored ? "timeline-mirror" : chartMode} onValueChange={(v) => { if (v === "timeline-mirror") { setMirrored(true); if (chartMode !== "timeline") changeChartMode("timeline"); } else { setMirrored(false); changeChartMode(v as ChartMode); } }}><TabsList className="h-8"><TabsTrigger value="5d-timeline" className="text-xs px-2 h-6"><CalendarDays className="h-3.5 w-3.5 mr-1" />五日</TabsTrigger><TabsTrigger value="timeline" className="text-xs px-3 h-6"><LineChart className="h-3.5 w-3.5 mr-1" />分时</TabsTrigger><TabsTrigger value="timeline-mirror" className="text-xs px-3 h-6"><FlipVertical2 className="h-3.5 w-3.5 mr-1" />分时倒影</TabsTrigger><TabsTrigger value="kline" className="text-xs px-3 h-6"><CandlestickChart className="h-3.5 w-3.5 mr-1" />K线</TabsTrigger></TabsList></Tabs>)}
           <Button variant={showNewsAnalysis ? "default" : "outline"} size="sm" className="h-8 text-xs px-3" onClick={() => { const next = !showNewsAnalysis; setShowNewsAnalysis(next); if (next && !newsData.market) (window as any).__newsFetchAnalysis?.(); }}><Newspaper className="h-3.5 w-3.5 mr-1" />资讯分析</Button>
           {chartMode === "kline" && (<div className="flex items-center gap-1">{INTERVALS.map((intv) => (<Button key={intv.value} variant={interval === intv.value ? "default" : "ghost"} size="sm" className="h-7 text-xs px-3" onClick={() => changeInterval(intv.value)}>{intv.label}</Button>))}</div>)}
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
@@ -997,7 +998,7 @@ export default function StockTAssistant() {
           <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} recentDayLows={recentDayLows} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} sectorInfo={sectorInfo} szIndexRegime={szIndexRegime} sectorRegime={sectorRegime} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} />
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
-            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} recentDayLows={recentDayLows} />
+            <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} recentDayLows={recentDayLows} mirrored={mirrored} />
             {/* 涨跌家数 + 市场情绪指数 — 放在深证成指分时图后面 */}
             {marketBreadth && (() => {
               const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;
