@@ -1,0 +1,2002 @@
+     1→"use client";
+     2→
+     3→import dynamic from "next/dynamic";
+     4→import React, { useState, useRef, useMemo, useEffect, useCallback, useDeferredValue } from "react";
+     5→import {
+     6→  ComposedChart,
+     7→  Bar,
+     8→  Line,
+     9→  Area,
+    10→  XAxis,
+    11→  YAxis,
+    12→  CartesianGrid,
+    13→  Tooltip,
+    14→  ResponsiveContainer,
+    15→  ReferenceLine,
+    16→  Customized,
+    17→} from "recharts";
+    18→import type { TimelineItem } from "@/hooks/use-stock-data";
+    19→import {
+    20→  type TSignal,
+    21→  type MergedSignal,
+    22→  type PulseVolumeMarker,
+    23→  REGIME_CONFIG,
+    24→  T_MODE_CONFIG,
+    25→  formatVolume,
+    26→  formatAmount,
+    27→  formatPrice,
+    28→  generateTimelineSignals,
+    29→  getStrengthLabel,
+    30→  getStrengthColor,
+    31→  pvParseTime,
+    32→} from "@/lib/chart-shared";
+    33→import { fullDayDataCache, regimeDetailCache, intradayIntentCache, FingerprintCache } from "@/lib/fingerprint-cache";
+    34→import { ALL_TRADE_TIMES } from "@/lib/trading-times";
+    35→import {
+    36→  detectMarketRegimeDetail,
+    37→  getTimeWindow,
+    38→  type Strength,
+    39→  type RegimeDetail,
+    40→} from "@/lib/t-strategy";
+    41→import { analyzeIntradayIntent, type IntradayIntentResult } from "@/lib/institutional-intent";
+    42→import { Badge } from "@/components/ui/badge";
+    43→import { Button } from "@/components/ui/button";
+    44→import {
+    45→  ZoomIn,
+    46→  ZoomOut,
+    47→  RotateCcw,
+    48→  ChevronLeft,
+    49→  ChevronRight,
+    50→} from "lucide-react";
+    51→
+    52→// ── Overlay computation cache ──
+    53→// Avoids recomputing signals/labels when recharts gives us new object refs
+    54→// but the underlying data hasn't actually changed (e.g. during crosshair moves).
+    55→const overlayCache = new FingerprintCache<{
+    56→  signalResult: { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null;
+    57→  pvPlacedLabels: PlacedLabel[];
+    58→}>();
+    59→
+    60→const banCache = new FingerprintCache<{
+    61→  tier: "mild" | "medium" | "strong" | "extreme";
+    62→  banEndTime: number;
+    63→  banEndTimeStr: string;
+    64→  declineScore: number;
+    65→  dropRate: number;
+    66→  volRatio: number;
+    67→  speedIndex: number;
+    68→  stabilityIndex: number;
+    69→  waveCount: number;
+    70→  vwapDeviation: number;
+    71→  gapDownRate: number;
+    72→  dangerIndex: number;
+    73→  earlyLifted: boolean;
+    74→} | null>();
+    75→
+    76→// Dynamic import for MiniTimelinePanel (code-split for faster page load)
+    77→const MiniTimelinePanel = dynamic(() => import("@/components/mini-timeline-panel").then(m => ({ default: m.MiniTimelinePanel })), { ssr: false });
+    78→
+    79→// ── Stable shape renderers (module-level to avoid re-creating on every render) ──
+    80→
+    81→function timelineVolumeBarShape(props: any) {
+    82→  const { x, y, width, height, payload } = props;
+    83→  if (!payload?.hasData) return null;
+    84→  return <rect x={x} y={y} width={width} height={height} fill={payload.volUp ? "#ef4444" : "#16a34a"} />;
+    85→}
+    86→
+    87→function timelineMacdBarShape(props: any) {
+    88→  const { x, y, width, height, payload } = props;
+    89→  if (payload?.macd == null) return null;
+    90→  const h = Math.abs(height || 0);
+    91→  if (h < 0.3) return null;
+    92→  const ry = height < 0 ? y + height : y;
+    93→  return <rect x={x} y={ry} width={width} height={h} fill={payload.macd >= 0 ? "#ef4444" : "#16a34a"} />;
+    94→}
+    95→
+    96→// ── Tooltip Components ─────────────────────────────────
+    97→
+    98→const TimelineTooltip = ({ active, payload }: any) => {
+    99→  if (!active || !payload?.length) return null;
+   100→  const data = payload[0]?.payload;
+   101→  if (!data || !data.hasData) return null;
+   102→
+   103→  const isUp = data.changePercent >= 0;
+   104→  const signal = data.tSignal as TSignal | undefined;
+   105→
+   106→  return (
+   107→    <div className="bg-card border border-border rounded-lg p-3 shadow-xl text-xs min-w-[160px]">
+   108→      <div className="font-medium mb-2 text-foreground">{data.time}</div>
+   109→      <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+   110→        <span className="text-muted-foreground">价格</span>
+   111→        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{formatPrice(data.price)}</span>
+   112→        <span className="text-muted-foreground">均价</span>
+   113→        <span className="text-right font-mono text-yellow-500">{formatPrice(data.avgPrice)}</span>
+   114→        <span className="text-muted-foreground">涨跌</span>
+   115→        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{data.changePercent?.toFixed(2) ?? "--"}%</span>
+   116→        <span className="text-muted-foreground">成交量</span>
+   117→        <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+   118→        <span className="text-muted-foreground">成交额</span>
+   119→        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * (data.price ?? 0))}</span>
+   120→      </div>
+   121→      {signal && (
+   122→        <div className="mt-2 pt-2 border-t border-border">
+   123→          <Badge variant={signal.type === "buy" ? "default" : signal.type === "stoploss" ? "outline" : "destructive"} className="text-xs">
+   124→            {signal.type === "buy" ? "买入" : signal.type === "stoploss" ? "止损" : "卖出"} · {signal.reason}
+   125→            {signal.strength === "strong" ? " (强)" : signal.strength === "medium" ? " (中)" : " (弱)"}
+   126→          </Badge>
+   127→          {signal.tMode && (
+   128→            <div className="text-[10px] text-muted-foreground mt-1">
+   129→              模式: {signal.tMode} {signal.timeWindow && `· ${signal.timeWindow}`}
+   130→            </div>
+   131→          )}
+   132→          {signal.description && (
+   133→            <div className="text-[10px] text-muted-foreground">{signal.description}</div>
+   134→          )}
+   135→        </div>
+   136→      )}
+   137→    </div>
+   138→  );
+   139→};
+   140→
+   141→const TimelineVolumeTooltip = ({ active, payload }: any) => {
+   142→  if (!active || !payload?.length) return null;
+   143→  const data = payload[0]?.payload as TimelineItem & { volColor?: string; hasData?: boolean };
+   144→  if (!data || !data.hasData) return null;
+   145→  const isUp = data.changePercent >= 0;
+   146→
+   147→  return (
+   148→    <div className="bg-card border border-border rounded-lg p-3 shadow-xl text-xs min-w-[140px]">
+   149→      <div className="font-medium mb-1 text-foreground">{data.time}</div>
+   150→      <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+   151→        <span className="text-muted-foreground">成交量</span>
+   152→        <span className="text-right font-mono">{formatVolume(data.volume)}</span>
+   153→        <span className="text-muted-foreground">成交额</span>
+   154→        <span className="text-right font-mono text-yellow-500">{formatAmount(data.volume * 100 * (data.price ?? 0))}</span>
+   155→        <span className="text-muted-foreground">价格</span>
+   156→        <span className={`text-right font-mono ${isUp ? "text-red-500" : "text-green-500"}`}>{formatPrice(data.price)}</span>
+   157→      </div>
+   158→    </div>
+   159→  );
+   160→};
+   161→
+   162→const TimelineMACDTooltip = ({ active, payload }: any) => {
+   163→  if (!active || !payload?.length) return null;
+   164→  const data = payload[0]?.payload;
+   165→  if (!data || !data.hasData) return null;
+   166→
+   167→  return (
+   168→    <div className="bg-card border border-border rounded-lg p-3 shadow-xl text-xs min-w-[160px]">
+   169→      <div className="font-medium mb-2 text-foreground">{data.time || data.date || ""}</div>
+   170→      <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+   171→        <span className="text-muted-foreground">DIF</span>
+   172→        <span className="text-right font-mono">{data.dif != null ? data.dif.toFixed(4) : "--"}</span>
+   173→        <span className="text-muted-foreground">DEA</span>
+   174→        <span className="text-right font-mono">{data.dea != null ? data.dea.toFixed(4) : "--"}</span>
+   175→        <span className="text-muted-foreground">MACD</span>
+   176→        <span className={`text-right font-mono ${data.macd != null && data.macd > 0 ? "text-red-500" : "text-green-500"}`}>
+   177→          {data.macd != null ? data.macd.toFixed(4) : "--"}
+   178→        </span>
+   179→      </div>
+   180→    </div>
+   181→  );
+   182→};
+   183→
+   184→// ── Pulse/Volume Surge Renderer for Timeline Chart ──────
+   185→// Renders colored markers on the timeline chart for pulse and volume surge events.
+   186→// Pulse = lightning bolt icon (⚡) in orange/amber
+   187→// Volume surge = rising arrow icon (📈) in cyan/teal
+   188→
+   189→// ── Extract Pulse/Volume marker data from chart points (shared by standalone & combined renderers) ──
+   190→
+   191→function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; y: number; marker: PulseVolumeMarker }[] {
+   192→  let priceLineData: any[] = [];
+   193→  for (const item of formattedGraphicalItems) {
+   194→    if (item?.props?.points && Array.isArray(item.props.points)) {
+   195→      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+   196→      if (stroke === "#eab308" || stroke === "#facc15" || stroke === "#ca8a04") continue;
+   197→      if (priceLineData.length === 0) {
+   198→        priceLineData = item.props.points;
+   199→      }
+   200→    }
+   201→  }
+   202→  if (priceLineData.length === 0) return [];
+   203→
+   204→  const markers: PulseVolumeMarker[] = [];
+   205→  const seen = new Set<string>();
+   206→  for (const point of priceLineData) {
+   207→    const pvMarker = point?.payload?.pvMarker as PulseVolumeMarker[] | undefined;
+   208→    if (pvMarker && Array.isArray(pvMarker)) {
+   209→      for (const m of pvMarker) {
+   210→        const key = `${m.time}-${m.type}`;
+   211→        if (!seen.has(key)) {
+   212→          seen.add(key);
+   213→          markers.push(m);
+   214→        }
+   215→      }
+   216→    }
+   217→  }
+   218→  if (markers.length === 0) return [];
+   219→
+   220→  // Build a Map for O(1) lookup instead of O(n) find per marker
+   221→  const timeMap = new Map<string, any>();
+   222→  for (const p of priceLineData) {
+   223→    if (p?.payload?.time) timeMap.set(p.payload.time, p);
+   224→  }
+   225→  const result: { x: number; y: number; marker: PulseVolumeMarker }[] = [];
+   226→  for (const marker of markers) {
+   227→    const matchPoint = timeMap.get(marker.time);
+   228→    if (!matchPoint) continue;
+   229→    result.push({ x: matchPoint.x, y: matchPoint.y, marker });
+   230→  }
+   231→  return result;
+   232→}
+   233→
+   234→// ── Render a single Pulse/Volume marker as prominent SVG ──
+   235→// v2: Much more prominent than before — larger markers, bolder labels, white glow
+   236→
+   237→// ── Compute label positioning info for a single PV marker ──
+   238→
+   239→interface PvLabelLayout {
+   240→  isAbove: boolean;      // label is above the price point
+   241→  labelY: number;        // vertical center-ish of the pill
+   242→  pillW: number;
+   243→  pillH: number;
+   244→  displayLabel: string;
+   245→}
+   246→
+   247→function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): PvLabelLayout {
+   248→  const isPulse = marker.type === "pulse";
+   249→  const isProgressiveVol = marker.type === "progressive_vol";
+   250→  const isVolRise = marker.type === "vol_rise";
+   251→  const isAbove = isPulse || isProgressiveVol || isVolRise;
+   252→
+   253→  const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
+   254→  const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
+   255→
+   256→  const estimatedCharWidth = 7.5;
+   257→  const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+   258→  const pillH = 16;
+   259→
+   260→  const labelY = isAbove ? y - 52 : y + 36;
+   261→
+   262→  return { isAbove, labelY, pillW, pillH, displayLabel };
+   263→}
+   264→
+   265→// ── Compute bounding rect of a label pill ──
+   266→
+   267→function computePvLabelRect(x: number, layout: PvLabelLayout): { x: number; y: number; width: number; height: number } {
+   268→  if (layout.isAbove) {
+   269→    return {
+   270→      x: x - layout.pillW / 2,
+   271→      y: layout.labelY - layout.pillH / 2 - 2,
+   272→      width: layout.pillW,
+   273→      height: layout.pillH,
+   274→    };
+   275→  } else {
+   276→    return {
+   277→      x: x - layout.pillW / 2,
+   278→      y: layout.labelY - 2,
+   279→      width: layout.pillW,
+   280→      height: layout.pillH,
+   281→    };
+   282→  }
+   283→}
+   284→
+   285→// ── Resolve label overlaps by shifting labels vertically ──
+   286→
+   287→interface PlacedLabel {
+   288→  idx: number;
+   289→  x: number;         // marker x (original price point)
+   290→  y: number;         // marker y (price point)
+   291→  marker: PulseVolumeMarker;
+   292→  layout: PvLabelLayout;
+   293→  adjustedLabelY: number; // may be shifted for overlap avoidance
+   294→  adjustedX: number;     // label x may be shifted horizontally for same-time markers
+   295→}
+   296→
+   297→function resolvePvLabelOverlaps(
+   298→  markerPoints: { x: number; y: number; marker: PulseVolumeMarker }[],
+   299→): PlacedLabel[] {
+   300→  if (markerPoints.length === 0) return [];
+   301→
+   302→  // Step 0: Detect markers at the same time point and spread them horizontally
+   303→  // so pulse and progressive_vol each get their own connection line
+   304→  const timeGroups = new Map<string, number[]>(); // time -> indices into markerPoints
+   305→  markerPoints.forEach((pt, idx) => {
+   306→    const t = pt.marker.time;
+   307→    if (!timeGroups.has(t)) timeGroups.set(t, []);
+   308→    timeGroups.get(t)!.push(idx);
+   309→  });
+   310→
+   311→  const HORIZONTAL_SPREAD = 28; // pixels to spread each marker from center
+   312→  const xOffsets = new Map<number, number>(); // markerPoints index -> x offset
+   313→  for (const [, indices] of timeGroups) {
+   314→    if (indices.length <= 1) {
+   315→      xOffsets.set(indices[0], 0);
+   316→    } else {
+   317→      // Spread evenly around center
+   318→      const total = indices.length;
+   319→      indices.forEach((mpIdx, i) => {
+   320→        const offset = (i - (total - 1) / 2) * HORIZONTAL_SPREAD;
+   321→        xOffsets.set(mpIdx, offset);
+   322→      });
+   323→    }
+   324→  }
+   325→
+   326→  // Step 1: Compute default layouts (use adjusted x for label positioning)
+   327→  const placed: PlacedLabel[] = markerPoints.map((pt, idx) => {
+   328→    const xOff = xOffsets.get(idx) || 0;
+   329→    const adjustedX = pt.x + xOff;
+   330→    const layout = computePvLabelLayout(adjustedX, pt.y, pt.marker);
+   331→    return { idx, x: pt.x, y: pt.y, marker: pt.marker, layout, adjustedLabelY: layout.labelY, adjustedX };
+   332→  });
+   333→
+   334→  // Step 2: Compute label rects and resolve overlaps
+   335→  // Sort by adjustedX to make overlap detection efficient
+   336→  placed.sort((a, b) => a.adjustedX - b.adjustedX);
+   337→
+   338→  const GAP = 3; // minimum gap between labels
+   339→  const placedRects: { x: number; y: number; width: number; height: number }[] = [];
+   340→
+   341→  for (const p of placed) {
+   342→    let rect = computePvLabelRect(p.adjustedX, { ...p.layout, labelY: p.adjustedLabelY });
+   343→
+   344→    // Try placing at default position first
+   345→    let overlapFound = true;
+   346→    let attempts = 0;
+   347→    const maxAttempts = 8;
+   348→
+   349→    while (overlapFound && attempts < maxAttempts) {
+   350→      overlapFound = false;
+   351→      for (const pr of placedRects) {
+   352→        // Check if this rect overlaps with any placed rect
+   353→        if (
+   354→          rect.x < pr.x + pr.width + GAP &&
+   355→          rect.x + rect.width + GAP > pr.x &&
+   356→          rect.y < pr.y + pr.height + GAP &&
+   357→          rect.y + rect.height + GAP > pr.y
+   358→        ) {
+   359→          overlapFound = true;
+   360→          // Shift label further away from the price point
+   361→          if (p.layout.isAbove) {
+   362→            p.adjustedLabelY -= 18; // shift up more
+   363→          } else {
+   364→            p.adjustedLabelY += 18; // shift down more
+   365→          }
+   366→          rect = computePvLabelRect(p.adjustedX, { ...p.layout, labelY: p.adjustedLabelY });
+   367→          break;
+   368→        }
+   369→      }
+   370→      attempts++;
+   371→    }
+   372→
+   373→    // If still overlapping after max attempts, try horizontal shift instead
+   374→    if (overlapFound) {
+   375→      // Reset vertical position to default
+   376→      p.adjustedLabelY = p.layout.labelY;
+   377→      rect = computePvLabelRect(p.adjustedX, { ...p.layout, labelY: p.adjustedLabelY });
+   378→
+   379→      // Try shifting right
+   380→      const shiftedRight = { ...rect, x: rect.x + rect.width * 0.7 };
+   381→      let rightOk = true;
+   382→      for (const pr of placedRects) {
+   383→        if (
+   384→          shiftedRight.x < pr.x + pr.width + GAP &&
+   385→          shiftedRight.x + shiftedRight.width + GAP > pr.x &&
+   386→          shiftedRight.y < pr.y + pr.height + GAP &&
+   387→          shiftedRight.y + shiftedRight.height + GAP > pr.y
+   388→        ) {
+   389→          rightOk = false;
+   390→          break;
+   391→        }
+   392→      }
+   393→      if (rightOk) {
+   394→        rect = shiftedRight;
+   395→      } else {
+   396→        // Try shifting left
+   397→        const shiftedLeft = { ...rect, x: rect.x - rect.width * 0.7 };
+   398→        let leftOk = true;
+   399→        for (const pr of placedRects) {
+   400→          if (
+   401→            shiftedLeft.x < pr.x + pr.width + GAP &&
+   402→            shiftedLeft.x + shiftedLeft.width + GAP > pr.x &&
+   403→            shiftedLeft.y < pr.y + pr.height + GAP &&
+   404→            shiftedLeft.y + shiftedLeft.height + GAP > pr.y
+   405→          ) {
+   406→            leftOk = false;
+   407→            break;
+   408→          }
+   409→        }
+   410→        if (leftOk) {
+   411→          rect = shiftedLeft;
+   412→        }
+   413→      }
+   414→    }
+   415→
+   416→    placedRects.push(rect);
+   417→  }
+   418→
+   419→  return placed;
+   420→}
+   421→
+   422→// ── Render a single Pulse/Volume marker as prominent SVG ──
+   423→// v3: Accepts optional adjustedLabelY for overlap avoidance
+   424→
+   425→function renderPulseVolumeMarker(
+   426→  x: number,
+   427→  y: number,
+   428→  marker: PulseVolumeMarker,
+   429→  idx: number,
+   430→  adjustedLabelY?: number,
+   431→  adjustedX?: number,
+   432→): React.ReactNode {
+   433→  const isPulse = marker.type === "pulse";
+   434→  const isProgressiveVol = marker.type === "progressive_vol";
+   435→  const isPulseDecline = marker.type === "pulse_decline";
+   436→  const isVolumeDecline = marker.type === "volume_decline";
+   437→  const isEarlyVolDrop = marker.type === "early_vol_drop";
+   438→  const isSlowDecline = marker.type === "slow_decline";
+   439→  const isWashTrade = marker.type === "wash_trade";
+   440→  const isVolRise = marker.type === "vol_rise";
+   441→  const isShrinkRise = marker.type === "shrink_rise";
+   442→  const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop || isSlowDecline;
+   443→
+   444→  // Color schemes — A股惯例：上涨=红色，下跌=绿色
+   445→  // 上涨类(pulse, progressive_vol, vol_rise)用红色，下跌类(pulse_decline, volume_decline, early_vol_drop)用绿色
+   446→  let bgColor: string, borderColor: string, textColor: string, iconColor: string, glowColor: string;
+   447→  const isAbove = isPulse || isProgressiveVol || isVolRise;
+   448→  const defaultLabelY = isAbove ? y - 52 : y + 36;
+   449→  const labelY = adjustedLabelY ?? defaultLabelY;
+   450→  const labelX = adjustedX ?? x; // label center x (may be shifted for same-time markers)
+   451→
+   452→  // Volume decline strength for visual emphasis
+   453→  const volDeclineStrength = isVolumeDecline ? Math.abs(marker.score) : 0;
+   454→  const isStrongDecline = isVolumeDecline && volDeclineStrength >= 30;
+   455→
+   456→  if (isPulse) {
+   457→    bgColor = "rgba(245, 158, 11, 0.25)";
+   458→    borderColor = "rgba(245, 158, 11, 0.85)";
+   459→    textColor = "#b45309";
+   460→    iconColor = "#f59e0b";
+   461→    glowColor = "rgba(245, 158, 11, 0.35)";
+   462→  } else if (isProgressiveVol) {
+   463→    // 温和放量上涨 — 红色（A股：上涨=红）
+   464→    bgColor = "rgba(239, 68, 68, 0.25)";
+   465→    borderColor = "rgba(239, 68, 68, 0.85)";
+   466→    textColor = "#991b1b";
+   467→    iconColor = "#ef4444";
+   468→    glowColor = "rgba(239, 68, 68, 0.35)";
+   469→  } else if (isPulseDecline) {
+   470→    bgColor = "rgba(22, 163, 74, 0.25)";
+   471→    borderColor = "rgba(22, 163, 74, 0.85)";
+   472→    textColor = "#166534";
+   473→    iconColor = "#16a34a";
+   474→    glowColor = "rgba(22, 163, 74, 0.35)";
+   475→  } else if (isVolumeDecline) {
+   476→    // 放量下跌 — 根据强度递进绿色（A股：下跌=绿）
+   477→    if (volDeclineStrength >= 50) {
+   478→      bgColor = "rgba(22, 163, 74, 0.35)";
+   479→      borderColor = "rgba(22, 163, 74, 1)";
+   480→      textColor = "#166534";
+   481→      iconColor = "#16a34a";
+   482→      glowColor = "rgba(22, 163, 74, 0.5)";
+   483→    } else if (volDeclineStrength >= 30) {
+   484→      bgColor = "rgba(34, 197, 94, 0.3)";
+   485→      borderColor = "rgba(34, 197, 94, 0.95)";
+   486→      textColor = "#166534";
+   487→      iconColor = "#22c55e";
+   488→      glowColor = "rgba(34, 197, 94, 0.4)";
+   489→    } else {
+   490→      bgColor = "rgba(34, 197, 94, 0.2)";
+   491→      borderColor = "rgba(34, 197, 94, 0.8)";
+   492→      textColor = "#166534";
+   493→      iconColor = "#22c55e";
+   494→      glowColor = "rgba(34, 197, 94, 0.3)";
+   495→    }
+   496→  } else if (isEarlyVolDrop) {
+   497→    bgColor = "rgba(249, 115, 22, 0.25)";
+   498→    borderColor = "rgba(249, 115, 22, 0.85)";
+   499→    textColor = "#9a3412";
+   500→    iconColor = "#f97316";
+   501→    glowColor = "rgba(249, 115, 22, 0.35)";
+   502→  } else if (isSlowDecline) {
+   503→    // 阴跌 — 暗绿色（A股：下跌=绿，阴跌用更暗的绿表示隐蔽性）
+   504→    bgColor = "rgba(20, 120, 60, 0.25)";
+   505→    borderColor = "rgba(20, 120, 60, 0.85)";
+   506→    textColor = "#14532d";
+   507→    iconColor = "#15803d";
+   508→    glowColor = "rgba(20, 120, 60, 0.35)";
+   509→  } else if (isWashTrade) {
+   510→    bgColor = "rgba(139, 92, 246, 0.25)";
+   511→    borderColor = "rgba(139, 92, 246, 0.85)";
+   512→    textColor = "#5b21b6";
+   513→    iconColor = "#8b5cf6";
+   514→    glowColor = "rgba(139, 92, 246, 0.35)";
+   515→  } else if (isVolRise) {
+   516→    // 放量上涨 — 红色（A股：上涨=红）
+   517→    bgColor = "rgba(239, 68, 68, 0.25)";
+   518→    borderColor = "rgba(239, 68, 68, 0.85)";
+   519→    textColor = "#991b1b";
+   520→    iconColor = "#ef4444";
+   521→    glowColor = "rgba(239, 68, 68, 0.35)";
+   522→  } else if (isShrinkRise) {
+   523→    bgColor = "rgba(234, 179, 8, 0.25)";
+   524→    borderColor = "rgba(234, 179, 8, 0.85)";
+   525→    textColor = "#854d0e";
+   526→    iconColor = "#eab308";
+   527→    glowColor = "rgba(234, 179, 8, 0.35)";
+   528→  } else {
+   529→    bgColor = "rgba(6, 182, 212, 0.25)";
+   530→    borderColor = "rgba(6, 182, 212, 0.85)";
+   531→    textColor = "#0e7490";
+   532→    iconColor = "#06b6d4";
+   533→    glowColor = "rgba(6, 182, 212, 0.35)";
+   534→  }
+   535→
+   536→  // Format amount for display
+   537→  const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
+   538→  const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
+   539→
+   540→  // Dynamic pill width based on label length
+   541→  const estimatedCharWidth = 7.5;
+   542→  const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
+   543→  const pillH = 16;
+   544→  const pillRx = 4;
+   545→
+   546→  return (
+   547→    <g key={`pv-${marker.type}-${idx}`}>
+   548→      {/* 放量下跌危险区域：绿色半透明光晕（A股：下跌=绿） */}
+   549→      {isVolumeDecline && (
+   550→        <>
+   551→          <circle cx={x} cy={y} r={isStrongDecline ? 22 : 16}
+   552→            fill={volDeclineStrength >= 50 ? "rgba(22, 163, 74, 0.08)" : "rgba(34, 197, 94, 0.06)"}
+   553→            stroke="none"
+   554→          />
+   555→          <circle cx={x} cy={y} r={isStrongDecline ? 15 : 11}
+   556→            fill={volDeclineStrength >= 50 ? "rgba(22, 163, 74, 0.12)" : "rgba(34, 197, 94, 0.08)"}
+   557→            stroke="none"
+   558→          />
+   559→        </>
+   560→      )}
+   561→      {/* Connecting line from price point to label (may be offset horizontally) */}
+   562→      <line
+   563→        x1={x} y1={y} x2={labelX} y2={labelY}
+   564→        stroke={borderColor} strokeWidth={isStrongDecline ? 1.5 : 1} strokeDasharray="3 2"
+   565→      />
+   566→      {/* Marker dot on price line — larger & bolder for volume_decline */}
+   567→      <circle
+   568→        cx={x} cy={y} r={isStrongDecline ? 8 : isVolumeDecline ? 7 : 6}
+   569→        fill={bgColor} stroke={iconColor} strokeWidth={isStrongDecline ? 2.5 : 2}
+   570→      />
+   571→      {/* Pulsing glow ring around dot */}
+   572→      <circle
+   573→        cx={x} cy={y} r={isStrongDecline ? 12 : 9}
+   574→        fill="none" stroke={glowColor} strokeWidth={isStrongDecline ? 2 : 1.5}
+   575→        strokeDasharray="2 2" opacity={isStrongDecline ? 0.9 : 0.7}
+   576→      />
+   577→      {/* 强放量下跌额外脉冲环 */}
+   578→      {volDeclineStrength >= 50 && (
+   579→        <circle
+   580→          cx={x} cy={y} r={16}
+   581→          fill="none" stroke="rgba(22, 163, 74, 0.3)" strokeWidth={1}
+   582→          strokeDasharray="3 3" opacity={0.5}
+   583→        />
+   584→      )}
+   585→      {/* Icon inside dot */}
+   586→      <text
+   587→        x={x} y={y + 1}
+   588→        textAnchor="middle" dominantBaseline="middle"
+   589→        fontSize={isVolumeDecline ? 8 : 7} fill={iconColor} fontWeight="bold"
+   590→      >
+   591→        {isPulse ? "⚡" : isPulseDecline ? "📉" : isProgressiveVol ? "📈" : isVolumeDecline ? "⚠" : isSlowDecline ? "▼" : "▲"}
+   592→      </text>
+   593→      {/* White glow behind label pill for readability */}
+   594→      <rect
+   595→        x={labelX - pillW / 2 - 1.5} y={(isAbove ? labelY - pillH / 2 - 2 : labelY - 2) - 1.5}
+   596→        width={pillW + 3} height={pillH + 3}
+   597→        rx={pillRx + 1} ry={pillRx + 1}
+   598→        fill="white" fillOpacity={0.85}
+   599→      />
+   600→      {/* Label background pill */}
+   601→      <rect
+   602→        x={labelX - pillW / 2} y={isAbove ? labelY - pillH / 2 - 2 : labelY - 2}
+   603→        width={pillW} height={pillH}
+   604→        rx={pillRx} ry={pillRx}
+   605→        fill={bgColor} stroke={borderColor} strokeWidth={isStrongDecline ? 1.5 : 1}
+   606→      />
+   607→      {/* Label text — larger & bolder */}
+   608→      <text
+   609→        x={labelX} y={isAbove ? labelY + 1 : labelY + 7}
+   610→        textAnchor="middle" dominantBaseline="middle"
+   611→        fontSize={isVolumeDecline ? 9.5 : 9} fontWeight={isVolumeDecline ? 800 : 700} fill={textColor}
+   612→      >
+   613→        {displayLabel}
+   614→      </text>
+   615→    </g>
+   616→  );
+   617→}
+   618→
+   619→// ── Standalone PulseVolumeRenderer (kept for backward compat, uses shared extract+render) ──
+   620→
+   621→function PulseVolumeRenderer(props: any) {
+   622→  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+   623→  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+   624→
+   625→  const xAxis = Object.values(xAxisMap)[0] as any;
+   626→  const yAxis = Object.values(yAxisMap)[0] as any;
+   627→  if (!xAxis || !yAxis) return null;
+   628→
+   629→  const markerPoints = extractPulseVolumePoints(formattedGraphicalItems);
+   630→  if (markerPoints.length === 0) return null;
+   631→
+   632→  // Resolve label overlaps
+   633→  const placedLabels = resolvePvLabelOverlaps(markerPoints);
+   634→
+   635→  return (
+   636→    <g className="pulse-volume-markers">
+   637→      {placedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY, p.adjustedX))}
+   638→    </g>
+   639→  );
+   640→}
+   641→
+   642→// ── Timeline Signal Rendering Logic (pure function, stateless) ────
+   643→// v6: Strong=label+triangle, Medium=amber dot+badge, Weak=gray dot only
+   644→// Extracted as a pure function so the combined overlay can control layer order.
+   645→
+   646→function computeTimelineSignalElements(
+   647→  formattedGraphicalItems: any[],
+   648→  xAxisMap: any,
+   649→  yAxisMap: any,
+   650→  expandedIds: Set<string>,
+   651→  toggleExpand: (id: string) => void,
+   652→): { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null {
+   653→  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+   654→
+   655→  const xAxis = Object.values(xAxisMap)[0] as any;
+   656→  const yAxis = Object.values(yAxisMap)[0] as any;
+   657→  if (!xAxis || !yAxis) return null;
+   658→
+   659→  // Get data points from the price line
+   660→  let priceLineData: any[] = [];
+   661→  for (const item of formattedGraphicalItems) {
+   662→    if (item?.props?.points && Array.isArray(item.props.points)) {
+   663→      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+   664→      // Skip avgPrice (yellow dashed) line
+   665→      if (stroke === "#eab308" || stroke === "#facc15" || stroke === "#ca8a04") continue;
+   666→      if (priceLineData.length === 0) {
+   667→        priceLineData = item.props.points;
+   668→      }
+   669→    }
+   670→  }
+   671→  if (priceLineData.length === 0) return null;
+   672→
+   673→  // ── Step 1: Collect all signal points ──
+   674→  const allSignals: { x: number; y: number; signal: TSignal; index: number }[] = [];
+   675→  priceLineData.forEach((point: any, i: number) => {
+   676→    const signal = point?.payload?.tSignal as TSignal | undefined | null;
+   677→    if (!signal) return;
+   678→    allSignals.push({ x: point.x, y: point.y, signal, index: i });
+   679→  });
+   680→
+   681→  if (allSignals.length === 0) return null;
+   682→
+   683→  // ── Step 2: Smart merge - same direction (buy/sell), wider distance ──
+   684→  // Adaptive merge distance: fewer data points = tighter merge to avoid swallowing early signals
+   685→  const MERGE_DISTANCE_X = priceLineData.length <= 20 ? 15 : 30;
+   686→  const strengthOrder: Record<string, number> = { strong: 3, medium: 2, weak: 1 };
+   687→  const merged: MergedSignal[] = [];
+   688→  const used = new Set<number>();
+   689→
+   690→  for (let i = 0; i < allSignals.length; i++) {
+   691→    if (used.has(i)) continue;
+   692→    const s = allSignals[i];
+   693→    const direction: "up" | "down" = s.signal.type === "buy" ? "up" : "down";
+   694→    const group: typeof allSignals = [s];
+   695→    used.add(i);
+   696→
+   697→    for (let j = i + 1; j < allSignals.length; j++) {
+   698→      if (used.has(j)) continue;
+   699→      const next = allSignals[j];
+   700→      const nextDir: "up" | "down" = next.signal.type === "buy" ? "up" : "down";
+   701→      if (nextDir === direction && (next.x - s.x) <= MERGE_DISTANCE_X) {
+   702→        group.push(next);
+   703→        used.add(j);
+   704→      } else if ((next.x - s.x) > MERGE_DISTANCE_X) {
+   705→        break;
+   706→      }
+   707→    }
+   708→
+   709→    let bestStrength: Strength = "weak";
+   710→    let bestIdx = 0;
+   711→    let hasCustomFactor = false;
+   712→    let overriddenStrengthCap: Strength | null = null;
+   713→    const uniqueReasons = new Set<string>();
+   714→    const customReasonSet = new Set<string>();
+   715→    for (let k = 0; k < group.length; k++) {
+   716→      const g = group[k];
+   717→      uniqueReasons.add(g.signal.reason);
+   718→      if (g.signal.strengthOverridden) {
+   719→        if (overriddenStrengthCap === null || strengthOrder[g.signal.strength] < strengthOrder[overriddenStrengthCap]) {
+   720→          overriddenStrengthCap = g.signal.strength;
+   721→        }
+   722→      }
+   723→      if (strengthOrder[g.signal.strength] > strengthOrder[bestStrength]) {
+   724→        bestStrength = g.signal.strength;
+   725→        bestIdx = k;
+   726→      }
+   727→      if (g.signal.description?.startsWith("自定义因子[")) {
+   728→        hasCustomFactor = true;
+   729→        customReasonSet.add(g.signal.reason);
+   730→      }
+   731→    }
+   732→
+   733→    if (overriddenStrengthCap !== null && strengthOrder[overriddenStrengthCap] < strengthOrder[bestStrength]) {
+   734→      bestStrength = overriddenStrengthCap;
+   735→      for (let k = 0; k < group.length; k++) {
+   736→        if (group[k].signal.strength === overriddenStrengthCap) {
+   737→          bestIdx = k;
+   738→          break;
+   739→        }
+   740→      }
+   741→    }
+   742→
+   743→    const representative = group[bestIdx];
+   744→
+   745→    merged.push({
+   746→      id: `sig-${s.index}-${direction}`,
+   747→      x: representative.x,
+   748→      y: representative.y,
+   749→      type: s.signal.type,
+   750→      reasons: Array.from(uniqueReasons),
+   751→      strength: bestStrength,
+   752→      count: group.length,
+   753→      originalIndex: s.index,
+   754→      direction,
+   755→      isCustom: hasCustomFactor,
+   756→      customReasons: customReasonSet,
+   757→      hasOverriddenStrength: overriddenStrengthCap !== null,
+   758→    });
+   759→  }
+   760→
+   761→  // ── Step 3: Strong + Medium signals get text labels ──
+   762→  const labelRects: { x: number; y: number; width: number; height: number }[] = [];
+   763→  const LABEL_GAP = 2; // 最小间距，避免标签紧贴
+   764→
+   765→  function overlapsAny(rect: { x: number; y: number; width: number; height: number }, rects: typeof labelRects): boolean {
+   766→    for (const r of rects) {
+   767→      if (rect.x - LABEL_GAP < r.x + r.width && rect.x + rect.width + LABEL_GAP > r.x &&
+   768→          rect.y - LABEL_GAP < r.y + r.height && rect.y + rect.height + LABEL_GAP > r.y) {
+   769→        return true;
+   770→      }
+   771→    }
+   772→    return false;
+   773→  }
+   774→
+   775→  interface LabelPlan {
+   776→    merged: MergedSignal;
+   777→    labelRect: { x: number; y: number; width: number; height: number } | null;
+   778→    labelText: string;
+   779→    showLabel: boolean;
+   780→    labelFontSize: number;
+   781→    labelIsBig: boolean;
+   782→    labelStrength: "strong" | "medium" | "weak";
+   783→  }
+   784→
+   785→  const labelPlans: LabelPlan[] = [];
+   786→  const assignedLabels = new Map<number, LabelPlan>();
+   787→
+   788→  // strong 信号优先放置，medium 其次，按 x 位置排序
+   789→  const labeledIndices = merged
+   790→    .map((_, i) => i)
+   791→    .filter((i) => merged[i].strength === "strong" || merged[i].strength === "medium")
+   792→    .sort((a, b) => {
+   793→      // strong 排前面，同 strength 按 x 排序
+   794→      const sa = merged[a].strength === "strong" ? 0 : 1;
+   795→      const sb = merged[b].strength === "strong" ? 0 : 1;
+   796→      if (sa !== sb) return sa - sb;
+   797→      return merged[a].x - merged[b].x;
+   798→    });
+   799→
+   800→  for (const idx of labeledIndices) {
+   801→    const m = merged[idx];
+   802→    const isBuy = m.direction === "up";
+   803→    const isStrong = m.strength === "strong";
+   804→    const isGapUpSell = m.reasons.includes("高开卖出");
+   805→    const isKeyBuySignal = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
+   806→    // v6.2: 核心卖点信号也使用大标签
+   807→    const isKeySellSignal = !isBuy && (
+   808→      m.reasons.includes("均线引力卖点") ||
+   809→      m.reasons.includes("次高点放量卖出") ||
+   810→      m.reasons.includes("冲高减速见顶") ||
+   811→      m.reasons.includes("放量上涨卖点") ||
+   812→      m.reasons.includes("缩量滞涨") ||
+   813→      m.reasons.includes("脉冲拉升缩量滞涨")
+   814→    );
+   815→    const isBigLabel = isStrong && (isGapUpSell || isKeyBuySignal || isKeySellSignal); // 只有strong信号才使用大标签
+   816→
+   817→    const strengthTag = `(${getStrengthLabel(m.strength)})`;
+   818→    let labelText: string;
+   819→    const fmtCustom = (text: string) => {
+   820→      const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
+   821→      return `${base}${strengthTag}`;
+   822→    };
+   823→    if (m.count >= 3) {
+   824→      labelText = fmtCustom(`${m.reasons[0]} ×${m.count}`);
+   825→    } else if (m.count === 2) {
+   826→      const combined = m.reasons.slice(0, 2).join("/");
+   827→      labelText = fmtCustom(combined.length > 6 ? `${m.reasons[0]}+1` : combined);
+   828→    } else {
+   829→      labelText = fmtCustom(m.reasons[0]);
+   830→    }
+   831→
+   832→    // v6.3: 标签大小按信号强度分3级 — 大/中/小
+   833→    // strong+核心因子(放量下跌买点/均线引力卖点等) = 大标签
+   834→    // strong+普通因子(高开卖出/其他) = 中标签
+   835→    // medium = 小标签
+   836→    const labelFontSize = isBigLabel ? 11 : isStrong ? 9 : 7;
+   837→    let textWidth = 0;
+   838→    for (const ch of labelText) {
+   839→      textWidth += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
+   840→    }
+   841→    const padX = isBigLabel ? 7 : isStrong ? 5 : 3;
+   842→    const labelW = textWidth + padX * 2;
+   843→    const labelH = isBigLabel ? 20 : isStrong ? 16 : 12;
+   844→
+   845→    // 根据信号强度决定标签偏移距离
+   846→    const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : isStrong ? 30 : 22;
+   847→    const labelGap = (isKeyBuySignal || isKeySellSignal) ? 6 : isStrong ? 8 : 5;
+   848→    let labelY: number;
+   849→    if (isBuy) {
+   850→      labelY = m.y + markerOffset + labelGap;
+   851→    } else {
+   852→      labelY = m.y - markerOffset - labelGap - labelH;
+   853→    }
+   854→
+   855→    let labelRect = { x: m.x - labelW / 2, y: labelY, width: labelW, height: labelH };
+   856→
+   857→    let placed = false;
+   858→
+   859→    // 尝试1: 默认位置
+   860→    if (!overlapsAny(labelRect, labelRects)) {
+   861→      placed = true;
+   862→    }
+   863→
+   864→    // 尝试2-3: 左右偏移
+   865→    if (!placed) {
+   866→      const shiftR = { ...labelRect, x: labelRect.x + labelRect.width * 0.6 };
+   867→      if (!overlapsAny(shiftR, labelRects)) {
+   868→        labelRect = shiftR;
+   869→        placed = true;
+   870→      } else {
+   871→        const shiftL = { ...labelRect, x: labelRect.x - labelRect.width * 0.6 };
+   872→        if (!overlapsAny(shiftL, labelRects)) {
+   873→          labelRect = shiftL;
+   874→          placed = true;
+   875→        }
+   876→      }
+   877→    }
+   878→
+   879→    // 尝试4-5: 更大左右偏移
+   880→    if (!placed) {
+   881→      const shiftR2 = { ...labelRect, x: labelRect.x + labelRect.width * 1.2 };
+   882→      if (!overlapsAny(shiftR2, labelRects)) {
+   883→        labelRect = shiftR2;
+   884→        placed = true;
+   885→      } else {
+   886→        const shiftL2 = { ...labelRect, x: labelRect.x - labelRect.width * 1.2 };
+   887→        if (!overlapsAny(shiftL2, labelRects)) {
+   888→          labelRect = shiftL2;
+   889→          placed = true;
+   890→        }
+   891→      }
+   892→    }
+   893→
+   894→    // 尝试6-7: 垂直偏移（向下/向上额外偏移一个标签高度）
+   895→    if (!placed) {
+   896→      const shiftDown = { ...labelRect, y: labelRect.y + labelH + 4 };
+   897→      if (!overlapsAny(shiftDown, labelRects)) {
+   898→        labelRect = shiftDown;
+   899→        placed = true;
+   900→      } else {
+   901→        const shiftUp = { ...labelRect, y: labelRect.y - labelH - 4 };
+   902→        if (!overlapsAny(shiftUp, labelRects)) {
+   903→          labelRect = shiftUp;
+   904→          placed = true;
+   905→        }
+   906→      }
+   907→    }
+   908→
+   909→    // 尝试8: 缩短文本后重试
+   910→    if (!placed) {
+   911→      const sfmt = (text: string) => {
+   912→        const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
+   913→        return `${base}${strengthTag}`;
+   914→      };
+   915→      const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
+   916→      let sw = 0;
+   917→      for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
+   918→      const shortW = sw + padX * 2;
+   919→      const shortRect = { x: m.x - shortW / 2, y: labelY, width: shortW, height: labelH };
+   920→      if (!overlapsAny(shortRect, labelRects)) {
+   921→        labelRect = shortRect;
+   922→        labelText = shortText;
+   923→        placed = true;
+   924→      }
+   925→    }
+   926→
+   927→    // 尝试9: 缩短文本+左右偏移
+   928→    if (!placed) {
+   929→      const sfmt = (text: string) => {
+   930→        const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
+   931→        return `${base}${strengthTag}`;
+   932→      };
+   933→      const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
+   934→      let sw = 0;
+   935→      for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
+   936→      const shortW = sw + padX * 2;
+   937→      const shortRectR = { x: m.x - shortW / 2 + shortW * 0.6, y: labelY, width: shortW, height: labelH };
+   938→      if (!overlapsAny(shortRectR, labelRects)) {
+   939→        labelRect = shortRectR;
+   940→        labelText = shortText;
+   941→        placed = true;
+   942→      } else {
+   943→        const shortRectL = { x: m.x - shortW / 2 - shortW * 0.6, y: labelY, width: shortW, height: labelH };
+   944→        if (!overlapsAny(shortRectL, labelRects)) {
+   945→          labelRect = shortRectL;
+   946→          labelText = shortText;
+   947→          placed = true;
+   948→        }
+   949→      }
+   950→    }
+   951→
+   952→    if (placed) {
+   953→      labelRects.push(labelRect);
+   954→    }
+   955→
+   956→    assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed, labelFontSize, labelIsBig: isBigLabel, labelStrength: m.strength });
+   957→  }
+   958→
+   959→  for (let i = 0; i < merged.length; i++) {
+   960→    if (assignedLabels.has(i)) continue;
+   961→    assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false, labelFontSize: 8, labelIsBig: false, labelStrength: merged[i].strength });
+   962→  }
+   963→
+   964→  for (let i = 0; i < merged.length; i++) {
+   965→    labelPlans.push(assignedLabels.get(i)!);
+   966→  }
+   967→
+   968→  // ── Step 4: Render ──
+   969→
+   970→  // v6.3: 标签样式按强度分3级
+   971→  const getLabelStyle = (strength: "strong" | "medium" | "weak") => {
+   972→    switch (strength) {
+   973→      case "strong": return { rx: 4, strokeWidth: 1.0, strokeOpacity: 0.6, fillOpacity: 0.95, fontWeight: "800" as const, connWidth: 1.5, connOpacity: 0.9 };
+   974→      case "medium": return { rx: 3, strokeWidth: 0.6, strokeOpacity: 0.4, fillOpacity: 0.88, fontWeight: "600" as const, connWidth: 1.0, connOpacity: 0.7 };
+   975→      case "weak": return { rx: 2, strokeWidth: 0.4, strokeOpacity: 0.3, fillOpacity: 0.80, fontWeight: "500" as const, connWidth: 0.8, connOpacity: 0.5 };
+   976→    }
+   977→  };
+   978→
+   979→  const renderCountBadge = (m: MergedSignal, badgeCx: number, badgeCy: number, badgeColor: string, badgeTextColor: string): { badgeSvg: React.ReactNode; bubbleSvg: React.ReactNode } => {
+   980→    if (m.count <= 1) return { badgeSvg: null, bubbleSvg: null };
+   981→    const isExpanded = expandedIds.has(m.id);
+   982→    const badgeR = 6;
+   983→
+   984→    const badgeSvg = (
+   985→      <g style={{ cursor: "pointer" }} onClick={() => toggleExpand(m.id)}>
+   986→        <circle cx={badgeCx} cy={badgeCy} r={badgeR} fill={badgeColor} stroke="white" strokeWidth={0.6} />
+   987→        <text x={badgeCx} y={badgeCy} textAnchor="middle" dominantBaseline="middle" fill={badgeTextColor} fontSize={7} fontWeight="bold">
+   988→          {m.count}
+   989→        </text>
+   990→      </g>
+   991→    );
+   992→
+   993→    if (!isExpanded) return { badgeSvg, bubbleSvg: null };
+   994→
+   995→    const lineHeight = 12;
+   996→    const fontSize = 8;
+   997→    const padX = 5;
+   998→    const padY = 4;
+   999→    const lines = m.reasons.map(r => m.customReasons?.has(r) ? `自定义[${r}]` : r);
+  1000→    const maxTextWidth = Math.max(...lines.map(line => {
+  1001→      let w = 0;
+  1002→      for (const ch of line) w += ch.charCodeAt(0) > 127 ? fontSize : fontSize * 0.55;
+  1003→      return w;
+  1004→    }));
+  1005→    const bubbleW = maxTextWidth + padX * 2 + 6;
+  1006→    const bubbleH = lines.length * lineHeight + padY * 2;
+  1007→    const bubbleX = badgeCx + badgeR + 4;
+  1008→    const bubbleY = badgeCy - bubbleH / 2;
+  1009→
+  1010→    const bubbleSvg = (
+  1011→      <g key={`bubble-${m.id}`} style={{ cursor: "pointer" }} onClick={() => toggleExpand(m.id)}>
+  1012→        <line x1={badgeCx + badgeR} y1={badgeCy} x2={bubbleX} y2={badgeCy} stroke={badgeColor} strokeWidth={0.5} strokeDasharray="2 1" opacity={0.5} />
+  1013→        <rect x={bubbleX} y={bubbleY} width={bubbleW} height={bubbleH} rx={4} fill="white" fillOpacity={0.97} stroke={badgeColor} strokeWidth={0.8} />
+  1014→        {lines.map((reason, ri) => (
+  1015→          <text
+  1016→            key={ri}
+  1017→            x={bubbleX + padX + 4}
+  1018→            y={bubbleY + padY + ri * lineHeight + lineHeight / 2}
+  1019→            dominantBaseline="middle"
+  1020→            fill="#1f2937"
+  1021→            fontSize={fontSize}
+  1022→            fontWeight={ri === 0 ? "600" : "400"}
+  1023→          >
+  1024→            <tspan fill={badgeColor} fontSize={6}>● </tspan>
+  1025→            {reason}
+  1026→          </text>
+  1027→        ))}
+  1028→      </g>
+  1029→    );
+  1030→
+  1031→    return { badgeSvg, bubbleSvg };
+  1032→  };
+  1033→
+  1034→  const bubbleElements: React.ReactNode[] = [];
+  1035→  const prioritySignalElements: React.ReactNode[] = []; // 高开卖出/放量下跌买点 — 渲染到最顶层
+  1036→  const signalElements: React.ReactNode[] = [];
+  1037→
+  1038→  labelPlans.forEach((plan, i) => {
+  1039→    const m = plan.merged;
+  1040→    const isBuy = m.direction === "up";
+  1041→    const isStoploss = m.type === "stoploss";
+  1042→
+  1043→    let markerColor: string;
+  1044→    let labelBgColor: string;
+  1045→    let badgeColor: string;
+  1046→    let badgeTextColor: string;
+  1047→
+  1048→    // 买点统一#dc2626鲜红，卖点统一#16a34a鲜绿
+  1049→    if (m.isCustom) {
+  1050→      markerColor = isBuy ? "#8b5cf6" : "#a78bfa";
+  1051→      labelBgColor = isBuy ? "#dc2626" : "#16a34a";
+  1052→      badgeColor = markerColor;
+  1053→      badgeTextColor = "white";
+  1054→    } else if (isStoploss) {
+  1055→      markerColor = "#f59e0b";
+  1056→      labelBgColor = "#92400e";
+  1057→      badgeColor = markerColor;
+  1058→      badgeTextColor = "white";
+  1059→    } else {
+  1060→      markerColor = isBuy ? "#dc2626" : "#16a34a";
+  1061→      labelBgColor = isBuy ? "#dc2626" : "#16a34a";
+  1062→      badgeColor = markerColor;
+  1063→      badgeTextColor = "white";
+  1064→    }
+  1065→
+  1066→    if (m.strength === "strong") {
+  1067→      const isGapUpSellSignal = m.reasons.includes("高开卖出");
+  1068→      const isKeyBuySignalR = m.reasons.includes("放量下跌买点") || m.reasons.includes("缩量底部买点") || m.reasons.includes("次低点缩量买入");
+  1069→      // v6.2: 核心卖点因子 — 均线引力/次高点放量/冲高减速见顶/放量上涨卖点/缩量滞涨
+  1070→      const isKeySellSignalR = !isBuy && (
+  1071→        m.reasons.includes("均线引力卖点") ||
+  1072→        m.reasons.includes("次高点放量卖出") ||
+  1073→        m.reasons.includes("冲高减速见顶") ||
+  1074→        m.reasons.includes("放量上涨卖点") ||
+  1075→        m.reasons.includes("缩量滞涨") ||
+  1076→        m.reasons.includes("脉冲拉升缩量滞涨")
+  1077→      );
+  1078→      const isBigMarker = isGapUpSellSignal || isKeyBuySignalR || isKeySellSignalR;
+  1079→      const markerSize = isBigMarker ? 9 : 6;
+  1080→      const badgeCx = m.x + markerSize + 4;
+  1081→      const badgeCy = isBuy ? m.y - markerSize * 0.3 : m.y + markerSize * 0.3;
+  1082→      const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
+  1083→      if (bubbleSvg) bubbleElements.push(bubbleSvg);
+  1084→
+  1085→      // 核心买点使用优化渲染 — 醒目V底三角+脉冲圆点+发光+粗实线连接
+  1086→      if (isKeyBuySignalR && isBuy) {
+  1087→        const dotR = 6;
+  1088→        const triOffset = 20;
+  1089→        const glowR = 16;
+  1090→        const el = (
+  1091→          <g key={`tl-sig-${m.originalIndex}-${i}`}>
+  1092→            {/* 外圈发光 — 两层叠加更醒目 */}
+  1093→            <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.12} />
+  1094→            <circle cx={m.x} cy={m.y} r={glowR - 3} fill={markerColor} fillOpacity={0.2} stroke={markerColor} strokeWidth={0.8} strokeOpacity={0.5} />
+  1095→            {/* 价格线上的锚点圆 */}
+  1096→            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={2} />
+  1097→            {/* 锚点到三角的连接线 — 粗实线更明显 */}
+  1098→            <line x1={m.x} y1={m.y + dotR + 1} x2={m.x} y2={m.y + triOffset - markerSize * 0.6} stroke={markerColor} strokeWidth={2} opacity={0.9} />
+  1099→            <polygon
+  1100→              points={`${m.x},${m.y + triOffset - markerSize} ${m.x - markerSize * 1.0},${m.y + triOffset + markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y + triOffset + markerSize * 0.7}`}
+  1101→              fill={markerColor}
+  1102→              stroke="white"
+  1103→              strokeWidth={1.0}
+  1104→            />
+  1105→            <text
+  1106→              x={m.x}
+  1107→              y={m.y + triOffset + 1}
+  1108→              textAnchor="middle"
+  1109→              dominantBaseline="middle"
+  1110→              fill="white"
+  1111→              fontSize={7}
+  1112→              fontWeight="bold"
+  1113→            >
+  1114→              买
+  1115→            </text>
+  1116→            {badgeSvg}
+  1117→            {plan.showLabel && plan.labelRect && (
+  1118→              <>
+  1119→                {/* 三角到文字标签的连接线 */}
+  1120→                <line
+  1121→                  x1={m.x}
+  1122→                  y1={m.y + triOffset + markerSize * 0.7}
+  1123→                  x2={plan.labelRect.x + plan.labelRect.width / 2}
+  1124→                  y2={plan.labelRect.y}
+  1125→                  stroke={markerColor}
+  1126→                  strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+  1127→                  opacity={getLabelStyle(plan.labelStrength).connOpacity}
+  1128→                />
+  1129→                <rect
+  1130→                  x={plan.labelRect.x - 1}
+  1131→                  y={plan.labelRect.y - 1}
+  1132→                  width={plan.labelRect.width + 2}
+  1133→                  height={plan.labelRect.height + 2}
+  1134→                  rx={getLabelStyle(plan.labelStrength).rx + 1}
+  1135→                  fill="none"
+  1136→                  stroke="white"
+  1137→                  strokeWidth={1.0}
+  1138→                  strokeOpacity={0.3}
+  1139→                />
+  1140→                <rect
+  1141→                  x={plan.labelRect.x}
+  1142→                  y={plan.labelRect.y}
+  1143→                  width={plan.labelRect.width}
+  1144→                  height={plan.labelRect.height}
+  1145→                  rx={getLabelStyle(plan.labelStrength).rx}
+  1146→                  fill={labelBgColor}
+  1147→                  fillOpacity={getLabelStyle(plan.labelStrength).fillOpacity}
+  1148→                  stroke={markerColor}
+  1149→                  strokeWidth={getLabelStyle(plan.labelStrength).strokeWidth}
+  1150→                  strokeOpacity={getLabelStyle(plan.labelStrength).strokeOpacity}
+  1151→                />
+  1152→                <text
+  1153→                  x={plan.labelRect.x + plan.labelRect.width / 2}
+  1154→                  y={plan.labelRect.y + plan.labelRect.height / 2}
+  1155→                  textAnchor="middle"
+  1156→                  dominantBaseline="middle"
+  1157→                  fill="white"
+  1158→                  fontSize={plan.labelFontSize}
+  1159→                  fontWeight={getLabelStyle(plan.labelStrength).fontWeight}
+  1160→                >
+  1161→                  {plan.labelText}
+  1162→                </text>
+  1163→              </>
+  1164→            )}
+  1165→          </g>
+  1166→        );
+  1167→        prioritySignalElements.push(el);
+  1168→        return;
+  1169→      }
+  1170→
+  1171→      // 核心卖点 — 醒目倒三角+脉冲圆点+发光+粗实线连接
+  1172→      if (isKeySellSignalR && !isBuy) {
+  1173→        const dotR = 6;
+  1174→        const triOffset = 20;
+  1175→        const glowR = 16;
+  1176→        const el = (
+  1177→          <g key={`tl-sig-${m.originalIndex}-${i}`}>
+  1178→            {/* 外圈发光 — 两层叠加 */}
+  1179→            <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.12} />
+  1180→            <circle cx={m.x} cy={m.y} r={glowR - 3} fill={markerColor} fillOpacity={0.2} stroke={markerColor} strokeWidth={0.8} strokeOpacity={0.5} />
+  1181→            {/* 价格线上的锚点圆 */}
+  1182→            <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={2} />
+  1183→            {/* 锚点到倒三角的连接线 */}
+  1184→            <line x1={m.x} y1={m.y - dotR - 1} x2={m.x} y2={m.y - triOffset + markerSize * 0.6} stroke={markerColor} strokeWidth={2} opacity={0.9} />
+  1185→            {/* 倒三角（卖点朝下） */}
+  1186→            <polygon
+  1187→              points={`${m.x},${m.y - triOffset + markerSize} ${m.x - markerSize * 1.0},${m.y - triOffset - markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y - triOffset - markerSize * 0.7}`}
+  1188→              fill={markerColor}
+  1189→              stroke="white"
+  1190→              strokeWidth={1.0}
+  1191→            />
+  1192→            <text
+  1193→              x={m.x}
+  1194→              y={m.y - triOffset - 1}
+  1195→              textAnchor="middle"
+  1196→              dominantBaseline="middle"
+  1197→              fill="white"
+  1198→              fontSize={7}
+  1199→              fontWeight="bold"
+  1200→            >
+  1201→              卖
+  1202→            </text>
+  1203→            {badgeSvg}
+  1204→            {plan.showLabel && plan.labelRect && (
+  1205→              <>
+  1206→                {/* 倒三角到文字标签的连接线 */}
+  1207→                <line
+  1208→                  x1={m.x}
+  1209→                  y1={m.y - triOffset - markerSize * 0.7}
+  1210→                  x2={plan.labelRect.x + plan.labelRect.width / 2}
+  1211→                  y2={plan.labelRect.y + plan.labelRect.height}
+  1212→                  stroke={markerColor}
+  1213→                  strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+  1214→                  opacity={getLabelStyle(plan.labelStrength).connOpacity}
+  1215→                />
+  1216→                <rect
+  1217→                  x={plan.labelRect.x - 1}
+  1218→                  y={plan.labelRect.y - 1}
+  1219→                  width={plan.labelRect.width + 2}
+  1220→                  height={plan.labelRect.height + 2}
+  1221→                  rx={getLabelStyle(plan.labelStrength).rx + 1}
+  1222→                  fill="none"
+  1223→                  stroke="white"
+  1224→                  strokeWidth={1.0}
+  1225→                  strokeOpacity={0.3}
+  1226→                />
+  1227→                <rect
+  1228→                  x={plan.labelRect.x}
+  1229→                  y={plan.labelRect.y}
+  1230→                  width={plan.labelRect.width}
+  1231→                  height={plan.labelRect.height}
+  1232→                  rx={getLabelStyle(plan.labelStrength).rx}
+  1233→                  fill={labelBgColor}
+  1234→                  fillOpacity={getLabelStyle(plan.labelStrength).fillOpacity}
+  1235→                  stroke={markerColor}
+  1236→                  strokeWidth={getLabelStyle(plan.labelStrength).strokeWidth}
+  1237→                  strokeOpacity={getLabelStyle(plan.labelStrength).strokeOpacity}
+  1238→                />
+  1239→                <text
+  1240→                  x={plan.labelRect.x + plan.labelRect.width / 2}
+  1241→                  y={plan.labelRect.y + plan.labelRect.height / 2}
+  1242→                  textAnchor="middle"
+  1243→                  dominantBaseline="middle"
+  1244→                  fill="white"
+  1245→                  fontSize={plan.labelFontSize}
+  1246→                  fontWeight={getLabelStyle(plan.labelStrength).fontWeight}
+  1247→                >
+  1248→                  {plan.labelText}
+  1249→                </text>
+  1250→              </>
+  1251→            )}
+  1252→          </g>
+  1253→        );
+  1254→        prioritySignalElements.push(el);
+  1255→        return;
+  1256→      }
+  1257→
+  1258→      // 其他strong信号 — 高开卖出也放入优先层，确保显示在最前面
+  1259→      const isPrioritySignal = isGapUpSellSignal;
+  1260→      const el = (
+  1261→        <g key={`tl-sig-${m.originalIndex}-${i}`}>
+  1262→          {isStoploss ? (
+  1263→            <polygon
+  1264→              points={`${m.x},${m.y - markerSize} ${m.x + markerSize},${m.y} ${m.x},${m.y + markerSize} ${m.x - markerSize},${m.y}`}
+  1265→              fill={markerColor}
+  1266→              stroke="white"
+  1267→              strokeWidth={0.8}
+  1268→            />
+  1269→          ) : isBuy ? (
+  1270→            <polygon
+  1271→              points={`${m.x},${m.y - markerSize} ${m.x - markerSize * 0.9},${m.y + markerSize * 0.6} ${m.x + markerSize * 0.9},${m.y + markerSize * 0.6}`}
+  1272→              fill={markerColor}
+  1273→              stroke="white"
+  1274→              strokeWidth={0.8}
+  1275→            />
+  1276→          ) : (
+  1277→            <polygon
+  1278→              points={`${m.x},${m.y + markerSize} ${m.x - markerSize * 0.9},${m.y - markerSize * 0.6} ${m.x + markerSize * 0.9},${m.y - markerSize * 0.6}`}
+  1279→              fill={markerColor}
+  1280→              stroke="white"
+  1281→              strokeWidth={0.8}
+  1282→            />
+  1283→          )}
+  1284→          {badgeSvg}
+  1285→          {plan.showLabel && plan.labelRect && (
+  1286→            <>
+  1287→              <line
+  1288→                x1={m.x}
+  1289→                y1={isBuy ? m.y + markerSize : m.y - markerSize}
+  1290→                x2={plan.labelRect.x + plan.labelRect.width / 2}
+  1291→                y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
+  1292→                stroke={markerColor}
+  1293→                strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+  1294→                opacity={getLabelStyle(plan.labelStrength).connOpacity}
+  1295→              />
+  1296→              <rect
+  1297→                x={plan.labelRect.x - 1}
+  1298→                y={plan.labelRect.y - 1}
+  1299→                width={plan.labelRect.width + 2}
+  1300→                height={plan.labelRect.height + 2}
+  1301→                rx={getLabelStyle(plan.labelStrength).rx + 1}
+  1302→                fill="none"
+  1303→                stroke="white"
+  1304→                strokeWidth={1.0}
+  1305→                strokeOpacity={0.3}
+  1306→              />
+  1307→              <rect
+  1308→                x={plan.labelRect.x}
+  1309→                y={plan.labelRect.y}
+  1310→                width={plan.labelRect.width}
+  1311→                height={plan.labelRect.height}
+  1312→                rx={getLabelStyle(plan.labelStrength).rx}
+  1313→                fill={labelBgColor}
+  1314→                fillOpacity={getLabelStyle(plan.labelStrength).fillOpacity}
+  1315→                stroke={m.isCustom ? "#c084fc" : markerColor}
+  1316→                strokeWidth={m.isCustom ? 0.8 : getLabelStyle(plan.labelStrength).strokeWidth}
+  1317→                strokeDasharray={m.isCustom ? "2 1" : "none"}
+  1318→                strokeOpacity={m.isCustom ? 1 : getLabelStyle(plan.labelStrength).strokeOpacity}
+  1319→              />
+  1320→              <text
+  1321→                x={plan.labelRect.x + plan.labelRect.width / 2}
+  1322→                y={plan.labelRect.y + plan.labelRect.height / 2}
+  1323→                textAnchor="middle"
+  1324→                dominantBaseline="middle"
+  1325→                fill="white"
+  1326→                fontSize={plan.labelFontSize}
+  1327→                fontWeight={getLabelStyle(plan.labelStrength).fontWeight}
+  1328→              >
+  1329→                {plan.labelText}
+  1330→              </text>
+  1331→            </>
+  1332→          )}
+  1333→        </g>
+  1334→      );
+  1335→      if (isPrioritySignal) {
+  1336→        prioritySignalElements.push(el);
+  1337→      } else {
+  1338→        signalElements.push(el);
+  1339→      }
+  1340→      return;
+  1341→    } else if (m.strength === "medium") {
+  1342→      const dotRadius = 5;
+  1343→      const glowR = 8;
+  1344→      const badgeCx = m.x + dotRadius + 4;
+  1345→      const badgeCy = m.y - dotRadius + 1;
+  1346→      const { badgeSvg, bubbleSvg } = renderCountBadge(m, badgeCx, badgeCy, badgeColor, badgeTextColor);
+  1347→      if (bubbleSvg) bubbleElements.push(bubbleSvg);
+  1348→
+  1349→      // 买点统一#dc2626鲜红，卖点统一#16a34a鲜绿
+  1350→      const mediumLabelBg = isBuy ? "#dc2626" : "#16a34a";
+  1351→
+  1352→      signalElements.push(
+  1353→        <g key={`tl-sig-${m.originalIndex}-${i}`}>
+  1354→          {/* 发光圈让medium信号也更醒目 */}
+  1355→          <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.12} />
+  1356→          <circle
+  1357→            cx={m.x}
+  1358→            cy={m.y}
+  1359→            r={dotRadius}
+  1360→            fill={markerColor}
+  1361→            fillOpacity={0.9}
+  1362→            stroke="white"
+  1363→            strokeWidth={1.2}
+  1364→          />
+  1365→          {isBuy ? (
+  1366→            <polygon
+  1367→              points={`${m.x},${m.y - 2.5} ${m.x - 2},${m.y + 1} ${m.x + 2},${m.y + 1}`}
+  1368→              fill="white"
+  1369→              fillOpacity={0.9}
+  1370→            />
+  1371→          ) : (
+  1372→            <polygon
+  1373→              points={`${m.x},${m.y + 2.5} ${m.x - 2},${m.y - 1} ${m.x + 2},${m.y - 1}`}
+  1374→              fill="white"
+  1375→              fillOpacity={0.9}
+  1376→            />
+  1377→          )}
+  1378→          {badgeSvg}
+  1379→          {plan.showLabel && plan.labelRect && (
+  1380→            <>
+  1381→              <line
+  1382→                x1={m.x}
+  1383→                y1={isBuy ? m.y + dotRadius : m.y - dotRadius}
+  1384→                x2={plan.labelRect.x + plan.labelRect.width / 2}
+  1385→                y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
+  1386→                stroke={markerColor}
+  1387→                strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+  1388→                opacity={getLabelStyle(plan.labelStrength).connOpacity}
+  1389→              />
+  1390→              <rect
+  1391→                x={plan.labelRect.x}
+  1392→                y={plan.labelRect.y}
+  1393→                width={plan.labelRect.width}
+  1394→                height={plan.labelRect.height}
+  1395→                rx={getLabelStyle(plan.labelStrength).rx}
+  1396→                fill={mediumLabelBg}
+  1397→                fillOpacity={getLabelStyle(plan.labelStrength).fillOpacity}
+  1398→                stroke={markerColor}
+  1399→                strokeWidth={getLabelStyle(plan.labelStrength).strokeWidth}
+  1400→                strokeOpacity={getLabelStyle(plan.labelStrength).strokeOpacity}
+  1401→              />
+  1402→              <text
+  1403→                x={plan.labelRect.x + plan.labelRect.width / 2}
+  1404→                y={plan.labelRect.y + plan.labelRect.height / 2}
+  1405→                textAnchor="middle"
+  1406→                dominantBaseline="middle"
+  1407→                fill="white"
+  1408→                fontSize={plan.labelFontSize}
+  1409→                fontWeight={getLabelStyle(plan.labelStrength).fontWeight}
+  1410→              >
+  1411→                {plan.labelText}
+  1412→              </text>
+  1413→            </>
+  1414→          )}
+  1415→        </g>
+  1416→      );
+  1417→    } else {
+  1418→      const dotRadius = 4;
+  1419→      const glowR = 6;
+  1420→      signalElements.push(
+  1421→        <g key={`tl-sig-${m.originalIndex}-${i}`}>
+  1422→          {/* v5.8: weak信号也加发光圈，提升可见性 */}
+  1423→          <circle cx={m.x} cy={m.y} r={glowR} fill={markerColor} fillOpacity={0.1} />
+  1424→          <circle
+  1425→            cx={m.x}
+  1426→            cy={m.y}
+  1427→            r={dotRadius}
+  1428→            fill={markerColor}
+  1429→            fillOpacity={0.8}
+  1430→            stroke="white"
+  1431→            strokeWidth={1.0}
+  1432→          />
+  1433→          {isBuy ? (
+  1434→            <polygon
+  1435→              points={`${m.x},${m.y - 2} ${m.x - 1.5},${m.y + 0.8} ${m.x + 1.5},${m.y + 0.8}`}
+  1436→              fill="white"
+  1437→              fillOpacity={0.85}
+  1438→            />
+  1439→          ) : (
+  1440→            <polygon
+  1441→              points={`${m.x},${m.y + 2} ${m.x - 1.5},${m.y - 0.8} ${m.x + 1.5},${m.y - 0.8}`}
+  1442→              fill="white"
+  1443→              fillOpacity={0.85}
+  1444→            />
+  1445→          )}
+  1446→        </g>
+  1447→      );
+  1448→    }
+  1449→  });
+  1450→
+  1451→  return { signalElements, prioritySignalElements, bubbleElements };
+  1452→}
+  1453→
+  1454→// ── Intent segment overlay removed — intent segments now rendered as an external bar outside the chart ──
+  1455→
+  1456→// ── Build a lightweight fingerprint from formattedGraphicalItems ──
+  1457→// Only checks the price line's last point position and signal/marker counts.
+  1458→// If these haven't changed, the expensive computation can be skipped.
+  1459→function buildOverlayFingerprint(
+  1460→  formattedGraphicalItems: any[],
+  1461→  xAxisMap: any,
+  1462→  yAxisMap: any,
+  1463→  expandedIds: Set<string>,
+  1464→): string {
+  1465→  if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return "empty";
+  1466→  let priceLineLen = 0;
+  1467→  let lastX = 0, lastY = 0;
+  1468→  let signalCount = 0;
+  1469→  let pvCount = 0;
+  1470→  for (const item of formattedGraphicalItems) {
+  1471→    if (item?.props?.points && Array.isArray(item.props.points)) {
+  1472→      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
+  1473→      if (stroke === "#eab308" || stroke === "#facc15" || stroke === "#ca8a04") continue;
+  1474→      if (priceLineLen === 0) {
+  1475→        const pts = item.props.points;
+  1476→        priceLineLen = pts.length;
+  1477→        if (pts.length > 0) {
+  1478→          lastX = pts[pts.length - 1].x;
+  1479→          lastY = pts[pts.length - 1].y;
+  1480→        }
+  1481→        // Count signals and pv markers in one pass
+  1482→        for (const p of pts) {
+  1483→          if (p?.payload?.tSignal) signalCount++;
+  1484→          const pv = p?.payload?.pvMarker;
+  1485→          if (pv && Array.isArray(pv)) pvCount += pv.length;
+  1486→        }
+  1487→      }
+  1488→    }
+  1489→  }
+  1490→  // Include expanded IDs in fingerprint so toggleExpand triggers re-render
+  1491→  const expandedKey = expandedIds.size > 0 ? Array.from(expandedIds).sort().join(",") : "";
+  1492→  return `${priceLineLen}:${(lastX ?? 0).toFixed(1)}:${(lastY ?? 0).toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}`;
+  1493→}
+  1494→
+  1495→// ── VWAP (均线) 禁止买卖标注 ─────────────────────────────
+  1496→// 在均线旁标注"禁止买卖"：均线上方+0.3%禁买，均线下方-0.3%禁卖，±0.3%内禁止买卖
+  1497→// 做T核心原则：低吸高抛 → 均线下0.3%外买入，均线上0.3%外卖出，均线附近不操作
+  1498→
+  1499→function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pricePoints: any[] }) {
+  1500→  if (vwapPoints.length < 2) return null;
+  1501→
+  1502→  const totalPoints = vwapPoints.length;
+  1503→  // Adaptive label count: show 1 label as soon as VWAP appears, scale up as data grows
+  1504→  const LABEL_COUNT = totalPoints < 10 ? 1
+  1505→    : Math.min(3, Math.max(1, Math.floor(totalPoints / 60)));
+  1506→  
+  1507→  const positions: number[] = [];
+  1508→  // With very few points, place the single label at the latest point for visibility
+  1509→  if (totalPoints < 10) {
+  1510→    positions.push(totalPoints - 1);
+  1511→  } else {
+  1512→    const spacing = Math.floor(totalPoints / (LABEL_COUNT + 1));
+  1513→    for (let i = 1; i <= LABEL_COUNT; i++) {
+  1514→      positions.push(spacing * i);
+  1515→    }
+  1516→  }
+  1517→
+  1518→  // ── Build the ±0.3% shaded band along the VWAP line ──
+  1519→  // We create a polygon path: upper boundary = VWAP + 0.3%, lower = VWAP - 0.3%
+  1520→  // Since we only have pixel coords, we need the Y-axis scale to convert
+  1521→  // Instead, we can estimate: find the pixel distance for 0.3% from a few sample points
+  1522→  // Using the price data payload to calculate the ratio of pixels to percentage
+  1523→  const bandElements: React.ReactNode[] = [];
+  1524→  const labelElements: React.ReactNode[] = [];
+  1525→
+  1526→  // ── Calculate pixels-per-percent using VWAP data ──
+  1527→  // Since vwapPoints[i].y = yAxis.scale(avgPrice), we can directly compute
+  1528→  // how many pixels correspond to 0.3% of the price at any sample point
+  1529→  const sampleIdx = Math.floor(totalPoints / 2);
+  1530→  const sampleVwapPt = vwapPoints[sampleIdx];
+  1531→  const sampleAvgPrice = sampleVwapPt?.payload?.avgPrice;
+  1532→
+  1533→  // Method 1: Use price vs avgPrice pixel difference
+  1534→  let pxPerPercent = 0;
+  1535→  if (sampleAvgPrice && sampleAvgPrice > 0) {
+  1536→    const samplePricePt = pricePoints[sampleIdx];
+  1537→    if (samplePricePt) {
+  1538→      const priceDiffPx = samplePricePt.y - sampleVwapPt.y; // positive = price below vwap in SVG coords
+  1539→      const priceDiffPct = ((samplePricePt.payload.price - sampleAvgPrice) / sampleAvgPrice) * 100;
+  1540→      if (Math.abs(priceDiffPct) > 0.01) {
+  1541→        pxPerPercent = priceDiffPx / priceDiffPct;
+  1542→      }
+  1543→    }
+  1544→  }
+  1545→
+  1546→  // Method 2: If price ≈ avgPrice, use the chart's Y range to estimate pxPerPercent
+  1547→  // The chart shows [yMin, yMax] which maps to the full pixel height
+  1548→  if (pxPerPercent === 0 && sampleAvgPrice && sampleAvgPrice > 0 && pricePoints.length >= 2) {
+  1549→    // 1% of the sampleAvgPrice in price units
+  1550→    const onePctInPrice = sampleAvgPrice * 0.01;
+  1551→    // Use the first and last price points to estimate the scale
+  1552→    const firstPt = pricePoints[0];
+  1553→    const midPt = pricePoints[Math.floor(pricePoints.length / 2)];
+  1554→    if (firstPt && midPt && firstPt.payload?.price && midPt.payload?.price) {
+  1555→      const priceRange = Math.abs(firstPt.payload.price - midPt.payload.price) || sampleAvgPrice * 0.02;
+  1556→      const pxRange = Math.abs(firstPt.y - midPt.y) || 100;
+  1557→      pxPerPercent = (pxRange / priceRange) * onePctInPrice;
+  1558→    }
+  1559→  }
+  1560→
+  1561→  // Method 3: Final fallback — estimate from chart dimensions
+  1562→  if (pxPerPercent === 0 && pricePoints.length >= 2) {
+  1563→    const chartHeight = Math.abs(pricePoints[0].y - pricePoints[pricePoints.length - 1].y) || 100;
+  1564→    // Assume chart shows roughly ±3% range
+  1565→    pxPerPercent = chartHeight / 6;
+  1566→  }
+  1567→
+  1568→  // 0.3% in pixels
+  1569→  const bandPx = Math.abs(pxPerPercent * 0.3);
+  1570→
+  1571→  // Build the band polygon as a series of rectangles between upper and lower boundaries
+  1572→  if (bandPx > 1) {
+  1573→    // Create the band as a single path
+  1574→    const upperPath: string[] = [];
+  1575→    const lowerPath: string[] = [];
+  1576→    
+  1577→    // Sample every few points for performance
+  1578→    const step = Math.max(1, Math.floor(totalPoints / 120));
+  1579→    for (let i = 0; i < totalPoints; i += step) {
+  1580→      const pt = vwapPoints[i];
+  1581→      if (!pt || pt.x == null || pt.y == null) continue;
+  1582→      upperPath.push(`${pt.x},${pt.y - bandPx}`);
+  1583→      lowerPath.push(`${pt.x},${pt.y + bandPx}`);
+  1584→    }
+  1585→    // Add the last point
+  1586→    const lastPt = vwapPoints[totalPoints - 1];
+  1587→    if (lastPt && lastPt.x != null && lastPt.y != null) {
+  1588→      upperPath.push(`${lastPt.x},${lastPt.y - bandPx}`);
+  1589→      lowerPath.push(`${lastPt.x},${lastPt.y + bandPx}`);
+  1590→    }
+  1591→
+  1592→    // Only need 2 points to draw a band segment
+  1593→    if (upperPath.length >= 2) {
+  1594→      // Polygon: go forward along upper, then backward along lower
+  1595→      const points = [...upperPath, ...lowerPath.reverse()].join(' ');
+  1596→      bandElements.push(
+  1597→        <polygon
+  1598→          key="vwap-band"
+  1599→          points={points}
+  1600→          fill="#ca8a04"
+  1601→          fillOpacity={0.10}
+  1602→          stroke="none"
+  1603→        />
+  1604→      );
+  1605→      // Upper boundary line (VWAP + 0.3%)
+  1606→      bandElements.push(
+  1607→        <polyline
+  1608→          key="vwap-band-upper"
+  1609→          points={upperPath.join(' ')}
+  1610→          fill="none"
+  1611→          stroke="#ca8a04"
+  1612→          strokeWidth={0.6}
+  1613→          strokeOpacity={0.35}
+  1614→          strokeDasharray="3 3"
+  1615→        />
+  1616→      );
+  1617→      // Lower boundary line (VWAP - 0.3%)
+  1618→      bandElements.push(
+  1619→        <polyline
+  1620→          key="vwap-band-lower"
+  1621→          points={lowerPath.reverse().join(' ')}
+  1622→          fill="none"
+  1623→          stroke="#ca8a04"
+  1624→          strokeWidth={0.6}
+  1625→          strokeOpacity={0.35}
+  1626→          strokeDasharray="3 3"
+  1627→        />
+  1628→      );
+  1629→    }
+  1630→  }
+  1631→
+  1632→  // ── Place labels at key positions ──
+  1633→  const lastVwapX = vwapPoints[totalPoints - 1]?.x ?? 0;
+  1634→  for (const pos of positions) {
+  1635→    const vwapPt = vwapPoints[pos];
+  1636→    const pricePt = pricePoints[pos];
+  1637→    if (!vwapPt || !pricePt || vwapPt.x == null || vwapPt.y == null) continue;
+  1638→
+  1639→    const x = vwapPt.x;
+  1640→    const y = vwapPt.y;
+  1641→    const priceY = pricePt.y;
+  1642→    const payload = vwapPt.payload;
+  1643→    const avgPrice = payload?.avgPrice ?? 0;
+  1644→    const curPrice = payload?.price ?? 0;
+  1645→    
+  1646→    // Calculate deviation from VWAP in percentage
+  1647→    const devPct = avgPrice > 0 ? ((curPrice - avgPrice) / avgPrice) * 100 : 0;
+  1648→    const absDevPct = Math.abs(devPct);
+  1649→    
+  1650→    let label: string;
+  1651→    let subLabel: string;
+  1652→    let color: string;
+  1653→    let offsetY: number;
+  1654→
+  1655→    if (absDevPct <= 0.3) {
+  1656→      // Within ±0.3% of VWAP → 禁止买卖 (both buying AND selling)
+  1657→      label = "禁止买卖";
+  1658→      subLabel = `均线±0.3%震荡区`;
+  1659→      color = "#ca8a04"; // amber/yellow to match VWAP line
+  1660→      offsetY = priceY < y ? -22 : 22; // offset away from VWAP
+  1661→    } else if (devPct > 0.3) {
+  1662→      // Price above VWAP + 0.3% → 禁买 (only sell allowed)
+  1663→      label = "禁买";
+  1664→      subLabel = "均线上方高抛区";
+  1665→      color = "#dc2626"; // red
+  1666→      offsetY = -18;
+  1667→    } else {
+  1668→      // Price below VWAP - 0.3% → 禁卖 (only buy allowed)
+  1669→      label = "禁卖";
+  1670→      subLabel = "均线下方低吸区";
+  1671→      color = "#16a34a"; // green
+  1672→      offsetY = 18;
+  1673→    }
+  1674→
+  1675→    const pillWidth = label.length > 2 ? 56 : 44;
+  1676→    // When label is at the rightmost position (latest data point), shift it left
+  1677→    // to avoid being clipped by the chart boundary
+  1678→    const isAtRightEdge = pos === totalPoints - 1;
+  1679→    const labelOffsetX = isAtRightEdge ? -pillWidth / 2 - 4 : 0;
+  1680→
+  1681→    labelElements.push(
+  1682→      <g key={`vwap-ban-${pos}`}>
+  1683→        {/* Small indicator dot on VWAP line */}
+  1684→        <circle cx={x} cy={y} r={2.5} fill={color} fillOpacity={0.6} />
+  1685→        {/* Main label pill */}
+  1686→        <rect
+  1687→          x={x - pillWidth / 2 + labelOffsetX}
+  1688→          y={y + offsetY - 8}
+  1689→          width={pillWidth}
+  1690→          height={16}
+  1691→          rx={3}
+  1692→          fill={color}
+  1693→          fillOpacity={0.15}
+  1694→          stroke={color}
+  1695→          strokeWidth={0.8}
+  1696→          strokeOpacity={0.5}
+  1697→        />
+  1698→        <text
+  1699→          x={x + labelOffsetX}
+  1700→          y={y + offsetY + 1}
+  1701→          textAnchor="middle"
+  1702→          dominantBaseline="middle"
+  1703→          fontSize={9}
+  1704→          fontWeight={700}
+  1705→          fill={color}
+  1706→          fillOpacity={0.85}
+  1707→          fontFamily="sans-serif"
+  1708→        >
+  1709→          {label}
+  1710→        </text>
+  1711→        {/* Sub-label */}
+  1712→        <text
+  1713→          x={x + labelOffsetX}
+  1714→          y={y + offsetY + (offsetY < 0 ? -12 : 12)}
+  1715→          textAnchor="middle"
+  1716→          dominantBaseline="middle"
+  1717→          fontSize={7}
+  1718→          fontWeight={500}
+  1719→          fill={color}
+  1720→          fillOpacity={0.45}
+  1721→          fontFamily="sans-serif"
+  1722→        >
+  1723→          {subLabel}
+  1724→        </text>
+  1725→      </g>
+  1726→    );
+  1727→  }
+  1728→
+  1729→  return (
+  1730→    <g className="vwap-ban-annotations">
+  1731→      {/* Band (bottom layer) */}
+  1732→      {bandElements}
+  1733→      {/* Labels (on top of band) */}
+  1734→      {labelElements}
+  1735→    </g>
+  1736→  );
+  1737→}
+  1738→
+  1739→// ── Combined Chart Overlay Renderer ──────────────────────
+  1740→// Ensures proper layer order:
+  1741→//   Layer 0 (bottom): 均线禁止买卖标注
+  1742→//   Layer 1: 分时因子 signal markers & labels
+  1743→//   Layer 2 (middle): 选股标记 pulse/volume markers (ON TOP of factor signals)
+  1744→//   Layer 3 (top):    Expanded bubbles (interactive, must be on top for usability)
+  1745→
+  1746→function CombinedChartOverlay(props: any) {
+  1747→  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  1748→  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  1749→
+  1750→  const toggleExpand = useCallback((id: string) => {
+  1751→    setExpandedIds(prev => {
+  1752→      const next = new Set(prev);
+  1753→      if (next.has(id)) next.delete(id);
+  1754→      else next.add(id);
+  1755→      return next;
+  1756→    });
+  1757→  }, []);
+  1758→
+  1759→  // ── Extract VWAP (avgPrice) line points for "禁止买卖" annotations ──
+  1760→  // Strategy: Find ANY line's points (all payloads contain both price and avgPrice),
+  1761→  // then compute VWAP pixel Y positions using yAxis.scale(avgPrice).
+  1762→  // This is much more robust than trying to identify which line IS the VWAP line.
+  1763→  const vwapAnnotations = useMemo(() => {
+  1764→    if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
+  1765→
+  1766→    const yAxis = Object.values(yAxisMap)[0] as any;
+  1767→    if (!yAxis?.scale) return null;
+  1768→
+  1769→    // Find the first line with points that has payload with avgPrice
+  1770→    let sourcePoints: any[] | null = null;
+  1771→    for (let i = 0; i < formattedGraphicalItems.length; i++) {
+  1772→      const item = formattedGraphicalItems[i];
+  1773→      if (item?.props?.points && Array.isArray(item.props.points) && item.props.points.length > 0) {
+  1774→        const pts = item.props.points;
+  1775→        // Check if the first point with data has avgPrice in payload
+  1776→        for (const pt of pts) {
+  1777→          if (pt?.payload?.avgPrice != null && pt?.payload?.price != null) {
+  1778→            sourcePoints = pts;
+  1779→            break;
+  1780→          }
+  1781→        }
+  1782→        if (sourcePoints) break;
+  1783→      }
+  1784→    }
+  1785→
+  1786→    if (!sourcePoints || sourcePoints.length === 0) return null;
+  1787→
+  1788→    // Filter to only points that have actual data (hasData === true)
+  1789→    const validPoints = sourcePoints.filter((pt: any) =>
+  1790→      pt?.payload?.hasData === true &&
+  1791→      pt?.payload?.avgPrice != null &&
+  1792→      pt?.payload?.price != null &&
+  1793→      pt.x != null
+  1794→    );
+  1795→
+  1796→    if (validPoints.length < 2) return null;
+  1797→
+  1798→    // Compute both price and VWAP pixel positions from the same source points
+  1799→    const pricePoints = validPoints.map((pt: any) => ({
+  1800→      x: pt.x,
+  1801→      y: yAxis.scale(pt.payload.price),
+  1802→      payload: pt.payload,
+  1803→    }));
+  1804→
+  1805→    const vwapPoints = validPoints.map((pt: any) => ({
+  1806→      x: pt.x,
+  1807→      y: yAxis.scale(pt.payload.avgPrice),
+  1808→      payload: pt.payload,
+  1809→    }));
+  1810→
+  1811→    return { vwapPoints, pricePoints };
+  1812→  }, [formattedGraphicalItems, xAxisMap, yAxisMap]);
+  1813→
+  1814→  // ── Fingerprint-based cache for overlay computation ──
+  1815→  // recharts creates new formattedGraphicalItems on every render, even if the data
+  1816→  // hasn't changed. The fingerprint is cheap to compute (one pass over points) and
+  1817→  // lets us skip the heavy signal extraction + overlap resolution when data is the same.
+  1818→  const fp = buildOverlayFingerprint(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds);
+  1819→
+  1820→  const { signalResult, pvPlacedLabels } = fp !== "empty"
+  1821→    ? overlayCache.compute(fp, () => {
+  1822→        // Compute signal elements (factor signals)
+  1823→        const sr = computeTimelineSignalElements(
+  1824→          formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand
+  1825→        );
+  1826→
+  1827→        // Compute PV marker points (screener markers)
+  1828→        const pvPoints = extractPulseVolumePoints(formattedGraphicalItems);
+  1829→
+  1830→        // Resolve PV label overlaps
+  1831→        const pvLabels = pvPoints.length > 0 ? resolvePvLabelOverlaps(pvPoints) : [];
+  1832→
+  1833→        return { signalResult: sr, pvPlacedLabels: pvLabels };
+  1834→      })
+  1835→    : { signalResult: null, pvPlacedLabels: [] as PlacedLabel[] };
+  1836→
+  1837→  if (!signalResult && pvPlacedLabels.length === 0 && !vwapAnnotations) return null;
+  1838→
+  1839→  return (
+  1840→    <g>
+  1841→      {/* Layer 0 (bottom-most): 均线禁止买卖标注 — 挨着均线显示 */}
+  1842→      {vwapAnnotations && <VwapBanAnnotations vwapPoints={vwapAnnotations.vwapPoints} pricePoints={vwapAnnotations.pricePoints} />}
+  1843→      {/* Layer 1: 分时因子 signal markers & labels (常规信号) */}
+  1844→      {signalResult?.signalElements}
+  1845→      {/* Layer 2 (middle): 选股标记 pulse/volume markers — ON TOP of factor signals */}
+  1846→      {pvPlacedLabels.length > 0 && (
+  1847→        <g className="pulse-volume-markers">
+  1848→          {pvPlacedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY, p.adjustedX))}
+  1849→        </g>
+  1850→      )}
+  1851→      {/* Layer 3: 优先信号（高开卖出/放量下跌买点）— 确保显示在最前面，不被PV标签遮挡 */}
+  1852→      {signalResult?.prioritySignalElements}
+  1853→      {/* Layer 4 (top): Expanded bubbles — interactive, must be on top for usability */}
+  1854→      {signalResult?.bubbleElements}
+  1855→    </g>
+  1856→  );
+  1857→}
+  1858→
+  1859→// ── Legacy TimelineSignalRenderer (kept for backward compat, delegates to computeTimelineSignalElements) ──
+  1860→
+  1861→function TimelineSignalRenderer(props: any) {
+  1862→  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  1863→  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  1864→
+  1865→  const toggleExpand = useCallback((id: string) => {
+  1866→    setExpandedIds(prev => {
+  1867→      const next = new Set(prev);
+  1868→      if (next.has(id)) next.delete(id);
+  1869→      else next.add(id);
+  1870→      return next;
+  1871→    });
+  1872→  }, []);
+  1873→
+  1874→  const result = computeTimelineSignalElements(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand);
+  1875→  if (!result) return null;
+  1876→
+  1877→  return (
+  1878→    <g>
+  1879→      {result.signalElements}
+  1880→      {result.prioritySignalElements}
+  1881→      {result.bubbleElements}
+  1882→    </g>
+  1883→  );
+  1884→}
+  1885→
+  1886→// ── Custom Percentage Y-Axis Tick (deep red/green color coding) ───
+  1887→
+  1888→function PercentYTick(props: { x?: number; y?: number; payload?: { value?: number }; index?: number; visibleTicksCount?: number }) {
+  1889→  const { x = 0, y = 0, payload } = props;
+  1890→  const val = payload?.value ?? 0;
+  1891→  const isPositive = val > 0.001;
+  1892→  const isZero = Math.abs(val) <= 0.001;
+  1893→  // Deep colors: red-600 for positive, green-600 for negative, muted for zero
+  1894→  const fill = isZero ? "#6b7280" : isPositive ? "#dc2626" : "#16a34a";
+  1895→  const text = isZero ? "0.00%" : val > 0 ? `+${val.toFixed(2)}%` : `${val.toFixed(2)}%`;
+  1896→  return (
+  1897→    <text x={x} y={y} textAnchor="end" dominantBaseline="middle" fill={fill} fontSize={10} fontWeight="600">
+  1898→      {text}
+  1899→    </text>
+  1900→  );
+  1901→}
+  1902→
+  1903→// ── 同花顺风格 分时图 (Unified Three-Panel) ──────────
+  1904→
+  1905→/**
+  1906→ * Custom shallow-equivalent comparison for TimeSharingPanel props.
+  1907→ * Compares array/object props by content fingerprint instead of reference,
+  1908→ * so React.memo can actually skip re-renders when data hasn't changed.
+  1909→ */
+  1910→function timeSharingPropsEqual(
+  1911→  prev: React.ComponentProps<typeof TimeSharingPanel>,
+  1912→  next: React.ComponentProps<typeof TimeSharingPanel>
+  1913→): boolean {
+  1914→  // Quick primitive checks first
+  1915→  if (
+  1916→    prev.prevClose !== next.prevClose ||
+  1917→    prev.symbol !== next.symbol ||
+  1918→    prev.visibleMinutes !== next.visibleMinutes ||
+  1919→    prev.zoomIdx !== next.zoomIdx ||
+  1920→    prev.maxZoomIdx !== next.maxZoomIdx ||
+  1921→    prev.panOffset !== next.panOffset ||
+  1922→    prev.prevDayMA5 !== next.prevDayMA5 ||
+  1923→    prev.activeIndexKey !== next.activeIndexKey
+  1924→  ) return false;
+  1925→
+  1926→  // Data array: compare length + last item fingerprint (most frequent change)
+  1927→  const pd = prev.data, nd = next.data;
+  1928→  if (pd.length !== nd.length) return false;
+  1929→  if (pd.length > 0) {
+  1930→    const pLast = pd[pd.length - 1], nLast = nd[nd.length - 1];
+  1931→    if (pLast.price !== nLast.price || pLast.time !== nLast.time || pLast.volume !== nLast.volume) return false;
+  1932→  }
+  1933→
+  1934→  // Signals: compare length + last signal type/reason + first signal
+  1935→  const ps = prev.signals, ns = next.signals;
+  1936→  if (ps.length !== ns.length) return false;
+  1937→  if (ps.length > 0) {
+  1938→    const pSig = ps[ps.length - 1], nSig = ns[ns.length - 1];
+  1939→    if (pSig?.type !== nSig?.type || pSig?.reason !== nSig?.reason) return false;
+  1940→    // Also check first signal to catch new signals at the start
+  1941→    const pFirst = ps[0], nFirst = ns[0];
+  1942→    if (pFirst?.type !== nFirst?.type || pFirst?.reason !== nFirst?.reason) return false;
+  1943→  }
+  1944→
+  1945→  // MACD data: compare length + last MACD values (most likely to change)
+  1946→  if (prev.macdData.length !== next.macdData.length) return false;
+  1947→  if (prev.macdData.length > 0) {
+  1948→    const pm = prev.macdData[prev.macdData.length - 1];
+  1949→    const nm = next.macdData[next.macdData.length - 1];
+  1950→    if (pm.dif !== nm.dif || pm.macd !== nm.macd) return false;
+  1951→  }
+  1952→
+  1953→  // Key price levels: compare length + first level price
+  1954→  if ((prev.keyPriceLevels?.length || 0) !== (next.keyPriceLevels?.length || 0)) return false;
+  1955→  if (prev.keyPriceLevels && prev.keyPriceLevels.length > 0 && next.keyPriceLevels && next.keyPriceLevels.length > 0) {
+  1956→    if (prev.keyPriceLevels[0].price !== next.keyPriceLevels[0].price) return false;
+  1957→  }
+  1958→
+  1959→  // PV markers: compare length + last marker time
+  1960→  if ((prev.pvMarkers?.length || 0) !== (next.pvMarkers?.length || 0)) return false;
+  1961→  if (prev.pvMarkers && prev.pvMarkers.length > 0 && next.pvMarkers && next.pvMarkers.length > 0) {
+  1962→    if (prev.pvMarkers[prev.pvMarkers.length - 1].time !== next.pvMarkers[next.pvMarkers.length - 1].time) return false;
+  1963→  }
+  1964→
+  1965→  // Regime objects: compare regime string
+  1966→  if (prev.szIndexRegime?.regime !== next.szIndexRegime?.regime) return false;
+  1967→  if (prev.sectorRegime?.regime !== next.sectorRegime?.regime) return false;
+  1968→  if (prev.sectorInfo?.code !== next.sectorInfo?.code) return false;
+  1969→  if (prev.sectorLoading !== next.sectorLoading) return false;
+  1970→  if (prev.indexLoading !== next.indexLoading) return false;
+  1971→
+  1972→  // Index timeline data: compare items length for active key + last item price
+  1973→  const prevIdxData = prev.indexTimelineData?.[prev.activeIndexKey || "sz"];
+  1974→  const nextIdxData = next.indexTimelineData?.[next.activeIndexKey || "sz"];
+  1975→  if ((prevIdxData?.items.length || 0) !== (nextIdxData?.items.length || 0)) return false;
+  1976→  if (prevIdxData && prevIdxData.items.length > 0 && nextIdxData && nextIdxData.items.length > 0) {
+  1977→    const piLast = prevIdxData.items[prevIdxData.items.length - 1];
+  1978→    const niLast = nextIdxData.items[nextIdxData.items.length - 1];
+  1979→    if (piLast.price !== niLast.price) return false;
+  1980→  }
+  1981→
+  1982→  // Sector timeline data: compare items length + last item price
+  1983→  if ((prev.sectorTimelineData?.items.length || 0) !== (next.sectorTimelineData?.items.length || 0)) return false;
+  1984→  if (prev.sectorTimelineData && prev.sectorTimelineData.items.length > 0 && next.sectorTimelineData && next.sectorTimelineData.items.length > 0) {
+  1985→    const psLast = prev.sectorTimelineData.items[prev.sectorTimelineData.items.length - 1];
+  1986→    const nsLast = next.sectorTimelineData.items[next.sectorTimelineData.items.length - 1];
+  1987→    if (psLast.price !== nsLast.price) return false;
+  1988→  }
+  1989→
+  1990→  // Callbacks and config are stable refs (useCallback in parent)
+  1991→
+  1992→  // Recent day lows: compare length + each low value
+  1993→  if ((prev.recentDayLows?.length || 0) !== (next.recentDayLows?.length || 0)) return false;
+  1994→  if (prev.recentDayLows && next.recentDayLows) {
+  1995→    for (let i = 0; i < prev.recentDayLows.length; i++) {
+  1996→      if (prev.recentDayLows[i].low !== next.recentDayLows[i].low) return false;
+  1997→    }
+  1998→  }
+  1999→
+  2000→  return true;
+
+[showing lines 1-2000 of 4793; use offset=2001 with limit to continue reading]

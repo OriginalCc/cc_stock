@@ -3589,7 +3589,18 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               <YAxis
                 yAxisId="price"
                 domain={[yMin, yMax]}
+                orientation="left"
+                tick={false}
+                tickLine={false}
+                axisLine={false}
+                width={55}
+              />
+              {/* Hidden right YAxis with width=1 to mirror the main chart's
+                  percent YAxis layout, keeping plot-area widths perfectly aligned */}
+              <YAxis
+                yAxisId="percent"
                 orientation="right"
+                domain={[percentMin, percentMax]}
                 tick={false}
                 tickLine={false}
                 axisLine={false}
