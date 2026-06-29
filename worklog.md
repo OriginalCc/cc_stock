@@ -462,3 +462,32 @@ Stage Summary:
 - 保留VWAP禁止买卖标注（非因子标签，是均线参考标注）
 - 保留参考线标签（MA5/5日最低/均线上方高抛区）
 - 正常分时模式不受影响，因子标签完整显示
+
+---
+Task ID: 10
+Agent: main
+Task: 分时倒影需要显示买卖点
+
+Work Log:
+- 上一个Task移除了倒影图所有因子标签，用户反馈需要保留买卖点
+- 分析CombinedChartOverlay的signalResult结构：
+  * signalElements: 常规因子信号（MACD死叉/跌破均价线/量价背离等中等强度因子）
+  * prioritySignalElements: 核心买卖点（放量下跌买点/高开卖出/次低点缩量买入/放量上涨卖点/次高点放量卖出/均线引力卖点等strong核心信号）
+  * pvPlacedLabels: PV选股标记（强脉冲/放量下跌等）
+  * bubbleElements: 展开气泡
+- 修改mirrored分支：从"只渲染VWAP标注"改为"渲染VWAP标注 + prioritySignalElements(核心买卖点)"
+- 跳过signalElements(常规因子)和pvPlacedLabels(PV选股标记)
+- Lint检查通过
+- Agent Browser验证（reload后）：
+  * 倒影模式显示的买卖点：高开卖出(强)/放量下跌买点×3(强)/放量上涨卖点(强)/次低点缩量买入×3(强)/次高点放量卖出+1(强) ✓
+  * "MACD死叉+1(强)"是"放量下跌买点"组合信号的副reason，作为买点显示（正确行为）✓
+  * 倒影模式不显示常规因子（跌破均价线/量价背离/J线超买回落等）✓
+  * 倒影模式不显示PV选股标记（强脉冲/放量下跌等）✓
+  * 浏览器控制台无错误 ✓
+- git commit + push 完成：commit 3dba15e
+
+Stage Summary:
+- 分时倒影图现在显示核心买卖点信号（prioritySignalElements）
+- 不显示常规因子标签（signalElements）和PV选股标记（pvPlacedLabels）
+- 保留VWAP禁止买卖标注
+- 买卖点包括：放量下跌买点/缩量底部买点/次低点缩量买入/高开卖出/放量上涨卖点/次高点放量卖出/均线引力卖点/冲高减速见顶/缩量滞涨
