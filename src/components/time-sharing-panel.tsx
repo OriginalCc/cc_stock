@@ -1744,7 +1744,7 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
 //   Layer 3 (top):    Expanded bubbles (interactive, must be on top for usability)
 
 function CombinedChartOverlay(props: any) {
-  const { formattedGraphicalItems, xAxisMap, yAxisMap } = props;
+  const { formattedGraphicalItems, xAxisMap, yAxisMap, mirrored } = props;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggleExpand = useCallback((id: string) => {
@@ -1835,6 +1835,15 @@ function CombinedChartOverlay(props: any) {
     : { signalResult: null, pvPlacedLabels: [] as PlacedLabel[] };
 
   if (!signalResult && pvPlacedLabels.length === 0 && !vwapAnnotations) return null;
+
+  // 分时倒影模式：只显示VWAP禁止买卖标注，不显示因子信号标签和选股标记
+  if (mirrored) {
+    return (
+      <g>
+        {vwapAnnotations && <VwapBanAnnotations vwapPoints={vwapAnnotations.vwapPoints} pricePoints={vwapAnnotations.pricePoints} />}
+      </g>
+    );
+  }
 
   return (
     <g>
@@ -4306,7 +4315,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 }} />
               );
             })()}
-            <Customized component={CombinedChartOverlay} />
+            <Customized component={CombinedChartOverlay} mirrored={mirrored} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
