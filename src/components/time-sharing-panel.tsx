@@ -773,6 +773,54 @@ function computeTimelineSignalElements(
     return false;
   }
 
+  // ── 曲线重叠检测：标签不能压在分时价格曲线上 ──
+  // priceLineData 是按 x 排序的 {x, y} 点序列，在标签横向区间内对曲线做线性插值采样，
+  // 若标签纵向区间与曲线 Y 重叠则视为遮挡。CURVE_PAD 为标签与曲线的安全间距。
+  const CURVE_PAD = 4;
+  function overlapsCurve(rect: { x: number; y: number; width: number; height: number }): boolean {
+    if (priceLineData.length < 2) return false;
+    const rx0 = rect.x;
+    const rx1 = rect.x + rect.width;
+    // 遍历所有 x 落在标签横向区间内的曲线点，精确检测纵向重叠（不采样，避免漏检波动）
+    for (let i = 0; i < priceLineData.length; i++) {
+      const p = priceLineData[i];
+      if (p.x < rx0) continue;
+      if (p.x > rx1) break;
+      const cy = p.y;
+      if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) return true;
+    }
+    // 额外：检查标签横向区间端点处的曲线插值，覆盖曲线点稀疏区间
+    const SAMPLES = Math.min(20, Math.max(5, Math.ceil(rect.width / 4)));
+    for (let s = 0; s <= SAMPLES; s++) {
+      const sx = rx0 + (rx1 - rx0) * (s / SAMPLES);
+      let lo = 0, hi = priceLineData.length - 1;
+      if (sx <= priceLineData[0].x) {
+        const cy = priceLineData[0].y;
+        if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) return true;
+        continue;
+      }
+      if (sx >= priceLineData[hi].x) {
+        const cy = priceLineData[hi].y;
+        if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) return true;
+        continue;
+      }
+      while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1;
+        if (priceLineData[mid].x <= sx) lo = mid; else hi = mid;
+      }
+      const p0 = priceLineData[lo], p1 = priceLineData[hi];
+      const t = (sx - p0.x) / (p1.x - p0.x || 1);
+      const cy = p0.y + (p1.y - p0.y) * t;
+      if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) return true;
+    }
+    return false;
+  }
+
+  // 综合检测：标签是否与其它标签或分时曲线重叠
+  function overlapsAnyOrCurve(rect: { x: number; y: number; width: number; height: number }): boolean {
+    return overlapsAny(rect, labelRects) || overlapsCurve(rect);
+  }
+
   interface LabelPlan {
     merged: MergedSignal;
     labelRect: { x: number; y: number; width: number; height: number } | null;
@@ -877,67 +925,139 @@ function computeTimelineSignalElements(
     let placed = false;
     let isFlipped = false;
 
-    // 尝试1: 默认位置
-    if (!overlapsAny(labelRect, labelRects)) {
+    // 尝试1: 默认位置（同时避开标签和分时曲线）
+    if (!overlapsAnyOrCurve(labelRect)) {
       placed = true;
     }
 
-    // 尝试2: 反方向（标签与标签重合时，往对方反方向显示，避免遮挡）
+    // 尝试2: 反方向（标签与标签/曲线重合时，往对方反方向显示）
     if (!placed) {
       const flippedRect = { ...labelRect, y: flippedY };
-      if (!overlapsAny(flippedRect, labelRects)) {
+      if (!overlapsAnyOrCurve(flippedRect)) {
         labelRect = flippedRect;
         isFlipped = true;
         placed = true;
       }
     }
 
-    // 尝试3-4: 左右偏移
+    // 尝试3: 默认方向加大偏移（远离锚点，避开曲线）
     if (!placed) {
-      const shiftR = { ...labelRect, x: labelRect.x + labelRect.width * 0.6 };
-      if (!overlapsAny(shiftR, labelRects)) {
+      const farY = (mirrored ? (isBuy ? labelY - labelH - 6 : labelY + labelH + 6)
+                             : (isBuy ? labelY + labelH + 6 : labelY - labelH - 6));
+      const farRect = { ...labelRect, y: farY };
+      if (!overlapsAnyOrCurve(farRect)) {
+        labelRect = farRect;
+        placed = true;
+      }
+    }
+
+    // 尝试4: 反方向加大偏移
+    if (!placed) {
+      const farFlippedY = (mirrored ? (isBuy ? flippedY + labelH + 6 : flippedY - labelH - 6)
+                                    : (isBuy ? flippedY - labelH - 6 : flippedY + labelH + 6));
+      const farFlippedRect = { ...labelRect, y: farFlippedY };
+      if (!overlapsAnyOrCurve(farFlippedRect)) {
+        labelRect = farFlippedRect;
+        isFlipped = true;
+        placed = true;
+      }
+    }
+
+    // 尝试5-6: 左右偏移（默认方向 Y）
+    if (!placed) {
+      const shiftR = { ...labelRect, x: labelRect.x + labelRect.width * 0.6, y: labelY };
+      if (!overlapsAnyOrCurve(shiftR)) {
         labelRect = shiftR;
         placed = true;
       } else {
-        const shiftL = { ...labelRect, x: labelRect.x - labelRect.width * 0.6 };
-        if (!overlapsAny(shiftL, labelRects)) {
+        const shiftL = { ...labelRect, x: labelRect.x - labelRect.width * 0.6, y: labelY };
+        if (!overlapsAnyOrCurve(shiftL)) {
           labelRect = shiftL;
           placed = true;
         }
       }
     }
 
-    // 尝试5-6: 更大左右偏移
+    // 尝试7-8: 左右偏移（反方向 Y）
     if (!placed) {
-      const shiftR2 = { ...labelRect, x: labelRect.x + labelRect.width * 1.2 };
-      if (!overlapsAny(shiftR2, labelRects)) {
+      const shiftR = { ...labelRect, x: labelRect.x + labelRect.width * 0.6, y: flippedY };
+      if (!overlapsAnyOrCurve(shiftR)) {
+        labelRect = shiftR;
+        isFlipped = true;
+        placed = true;
+      } else {
+        const shiftL = { ...labelRect, x: labelRect.x - labelRect.width * 0.6, y: flippedY };
+        if (!overlapsAnyOrCurve(shiftL)) {
+          labelRect = shiftL;
+          isFlipped = true;
+          placed = true;
+        }
+      }
+    }
+
+    // 尝试9-10: 更大左右偏移（默认方向 Y）
+    if (!placed) {
+      const shiftR2 = { ...labelRect, x: m.x - labelW / 2 + labelRect.width * 1.2, y: labelY };
+      if (!overlapsAnyOrCurve(shiftR2)) {
         labelRect = shiftR2;
         placed = true;
       } else {
-        const shiftL2 = { ...labelRect, x: labelRect.x - labelRect.width * 1.2 };
-        if (!overlapsAny(shiftL2, labelRects)) {
+        const shiftL2 = { ...labelRect, x: m.x - labelW / 2 - labelRect.width * 1.2, y: labelY };
+        if (!overlapsAnyOrCurve(shiftL2)) {
           labelRect = shiftL2;
           placed = true;
         }
       }
     }
 
-    // 尝试7-8: 垂直偏移（向下/向上额外偏移一个标签高度）
+    // 尝试11-12: 更大左右偏移（反方向 Y）
     if (!placed) {
-      const shiftDown = { ...labelRect, y: labelRect.y + labelH + 4 };
-      if (!overlapsAny(shiftDown, labelRects)) {
+      const shiftR2 = { ...labelRect, x: m.x - labelW / 2 + labelRect.width * 1.2, y: flippedY };
+      if (!overlapsAnyOrCurve(shiftR2)) {
+        labelRect = shiftR2;
+        isFlipped = true;
+        placed = true;
+      } else {
+        const shiftL2 = { ...labelRect, x: m.x - labelW / 2 - labelRect.width * 1.2, y: flippedY };
+        if (!overlapsAnyOrCurve(shiftL2)) {
+          labelRect = shiftL2;
+          isFlipped = true;
+          placed = true;
+        }
+      }
+    }
+
+    // 尝试13-14: 垂直偏移（向下/向上额外偏移两个标签高度，进一步远离曲线）
+    if (!placed) {
+      const shiftDown = { ...labelRect, y: labelRect.y + labelH * 2 + 6 };
+      if (!overlapsAnyOrCurve(shiftDown)) {
         labelRect = shiftDown;
         placed = true;
       } else {
-        const shiftUp = { ...labelRect, y: labelRect.y - labelH - 4 };
-        if (!overlapsAny(shiftUp, labelRects)) {
+        const shiftUp = { ...labelRect, y: labelRect.y - labelH * 2 - 6 };
+        if (!overlapsAnyOrCurve(shiftUp)) {
           labelRect = shiftUp;
           placed = true;
         }
       }
     }
 
-    // 尝试9: 缩短文本后重试
+    // 尝试13b-14b: 更大垂直偏移（±4个标签高度，极端逃离曲线，用于边缘标签）
+    if (!placed) {
+      const shiftDown = { ...labelRect, y: labelY + labelH * 4 + 12 };
+      if (!overlapsAnyOrCurve(shiftDown)) {
+        labelRect = shiftDown;
+        placed = true;
+      } else {
+        const shiftUp = { ...labelRect, y: labelY - labelH * 4 - 12 };
+        if (!overlapsAnyOrCurve(shiftUp)) {
+          labelRect = shiftUp;
+          placed = true;
+        }
+      }
+    }
+
+    // 尝试15: 缩短文本后重试（默认方向 Y）
     if (!placed) {
       const sfmt = (text: string) => {
         const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -948,14 +1068,14 @@ function computeTimelineSignalElements(
       for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
       const shortW = sw + padX * 2;
       const shortRect = { x: m.x - shortW / 2, y: labelY, width: shortW, height: labelH };
-      if (!overlapsAny(shortRect, labelRects)) {
+      if (!overlapsAnyOrCurve(shortRect)) {
         labelRect = shortRect;
         labelText = shortText;
         placed = true;
       }
     }
 
-    // 尝试10: 缩短文本+左右偏移
+    // 尝试16: 缩短文本+左右偏移（默认方向 Y）
     if (!placed) {
       const sfmt = (text: string) => {
         const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -966,17 +1086,36 @@ function computeTimelineSignalElements(
       for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
       const shortW = sw + padX * 2;
       const shortRectR = { x: m.x - shortW / 2 + shortW * 0.6, y: labelY, width: shortW, height: labelH };
-      if (!overlapsAny(shortRectR, labelRects)) {
+      if (!overlapsAnyOrCurve(shortRectR)) {
         labelRect = shortRectR;
         labelText = shortText;
         placed = true;
       } else {
         const shortRectL = { x: m.x - shortW / 2 - shortW * 0.6, y: labelY, width: shortW, height: labelH };
-        if (!overlapsAny(shortRectL, labelRects)) {
+        if (!overlapsAnyOrCurve(shortRectL)) {
           labelRect = shortRectL;
           labelText = shortText;
           placed = true;
         }
+      }
+    }
+
+    // 尝试17: 缩短文本（反方向 Y）
+    if (!placed) {
+      const sfmt = (text: string) => {
+        const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
+        return `${base}${strengthTag}`;
+      };
+      const shortText = m.count > 1 ? sfmt(`${m.reasons[0]}×${m.count}`) : sfmt(m.reasons[0].slice(0, 4));
+      let sw = 0;
+      for (const ch of shortText) sw += ch.charCodeAt(0) > 127 ? labelFontSize : labelFontSize * 0.55;
+      const shortW = sw + padX * 2;
+      const shortRectF = { x: m.x - shortW / 2, y: flippedY, width: shortW, height: labelH };
+      if (!overlapsAnyOrCurve(shortRectF)) {
+        labelRect = shortRectF;
+        labelText = shortText;
+        isFlipped = true;
+        placed = true;
       }
     }
 
@@ -1148,10 +1287,10 @@ function computeTimelineSignalElements(
             {badgeSvg}
             {plan.showLabel && plan.labelRect && (
               <>
-                {/* 三角到文字标签的连接线 — 反方向时从锚点出发，连接到标签离锚点最近的边 */}
+                {/* 锚点到文字标签的连接线 — 始终从锚点出发，连接到标签离锚点最近的边，保证连接线足够长 */}
                 <line
                   x1={m.x}
-                  y1={plan.labelFlipped ? m.y : (m.y + triOffset + (mirrored ? -markerSize * 0.7 : markerSize * 0.7))}
+                  y1={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? m.y - dotR : m.y + dotR}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
                   y2={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                   stroke={markerColor}
@@ -1236,10 +1375,10 @@ function computeTimelineSignalElements(
             {badgeSvg}
             {plan.showLabel && plan.labelRect && (
               <>
-                {/* 倒三角到文字标签的连接线 — 反方向时从锚点出发，连接到标签离锚点最近的边 */}
+                {/* 锚点到文字标签的连接线 — 始终从锚点出发，连接到标签离锚点最近的边，保证连接线足够长 */}
                 <line
                   x1={m.x}
-                  y1={plan.labelFlipped ? m.y : (m.y - triOffset - (mirrored ? -markerSize * 0.7 : markerSize * 0.7))}
+                  y1={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? m.y - dotR : m.y + dotR}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
                   y2={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                   stroke={markerColor}
@@ -1324,6 +1463,7 @@ function computeTimelineSignalElements(
                 y2={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                 stroke={markerColor}
                 strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+                strokeDasharray={plan.labelFlipped ? "3 2" : "none"}
                 opacity={getLabelStyle(plan.labelStrength).connOpacity}
               />
               <rect
@@ -1418,6 +1558,7 @@ function computeTimelineSignalElements(
                 y2={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                 stroke={markerColor}
                 strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
+                strokeDasharray={plan.labelFlipped ? "3 2" : "none"}
                 opacity={getLabelStyle(plan.labelStrength).connOpacity}
               />
               <rect
@@ -1848,7 +1989,10 @@ function CombinedChartOverlay(props: any) {
   // recharts creates new formattedGraphicalItems on every render, even if the data
   // hasn't changed. The fingerprint is cheap to compute (one pass over points) and
   // lets us skip the heavy signal extraction + overlap resolution when data is the same.
-  const fp = buildOverlayFingerprint(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds);
+  // OVERLAY_FP_VERSION: bump when placement/label logic changes to invalidate stale cache.
+  const OVERLAY_FP_VERSION = "v4-curve-avoid";
+  const fp = buildOverlayFingerprint(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds)
+    + `:${OVERLAY_FP_VERSION}:${mirrored ? "m" : "n"}`;
 
   const { signalResult, pvPlacedLabels } = fp !== "empty"
     ? overlayCache.compute(fp, () => {
