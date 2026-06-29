@@ -3571,12 +3571,12 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
       )}
 
       {/* ─── Panel 0: Inverted (Mirror) Price Chart ─── */}
-      <div className="relative overflow-hidden border-b border-border/40" style={{ height: isZoomed ? 140 : 120 }}>
+      <div className="relative overflow-hidden border-b border-border/40" style={{ height: isZoomed ? 620 : 530 }}>
         <div className="absolute inset-0" style={{ transform: "scaleY(-1)", transformOrigin: "center" }}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={zoomData}
-              margin={{ top: 4, right: 82, left: 2, bottom: 4 }}
+              margin={{ top: 36, right: 82, left: 2, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.10} vertical={false} />
               {/* Hidden XAxis to enforce the same domain as the main chart */}
