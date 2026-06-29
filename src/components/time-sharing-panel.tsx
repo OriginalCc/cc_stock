@@ -654,18 +654,31 @@ function computeTimelineSignalElements(
   if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
 
   const xAxis = Object.values(xAxisMap)[0] as any;
-  const yAxis = Object.values(yAxisMap)[0] as any;
+  const yAxis = (yAxisMap as any)?.price ?? Object.values(yAxisMap)[0] as any;
   if (!xAxis || !yAxis) return null;
 
   // Get data points from the price line
+  // recharts 16 的 formattedGraphicalItems 的 item.props 不含 stroke 字段，
+  // 用 baseLine 区分：Area 有 baseLine，Line 没有。取第一个无 baseLine 的 Line（蓝色价格线）。
+  // 重要：recharts 16 在 reversed YAxis 下，formattedGraphicalItems 的 points.y 可能不是 reversed 后的值，
+  // 用 yAxis.scale(payload.price) 重新转换，确保与 lineY=yAxis.scale(item.low) 在同一坐标系。
   let priceLineData: any[] = [];
   for (const item of formattedGraphicalItems) {
     if (item?.props?.points && Array.isArray(item.props.points)) {
-      const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
-      // Skip avgPrice (yellow dashed) line
-      if (stroke === "#eab308" || stroke === "#facc15" || stroke === "#ca8a04") continue;
+      // 跳过 Area (有 baseLine)
+      if (item.props.baseLine != null) continue;
+      const pts = item.props.points;
+      // 优先用 payload.price 重新转换 y 值（确保 reversed 坐标系一致）
+      if (pts.length > 0 && pts[0]?.payload?.price != null && yAxis?.scale) {
+        priceLineData = pts.map((p: any) => ({
+          x: p.x,
+          y: yAxis.scale(p.payload.price),
+          payload: p.payload,
+        }));
+        break;
+      }
       if (priceLineData.length === 0) {
-        priceLineData = item.props.points;
+        priceLineData = pts;
       }
     }
   }
@@ -1657,7 +1670,17 @@ function computeRecentLowPill(
   };
 
   // 曲线重叠检测（与 computeTimelineSignalElements 内的 overlapsCurve 逻辑一致）
-  const overlapsCurve = (rect: { x: number; y: number; width: number; height: number }) => {
+  // 额外：若标签靠近 lineY（5日最低线），说明标签在曲线最密集的区域，视为重叠。
+  // 因为 reversed 坐标系下 priceLineData 的 y 值可能不包含5日最低价附近的插值点，
+  // 但实际 SVG 曲线（monotone 插值）会在 lineY 附近有点。
+  const overlapsCurve = (rect: { x: number; y: number; width: number; height: number }, lineYVal?: number) => {
+    // lineY 附近区域检测：标签 y 范围与 lineY±LINE_PAD 重叠时，视为曲线重叠
+    if (lineYVal != null) {
+      const LINE_PAD = 20; // 5日最低线两侧 20px 内视为曲线密集区
+      if (rect.y - LINE_PAD < lineYVal && rect.y + rect.height + LINE_PAD > lineYVal) {
+        return true;
+      }
+    }
     if (priceLineData.length < 2) return false;
     const rx0 = rect.x;
     const rx1 = rect.x + rect.width;
@@ -1694,13 +1717,32 @@ function computeRecentLowPill(
     return false;
   };
 
-  const overlapsAnyOrCurve = (rect: { x: number; y: number; width: number; height: number }) =>
-    overlapsAny(rect) || overlapsCurve(rect);
+  const overlapsAnyOrCurve = (rect: { x: number; y: number; width: number; height: number }, lineYVal?: number) =>
+    overlapsAny(rect) || overlapsCurve(rect, lineYVal);
 
-  const elements: React.ReactNode[] = [];
   // 图表边界（用于防止标签越界）
   const chartTop = offset.top ?? 0;
   const chartBottom = offset.top != null ? offset.top + (offset.height ?? 0) : 9999;
+  const chartLeft = offset.left ?? 0;
+  const chartRight = offset.left != null ? offset.left + (offset.width ?? 0) : 9999;
+
+  // 计算曲线重叠程度（用于兜底选择最优位置：曲线穿过标签的点数越少越好）
+  const curveOverlapScore = (rect: { x: number; y: number; width: number; height: number }) => {
+    if (priceLineData.length < 2) return 0;
+    const rx0 = rect.x;
+    const rx1 = rect.x + rect.width;
+    let score = 0;
+    for (let i = 0; i < priceLineData.length; i++) {
+      const p = priceLineData[i];
+      if (p.x < rx0) continue;
+      if (p.x > rx1) break;
+      const cy = p.y;
+      if (rect.y - CURVE_PAD < cy && rect.y + rect.height + CURVE_PAD > cy) score++;
+    }
+    return score;
+  };
+
+  const elements: React.ReactNode[] = [];
   for (let li = 0; li < recentDayLows.length; li++) {
     const item = recentDayLows[li];
     if (!item.low || item.low <= 0) continue;
@@ -1713,37 +1755,73 @@ function computeRecentLowPill(
     const spaceAbove = lineY - chartTop;
     const spaceBelow = chartBottom - lineY;
     const preferAbove = spaceAbove >= spaceBelow;
-    const OFFSET = 12; // 标签与5日最低线的基础间距
 
-    // 候选位置（按优先级排序）：preferred小偏移 → other side小偏移 → preferred大偏移 → other side大偏移
-    const candidates: { y: number }[] = [
-      { y: preferAbove ? lineY - PILL_H - OFFSET : lineY + OFFSET },
-      { y: preferAbove ? lineY + OFFSET : lineY - PILL_H - OFFSET },
-      { y: preferAbove ? lineY - PILL_H * 2 - OFFSET * 2 : lineY + PILL_H + OFFSET * 2 },
-      { y: preferAbove ? lineY + PILL_H + OFFSET * 2 : lineY - PILL_H * 2 - OFFSET * 2 },
-      { y: preferAbove ? lineY - PILL_H / 2 - PILL_H - OFFSET : lineY + PILL_H / 2 + OFFSET },
-    ];
+    // 候选位置生成策略：紧贴5日最低线（小偏移）优先，X方向扫描找空位避开其他标签。
+    // 在 mirrored 模式下5日最低线接近顶部，上方可能有买点标签，下方有曲线，
+    // 需要X方向扫描找到既不与标签重叠也不与曲线重叠的位置。
+    type Candidate = { x: number; y: number };
+    const candidates: Candidate[] = [];
+    const Y_OFFSETS = [2, 6, 10, 16, 24, 32, 42, 54, 68, 84];
+    // X方向扫描步长（用 PILL_W 的 60%，确保相邻候选有重叠以覆盖所有空位）
+    const X_STEP = Math.max(20, Math.round(PILL_W * 0.6));
+    // 生成X方向扫描位置：从 PILL_X 开始，向右扫描到图表右边；同时向左扫描
+    const xPositions: number[] = [];
+    for (let xs = 0; PILL_X + xs + PILL_W <= chartRight + 4; xs += X_STEP) {
+      xPositions.push(PILL_X + xs);
+    }
+    for (let xs = X_STEP; PILL_X - xs >= chartLeft - 4; xs += X_STEP) {
+      xPositions.unshift(PILL_X - xs);
+    }
+    // 对每个Y偏移，preferred侧和other side都尝试，X方向扫描
+    for (const off of Y_OFFSETS) {
+      // preferred侧
+      const prefY = preferAbove ? lineY - PILL_H - off : lineY + off;
+      for (const xp of xPositions) candidates.push({ x: xp, y: prefY });
+      // other side
+      const otherY = preferAbove ? lineY + off : lineY - PILL_H - off;
+      for (const xp of xPositions) candidates.push({ x: xp, y: otherY });
+    }
 
     let pillRect: { x: number; y: number; width: number; height: number } | null = null;
     for (const c of candidates) {
-      const rect = { x: PILL_X, y: c.y, width: PILL_W, height: PILL_H };
+      const rect = { x: c.x, y: c.y, width: PILL_W, height: PILL_H };
       // 边界检查：标签需在图表可视区域内（允许少量越界）
       if (rect.y < chartTop - 4 || rect.y + rect.height > chartBottom + 4) continue;
-      if (!overlapsAnyOrCurve(rect)) {
+      if (!overlapsAnyOrCurve(rect, lineY)) {
         pillRect = rect;
         break;
       }
     }
-    // 兜底：所有候选位置均失败，则放在空间更大的一侧（即便有重叠也保证标签可见）
+    // 兜底：所有候选位置均失败，则选择曲线重叠最少且不与标签重叠的位置
     if (!pillRect) {
-      const fallbackY = preferAbove ? Math.max(chartTop + 2, lineY - PILL_H - OFFSET) : Math.min(chartBottom - PILL_H - 2, lineY + OFFSET);
-      pillRect = { x: PILL_X, y: fallbackY, width: PILL_W, height: PILL_H };
+      let bestRect: { x: number; y: number; width: number; height: number } | null = null;
+      let bestScore = Infinity;
+      for (const c of candidates) {
+        const rect = { x: c.x, y: c.y, width: PILL_W, height: PILL_H };
+        if (rect.y < chartTop - 4 || rect.y + rect.height > chartBottom + 4) continue;
+        // 曲线重叠点数 + 标签重叠惩罚 + lineY附近区域惩罚
+        const nearLineY = lineY != null && rect.y - 20 < lineY && rect.y + rect.height + 20 > lineY;
+        const score = curveOverlapScore(rect) + (overlapsAny(rect) ? 1000 : 0) + (nearLineY ? 500 : 0);
+        if (score < bestScore) {
+          bestScore = score;
+          bestRect = rect;
+        }
+      }
+      if (!bestRect) {
+        // 所有候选都越界，用preferred侧小偏移
+        const fallbackY = preferAbove
+          ? Math.max(chartTop + 2, lineY - PILL_H - 10)
+          : Math.min(chartBottom - PILL_H - 2, lineY + 10);
+        bestRect = { x: PILL_X, y: fallbackY, width: PILL_W, height: PILL_H };
+      }
+      pillRect = bestRect;
     }
 
     // 标签始终偏离5日最低线，因此始终需要虚线连接线
     const pillCenterY = pillRect.y + PILL_H / 2;
     const pillIsAbove = pillCenterY < lineY;
-    const connectorX = PILL_X + PILL_W / 2;
+    // 连接线X位置跟随标签实际位置（标签可能在X方向偏移过）
+    const connectorX = pillRect.x + PILL_W / 2;
     // 连接线起点：标签靠5日最低线那一侧的边
     const connectorY1 = pillIsAbove ? pillRect.y + PILL_H : pillRect.y;
 
@@ -2164,7 +2242,7 @@ function CombinedChartOverlay(props: any) {
   // hasn't changed. The fingerprint is cheap to compute (one pass over points) and
   // lets us skip the heavy signal extraction + overlap resolution when data is the same.
   // OVERLAY_FP_VERSION: bump when placement/label logic changes to invalidate stale cache.
-  const OVERLAY_FP_VERSION = "v5-lowpill-dash";
+  const OVERLAY_FP_VERSION = "v12-lowpill-liney-avoid";
   const recentLowsKey = recentDayLows && recentDayLows.length > 0
     ? recentDayLows.map(d => `${d.date}:${d.low}`).join("|")
     : "none";
@@ -2188,14 +2266,24 @@ function CombinedChartOverlay(props: any) {
         const pillLabelRects = sr?.labelRects ?? [];
         let pillPriceLineData = sr?.priceLineData ?? [];
         // 若 computeTimelineSignalElements 返回 null（无信号），则自行提取 priceLineData 用于曲线避让检测
+        // recharts 16 的 item.props 不含 stroke，用 baseLine 区分 Area/Line，取第一个无 baseLine 的 Line
+        // 用 yAxis.scale(payload.price) 重新转换 y 值，确保 reversed 坐标系一致
         if (pillPriceLineData.length === 0 && formattedGraphicalItems) {
+          const pillYAxis = (yAxisMap as any)?.price ?? Object.values(yAxisMap || {})[0];
           for (const item of formattedGraphicalItems) {
             if (item?.props?.points && Array.isArray(item.props.points)) {
-              const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
-              if (stroke === "#eab308" || stroke === "#facc15" || stroke === "#ca8a04") continue;
-              if (pillPriceLineData.length === 0) {
-                pillPriceLineData = item.props.points;
+              if (item.props.baseLine != null) continue; // 跳过 Area
+              const pts = item.props.points;
+              if (pts.length > 0 && pts[0]?.payload?.price != null && pillYAxis?.scale) {
+                pillPriceLineData = pts.map((p: any) => ({
+                  x: p.x,
+                  y: pillYAxis.scale(p.payload.price),
+                  payload: p.payload,
+                }));
                 break;
+              }
+              if (pillPriceLineData.length === 0) {
+                pillPriceLineData = pts;
               }
             }
           }
