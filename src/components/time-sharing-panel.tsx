@@ -3599,6 +3599,50 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 <ReferenceLine yAxisId="price" y={prevDayMA5} stroke="#a855f7" strokeWidth={0.8} strokeDasharray="4 2" strokeOpacity={0.5} />
               )}
               <ReferenceLine yAxisId="price" y={safePrevClose} stroke="#64748b" strokeWidth={0.6} strokeDasharray="2 2" strokeOpacity={0.4} />
+              {/* Highest price line in inverted chart */}
+              {highestPrice != null && highestPrice !== safePrevClose && (
+                <ReferenceLine yAxisId="price" y={highestPrice} stroke="#ef4444" strokeWidth={1} strokeDasharray="6 3" strokeOpacity={0.7} />
+              )}
+              {/* Lowest price line in inverted chart */}
+              {lowestPrice != null && lowestPrice !== safePrevClose && (
+                <ReferenceLine yAxisId="price" y={lowestPrice} stroke="#22c55e" strokeWidth={1} strokeDasharray="6 3" strokeOpacity={0.7} />
+              )}
+              {/* Highest/Lowest price labels via Customized (rendered flipped, so text is also flipped — but we counter-flip to keep readable) */}
+              <Customized component={(props: any) => {
+                const { yAxisMap, offset } = props;
+                if (!yAxisMap || !offset) return null;
+                const yAxis = (yAxisMap as any).price ?? Object.values(yAxisMap)[0] as any;
+                if (!yAxis?.scale) return null;
+                if (highestPrice == null && lowestPrice == null) return null;
+                const yScale = yAxis.scale;
+                const labelX = offset.left + offset.width - 78;
+                return (
+                  <g>
+                    {highestPrice != null && highestPrice !== safePrevClose && (() => {
+                      const y = yScale(highestPrice);
+                      if (y < offset.top || y > offset.top + offset.height) return null;
+                      const pct = ((highestPrice - safePrevClose) / safePrevClose * 100);
+                      return (
+                        <g transform={`translate(${labelX},${y}) scale(1,-1)`}>
+                          <rect x={0} y={-7} width={76} height={14} rx={2} fill="#ef4444" fillOpacity={0.92} />
+                          <text x={38} y={0} textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight={700} fill="#ffffff">{formatPrice(highestPrice)} {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</text>
+                        </g>
+                      );
+                    })()}
+                    {lowestPrice != null && lowestPrice !== safePrevClose && (() => {
+                      const y = yScale(lowestPrice);
+                      if (y < offset.top || y > offset.top + offset.height) return null;
+                      const pct = ((lowestPrice - safePrevClose) / safePrevClose * 100);
+                      return (
+                        <g transform={`translate(${labelX},${y}) scale(1,-1)`}>
+                          <rect x={0} y={-7} width={76} height={14} rx={2} fill="#22c55e" fillOpacity={0.92} />
+                          <text x={38} y={0} textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight={700} fill="#ffffff">{formatPrice(lowestPrice)} {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</text>
+                        </g>
+                      );
+                    })()}
+                  </g>
+                );
+              }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
