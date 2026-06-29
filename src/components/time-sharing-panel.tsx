@@ -649,6 +649,7 @@ function computeTimelineSignalElements(
   yAxisMap: any,
   expandedIds: Set<string>,
   toggleExpand: (id: string) => void,
+  mirrored: boolean = false,
 ): { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[] } | null {
   if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
 
@@ -846,10 +847,20 @@ function computeTimelineSignalElements(
     const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : isStrong ? 30 : 22;
     const labelGap = (isKeyBuySignal || isKeySellSignal) ? 6 : isStrong ? 8 : 5;
     let labelY: number;
-    if (isBuy) {
-      labelY = m.y + markerOffset + labelGap;
+    if (mirrored) {
+      // 倒影模式：买点在图表上方（低价在上），标签往上放；卖点在下方，标签往下放
+      // 这样标签贴近图表边缘，不遮挡翻转后的曲线
+      if (isBuy) {
+        labelY = m.y - markerOffset - labelGap - labelH;
+      } else {
+        labelY = m.y + markerOffset + labelGap;
+      }
     } else {
-      labelY = m.y - markerOffset - labelGap - labelH;
+      if (isBuy) {
+        labelY = m.y + markerOffset + labelGap;
+      } else {
+        labelY = m.y - markerOffset - labelGap - labelH;
+      }
     }
 
     let labelRect = { x: m.x - labelW / 2, y: labelY, width: labelW, height: labelH };
@@ -1085,7 +1096,8 @@ function computeTimelineSignalElements(
       // 核心买点使用优化渲染 — 醒目V底三角+脉冲圆点+发光+粗实线连接
       if (isKeyBuySignalR && isBuy) {
         const dotR = 6;
-        const triOffset = 20;
+        // 倒影模式：买点在上方，三角和标签往上偏移（triOffset为负）
+        const triOffset = mirrored ? -20 : 20;
         const glowR = 16;
         const el = (
           <g key={`tl-sig-${m.originalIndex}-${i}`}>
@@ -1094,17 +1106,17 @@ function computeTimelineSignalElements(
             <circle cx={m.x} cy={m.y} r={glowR - 3} fill={markerColor} fillOpacity={0.2} stroke={markerColor} strokeWidth={0.8} strokeOpacity={0.5} />
             {/* 价格线上的锚点圆 */}
             <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={2} />
-            {/* 锚点到三角的连接线 — 粗实线更明显 */}
-            <line x1={m.x} y1={m.y + dotR + 1} x2={m.x} y2={m.y + triOffset - markerSize * 0.6} stroke={markerColor} strokeWidth={2} opacity={0.9} />
+            {/* 锚点到三角的连接线 — 倒影模式往上，正常往下 */}
+            <line x1={m.x} y1={m.y + (mirrored ? -dotR - 1 : dotR + 1)} x2={m.x} y2={m.y + triOffset - (mirrored ? -markerSize * 0.6 : markerSize * 0.6)} stroke={markerColor} strokeWidth={2} opacity={0.9} />
             <polygon
-              points={`${m.x},${m.y + triOffset - markerSize} ${m.x - markerSize * 1.0},${m.y + triOffset + markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y + triOffset + markerSize * 0.7}`}
+              points={`${m.x},${m.y + triOffset - (mirrored ? -markerSize : markerSize)} ${m.x - markerSize * 1.0},${m.y + triOffset + (mirrored ? -markerSize * 0.7 : markerSize * 0.7)} ${m.x + markerSize * 1.0},${m.y + triOffset + (mirrored ? -markerSize * 0.7 : markerSize * 0.7)}`}
               fill={markerColor}
               stroke="white"
               strokeWidth={1.0}
             />
             <text
               x={m.x}
-              y={m.y + triOffset + 1}
+              y={m.y + triOffset + (mirrored ? -1 : 1)}
               textAnchor="middle"
               dominantBaseline="middle"
               fill="white"
@@ -1119,9 +1131,9 @@ function computeTimelineSignalElements(
                 {/* 三角到文字标签的连接线 */}
                 <line
                   x1={m.x}
-                  y1={m.y + triOffset + markerSize * 0.7}
+                  y1={m.y + triOffset + (mirrored ? -markerSize * 0.7 : markerSize * 0.7)}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
-                  y2={plan.labelRect.y}
+                  y2={mirrored ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                   stroke={markerColor}
                   strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
                   opacity={getLabelStyle(plan.labelStrength).connOpacity}
@@ -1171,7 +1183,8 @@ function computeTimelineSignalElements(
       // 核心卖点 — 醒目倒三角+脉冲圆点+发光+粗实线连接
       if (isKeySellSignalR && !isBuy) {
         const dotR = 6;
-        const triOffset = 20;
+        // 倒影模式：卖点在下方，三角和标签往下偏移（triOffset为负，因原逻辑用 m.y - triOffset 往上）
+        const triOffset = mirrored ? -20 : 20;
         const glowR = 16;
         const el = (
           <g key={`tl-sig-${m.originalIndex}-${i}`}>
@@ -1180,18 +1193,18 @@ function computeTimelineSignalElements(
             <circle cx={m.x} cy={m.y} r={glowR - 3} fill={markerColor} fillOpacity={0.2} stroke={markerColor} strokeWidth={0.8} strokeOpacity={0.5} />
             {/* 价格线上的锚点圆 */}
             <circle cx={m.x} cy={m.y} r={dotR} fill={markerColor} stroke="white" strokeWidth={2} />
-            {/* 锚点到倒三角的连接线 */}
-            <line x1={m.x} y1={m.y - dotR - 1} x2={m.x} y2={m.y - triOffset + markerSize * 0.6} stroke={markerColor} strokeWidth={2} opacity={0.9} />
-            {/* 倒三角（卖点朝下） */}
+            {/* 锚点到倒三角的连接线 — 倒影模式往下，正常往上 */}
+            <line x1={m.x} y1={m.y + (mirrored ? dotR + 1 : -dotR - 1)} x2={m.x} y2={m.y - triOffset + (mirrored ? -markerSize * 0.6 : markerSize * 0.6)} stroke={markerColor} strokeWidth={2} opacity={0.9} />
+            {/* 倒三角（卖点朝下，倒影模式朝上） */}
             <polygon
-              points={`${m.x},${m.y - triOffset + markerSize} ${m.x - markerSize * 1.0},${m.y - triOffset - markerSize * 0.7} ${m.x + markerSize * 1.0},${m.y - triOffset - markerSize * 0.7}`}
+              points={`${m.x},${m.y - triOffset + (mirrored ? -markerSize : markerSize)} ${m.x - markerSize * 1.0},${m.y - triOffset - (mirrored ? -markerSize * 0.7 : markerSize * 0.7)} ${m.x + markerSize * 1.0},${m.y - triOffset - (mirrored ? -markerSize * 0.7 : markerSize * 0.7)}`}
               fill={markerColor}
               stroke="white"
               strokeWidth={1.0}
             />
             <text
               x={m.x}
-              y={m.y - triOffset - 1}
+              y={m.y - triOffset + (mirrored ? 1 : -1)}
               textAnchor="middle"
               dominantBaseline="middle"
               fill="white"
@@ -1206,9 +1219,9 @@ function computeTimelineSignalElements(
                 {/* 倒三角到文字标签的连接线 */}
                 <line
                   x1={m.x}
-                  y1={m.y - triOffset - markerSize * 0.7}
+                  y1={m.y - triOffset - (mirrored ? -markerSize * 0.7 : markerSize * 0.7)}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
-                  y2={plan.labelRect.y + plan.labelRect.height}
+                  y2={mirrored ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
                   stroke={markerColor}
                   strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
                   opacity={getLabelStyle(plan.labelStrength).connOpacity}
@@ -1286,9 +1299,9 @@ function computeTimelineSignalElements(
             <>
               <line
                 x1={m.x}
-                y1={isBuy ? m.y + markerSize : m.y - markerSize}
+                y1={(mirrored ? !isBuy : isBuy) ? m.y + markerSize : m.y - markerSize}
                 x2={plan.labelRect.x + plan.labelRect.width / 2}
-                y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
+                y2={(mirrored ? !isBuy : isBuy) ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
                 stroke={markerColor}
                 strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
                 opacity={getLabelStyle(plan.labelStrength).connOpacity}
@@ -1821,7 +1834,7 @@ function CombinedChartOverlay(props: any) {
     ? overlayCache.compute(fp, () => {
         // Compute signal elements (factor signals)
         const sr = computeTimelineSignalElements(
-          formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand
+          formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand, mirrored
         );
 
         // Compute PV marker points (screener markers)
