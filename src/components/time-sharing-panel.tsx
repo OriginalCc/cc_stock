@@ -3570,6 +3570,46 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         </div>
       )}
 
+      {/* ─── Panel 0: Inverted (Mirror) Price Chart ─── */}
+      <div className="relative overflow-hidden border-b border-border/40" style={{ height: isZoomed ? 140 : 120 }}>
+        <div className="absolute inset-0" style={{ transform: "scaleY(-1)", transformOrigin: "center" }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={zoomData}
+              margin={{ top: 4, right: 82, left: 2, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.10} vertical={false} />
+              <YAxis
+                yAxisId="price"
+                domain={[yMin, yMax]}
+                orientation="right"
+                tick={false}
+                tickLine={false}
+                axisLine={false}
+                width={1}
+              />
+              <defs>
+                <linearGradient id="invertedPriceGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.18} />
+                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <Area yAxisId="price" type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} fill="url(#invertedPriceGrad)" isAnimationActive={false} connectNulls dot={false} />
+              {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
+                <ReferenceLine yAxisId="price" y={prevDayMA5} stroke="#a855f7" strokeWidth={0.8} strokeDasharray="4 2" strokeOpacity={0.5} />
+              )}
+              <ReferenceLine yAxisId="price" y={safePrevClose} stroke="#64748b" strokeWidth={0.6} strokeDasharray="2 2" strokeOpacity={0.4} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        {/* Inverted chart label (not flipped) */}
+        <div className="absolute top-1 left-2 flex items-center gap-1 pointer-events-none z-10">
+          <span className="text-[9px] font-semibold text-muted-foreground/70 tracking-wider">⇅ 分时倒影</span>
+        </div>
+        {/* Fade overlay at bottom (which is the top of the inverted chart) */}
+        <div className="absolute bottom-0 left-0 right-0 h-4 pointer-events-none" style={{ background: "linear-gradient(to bottom, transparent, hsl(var(--background)))" }} />
+      </div>
+
       {/* ─── Panel 1: Price Chart ─── */}
       <div className="relative overflow-visible">
         <ResponsiveContainer width="100%" height={isZoomed ? 620 : 530}>
