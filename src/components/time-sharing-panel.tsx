@@ -3579,6 +3579,13 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               margin={{ top: 4, right: 82, left: 2, bottom: 4 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.10} vertical={false} />
+              {/* Hidden XAxis to enforce the same domain as the main chart */}
+              <XAxis
+                dataKey="idx"
+                type="number"
+                domain={xDomain}
+                hide
+              />
               <YAxis
                 yAxisId="price"
                 domain={[yMin, yMax]}
