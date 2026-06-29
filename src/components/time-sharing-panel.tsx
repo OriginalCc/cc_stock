@@ -781,6 +781,7 @@ function computeTimelineSignalElements(
     labelFontSize: number;
     labelIsBig: boolean;
     labelStrength: "strong" | "medium" | "weak";
+    labelFlipped: boolean;
   }
 
   const labelPlans: LabelPlan[] = [];
@@ -846,33 +847,52 @@ function computeTimelineSignalElements(
     // 根据信号强度决定标签偏移距离
     const markerOffset = (isKeyBuySignal || isKeySellSignal) ? 34 : isStrong ? 30 : 22;
     const labelGap = (isKeyBuySignal || isKeySellSignal) ? 6 : isStrong ? 8 : 5;
+    // 计算默认方向和反方向的 labelY
+    // 默认方向：正常模式买点往下、卖点往上；倒影模式买点往上、卖点往下（贴近图表边缘）
+    // 反方向(flippedY)：与默认方向相反，用于标签重合时往对方反方向显示
     let labelY: number;
+    let flippedY: number;
     if (mirrored) {
       // 倒影模式：买点在图表上方（低价在上），标签往上放；卖点在下方，标签往下放
       // 这样标签贴近图表边缘，不遮挡翻转后的曲线
       if (isBuy) {
         labelY = m.y - markerOffset - labelGap - labelH;
+        flippedY = m.y + markerOffset + labelGap;
       } else {
         labelY = m.y + markerOffset + labelGap;
+        flippedY = m.y - markerOffset - labelGap - labelH;
       }
     } else {
       if (isBuy) {
         labelY = m.y + markerOffset + labelGap;
+        flippedY = m.y - markerOffset - labelGap - labelH;
       } else {
         labelY = m.y - markerOffset - labelGap - labelH;
+        flippedY = m.y + markerOffset + labelGap;
       }
     }
 
     let labelRect = { x: m.x - labelW / 2, y: labelY, width: labelW, height: labelH };
 
     let placed = false;
+    let isFlipped = false;
 
     // 尝试1: 默认位置
     if (!overlapsAny(labelRect, labelRects)) {
       placed = true;
     }
 
-    // 尝试2-3: 左右偏移
+    // 尝试2: 反方向（标签与标签重合时，往对方反方向显示，避免遮挡）
+    if (!placed) {
+      const flippedRect = { ...labelRect, y: flippedY };
+      if (!overlapsAny(flippedRect, labelRects)) {
+        labelRect = flippedRect;
+        isFlipped = true;
+        placed = true;
+      }
+    }
+
+    // 尝试3-4: 左右偏移
     if (!placed) {
       const shiftR = { ...labelRect, x: labelRect.x + labelRect.width * 0.6 };
       if (!overlapsAny(shiftR, labelRects)) {
@@ -887,7 +907,7 @@ function computeTimelineSignalElements(
       }
     }
 
-    // 尝试4-5: 更大左右偏移
+    // 尝试5-6: 更大左右偏移
     if (!placed) {
       const shiftR2 = { ...labelRect, x: labelRect.x + labelRect.width * 1.2 };
       if (!overlapsAny(shiftR2, labelRects)) {
@@ -902,7 +922,7 @@ function computeTimelineSignalElements(
       }
     }
 
-    // 尝试6-7: 垂直偏移（向下/向上额外偏移一个标签高度）
+    // 尝试7-8: 垂直偏移（向下/向上额外偏移一个标签高度）
     if (!placed) {
       const shiftDown = { ...labelRect, y: labelRect.y + labelH + 4 };
       if (!overlapsAny(shiftDown, labelRects)) {
@@ -917,7 +937,7 @@ function computeTimelineSignalElements(
       }
     }
 
-    // 尝试8: 缩短文本后重试
+    // 尝试9: 缩短文本后重试
     if (!placed) {
       const sfmt = (text: string) => {
         const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -935,7 +955,7 @@ function computeTimelineSignalElements(
       }
     }
 
-    // 尝试9: 缩短文本+左右偏移
+    // 尝试10: 缩短文本+左右偏移
     if (!placed) {
       const sfmt = (text: string) => {
         const base = m.customReasons?.has(text) ? `自定义[${text}]` : text;
@@ -964,12 +984,12 @@ function computeTimelineSignalElements(
       labelRects.push(labelRect);
     }
 
-    assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed, labelFontSize, labelIsBig: isBigLabel, labelStrength: m.strength });
+    assignedLabels.set(idx, { merged: m, labelRect: placed ? labelRect : null, labelText, showLabel: placed, labelFontSize, labelIsBig: isBigLabel, labelStrength: m.strength, labelFlipped: isFlipped });
   }
 
   for (let i = 0; i < merged.length; i++) {
     if (assignedLabels.has(i)) continue;
-    assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false, labelFontSize: 8, labelIsBig: false, labelStrength: merged[i].strength });
+    assignedLabels.set(i, { merged: merged[i], labelRect: null, labelText: "", showLabel: false, labelFontSize: 8, labelIsBig: false, labelStrength: merged[i].strength, labelFlipped: false });
   }
 
   for (let i = 0; i < merged.length; i++) {
@@ -1128,12 +1148,12 @@ function computeTimelineSignalElements(
             {badgeSvg}
             {plan.showLabel && plan.labelRect && (
               <>
-                {/* 三角到文字标签的连接线 */}
+                {/* 三角到文字标签的连接线 — 反方向时从锚点出发，连接到标签离锚点最近的边 */}
                 <line
                   x1={m.x}
-                  y1={m.y + triOffset + (mirrored ? -markerSize * 0.7 : markerSize * 0.7)}
+                  y1={plan.labelFlipped ? m.y : (m.y + triOffset + (mirrored ? -markerSize * 0.7 : markerSize * 0.7))}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
-                  y2={mirrored ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
+                  y2={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                   stroke={markerColor}
                   strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
                   opacity={getLabelStyle(plan.labelStrength).connOpacity}
@@ -1216,12 +1236,12 @@ function computeTimelineSignalElements(
             {badgeSvg}
             {plan.showLabel && plan.labelRect && (
               <>
-                {/* 倒三角到文字标签的连接线 */}
+                {/* 倒三角到文字标签的连接线 — 反方向时从锚点出发，连接到标签离锚点最近的边 */}
                 <line
                   x1={m.x}
-                  y1={m.y - triOffset - (mirrored ? -markerSize * 0.7 : markerSize * 0.7)}
+                  y1={plan.labelFlipped ? m.y : (m.y - triOffset - (mirrored ? -markerSize * 0.7 : markerSize * 0.7))}
                   x2={plan.labelRect.x + plan.labelRect.width / 2}
-                  y2={mirrored ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
+                  y2={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                   stroke={markerColor}
                   strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
                   opacity={getLabelStyle(plan.labelStrength).connOpacity}
@@ -1299,9 +1319,9 @@ function computeTimelineSignalElements(
             <>
               <line
                 x1={m.x}
-                y1={(mirrored ? !isBuy : isBuy) ? m.y + markerSize : m.y - markerSize}
+                y1={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? m.y - markerSize : m.y + markerSize}
                 x2={plan.labelRect.x + plan.labelRect.width / 2}
-                y2={(mirrored ? !isBuy : isBuy) ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
+                y2={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                 stroke={markerColor}
                 strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
                 opacity={getLabelStyle(plan.labelStrength).connOpacity}
@@ -1393,9 +1413,9 @@ function computeTimelineSignalElements(
             <>
               <line
                 x1={m.x}
-                y1={isBuy ? m.y + dotRadius : m.y - dotRadius}
+                y1={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? m.y - dotRadius : m.y + dotRadius}
                 x2={plan.labelRect.x + plan.labelRect.width / 2}
-                y2={isBuy ? plan.labelRect.y : plan.labelRect.y + plan.labelRect.height}
+                y2={(plan.labelRect.y + plan.labelRect.height / 2 < m.y) ? plan.labelRect.y + plan.labelRect.height : plan.labelRect.y}
                 stroke={markerColor}
                 strokeWidth={getLabelStyle(plan.labelStrength).connWidth}
                 opacity={getLabelStyle(plan.labelStrength).connOpacity}
