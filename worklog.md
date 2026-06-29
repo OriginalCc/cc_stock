@@ -430,3 +430,35 @@ Stage Summary:
 - 移除分时页面内嵌的倒影图(Panel 0)，约299行代码
 - 独立的"分时倒影"tab功能保留不受影响
 - 分时页面现在只有主图+成交量+MACD三个图表区域，更简洁
+
+---
+Task ID: 9
+Agent: main
+Task: 分时倒影图上不要显示因子标签
+
+Work Log:
+- 分析因子标签来源：time-sharing-panel.tsx 的 CombinedChartOverlay 组件渲染所有信号标签
+  * Layer 0: VWAP禁止买卖标注（禁止买卖/禁买/禁卖）
+  * Layer 1: 分时因子signal markers & labels（MACD死叉/跌破均价线/量价背离等）
+  * Layer 2: 选股标记pulse/volume markers（强脉冲/放量下跌等）
+  * Layer 3: 优先信号（高开卖出/放量下跌买点）
+  * Layer 4: 展开气泡
+- 修改方案：让 CombinedChartOverlay 接收 mirrored prop，mirrored时只渲染Layer 0(VWAP标注)，跳过Layer 1-4(因子标签和PV标记)
+- 修改内容：
+  * CombinedChartOverlay props解构加 mirrored
+  * 在early return后加mirrored分支：只渲染VwapBanAnnotations
+  * <Customized component={CombinedChartOverlay} /> 加 mirrored={mirrored} prop
+- Lint检查通过
+- Agent Browser验证：
+  * 正常分时模式：39个信号文字，包含完整因子标签(MACD死叉/跌破均价线/量价背离/放量下跌买点/高开卖出等) ✓
+  * 分时倒影模式：18个信号文字，只剩VWAP标注(禁止买卖/禁买/禁卖)，无因子标签 ✓
+  * 对比factorLabels：正常模式38个(含因子)，倒影模式5个(仅MA5/5日最低/均线上方高抛区参考线标签) ✓
+  * 浏览器控制台无错误 ✓
+- git commit + push 完成：commit aaa2f28
+
+Stage Summary:
+- 分时倒影图不再显示因子信号标签（MACD死叉/跌破均价线/量价背离/放量下跌买点等）
+- 分时倒影图不再显示PV选股标记（强脉冲/放量下跌等）
+- 保留VWAP禁止买卖标注（非因子标签，是均线参考标注）
+- 保留参考线标签（MA5/5日最低/均线上方高抛区）
+- 正常分时模式不受影响，因子标签完整显示
