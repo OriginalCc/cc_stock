@@ -491,3 +491,31 @@ Stage Summary:
 - 不显示常规因子标签（signalElements）和PV选股标记（pvPlacedLabels）
 - 保留VWAP禁止买卖标注
 - 买卖点包括：放量下跌买点/缩量底部买点/次低点缩量买入/高开卖出/放量上涨卖点/次高点放量卖出/均线引力卖点/冲高减速见顶/缩量滞涨
+
+---
+Task ID: 11
+Agent: main
+Task: 显示的买卖点标签不要把分时图遮挡了，优化一下
+
+Work Log:
+- 问题：倒影模式下买点在图表上方（低价在上）、卖点在下方，但标签仍按正常模式方向偏移（买点往下、卖点往上），导致标签都落在图表中部的曲线区域，遮挡曲线
+- 修改 computeTimelineSignalElements 函数，添加 mirrored 参数：
+  1. 函数签名加 mirrored: boolean = false
+  2. labelY 计算翻转：mirrored时买点标签往上放(m.y - offset)，卖点标签往下放(m.y + offset)
+  3. 核心买点渲染(isKeyBuySignalR && isBuy)：triOffset 在mirrored时为-20，三角/连接线/文字都往上偏移
+  4. 核心卖点渲染(isKeySellSignalR && !isBuy)：triOffset 在mirrored时为-20，三角/连接线/文字都往下偏移
+  5. 其他strong信号(高开卖出等)连接线方向：mirrored时翻转y1/y2的isBuy判断
+- 调用处传mirrored：computeTimelineSignalElements(..., mirrored)
+- Lint检查通过
+- Agent Browser验证：
+  * 倒影模式：买点"买"标签在y=575(顶部)，卖点"卖"标签在y=898(底部)，标签集中在图表边缘 ✓
+  * VLM视觉确认：标签未遮挡价格曲线，位于曲线区域下方/边缘 ✓
+  * 正常分时模式不受影响：买点标签在下方、卖点在上方 ✓
+  * 浏览器控制台无错误 ✓
+- git commit + push 完成：commit ff7e40e
+
+Stage Summary:
+- 倒影模式下买卖点标签方向翻转：买点标签往上（图表顶部边缘），卖点标签往下（图表底部边缘）
+- 核心买点/卖点的三角标记、连接线、文字都相应翻转方向
+- 标签不再遮挡翻转后的价格曲线
+- 正常分时模式渲染逻辑不变
