@@ -142,9 +142,14 @@ export function useStockData() {
     return DEFAULT_CHART_MODE;
   });
   // 分时图倒影：独立的镜像翻转状态，复用 timeline 数据，仅 UI 层翻转
+  // 首次进入（localStorage 无记录）默认开启倒影；用户操作过后尊重其选择
   const [mirrored, setMirroredState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try { return localStorage.getItem(LAST_MIRRORED_KEY) === "1"; } catch { return false; }
+    if (typeof window === 'undefined') return true;
+    try {
+      const saved = localStorage.getItem(LAST_MIRRORED_KEY);
+      if (saved === null) return true; // 首次进入默认分时倒影
+      return saved === "1";
+    } catch { return true; }
   });
   const [loading, setLoading] = useState(false);
   const [timelineLoading, setTimelineLoading] = useState(() => {
