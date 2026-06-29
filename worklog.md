@@ -378,3 +378,27 @@ Stage Summary:
 - mirrored作为独立state持久化到localStorage，切换tab时自动联动
 - 翻转通过recharts YAxis的reversed属性实现，文字保持正向可读
 - 仅翻转价格YAxis(price+percent)，成交量/MACD不受影响
+
+---
+Task ID: 7
+Agent: main
+Task: 第一次进入页面默认进入分时倒影页面
+
+Work Log:
+- 修改 use-stock-data.ts 的 mirrored state 初始化逻辑：
+  * 原：localStorage.getItem('lastMirrored') === "1"（无记录时返回false）
+  * 新：无记录时(null)返回true（默认开启倒影），有记录则尊重用户选择
+  * SSR时也返回true保持一致
+- git commit 保存：commit 83000d5
+- Lint检查通过
+- Agent Browser验证：
+  * 清除localStorage的lastMirrored，模拟首次进入
+  * reload后默认选中"分时倒影"tab ✓
+  * Y轴翻转生效：1138.29(低价)→y=549(上), 1188.29(高价)→y=809(下) ✓
+  * 切到"分时"后localStorage变为"0"，刷新后仍选中"分时"（用户选择被尊重）✓
+  * 浏览器控制台无错误 ✓
+
+Stage Summary:
+- 首次进入页面（localStorage无lastMirrored记录）默认显示"分时倒影"
+- 用户操作过后（切换tab）选择持久化，刷新后尊重用户选择
+- 实现方式：mirrored初始化时检查localStorage是否为null，null则默认true
