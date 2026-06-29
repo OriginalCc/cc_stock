@@ -3597,11 +3597,12 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
               />
               <defs>
                 <linearGradient id="invertedPriceGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.18} />
-                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.18} />
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <Area yAxisId="price" type="monotone" dataKey="price" stroke="#ef4444" strokeWidth={1.2} fill="url(#invertedPriceGrad)" isAnimationActive={false} connectNulls dot={false} />
+              <Area yAxisId="price" type="monotone" dataKey="price" stroke="none" fill="#3b82f6" fillOpacity={0.06} isAnimationActive={false} connectNulls />
+              <Line yAxisId="price" type="monotone" dataKey="price" stroke="#3b82f6" strokeWidth={1} dot={false} isAnimationActive={false} connectNulls />
               {prevDayMA5 != null && prevDayMA5 >= yMin && prevDayMA5 <= yMax && (
                 <ReferenceLine yAxisId="price" y={prevDayMA5} stroke="#a855f7" strokeWidth={0.8} strokeDasharray="4 2" strokeOpacity={0.5} />
               )}
