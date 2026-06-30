@@ -733,17 +733,23 @@ export async function getStockSector(symbol: string): Promise<SectorInfo | null>
   try {
     const fallback = getStockSectorFallback(symbol);
     const secid = toEastMoneySecid(symbol);
-    const url = `http://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f127`;
 
-    // Use single AbortSignal.timeout instead of redundant Promise.race wrappers
-    const response = await fetch(url, { next: { revalidate: 0 }, signal: AbortSignal.timeout(8000) });
-
-    if (!response.ok) return fallback;
-
-    const data = await response.json();
-    if (!data) return fallback;
-
-    const sectorName: string | undefined = data?.data?.f127;
+    // EastMoney's push2.eastmoney.com has become unstable (returns empty reply /
+    // 302 redirect to push2delay). Use push2delay as primary, push2 as fallback.
+    const hosts = ["push2delay.eastmoney.com", "push2.eastmoney.com"];
+    let sectorName: string | undefined;
+    for (const host of hosts) {
+      try {
+        const url = `http://${host}/api/qt/stock/get?secid=${secid}&fields=f127`;
+        const response = await fetch(url, { next: { revalidate: 0 }, signal: AbortSignal.timeout(8000) });
+        if (!response.ok) continue;
+        const data = await response.json();
+        sectorName = data?.data?.f127;
+        if (sectorName) break;
+      } catch {
+        // try next host
+      }
+    }
     if (!sectorName) return fallback;
 
     // Strip Ⅱ/Ⅲ suffix (e.g. "白酒Ⅱ" → "白酒")
@@ -889,18 +895,26 @@ export async function searchSectorCode(sectorName: string): Promise<SectorInfo |
  * Returns 1-minute timeline data similar to AShareTimelineItem format
  */
 export async function getSectorTimeline(sectorCode: string): Promise<{ items: SectorTimelineItem[]; prevClose: number }> {
+  // EastMoney's push2.eastmoney.com has become unstable for sector trends2
+  // (returns empty reply / 302 to push2delay which fetch fails to follow).
+  // Use push2delay as primary, push2 as fallback.
+  const hosts = ["push2delay.eastmoney.com", "push2.eastmoney.com"];
+  let trendsData: any = null;
+  for (const host of hosts) {
+    try {
+      const url = `http://${host}/api/qt/stock/trends2/get?secid=90.${sectorCode}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&iscr=0`;
+      const response = await fetch(url, {
+        next: { revalidate: 0 },
+        signal: AbortSignal.timeout(10000), // 10s timeout
+      });
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (data?.data) { trendsData = data.data; break; }
+    } catch {
+      // try next host
+    }
+  }
   try {
-    const url = `http://push2.eastmoney.com/api/qt/stock/trends2/get?secid=90.${sectorCode}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&iscr=0`;
-
-    const response = await fetch(url, {
-      next: { revalidate: 0 },
-      signal: AbortSignal.timeout(10000), // 10s timeout
-    });
-
-    if (!response.ok) return { items: [], prevClose: 0 };
-
-    const data = await response.json();
-    const trendsData = data?.data;
     if (!trendsData) return { items: [], prevClose: 0 };
 
     // Extract prevClose from data.preClose or data.prePrice
