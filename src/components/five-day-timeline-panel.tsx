@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef, useDeferredValue } from "react";
 import dynamic from "next/dynamic";
 import {
   ComposedChart,
@@ -710,6 +710,27 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
   const dragStartX = useRef(0);
   const dragStartRange = useRef<[number, number]>([0, 0]);
 
+  // ── Crosshair state: shared across price + volume panels ──
+  const [crosshairIdx, setCrosshairIdx] = useState<number | null>(null);
+  const deferredCrosshairIdx = useDeferredValue(crosshairIdx);
+  const lastCrosshairUpdateRef = useRef(0);
+  const setCrosshairIdxThrottled = useCallback((idx: number | null) => {
+    if (idx === null) { setCrosshairIdx(null); return; }
+    const now = Date.now();
+    if (now - lastCrosshairUpdateRef.current >= 66) { // ~15fps
+      lastCrosshairUpdateRef.current = now;
+      setCrosshairIdx(idx);
+    }
+  }, []);
+  const handleChartMouseMove = useCallback((state: any) => {
+    if (state?.activeTooltipIndex != null) {
+      setCrosshairIdxThrottled(state.activeTooltipIndex);
+    }
+  }, [setCrosshairIdxThrottled]);
+  const handleChartMouseLeave = useCallback(() => {
+    setCrosshairIdxThrottled(null);
+  }, [setCrosshairIdxThrottled]);
+
   // Auto-fit chart height
   useEffect(() => {
     const updateHeight = () => {
@@ -765,6 +786,11 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
   const totalItems = items.length;
   const [visStart, visEnd] = visibleRange || [0, totalItems];
   const visibleItems = useMemo(() => items.slice(visStart, visEnd), [items, visStart, visEnd]);
+
+  // ── Crosshair item (must reference visibleItems) ──
+  const crosshairItem = deferredCrosshairIdx != null && deferredCrosshairIdx >= 0 && deferredCrosshairIdx < visibleItems.length
+    ? visibleItems[deferredCrosshairIdx]
+    : null;
 
   // Adjust dayBoundaries to visible slice
   const visibleDayBoundaries = useMemo(() => {
@@ -1042,23 +1068,56 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
         className="select-none"
         onMouseDown={(e) => { e.currentTarget.style.cursor = "grabbing"; handleMouseDown(e); }}
         onMouseMove={handleMouseMove}
-        onMouseUp={(e) => { e.currentTarget.style.cursor = visibleRange ? "grab" : "default"; handleMouseUp(); }}
-        onMouseLeave={(e) => { e.currentTarget.style.cursor = visibleRange ? "grab" : "default"; handleMouseUp(); }}
-        style={{ cursor: visibleRange ? "grab" : "default" }}
+        onMouseUp={(e) => { e.currentTarget.style.cursor = "crosshair"; handleMouseUp(); }}
+        onMouseLeave={(e) => { e.currentTarget.style.cursor = "crosshair"; handleMouseUp(); }}
+        style={{ cursor: "crosshair" }}
       >
         {/* 5-Day Price Chart */}
         <Card className="py-0 flex-1">
           <CardContent className="pb-1 pt-1 px-2">
-            <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5">
+            <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5 flex-wrap">
               <span className="text-xs font-medium text-muted-foreground">五日分时图</span>
+              {/* Crosshair data display */}
+              {crosshairItem && (() => {
+                const isUp = crosshairItem.changePercent >= 0;
+                return (
+                  <div className="flex items-center gap-2 text-[10px] font-mono ml-1">
+                    <span className="text-muted-foreground">{crosshairItem.date} {crosshairItem.time}</span>
+                    <span className={isUp ? "text-red-500" : "text-green-500"}>{formatPrice(crosshairItem.price)}</span>
+                    <span className={isUp ? "text-red-500" : "text-green-500"}>{isUp ? "+" : ""}{crosshairItem.changePercent?.toFixed(2) ?? "--"}%</span>
+                    <span className="text-yellow-500">均 {formatPrice(crosshairItem.avgPrice)}</span>
+                  </div>
+                );
+              })()}
               {quote && <span className="text-[10px] text-muted-foreground ml-auto">{quote.symbol} {quote.name}</span>}
             </div>
             <ResponsiveContainer width="100%" height={chartHeight}>
-              <ComposedChart data={visibleItems} syncId="5dayTimeline" margin={{ top: 4, right: 80, left: 0, bottom: 0 }}>
+              <ComposedChart data={visibleItems} syncId="5dayTimeline" margin={{ top: 4, right: 80, left: 0, bottom: 0 }} onMouseMove={handleChartMouseMove} onMouseLeave={handleChartMouseLeave}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#334155", strokeWidth: 0.5 }} interval={xTickInterval} />
                 <YAxis domain={[minPrice, maxPrice]} tickLine={false} axisLine={false} width={65} tick={<PercentYTick prevClose={refClose} />} ticks={yTicks} tickCount={5} />
-                <Tooltip content={<FiveDayTooltip />} cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "4 2" }} wrapperStyle={{ background: "transparent", border: "none" }} />
+                <Tooltip content={<FiveDayTooltip />} cursor={false} wrapperStyle={{ background: "transparent", border: "none" }} />
+                {/* Crosshair vertical line */}
+                <Customized component={(props: any) => {
+                  const { xAxisMap, offset } = props;
+                  if (!xAxisMap || !offset) return null;
+                  if (deferredCrosshairIdx == null) return null;
+                  const xAxis = Object.values(xAxisMap)[0] as any;
+                  if (!xAxis?.scale) return null;
+                  const scale = xAxis.scale;
+                  let x: number | null = null;
+                  if (typeof scale.bandwidth === 'function') {
+                    const step = scale.step();
+                    const start = scale.range?.()[0] ?? 0;
+                    x = start + deferredCrosshairIdx * step + step / 2;
+                  } else {
+                    x = scale(deferredCrosshairIdx);
+                  }
+                  if (x == null || isNaN(x)) return null;
+                  const plotTop = offset.top;
+                  const plotBottom = offset.top + offset.height;
+                  return <line x1={x} y1={plotTop} x2={x} y2={plotBottom} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />;
+                }} />
                 {refClose > 0 && <ReferenceLine y={refClose} stroke="#64748b" strokeWidth={0.8} />}
                 {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#ef4444" strokeDasharray="8 4" strokeWidth={1.8} />}
                 {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#22c55e" strokeDasharray="8 4" strokeWidth={1.8} />}
@@ -1176,7 +1235,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
               <span className="text-[10px] text-muted-foreground">成交量</span>
             </div>
             <ResponsiveContainer width="100%" height={volumeChartHeight}>
-              <ComposedChart data={visibleItems} syncId="5dayTimeline" margin={{ top: 2, right: 80, left: 0, bottom: 0 }}>
+              <ComposedChart data={visibleItems} syncId="5dayTimeline" margin={{ top: 2, right: 80, left: 0, bottom: 0 }} onMouseMove={handleChartMouseMove} onMouseLeave={handleChartMouseLeave}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.2} vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 8, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#334155", strokeWidth: 0.5 }} interval={xTickInterval} />
                 <YAxis domain={[0, maxVolume * 1.2]} tickLine={false} axisLine={false} width={65} tickFormatter={(v: number) => formatVolume(v)} tick={{ fontSize: 8, fill: "#64748b" }} tickCount={3} />
@@ -1200,9 +1259,30 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                       </div>
                     );
                   }}
-                  cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "4 2" }}
+                  cursor={false}
                   wrapperStyle={{ background: "transparent", border: "none" }}
                 />
+                {/* Crosshair vertical line (volume panel) */}
+                <Customized component={(props: any) => {
+                  const { xAxisMap, offset } = props;
+                  if (!xAxisMap || !offset) return null;
+                  if (deferredCrosshairIdx == null) return null;
+                  const xAxis = Object.values(xAxisMap)[0] as any;
+                  if (!xAxis?.scale) return null;
+                  const scale = xAxis.scale;
+                  let x: number | null = null;
+                  if (typeof scale.bandwidth === 'function') {
+                    const step = scale.step();
+                    const start = scale.range?.()[0] ?? 0;
+                    x = start + deferredCrosshairIdx * step + step / 2;
+                  } else {
+                    x = scale(deferredCrosshairIdx);
+                  }
+                  if (x == null || isNaN(x)) return null;
+                  const plotTop = offset.top;
+                  const plotBottom = offset.top + offset.height;
+                  return <line x1={x} y1={plotTop} x2={x} y2={plotBottom} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />;
+                }} />
                 <Bar dataKey="displayVolume" isAnimationActive={false} barSize={barSize} shape={VolumeBarShape} />
               </ComposedChart>
             </ResponsiveContainer>
