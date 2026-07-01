@@ -484,41 +484,32 @@ function BreadthChartOverlay(props: BreadthOverlayProps) {
       {/* Down line with glow */}
       {downSmooth && <path d={downSmooth} fill="none" stroke={DOWN_COLOR} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" filter="url(#downGlow)" />}
 
-      {/* Data point dots & pill labels — 只在关键时间点+显著变化时显示，标签永远朝对方相反方向 */}
+      {/* Data point dots & pill labels — 只显示「最初」+「最新」+ 中间段3个点，避免数字挤到一起 */}
       {(() => {
-        // ── 预计算哪些点需要显示标签 ──
-        const KEY_TIMES = new Set(["09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00"]);
-        // 显著变化阈值：变化量超过上次显示值的5%，且绝对变化≥50
-        const CHANGE_RATIO = 0.05;
-        const CHANGE_MIN = 50;
-
-        const upShow: boolean[] = new Array(data.length).fill(false);
-        const downShow: boolean[] = new Array(data.length).fill(false);
-
-        let lastShownUp = -1;
-        let lastShownDown = -1;
-
-        for (let i = 0; i < data.length; i++) {
-          const isLast = i === data.length - 1;
-          const isFirst = i === 0;
-          const isKeyTime = KEY_TIMES.has(data[i].time);
-
-          // 涨标签：首点、末点、关键时间点、或显著变化
-          const upChangedEnough = lastShownUp < 0
-            || Math.abs(data[i].totalUp - lastShownUp) >= Math.max(CHANGE_MIN, lastShownUp * CHANGE_RATIO);
-          if (isFirst || isLast || (isKeyTime && data[i].totalUp !== lastShownUp) || upChangedEnough) {
-            upShow[i] = true;
-            lastShownUp = data[i].totalUp;
-          }
-
-          // 跌标签：首点、末点、关键时间点、或显著变化
-          const downChangedEnough = lastShownDown < 0
-            || Math.abs(data[i].totalDown - lastShownDown) >= Math.max(CHANGE_MIN, lastShownDown * CHANGE_RATIO);
-          if (isFirst || isLast || (isKeyTime && data[i].totalDown !== lastShownDown) || downChangedEnough) {
-            downShow[i] = true;
-            lastShownDown = data[i].totalDown;
+        // ── 预计算哪些点需要显示标签：首点 + 末点 + 中间段均匀挑选3个 ──
+        const showIdxSet = new Set<number>();
+        if (data.length > 0) {
+          showIdxSet.add(0);                  // 最初
+          showIdxSet.add(data.length - 1);    // 最新
+          // 中间段（排除首末）均匀挑选3个点
+          if (data.length > 4) {
+            const midStart = 1;
+            const midEnd = data.length - 2;
+            const midLen = midEnd - midStart + 1;
+            if (midLen >= 3) {
+              showIdxSet.add(midStart + Math.floor(midLen * 0.25));
+              showIdxSet.add(midStart + Math.floor(midLen * 0.5));
+              showIdxSet.add(midStart + Math.floor(midLen * 0.75));
+            } else {
+              for (let i = midStart; i <= midEnd; i++) showIdxSet.add(i);
+            }
+          } else {
+            // 数据点很少，全部显示
+            for (let i = 0; i < data.length; i++) showIdxSet.add(i);
           }
         }
+        const upShow = data.map((_, i) => showIdxSet.has(i));
+        const downShow = data.map((_, i) => showIdxSet.has(i));
 
         return data.map((d, i) => {
           const x = toX(i);
