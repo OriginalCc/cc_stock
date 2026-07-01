@@ -11,7 +11,7 @@ function getSectorCacheTTL(): number {
   if (!isWeekday) return 300000;
   const isTrading = ((chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35)) ||
     (chinaHour === 13 || chinaHour === 14 || (chinaHour === 15 && chinaMinute <= 5));
-  return isTrading ? 30000 : 300000; // 30s during trading, 5min otherwise
+  return isTrading ? 4000 : 300000; // 4s during trading (supports 5s client refresh), 5min otherwise
 }
 
 /**

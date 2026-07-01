@@ -384,11 +384,11 @@ export default function StockTAssistant() {
 
     // Initial fetch — delayed 5s to avoid competing with main stock timeline data
     setTimeout(() => { if (!cancelled) fetchSectorData(); }, 5000);
-    // Periodic refresh every 15s — no fail counter, always retry
+    // Periodic refresh every 5s — no fail counter, always retry
     const refreshInterval = setInterval(() => {
       retryCount = 0; // Reset retry counter on periodic refresh
       if (!cancelled) fetchSectorData();
-    }, 15000);
+    }, 5000);
     return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
   }, [symbol, isAShareStock]);
 
