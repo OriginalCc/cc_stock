@@ -1096,28 +1096,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} vertical={false} />
                 <XAxis dataKey="time" tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#334155", strokeWidth: 0.5 }} interval={xTickInterval} />
                 <YAxis domain={[minPrice, maxPrice]} tickLine={false} axisLine={false} width={65} tick={<PercentYTick prevClose={refClose} />} ticks={yTicks} tickCount={5} />
-                <Tooltip content={<FiveDayTooltip />} cursor={false} wrapperStyle={{ background: "transparent", border: "none" }} />
-                {/* Crosshair vertical line */}
-                <Customized component={(props: any) => {
-                  const { xAxisMap, offset } = props;
-                  if (!xAxisMap || !offset) return null;
-                  if (deferredCrosshairIdx == null) return null;
-                  const xAxis = Object.values(xAxisMap)[0] as any;
-                  if (!xAxis?.scale) return null;
-                  const scale = xAxis.scale;
-                  let x: number | null = null;
-                  if (typeof scale.bandwidth === 'function') {
-                    const step = scale.step();
-                    const start = scale.range?.()[0] ?? 0;
-                    x = start + deferredCrosshairIdx * step + step / 2;
-                  } else {
-                    x = scale(deferredCrosshairIdx);
-                  }
-                  if (x == null || isNaN(x)) return null;
-                  const plotTop = offset.top;
-                  const plotBottom = offset.top + offset.height;
-                  return <line x1={x} y1={plotTop} x2={x} y2={plotBottom} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />;
-                }} />
+                <Tooltip content={<FiveDayTooltip />} cursor={{ stroke: "#64748b", strokeWidth: 1.2, strokeDasharray: "5 3" }} wrapperStyle={{ background: "transparent", border: "none" }} />
                 {refClose > 0 && <ReferenceLine y={refClose} stroke="#64748b" strokeWidth={0.8} />}
                 {highestPrice != null && <ReferenceLine y={highestPrice} stroke="#ef4444" strokeDasharray="8 4" strokeWidth={1.8} />}
                 {lowestPrice != null && <ReferenceLine y={lowestPrice} stroke="#22c55e" strokeDasharray="8 4" strokeWidth={1.8} />}
@@ -1259,30 +1238,9 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                       </div>
                     );
                   }}
-                  cursor={false}
+                  cursor={{ stroke: "#64748b", strokeWidth: 1.2, strokeDasharray: "5 3" }}
                   wrapperStyle={{ background: "transparent", border: "none" }}
                 />
-                {/* Crosshair vertical line (volume panel) */}
-                <Customized component={(props: any) => {
-                  const { xAxisMap, offset } = props;
-                  if (!xAxisMap || !offset) return null;
-                  if (deferredCrosshairIdx == null) return null;
-                  const xAxis = Object.values(xAxisMap)[0] as any;
-                  if (!xAxis?.scale) return null;
-                  const scale = xAxis.scale;
-                  let x: number | null = null;
-                  if (typeof scale.bandwidth === 'function') {
-                    const step = scale.step();
-                    const start = scale.range?.()[0] ?? 0;
-                    x = start + deferredCrosshairIdx * step + step / 2;
-                  } else {
-                    x = scale(deferredCrosshairIdx);
-                  }
-                  if (x == null || isNaN(x)) return null;
-                  const plotTop = offset.top;
-                  const plotBottom = offset.top + offset.height;
-                  return <line x1={x} y1={plotTop} x2={x} y2={plotBottom} stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />;
-                }} />
                 <Bar dataKey="displayVolume" isAnimationActive={false} barSize={barSize} shape={VolumeBarShape} />
               </ComposedChart>
             </ResponsiveContainer>
