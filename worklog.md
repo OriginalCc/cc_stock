@@ -650,3 +650,53 @@ Stage Summary:
 - 5级候选位置 + 兜底位置，保证标签始终可见
 - 正常模式和倒影模式均生效
 - OVERLAY_FP_VERSION升级到v5-lowpill-dash，缓存正确失效
+
+---
+Task ID: 1
+Agent: full-stack-developer
+Task: 给选股器加记忆功能
+
+Work Log:
+- 读取5个选股器组件现状：low-open 已有 result 持久化但缺 filters；其他4个组件只用 initialCache 内存缓存，刷新后丢失
+- stock-screener.tsx (智能选股):
+  * 新增常量 LAST_FILTERS_KEY = "stock-screener-last-filters" 和 LAST_RESULT_KEY = "stock-screener-last-result"
+  * filters state 改为函数初始化从 localStorage 恢复（用 {...DEFAULT_FILTERS, ...parsed} 合并防止字段缺失）
+  * result state 改为函数初始化从 localStorage 优先读取，回退到 initialCache
+  * 新增 useEffect 在 filters 变化时持久化到 localStorage
+  * 在 fetch 成功 setResult(data) 后追加 localStorage 写入 result
+  * 修正 sectorInput 初始化从 DEFAULT_FILTERS.sector 改为 filters.sector，保证与恢复后的 filters 同步
+- intraday-screener.tsx (分时选股):
+  * 新增常量 LAST_FILTERS_KEY/LAST_RESULT_KEY = "intraday-screener-last-filters/result"
+  * filters/result state 改为函数初始化从 localStorage 恢复
+  * 新增 useEffect 持久化 filters
+  * fetch 成功后追加 localStorage 写入 result
+- early-trading-screener.tsx (早盘选股):
+  * 新增常量 LAST_FILTERS_KEY/LAST_RESULT_KEY = "early-screener-last-filters/result"
+  * filters/result state 改为函数初始化从 localStorage 恢复
+  * 新增 useEffect 持久化 filters
+  * fetch 成功后追加 localStorage 写入 result
+- limit-up-analysis.tsx (涨停回踩):
+  * 新增常量 LAST_RESULT_KEY = "limit-up-screener-last-result" 和 LAST_FILTER_LEVEL_KEY = "limit-up-screener-last-filter-level"
+  * result state 改为函数初始化从 localStorage 恢复，回退到 initialCache
+  * filterLevel state 改为函数初始化从 localStorage 读取（Number(saved)），默认30
+  * 新增 useEffect 持久化 filterLevel（用 String(filterLevel)）
+  * fetch 成功后追加 localStorage 写入 result
+- low-open-screener.tsx (低开选股):
+  * 已有 LAST_RESULT_KEY 和 result 持久化逻辑保留
+  * 新增常量 LAST_FILTERS_KEY = "low-open-last-filters"
+  * filters state 改为函数初始化从 localStorage 恢复
+  * sectorInput 初始化改为 filters.sector || ""，保证与恢复后的 filters 同步
+  * 新增 useEffect 持久化 filters
+- 所有 localStorage 读写都用 try/catch 包裹防止 SSR/quota 异常
+- 所有 useState 初始化都加 typeof window === "undefined" 检查防止 SSR 报错
+- 没有修改任何 UI 布局，只加记忆逻辑
+- 没有破坏现有 saveScreenerResults/getCachedData/fetchWithSWR 逻辑
+- 运行 `bun run lint` 通过，无错误
+
+Stage Summary:
+- 5个选股器组件全部加上 localStorage 记忆功能
+- 刷新页面后能恢复上次的筛选条件（filters/filterLevel）和结果（result）
+- key 命名统一规范：{component}-last-{filters|result|filter-level}，各组件独立无冲突
+- stock-screener 的 sectorInput 和 low-open 的 sectorInput 同步从恢复后的 filters 初始化，避免输入框与实际筛选值不一致
+- limit-up-analysis 用 String/Number 适配 number 类型的 filterLevel 持久化
+- bun run lint 通过

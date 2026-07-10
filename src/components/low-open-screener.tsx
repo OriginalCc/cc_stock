@@ -264,6 +264,7 @@ interface LowOpenScreenerProps {
 }
 
 const LAST_RESULT_KEY = "low-open-last-result";
+const LAST_FILTERS_KEY = "low-open-last-filters";
 
 // 7 factor definitions for expansion
 const FACTOR_DEFS: { key: keyof LowOpenStock; label: string; weight: string }[] = [
@@ -294,9 +295,16 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
   const [lastFetchTimestamp, setLastFetchTimestamp] = useState(0);
 
   // Filter states
-  const [filters, setFilters] = useState<LowOpenFilters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<LowOpenFilters>(() => {
+    if (typeof window === "undefined") return DEFAULT_FILTERS;
+    try {
+      const saved = localStorage.getItem(LAST_FILTERS_KEY);
+      if (saved) return { ...DEFAULT_FILTERS, ...JSON.parse(saved) };
+    } catch {}
+    return DEFAULT_FILTERS;
+  });
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [sectorInput, setSectorInput] = useState("");
+  const [sectorInput, setSectorInput] = useState(filters.sector || "");
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const sectorDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -421,6 +429,11 @@ export const LowOpenScreener = React.memo(function LowOpenScreener({ onSelectSto
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Persist filters to localStorage on change
+  useEffect(() => {
+    try { localStorage.setItem(LAST_FILTERS_KEY, JSON.stringify(filters)); } catch {}
+  }, [filters]);
 
   // Sorted stocks
   const sortedStocks = React.useMemo(() => {

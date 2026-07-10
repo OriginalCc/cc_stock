@@ -222,6 +222,9 @@ function getPatternTagChartColor(tag: string): string {
 
 // ── Component ──────────────────────────────────────────
 
+const LAST_FILTERS_KEY = "intraday-screener-last-filters";
+const LAST_RESULT_KEY = "intraday-screener-last-result";
+
 interface IntradayScreenerProps {
   onSelectStock?: (symbol: string) => void;
 }
@@ -245,7 +248,13 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
     return getCachedData<IntradayScreenerResult>(cacheKey);
   });
 
-  const [result, setResult] = useState<IntradayScreenerResult | null>(initialCache);
+  const [result, setResult] = useState<IntradayScreenerResult | null>(() => {
+    if (typeof window === "undefined") return initialCache;
+    try {
+      const saved = localStorage.getItem(LAST_RESULT_KEY);
+      return saved ? JSON.parse(saved) : initialCache;
+    } catch { return initialCache; }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("compositeScore");
@@ -255,7 +264,14 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
   const [lastFetchTimestamp, setLastFetchTimestamp] = useState(0);
 
   // Filter states
-  const [filters, setFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<ScreenerFilters>(() => {
+    if (typeof window === "undefined") return DEFAULT_FILTERS;
+    try {
+      const saved = localStorage.getItem(LAST_FILTERS_KEY);
+      if (saved) return { ...DEFAULT_FILTERS, ...JSON.parse(saved) };
+    } catch {}
+    return DEFAULT_FILTERS;
+  });
   const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   // Score detail popover
@@ -330,6 +346,8 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
         setLastFetchTime(fetchTime);
         setIsFromCache(fromCache);
         setLastFetchTimestamp(Date.now());
+        // Persist to localStorage so next mount shows last result immediately
+        try { localStorage.setItem(LAST_RESULT_KEY, JSON.stringify(data)); } catch {}
       } else {
         setError(data.error || "选股失败");
       }
@@ -355,6 +373,11 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Persist filters to localStorage on change
+  useEffect(() => {
+    try { localStorage.setItem(LAST_FILTERS_KEY, JSON.stringify(filters)); } catch {}
+  }, [filters]);
 
   // Sort stocks
   const sortedStocks = useMemo(() => {

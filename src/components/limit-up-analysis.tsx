@@ -370,16 +370,31 @@ function StockDetailPanel({ stock }: { stock: PullbackStock }) {
 
 // ── Main Component ─────────────────────────────────────
 
+const LAST_RESULT_KEY = "limit-up-screener-last-result";
+const LAST_FILTER_LEVEL_KEY = "limit-up-screener-last-filter-level";
+
 export const LimitUpAnalysis = React.memo(function LimitUpAnalysis({ onSelectStock }: LimitUpAnalysisProps) {
   // ── Initialize from cache on mount (instant display on tab switch) ──
   const [initialCache] = useState(() => getCachedData<PullbackResult>("pullback:default"));
 
-  const [result, setResult] = useState<PullbackResult | null>(initialCache);
+  const [result, setResult] = useState<PullbackResult | null>(() => {
+    if (typeof window === "undefined") return initialCache;
+    try {
+      const saved = localStorage.getItem(LAST_RESULT_KEY);
+      return saved ? JSON.parse(saved) : initialCache;
+    } catch { return initialCache; }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<string>("");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [filterLevel, setFilterLevel] = useState<number>(30); // minimum approach %
+  const [filterLevel, setFilterLevel] = useState<number>(() => {
+    if (typeof window === "undefined") return 30;
+    try {
+      const saved = localStorage.getItem(LAST_FILTER_LEVEL_KEY);
+      return saved ? Number(saved) : 30;
+    } catch { return 30; }
+  });
 
   const toggleRow = useCallback((symbol: string) => {
     setExpandedRows(prev => {
@@ -419,6 +434,8 @@ export const LimitUpAnalysis = React.memo(function LimitUpAnalysis({ onSelectSto
         const fetchTime = new Date().toLocaleTimeString("zh-CN");
         setResult(data);
         setLastFetchTime(fetchTime);
+        // Persist to localStorage so next mount shows last result immediately
+        try { localStorage.setItem(LAST_RESULT_KEY, JSON.stringify(data)); } catch {}
       } else {
         setError(data.error || "涨停回踩分析失败");
       }
@@ -434,6 +451,11 @@ export const LimitUpAnalysis = React.memo(function LimitUpAnalysis({ onSelectSto
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Persist filterLevel to localStorage on change
+  useEffect(() => {
+    try { localStorage.setItem(LAST_FILTER_LEVEL_KEY, String(filterLevel)); } catch {}
+  }, [filterLevel]);
 
   // ── Filtered stocks ──────────────────────────────────
   const filteredStocks = useMemo(() => {
