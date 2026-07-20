@@ -838,6 +838,56 @@ export default function StockTAssistant() {
   const isUp = quote ? quote.change >= 0 : true;
   const priceColor = isUp ? "text-red-500" : "text-green-500";
 
+  // 涨跌家数 + 市场情绪指数板块（分时与五日分时共用，复用分时倒影代码）
+  const marketBreadthSection = marketBreadth ? (() => {
+    const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;
+    return (
+      <div className="space-y-2">
+        <MarketBreadthChart
+          history={history || []}
+          currentUp={totalUp}
+          currentDown={totalDown}
+          currentFlat={totalFlat}
+          limitUp={limitUp}
+          limitDown={limitDown}
+          shUp={shUp}
+          shDown={shDown}
+          szUp={szUp}
+          szDown={szDown}
+        />
+        <MarketSentiment
+          totalUp={totalUp}
+          totalDown={totalDown}
+          totalFlat={totalFlat}
+          limitUp={limitUp}
+          limitDown={limitDown}
+          breadthHistory={history || []}
+          indexRegimes={indexRegimes}
+        />
+        {/* 涨跌幅分布 + 板块排行 各占50% */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {marketDistribution && (
+            <MarketChangeDistribution
+              buckets={marketDistribution.buckets}
+              total={marketDistribution.total}
+              median={marketDistribution.median}
+              avgChange={marketDistribution.avgChange}
+              limitUpSealed={marketDistribution.limitUpSealed}
+              limitUpBroken={marketDistribution.limitUpBroken}
+              limitDownSealed={marketDistribution.limitDownSealed}
+              limitDownBroken={marketDistribution.limitDownBroken}
+            />
+          )}
+          <SectorTopBottomCard />
+        </div>
+        {/* 涨跌停详情 */}
+        {marketLimitStats && marketLimitStats.limitUp.total + marketLimitStats.limitDown.total > 0 && (
+          <MarketLimitStats stats={marketLimitStats} />
+        )}
+      </div>
+    );
+  })() : null;
+
   return (
     <PasswordGate>
     <div className="min-h-screen flex flex-col bg-background">
@@ -995,59 +1045,16 @@ export default function StockTAssistant() {
         {(chartMode === "timeline" || chartMode === "5d-timeline") && liveTimeline.length === 0 && timelineLoading ? (
           <div className="space-y-4"><Skeleton className="h-[400px] w-full" /><Skeleton className="h-[150px] w-full" /><Skeleton className="h-[100px] w-full" /></div>
         ) : chartMode === "5d-timeline" ? (
-          <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} recentDayLows={recentDayLows} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} sectorInfo={sectorInfo} szIndexRegime={szIndexRegime} sectorRegime={sectorRegime} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} />
+          <div className="space-y-4">
+            <FiveDayTimelinePanel symbol={symbol} quote={quote} timeline={liveTimeline} timelinePrevClose={timelinePrevClose} recentDayLows={recentDayLows} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} sectorInfo={sectorInfo} szIndexRegime={szIndexRegime} sectorRegime={sectorRegime} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} />
+            {/* 涨跌家数 + 市场情绪指数 — 复用分时倒影代码 */}
+            {marketBreadthSection}
+          </div>
         ) : chartMode === "timeline" && liveTimeline.length > 0 ? (
           <div className="space-y-4">
             <TimeSharingPanel data={liveTimeline} prevClose={timelinePrevClose} symbol={symbol} signals={timelineSignals} macdData={timelineMACDData} visibleMinutes={tlVisibleMinutes} onZoomIn={tlZoomIn} onZoomOut={tlZoomOut} onZoomReset={tlZoomReset} zoomIdx={tlZoomIdx} maxZoomIdx={TL_ZOOM_LEVELS.length - 1} prevDayMA5={prevDayMA5} szIndexRegime={szIndexRegime} activeIndexKey={activeIndexKey} indexConfig={INDEX_CONFIG} onCycleIndex={cycleIndexKey} keyPriceLevels={keyPriceLevels} panOffset={tlPanOffset} onPanOffsetChange={setTlPanOffset} sectorRegime={sectorRegime} sectorInfo={sectorInfo} sectorLoading={sectorLoading} onRetrySector={retrySectorFetch} pvMarkers={pvMarkers} stockName={quote?.name} indexTimelineData={indexTimelineData} sectorTimelineData={sectorTimelineData} indexLoading={indexLoading} onRetryIndex={retryIndexFetch} recentDayLows={recentDayLows} mirrored={mirrored} />
             {/* 涨跌家数 + 市场情绪指数 — 放在深证成指分时图后面 */}
-            {marketBreadth && (() => {
-              const { totalUp, totalDown, totalFlat, shUp, shDown, szUp, szDown, limitUp, limitDown, history } = marketBreadth;
-              return (
-                <div className="space-y-2">
-                  <MarketBreadthChart
-                    history={history || []}
-                    currentUp={totalUp}
-                    currentDown={totalDown}
-                    currentFlat={totalFlat}
-                    limitUp={limitUp}
-                    limitDown={limitDown}
-                    shUp={shUp}
-                    shDown={shDown}
-                    szUp={szUp}
-                    szDown={szDown}
-                  />
-                  <MarketSentiment
-                    totalUp={totalUp}
-                    totalDown={totalDown}
-                    totalFlat={totalFlat}
-                    limitUp={limitUp}
-                    limitDown={limitDown}
-                    breadthHistory={history || []}
-                    indexRegimes={indexRegimes}
-                  />
-                  {/* 涨跌幅分布 + 板块排行 各占50% */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {marketDistribution && (
-                      <MarketChangeDistribution
-                        buckets={marketDistribution.buckets}
-                        total={marketDistribution.total}
-                        median={marketDistribution.median}
-                        avgChange={marketDistribution.avgChange}
-                        limitUpSealed={marketDistribution.limitUpSealed}
-                        limitUpBroken={marketDistribution.limitUpBroken}
-                        limitDownSealed={marketDistribution.limitDownSealed}
-                        limitDownBroken={marketDistribution.limitDownBroken}
-                      />
-                    )}
-                    <SectorTopBottomCard />
-                  </div>
-                  {/* 涨跌停详情 */}
-                  {marketLimitStats && marketLimitStats.limitUp.total + marketLimitStats.limitDown.total > 0 && (
-                    <MarketLimitStats stats={marketLimitStats} />
-                  )}
-                </div>
-              );
-            })()}
+            {marketBreadthSection}
           </div>
         ) : chartMode === "kline" && chartData.length > 0 ? (
           <KLineChartPanel allChartData={allChartData} klineVisibleBars={klineVisibleBars} setKlineVisibleBars={setKlineVisibleBars} klinePanOffset={klinePanOffset} setKlinePanOffset={setKlinePanOffset} interval={interval} />

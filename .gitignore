@@ -68,3 +68,7 @@ server.log
 
 # zscripts
 /.zscripts/
+# agent browser screenshots & tool results
+*.png
+/tool-results/
+/dev.log
