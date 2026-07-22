@@ -819,8 +819,22 @@ export default function StockTAssistant() {
         const bars: KLineItem[] = data.data || [];
         const valid = bars.filter((b: KLineItem) => b.low > 0);
         if (valid.length === 0 || cancelled) return;
-        const minItem = valid.reduce((min: KLineItem, cur: KLineItem) => cur.low < min.low ? cur : min, valid[0]);
-        setRecentDayLows([{ date: minItem.date, low: minItem.low }]);
+        // 按.low升序排序，取最低点与第二低点
+        // 规则：第二低点排除当天，仅从前几天（不含最新一日）中选取，每天只算一个低点
+        const sortedByLow = valid.slice().sort((a: KLineItem, b: KLineItem) => a.low - b.low);
+        const lowest = sortedByLow[0];
+        // 当天日期 = 数据中日期最大者
+        const sortedByDate = valid.slice().sort((a: KLineItem, b: KLineItem) => a.date.localeCompare(b.date));
+        const todayDate = sortedByDate[sortedByDate.length - 1].date;
+        // 前几天（排除当天）数据，按 low 升序
+        const prevDaysSorted = valid.filter((b: KLineItem) => b.date !== todayDate).sort((a: KLineItem, b: KLineItem) => a.low - b.low);
+        // 第二低点 = 前几天中最低的，且与最低点不同日期
+        const secondLowest = prevDaysSorted.find((b: KLineItem) => b.date !== lowest.date);
+        const lows: { date: string; low: number }[] = [{ date: lowest.date, low: lowest.low }];
+        if (secondLowest && secondLowest.low > lowest.low) {
+          lows.push({ date: secondLowest.date, low: secondLowest.low });
+        }
+        setRecentDayLows(lows);
       } catch {
         // Retry up to 3 times with 5s delay on network/timeout errors
         if (attempt < 3 && !cancelled) {

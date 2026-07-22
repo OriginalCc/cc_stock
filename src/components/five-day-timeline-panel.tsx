@@ -1142,11 +1142,18 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                   }
                   return els.length > 0 ? <g>{els}</g> : null;
                 }} />
-                {/* 5-day low line — gradient highlight */}
+                {/* 5-day low lines — 最低点(红) + 第二低点(橙) 渐变高亮 */}
                 {recentDayLows && recentDayLows.length > 0 && recentDayLows
                   .map((item, i) => {
                     const parts = item.date.split("-");
                     const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
+                    // i === 0: 最低点（红色）；i === 1: 第二低点（橙色）
+                    const isLowest = i === 0;
+                    const gradId = isLowest ? "recentLowGrad5d" : "secondLowGrad5d";
+                    const glowId = isLowest ? "recentLowGlow5d" : "secondLowGlow5d";
+                    const pillFill = isLowest ? "#dc2626" : "#d97706";
+                    const pillStroke = isLowest ? "#fca5a5" : "#fcd34d";
+                    const labelText = isLowest ? `▼5日最低 ${dateLabel} ${formatPrice(item.low)}` : `▼5日次低 ${dateLabel} ${formatPrice(item.low)}`;
                     return (
                       <Customized key={`recentlow-${i}`} component={(props: any) => {
                         const { yAxisMap, offset } = props;
@@ -1160,14 +1167,26 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                         return (
                           <g>
                             <defs>
-                              <linearGradient id="recentLowGrad5d" x1={x1} y1={y} x2={x2} y2={y} gradientUnits="userSpaceOnUse">
-                                <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
-                                <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
-                                <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
-                                <stop offset="80%" stopColor="#dc2626" stopOpacity="1" />
-                                <stop offset="100%" stopColor="#b91c1c" stopOpacity="1" />
+                              <linearGradient id={gradId} x1={x1} y1={y} x2={x2} y2={y} gradientUnits="userSpaceOnUse">
+                                {isLowest ? (
+                                  <>
+                                    <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
+                                    <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
+                                    <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
+                                    <stop offset="80%" stopColor="#dc2626" stopOpacity="1" />
+                                    <stop offset="100%" stopColor="#b91c1c" stopOpacity="1" />
+                                  </>
+                                ) : (
+                                  <>
+                                    <stop offset="0%" stopColor="#fde047" stopOpacity="0.5" />
+                                    <stop offset="20%" stopColor="#facc15" stopOpacity="0.75" />
+                                    <stop offset="50%" stopColor="#f59e0b" stopOpacity="0.9" />
+                                    <stop offset="80%" stopColor="#d97706" stopOpacity="1" />
+                                    <stop offset="100%" stopColor="#b45309" stopOpacity="1" />
+                                  </>
+                                )}
                               </linearGradient>
-                              <filter id="recentLowGlow5d" x="-5%" y="-100%" width="110%" height="300%">
+                              <filter id={glowId} x="-5%" y="-100%" width="110%" height="300%">
                                 <feGaussianBlur stdDeviation="5" result="blur" />
                                 <feMerge>
                                   <feMergeNode in="blur" />
@@ -1175,24 +1194,27 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                                 </feMerge>
                               </filter>
                             </defs>
-                            {/* Wide glow layer */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={5} strokeOpacity={0.12} filter="url(#recentLowGlow5d)" />
-                            {/* Medium glow layer */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={2.5} strokeOpacity={0.25} />
-                            {/* Main gradient line */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={1.5} strokeLinecap="round" />
-                            {/* Bright core line */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} />
+                            {/* Wide glow layer (实线光晕) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={5} strokeOpacity={0.12} filter={`url(#${glowId})`} />
+                            {/* Medium glow layer (虚线) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={2.5} strokeOpacity={0.25} strokeDasharray="8 4" />
+                            {/* Main gradient line (虚线) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={1.5} strokeLinecap="round" strokeDasharray="8 4" />
+                            {/* Bright core line (虚线) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} strokeDasharray="8 4" />
                             {/* Label pill */}
                             {(() => {
                               const pillW = 116;
                               const pillH = 24;
+                              // 第二低点 pill 纵向偏移避免与最低点重叠
+                              const pillYOffset = isLowest ? 0 : (pillH + 6);
                               const pillX = x1 + 4;
+                              const pillY = y + pillYOffset;
                               return (
                                 <>
-                                  <rect x={pillX - 2} y={y - pillH / 2 - 2} width={pillW + 4} height={pillH + 4} rx={14} fill="#dc2626" fillOpacity={0.25} filter="url(#recentLowGlow5d)" />
-                                  <rect x={pillX} y={y - pillH / 2} width={pillW} height={pillH} rx={12} fill="#dc2626" fillOpacity={0.95} stroke="#fca5a5" strokeWidth={1} />
-                                  <text x={pillX + pillW / 2} y={y + 1} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={10} fontWeight={900}>{`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}</text>
+                                  <rect x={pillX - 2} y={pillY - pillH / 2 - 2} width={pillW + 4} height={pillH + 4} rx={14} fill={pillFill} fillOpacity={0.25} filter={`url(#${glowId})`} />
+                                  <rect x={pillX} y={pillY - pillH / 2} width={pillW} height={pillH} rx={12} fill={pillFill} fillOpacity={0.95} stroke={pillStroke} strokeWidth={1} />
+                                  <text x={pillX + pillW / 2} y={pillY + 1} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={10} fontWeight={900}>{labelText}</text>
                                 </>
                               );
                             })()}
