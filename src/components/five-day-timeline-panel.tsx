@@ -903,9 +903,10 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
     let minP = refP - maxDeviation - padding;
     let maxP = refP + maxDeviation + padding;
     // Ensure 5-day low line is always within Y-axis domain
+    // 额外向下留 3% 空间，用于放置低点标签 pill（避免遮挡分时线）
     if (recentDayLows && recentDayLows.length > 0) {
       for (const dl of recentDayLows) {
-        if (dl.low > 0 && dl.low < minP) minP = dl.low - (refP * 0.002);
+        if (dl.low > 0 && dl.low < minP) minP = dl.low - (refP * 0.03);
       }
     }
     const range = maxP - minP;
@@ -1142,11 +1143,18 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                   }
                   return els.length > 0 ? <g>{els}</g> : null;
                 }} />
-                {/* 5-day low line — gradient highlight */}
+                {/* 5-day low lines — 最低点(红) + 第二低点(橙) 渐变高亮 */}
                 {recentDayLows && recentDayLows.length > 0 && recentDayLows
                   .map((item, i) => {
                     const parts = item.date.split("-");
                     const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
+                    // i === 0: 最低点（红色）；i === 1: 第二低点（橙色）
+                    const isLowest = i === 0;
+                    const gradId = isLowest ? "recentLowGrad5d" : "secondLowGrad5d";
+                    const glowId = isLowest ? "recentLowGlow5d" : "secondLowGlow5d";
+                    const pillFill = isLowest ? "#dc2626" : "#d97706";
+                    const pillStroke = isLowest ? "#fca5a5" : "#fcd34d";
+                    const labelText = isLowest ? `▼5日最低 ${dateLabel} ${formatPrice(item.low)}` : `▼5日次低 ${dateLabel} ${formatPrice(item.low)}`;
                     return (
                       <Customized key={`recentlow-${i}`} component={(props: any) => {
                         const { yAxisMap, offset } = props;
@@ -1160,14 +1168,26 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                         return (
                           <g>
                             <defs>
-                              <linearGradient id="recentLowGrad5d" x1={x1} y1={y} x2={x2} y2={y} gradientUnits="userSpaceOnUse">
-                                <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
-                                <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
-                                <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
-                                <stop offset="80%" stopColor="#dc2626" stopOpacity="1" />
-                                <stop offset="100%" stopColor="#b91c1c" stopOpacity="1" />
+                              <linearGradient id={gradId} x1={x1} y1={y} x2={x2} y2={y} gradientUnits="userSpaceOnUse">
+                                {isLowest ? (
+                                  <>
+                                    <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.6" />
+                                    <stop offset="20%" stopColor="#f97316" stopOpacity="0.9" />
+                                    <stop offset="50%" stopColor="#ef4444" stopOpacity="1" />
+                                    <stop offset="80%" stopColor="#dc2626" stopOpacity="1" />
+                                    <stop offset="100%" stopColor="#b91c1c" stopOpacity="1" />
+                                  </>
+                                ) : (
+                                  <>
+                                    <stop offset="0%" stopColor="#fde047" stopOpacity="0.5" />
+                                    <stop offset="20%" stopColor="#facc15" stopOpacity="0.75" />
+                                    <stop offset="50%" stopColor="#f59e0b" stopOpacity="0.9" />
+                                    <stop offset="80%" stopColor="#d97706" stopOpacity="1" />
+                                    <stop offset="100%" stopColor="#b45309" stopOpacity="1" />
+                                  </>
+                                )}
                               </linearGradient>
-                              <filter id="recentLowGlow5d" x="-5%" y="-100%" width="110%" height="300%">
+                              <filter id={glowId} x="-5%" y="-100%" width="110%" height="300%">
                                 <feGaussianBlur stdDeviation="5" result="blur" />
                                 <feMerge>
                                   <feMergeNode in="blur" />
@@ -1175,24 +1195,37 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                                 </feMerge>
                               </filter>
                             </defs>
-                            {/* Wide glow layer */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={5} strokeOpacity={0.12} filter="url(#recentLowGlow5d)" />
-                            {/* Medium glow layer */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={2.5} strokeOpacity={0.25} />
-                            {/* Main gradient line */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="url(#recentLowGrad5d)" strokeWidth={1.5} strokeLinecap="round" />
-                            {/* Bright core line */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} />
-                            {/* Label pill */}
+                            {/* Wide glow layer (实线光晕) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={5} strokeOpacity={0.12} filter={`url(#${glowId})`} />
+                            {/* Medium glow layer (虚线) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={2.5} strokeOpacity={0.25} strokeDasharray="8 4" />
+                            {/* Main gradient line (虚线) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={1.5} strokeLinecap="round" strokeDasharray="8 4" />
+                            {/* Bright core line (虚线) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} strokeDasharray="8 4" />
+                            {/* Label pill — 两个 pill 都放绘图区底部(左下/右下)，虚线引导向上连到横线，避免遮挡分时线 */}
                             {(() => {
                               const pillW = 116;
                               const pillH = 24;
-                              const pillX = x1 + 4;
+                              const pillX = isLowest ? (x1 + 4) : (x2 - pillW - 4);
+                              const pillCX = pillX + pillW / 2;
+                              const topBound = (offset?.top ?? 0);
+                              const bottomBound = topBound + (offset?.height ?? 0);
+                              // pill 贴绘图区底部
+                              const pillCenterY = bottomBound - pillH / 2 - 4;
+                              // 虚线引导线：从横线 (pillCX, y) 向下连到 pill 顶部 (pillCX, pillCenterY - pillH/2)
+                              const guideY1 = y;
+                              const guideY2 = pillCenterY - pillH / 2;
+                              // 仅当 pill 在横线下方时画引导线
+                              const showGuide = guideY2 > guideY1 + 2;
                               return (
                                 <>
-                                  <rect x={pillX - 2} y={y - pillH / 2 - 2} width={pillW + 4} height={pillH + 4} rx={14} fill="#dc2626" fillOpacity={0.25} filter="url(#recentLowGlow5d)" />
-                                  <rect x={pillX} y={y - pillH / 2} width={pillW} height={pillH} rx={12} fill="#dc2626" fillOpacity={0.95} stroke="#fca5a5" strokeWidth={1} />
-                                  <text x={pillX + pillW / 2} y={y + 1} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={10} fontWeight={900}>{`▼5日最低 ${dateLabel} ${formatPrice(item.low)}`}</text>
+                                  {showGuide && (
+                                    <line x1={pillCX} y1={guideY1} x2={pillCX} y2={guideY2} stroke={pillFill} strokeWidth={1.2} strokeDasharray="3 2" strokeOpacity={0.85} />
+                                  )}
+                                  <rect x={pillX - 2} y={pillCenterY - pillH / 2 - 2} width={pillW + 4} height={pillH + 4} rx={14} fill={pillFill} fillOpacity={0.25} filter={`url(#${glowId})`} />
+                                  <rect x={pillX} y={pillCenterY - pillH / 2} width={pillW} height={pillH} rx={12} fill={pillFill} fillOpacity={0.95} stroke={pillStroke} strokeWidth={1} />
+                                  <text x={pillCX} y={pillCenterY + 1} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={10} fontWeight={900}>{labelText}</text>
                                 </>
                               );
                             })()}
