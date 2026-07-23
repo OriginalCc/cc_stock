@@ -903,10 +903,10 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
     let minP = refP - maxDeviation - padding;
     let maxP = refP + maxDeviation + padding;
     // Ensure 5-day low line is always within Y-axis domain
-    // 额外向下留 3% 空间，用于放置低点标签 pill（避免遮挡分时线）
+    // 额外向下留 2% 空间，用于放置低点标签 pill（避免遮挡分时线）
     if (recentDayLows && recentDayLows.length > 0) {
       for (const dl of recentDayLows) {
-        if (dl.low > 0 && dl.low < minP) minP = dl.low - (refP * 0.03);
+        if (dl.low > 0 && dl.low < minP) minP = dl.low - (refP * 0.02);
       }
     }
     const range = maxP - minP;
@@ -1154,7 +1154,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                     const glowId = isLowest ? "recentLowGlow5d" : "secondLowGlow5d";
                     const pillFill = isLowest ? "#dc2626" : "#d97706";
                     const pillStroke = isLowest ? "#fca5a5" : "#fcd34d";
-                    const labelText = isLowest ? `▼5日最低 ${dateLabel} ${formatPrice(item.low)}` : `▼5日次低 ${dateLabel} ${formatPrice(item.low)}`;
+                    const labelText = isLowest ? `▼最低 ${dateLabel} ${formatPrice(item.low)}` : `▼次低 ${dateLabel} ${formatPrice(item.low)}`;
                     return (
                       <Customized key={`recentlow-${i}`} component={(props: any) => {
                         const { yAxisMap, offset } = props;
@@ -1205,14 +1205,14 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                             <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} strokeDasharray="8 4" />
                             {/* Label pill — 两个 pill 都放绘图区底部(左下/右下)，虚线引导向上连到横线，避免遮挡分时线 */}
                             {(() => {
-                              const pillW = 116;
-                              const pillH = 24;
+                              const pillW = 92;
+                              const pillH = 18;
                               const pillX = isLowest ? (x1 + 4) : (x2 - pillW - 4);
                               const pillCX = pillX + pillW / 2;
                               const topBound = (offset?.top ?? 0);
                               const bottomBound = topBound + (offset?.height ?? 0);
                               // pill 贴绘图区底部
-                              const pillCenterY = bottomBound - pillH / 2 - 4;
+                              const pillCenterY = bottomBound - pillH / 2 - 3;
                               // 虚线引导线：从横线 (pillCX, y) 向下连到 pill 顶部 (pillCX, pillCenterY - pillH/2)
                               const guideY1 = y;
                               const guideY2 = pillCenterY - pillH / 2;
@@ -1221,11 +1221,11 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                               return (
                                 <>
                                   {showGuide && (
-                                    <line x1={pillCX} y1={guideY1} x2={pillCX} y2={guideY2} stroke={pillFill} strokeWidth={1.2} strokeDasharray="3 2" strokeOpacity={0.85} />
+                                    <line x1={pillCX} y1={guideY1} x2={pillCX} y2={guideY2} stroke={pillFill} strokeWidth={1} strokeDasharray="3 2" strokeOpacity={0.8} />
                                   )}
-                                  <rect x={pillX - 2} y={pillCenterY - pillH / 2 - 2} width={pillW + 4} height={pillH + 4} rx={14} fill={pillFill} fillOpacity={0.25} filter={`url(#${glowId})`} />
-                                  <rect x={pillX} y={pillCenterY - pillH / 2} width={pillW} height={pillH} rx={12} fill={pillFill} fillOpacity={0.95} stroke={pillStroke} strokeWidth={1} />
-                                  <text x={pillCX} y={pillCenterY + 1} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={10} fontWeight={900}>{labelText}</text>
+                                  <rect x={pillX - 1} y={pillCenterY - pillH / 2 - 1} width={pillW + 2} height={pillH + 2} rx={9} fill={pillFill} fillOpacity={0.22} filter={`url(#${glowId})`} />
+                                  <rect x={pillX} y={pillCenterY - pillH / 2} width={pillW} height={pillH} rx={8} fill={pillFill} fillOpacity={0.92} stroke={pillStroke} strokeWidth={0.8} />
+                                  <text x={pillCX} y={pillCenterY + 0.5} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={8.5} fontWeight={800}>{labelText}</text>
                                 </>
                               );
                             })()}
