@@ -1196,13 +1196,13 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                               </filter>
                             </defs>
                             {/* Wide glow layer (实线光晕) */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={5} strokeOpacity={0.12} filter={`url(#${glowId})`} />
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={pillFill} strokeWidth={5} strokeOpacity={0.18} filter={`url(#${glowId})`} />
                             {/* Medium glow layer (虚线) */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={2.5} strokeOpacity={0.25} strokeDasharray="8 4" />
-                            {/* Main gradient line (虚线) */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={`url(#${gradId})`} strokeWidth={1.5} strokeLinecap="round" strokeDasharray="8 4" />
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={pillFill} strokeWidth={3} strokeOpacity={0.4} strokeDasharray="8 4" />
+                            {/* Main line (虚线) */}
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke={pillFill} strokeWidth={1.8} strokeLinecap="round" strokeOpacity={0.95} strokeDasharray="8 4" />
                             {/* Bright core line (虚线) */}
-                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.25} strokeDasharray="8 4" />
+                            <line x1={x1} y1={y} x2={x2} y2={y} stroke="white" strokeWidth={0.8} strokeOpacity={0.5} strokeDasharray="8 4" />
                             {/* Label pill — 两个 pill 都放绘图区底部(左下/右下)，虚线引导向上连到横线，避免遮挡分时线 */}
                             {(() => {
                               const pillW = 92;
@@ -1221,7 +1221,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
                               return (
                                 <>
                                   {showGuide && (
-                                    <line x1={pillCX} y1={guideY1} x2={pillCX} y2={guideY2} stroke={pillFill} strokeWidth={1} strokeDasharray="3 2" strokeOpacity={0.8} />
+                                    <line x1={pillCX} y1={guideY1} x2={pillCX} y2={guideY2} stroke={pillFill} strokeWidth={1.2} strokeDasharray="3 2" strokeOpacity={0.95} />
                                   )}
                                   <rect x={pillX - 1} y={pillCenterY - pillH / 2 - 1} width={pillW + 2} height={pillH + 2} rx={9} fill={pillFill} fillOpacity={0.22} filter={`url(#${glowId})`} />
                                   <rect x={pillX} y={pillCenterY - pillH / 2} width={pillW} height={pillH} rx={8} fill={pillFill} fillOpacity={0.92} stroke={pillStroke} strokeWidth={0.8} />
