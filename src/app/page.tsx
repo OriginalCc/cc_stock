@@ -9,6 +9,7 @@ import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem
 const StockScreener = dynamic(() => import("@/components/stock-screener").then(m => ({ default: m.StockScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载选股器...</span></div> });
 const IntradayScreener = dynamic(() => import("@/components/intraday-screener").then(m => ({ default: m.IntradayScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载分时选股...</span></div> });
 const LimitUpAnalysis = dynamic(() => import("@/components/limit-up-analysis").then(m => ({ default: m.LimitUpAnalysis })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨停回踩...</span></div> });
+const LimitUpPullbackScreener = dynamic(() => import("@/components/limit-up-pullback-screener").then(m => ({ default: m.LimitUpPullbackScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载涨停回踩选股...</span></div> });
 const EarlyTradingScreener = dynamic(() => import("@/components/early-trading-screener").then(m => ({ default: m.EarlyTradingScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载早盘选股...</span></div> });
 const LowOpenScreener = dynamic(() => import("@/components/low-open-screener").then(m => ({ default: m.LowOpenScreener })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载低开选股...</span></div> });
 const SectorRotationPanel = dynamic(() => import("@/components/sector-rotation-panel").then(m => ({ default: m.SectorRotationPanel })), { ssr: false, loading: () => <div className="h-[600px] flex items-center justify-center"><span className="text-sm text-muted-foreground animate-pulse">加载板块轮动...</span></div> });
@@ -55,7 +56,7 @@ import {
   Search, TrendingUp, TrendingDown, Activity, ArrowUpRight, ArrowDownRight,
   X, Clock, Zap, LineChart, CandlestickChart, Filter,
   Star, Bell, BellOff, Volume2, Newspaper, CalendarDays, Flame,
-  History, ShieldCheck, Server, Scale, AlertTriangle, BookOpen, Info, FlipVertical2,
+  History, ShieldCheck, Server, Scale, AlertTriangle, BookOpen, Info, FlipVertical2, Target,
 } from "lucide-react";
 
 export default function StockTAssistant() {
@@ -66,7 +67,7 @@ export default function StockTAssistant() {
     searchStocks, isAShare: isAShareStock,
   } = useStockData();
 
-  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "intraday-screener" | "sector-rotation" | "early-screen" | "limit-up" | "low-open" | "baota-deploy">("t-assistant");
+  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "intraday-screener" | "sector-rotation" | "early-screen" | "limit-up" | "low-open" | "baota-deploy" | "limit-up-pullback">("t-assistant");
   const [screenerSubView, setScreenerSubView] = useState<"screener" | "history">("screener");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
@@ -914,7 +915,7 @@ export default function StockTAssistant() {
               <h1 className="text-lg font-bold hidden sm:block">做T助手</h1>
               <Badge variant="outline" className="text-xs hidden sm:flex">A股</Badge>
               <div className="flex items-center border border-border rounded-md overflow-hidden ml-1">
-                {(["t-assistant", "screener", "low-open", "intraday-screener", "sector-rotation", "early-screen", "limit-up", "baota-deploy"] as const).map((mode) => (
+                {(["t-assistant", "screener", "low-open", "intraday-screener", "sector-rotation", "early-screen", "limit-up", "limit-up-pullback", "baota-deploy"] as const).map((mode) => (
                   <button key={mode} onClick={() => { setPageMode(mode); setScreenerSubView("screener"); }} className={`px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${pageMode === mode ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}>
                     {mode === "t-assistant" && "做T"}
                     {mode === "screener" && <><Filter className="w-3 h-3" />选股</>}
@@ -923,6 +924,7 @@ export default function StockTAssistant() {
                     {mode === "early-screen" && <><Clock className="w-3 h-3" />早盘选股</>}
                     {mode === "low-open" && <><TrendingDown className="w-3 h-3" />低开</>}
                     {mode === "limit-up" && <><TrendingUp className="w-3 h-3" />回踩</>}
+                    {mode === "limit-up-pullback" && <><Target className="w-3 h-3" />回踩选股</>}
                     {mode === "baota-deploy" && <><Server className="w-3 h-3" />部署</>}
                   </button>
                 ))}
@@ -994,7 +996,7 @@ export default function StockTAssistant() {
         )}
         {pageMode === "baota-deploy" ? (<BaotaDeployGuide />) : screenerSubView === "history" && pageMode !== "t-assistant" && pageMode !== "sector-rotation" ? (
           <ScreenerHistoryPanel onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />
-        ) : pageMode === "screener" ? (<StockScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "intraday-screener" ? (<IntradayScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "sector-rotation" ? (<SectorRotationPanel onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "early-screen" ? (<EarlyTradingScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "low-open" ? (<LowOpenScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "limit-up" ? (<LimitUpAnalysis onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : (
+        ) : pageMode === "screener" ? (<StockScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "intraday-screener" ? (<IntradayScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "sector-rotation" ? (<SectorRotationPanel onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "early-screen" ? (<EarlyTradingScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "low-open" ? (<LowOpenScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "limit-up" ? (<LimitUpAnalysis onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "limit-up-pullback" ? (<LimitUpPullbackScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : (
         <>
         {/* Stock Info Bar */}
         <Card className={`mb-4 transition-all ${flashSignal === 'buy' ? 'animate-flash-green' : flashSignal ? 'animate-flash-red' : ''}`}>

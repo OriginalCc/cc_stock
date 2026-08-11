@@ -700,3 +700,43 @@ Stage Summary:
 - stock-screener 的 sectorInput 和 low-open 的 sectorInput 同步从恢复后的 filters 初始化，避免输入框与实际筛选值不一致
 - limit-up-analysis 用 String/Number 适配 number 类型的 filterLevel 持久化
 - bun run lint 通过
+
+---
+Task ID: 4-5
+Agent: full-stack-developer
+Task: 新增涨停回踩选股页面 + 记忆功能
+
+Work Log:
+- 阅读 worklog.md / page.tsx / limit-up-analysis.tsx / low-open-screener.tsx / limit-up-pullback API / client-cache.ts 理解模式
+- 创建 `src/components/limit-up-pullback-screener.tsx`（~1090 行），独立、功能更丰富的多维度筛选器
+  - 类型对齐 API 返回的 `PullbackStock` / `PullbackResult`
+  - 多维度筛选条件：回踩深度阈值(0-100)、距涨停最大天数(1-15)、最大市值上限(0-10000亿)、最小换手率(0-50)、量比下限(0-10)、排除ST复选框
+  - 使用 shadcn/ui: Card, Button, Badge, Table, Input, Skeleton, Separator, Slider, Checkbox, Label, Collapsible, Tooltip
+  - lucide-react 图标: Target, TrendingUp/Down, RefreshCw, Loader2, AlertCircle, ArrowDownRight, ArrowUpDown, ChevronUp/Down, BarChart3, Clock, Activity, Filter, SlidersHorizontal, Database, RotateCcw, Zap, PieChart
+  - 筛选条件 Collapsible 包裹，默认展开，标题显示当前条件摘要 + 已调整徽章
+  - 表格 14 列：代码/名称、涨停日、涨停涨幅、涨停价、起涨点、当前价、今日涨跌、回踩深度(带进度条+颜色标签)、距涨停、最大回撤、换手率、市值、量比、走势(mini SVG)
+  - 表头 SortableHead 组件支持升降序切换（12 个数值字段可排序）
+  - 行点击调用 onSelectStock(symbol) 跳转
+  - 顶部统计卡片：扫描总数、符合筛选数、深度回踩个数(≥70%)、平均回踩深度
+  - 刷新按钮强制刷新(?refresh=1)，使用 cachedFetch 10 分钟客户端缓存
+  - 加载 Skeleton，错误状态显示错误信息+重试，空结果友好提示
+  - 显示数据时间戳 + 服务端缓存徽章 + 客户端缓存徽章
+  - 记忆功能：LAST_RESULT_KEY + LAST_FILTERS_KEY 双 localStorage 保存，filters/result 变化时持久化
+  - 表格容器 `max-h-[600px] overflow-y-auto` + 自定义滚动条（支持深色模式）
+  - 容器 `overflow-x-auto` 移动端横向滚动
+  - 添加策略说明卡片（含 4 档回踩深度图例）
+- 修改 `src/app/page.tsx`:
+  - 第 12 行附近新增 dynamic import: `LimitUpPullbackScreener`，loading skeleton 文案 "加载涨停回踩选股..."
+  - 第 59 行 lucide-react 导入列表追加 `Target`
+  - 第 69 行 pageMode 联合类型追加 `"limit-up-pullback"`
+  - 第 918 行菜单按钮数组追加 `"limit-up-pullback"`
+  - 第 927 行菜单标签: `{mode === "limit-up-pullback" && <><Target className="w-3 h-3" />回踩选股</>}`
+  - 第 999 行条件渲染链路追加 `pageMode === "limit-up-pullback" ? (<LimitUpPullbackScreener onSelectStock={...} />) : ...`
+- 运行 `bun run lint`，exit 0，无错误
+
+Stage Summary:
+- 新增独立组件 `limit-up-pullback-screener.tsx`，与已有 `limit-up-analysis.tsx`（单维度回踩深度按钮筛选）并存，提供 6 维度精细筛选 + 表头排序 + 记忆功能
+- 后端 API `/api/stock/limit-up-pullback` 未改动，直接复用
+- 记忆功能完整：filters + result 都用 localStorage 保存，刷新页面立即恢复筛选条件和结果
+- 客户端 10 分钟缓存 + 服务端 10 分钟缓存 + 强制刷新按钮(?refresh=1)
+- lint 通过，dev server 编译成功
