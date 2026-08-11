@@ -740,3 +740,51 @@ Stage Summary:
 - 记忆功能完整：filters + result 都用 localStorage 保存，刷新页面立即恢复筛选条件和结果
 - 客户端 10 分钟缓存 + 服务端 10 分钟缓存 + 强制刷新按钮(?refresh=1)
 - lint 通过，dev server 编译成功
+
+---
+Task ID: 15
+Agent: full-stack-developer
+Task: 丰富回踩选股页面功能（12 类增强）
+
+Work Log:
+- 读取 worklog.md（Task ID 4-5）与现有 limit-up-pullback-screener.tsx（1092 行）了解结构与 API 字段
+- 重写 /home/z/my-project/src/components/limit-up-pullback-screener.tsx，最终 2514 行，保留所有现有功能 + 新增 12 类增强
+- 12 类增强功能实现：
+  1. 搜索框：Input + Search 图标 + X 清空按钮，placeholder "搜索代码或名称..."，按 symbol/name 二级过滤，localStorage(last-search)
+  2. 5 个快捷预设：激进(red)/稳健(purple)/保守(emerald)/深度回踩(orange)/快速反弹(cyan)，Badge 不同色系，激活时 ring-2 描边高亮，Tooltip 显示条件，JSON.stringify 比较，再次点击恢复默认
+  3. 三类新筛选维度：
+     - 价格区间（minPrice/maxPrice 双 Input）
+     - 今日涨跌幅区间（双滑块 -10~10，附"今日反弹"/"今日下跌"快捷按钮）
+     - 涨停板类型（3 Checkbox: 主板10%/创业板20%/北交所30%，按 symbol 前缀判断）
+  4. 10 个快速标签 chips：今日反弹/今日下跌/今日放量/极度逼近/近3日涨停/小盘/中盘/大盘/低换手/高换手，多选 AND 过滤，激活高亮+ring，"已选 N 项 / 清空"按钮，横向滚动，localStorage(last-tags)
+  5. 收藏功能：Star/StarOff 图标按钮（e.stopPropagation 防误触行点击），localStorage(favorites) 存 symbol[]，顶部"⭐ 我的收藏 (N)"切换按钮，收藏模式空状态友好提示
+  6. 行展开详情：ChevronRight/ChevronDown 图标（仅图标 stopPropagation），expandedRows: Set<string> 不持久化，展开行 colSpan=17 grid 布局：左 LargeKlineChart 240×120 蜡烛图（标注涨停日/起涨点线/当前价线）+ 中 11 项详细数据表 + 右 风险评分卡（含 4 项贡献值分解）
+  7. CSV 导出：Download 图标按钮（在刷新旁），BOM \uFEFF 防 Excel 乱码，14 字段，文件名 涨停回踩筛选_YYYYMMDD_HHmm.csv，Blob+createObjectURL 下载，空结果禁用
+  8. 6 个统计卡：扫描总数/符合筛选/深度回踩/平均回踩（保留）+ 今日上涨 N/总数（绿色 TrendingUp）+ 平均最大回撤（红色 ArrowDownRight），grid 2/3/6 响应式
+  9. 风险评分：calcRiskScore 公式 approachPct*0.35 + maxPullbackPct*0.25 + min(daysSinceLimitUp*3,30)*0.15 + max(0,-currentChangePct)*0.25，0-100，4 档 badge（低/中/高/极高），表格新增"风险"列可排序，展开详情显示各分项贡献值
+  10. 回踩深度分布直方图：5 柱 [30-50%]/[50-70%]/[70-90%]/[90-100%]/[≥100%回到起涨点]，归一化高度，颜色对应 getApproachStyle，纯 div+height 实现，暗色模式兼容
+  11. 视图切换：SegmentedControl 风格 [表格|卡片]，卡片视图 grid 1/2/3 列，每卡含代码+名称+收藏按钮+mini K线+数据网格+风险 badge，localStorage(last-view)，默认表格
+  12. 分页：上一页/下一页/当前页/总页数，每页 20/50/100 切换（默认 50），切换筛选/搜索/排序/标签/收藏模式自动回第 1 页，localStorage(last-page-size)
+- 新增 localStorage key 共 5 个：last-search / last-tags / favorites / last-view / last-page-size（原有 last-result / last-filters 保留）
+- 新增 lucide 图标：Search, Star, Download, ChevronRight, LayoutGrid, Table as TableIcon, AlertTriangle, X, Layers, type LucideIcon
+- 新增辅助函数：getBoardType (按 symbol 前缀判断板块), calcRiskScore (风险评分), getRiskStyle (4 档样式), csvEscape (CSV 转义)
+- 新增子组件：LargeKlineChart (240×120 蜡烛图), Histogram (5 柱直方图), PresetButtons (5 预设), QuickTagChips (10 标签), RiskBadge (风险徽章), ExpandedRowDetail (展开详情), Pagination (分页), StockCardViewItem (卡片视图项)
+- 表格列从 14 列扩展到 17 列：新增"展开图标"(列首)/"风险"(最大回撤后)/"收藏"(走势后)
+- SortField 类型新增 "riskScore"，排序逻辑中 calcRiskScore 兼容处理
+- 拉踩 stopPropagation：展开图标、收藏按钮的 TableCell onClick 都加 e.stopPropagation() 防误触行点击跳转
+- 所有 localStorage 读写用 try/catch + typeof window==="undefined" 检查防 SSR 报错
+- 颜色合规：避免 indigo/blue，预设稳健型用 purple（用户指定"蓝紫"），板块类型用 violet 替代 indigo
+- 暗色模式：所有新增样式都加 dark: 变体
+- 响应式：mobile-first，grid 2/3/6 列，控件横向滚动
+- 运行 `bun run lint` 通过 exit 0
+- dev server 日志确认编译成功（✓ Compiled in 346ms），无组件相关错误
+- 未修改 page.tsx / API / 其他组件
+
+Stage Summary:
+- 完整重写 limit-up-pullback-screener.tsx，从 1092 行扩展到 2514 行（+1422 行）
+- 12 类增强功能全部实现：搜索框/5预设/3类新筛选/10标签/收藏/行展开/CSV导出/6统计卡/风险评分/直方图/视图切换/分页
+- 5 个新 localStorage key，所有控件状态记忆
+- 表格 14→17 列（新增展开/风险/收藏），新增卡片视图
+- 风险评分公式 + 4 档等级 + 展开详情显示分项贡献
+- 行点击跳转保留，所有图标按钮 stopPropagation
+- bun run lint 通过 exit 0，编译成功无错
