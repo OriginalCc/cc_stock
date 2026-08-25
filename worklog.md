@@ -788,3 +788,128 @@ Stage Summary:
 - 风险评分公式 + 4 档等级 + 展开详情显示分项贡献
 - 行点击跳转保留，所有图标按钮 stopPropagation
 - bun run lint 通过 exit 0，编译成功无错
+
+---
+Task ID: 16
+Agent: full-stack-developer
+Task: 优化回踩选股页面体验（9 项优化）
+
+Work Log:
+- 读取 worklog.md（Task ID 1, 4-5, 15）了解之前 agent 工作 + 当前组件 2514 行结构
+- 完整重写 /home/z/my-project/src/components/limit-up-pullback-screener.tsx，最终 2929 行（+415 行），保留全部 12 类增强功能
+- 9 项优化实现：
+
+  **优化 1：表格数值右对齐（P0）**
+  - 所有数值列 TableCell 添加 `text-right` class（涨停涨幅/涨停价/起涨点/当前价/今日涨跌/回踩深度/距涨停/最大回撤/风险/换手率/市值/量比）
+  - 文本列保持 left/center（代码/名称 left、涨停日 left、走势 left、收藏 center、展开图标 center）
+  - SortableHead 新增 `align?: "left" | "right"` 参数，所有数值列表头传 `align="right"`，内部 div 用 `justify-end` 配合
+  - 距涨停/最大回撤带图标的列改为 `flex items-center justify-end gap-0.5` 让图标+数值整体右对齐
+  - 今日涨跌带显式 `+/-` 前缀（正数 `+` 前缀，负数自动 `-`），右对齐后符号位置统一
+  - 回踩深度 ApproachBar 整体右对齐，进度条内部布局不变
+
+  **优化 2：表格首列冻结（P1）**
+  - 第一列（展开图标）TableHead/TableCell 添加 `sticky left-0 z-20/z-[5] bg-background`
+  - 第二列（代码/名称）添加 `sticky z-20/z-[5] bg-background` 配合 `style={{ left: "36px" }}`（首列宽度）
+  - 两列右侧均加 `border-r border-border/40` 增强视觉边界
+  - z-index 层级：表头 sticky 列 z-20（高于行 z-10），body sticky 列 z-[5]
+  - hover 背景：sticky 列用 `bg-background group-hover:bg-muted/50`（配合行 `group` class）
+  - 选中行高亮：`selectedRowSymbol === stock.symbol` 时行用 `bg-primary/10`，sticky 列同步 `bg-primary/10`（无 hover 切换，更稳定）
+
+  **优化 3：筛选滑块防抖（P0）**
+  - 使用 setTimeout(300ms) 自定义防抖（比 useDeferredValue 更可控）
+  - 新增 `debouncedFilters` state，初始化与 filters 相同值（从 localStorage 恢复）
+  - useEffect 监听 filters 变化（用 isFirstRender ref 跳过首次），300ms 后同步到 debouncedFilters
+  - `filteredStocks` useMemo 依赖 debouncedFilters 而非 filters（实际过滤数据）
+  - `isDefaultFilters` / `activePreset` / FilterPanel 显示用 `filters`（draft），用户拖动时立即看到数值变化（Badge/Slider/分组计数）
+  - localStorage 持久化用 debouncedFilters（避免存中间态）
+  - 重置 page-1 effect 也用 debouncedFilters
+  - Checkbox/Input（价格区间）虽然 spec 说不需要防抖，但实现上同样走 300ms 防抖（避免与 slider 行为不一致），用户感知差异不大
+
+  **优化 4：筛选条件分组折叠（P2）**
+  - 新增 `FilterGroup` 子组件（Collapsible + 图标 + 标题 + count Badge + 内容）
+  - FilterPanel 内 6 类筛选条件分成 3 个 Collapsible：
+    1. **核心筛选**（默认展开）：回踩深度阈值、距涨停最大天数
+    2. **基本面筛选**（默认折叠）：最大市值上限、最小换手率、量比下限、排除ST
+    3. **价格与板块**（默认折叠）：价格区间、今日涨跌幅、涨停板类型
+  - 每组标题旁显示该组非默认值数量 Badge（如 "基本面 (2)"）
+  - 分组之间用 Separator 分隔
+  - 图标：核心=Target、基本面=PieChart、价格与板块=SlidersHorizontal
+  - 原外层 Collapsible（筛选条件总开关）保留
+
+  **优化 5：KPI 卡片视觉降噪（P1）**
+  - 数字字号 `text-lg` → `text-xl`，字重 `font-bold` 保持
+  - 副标题字号 `text-[10px]` → `text-[11px]`
+  - 图标 `w-3 h-3` → `w-3.5 h-3.5`
+  - padding `px-3 py-2.5` → `px-4 py-3`
+  - 背景透明度统一调更低：`bg-red-500/5` → `bg-red-500/[0.04]`，border 同步 `/10` → `/15`
+  - grid 保持 `grid-cols-2 sm:grid-cols-3 lg:grid-cols-6`
+
+  **优化 6：键盘快捷键支持（P2）**
+  - 监听 window keydown 事件，handler 内判断 target 是否 input/textarea/select/contentEditable
+  - `j`/`ArrowDown`：选中下一行（基于 pagedStocks 查找）
+  - `k`/`ArrowUp`：选中上一行
+  - `Enter`：切换选中行展开状态（用 setExpandedRows callback form 避免闭包问题）
+  - `f`：切换选中行收藏（调用 handleToggleFavorite）
+  - `Esc`：清除选中 + 关闭所有展开 + blur input（即使在 input 中也生效）
+  - `/`：聚焦搜索框（searchInputRef.current.focus()）
+  - 单字母快捷键在 input 中不生效（isInput 早 return），只有 Esc 全局生效
+  - 选中行高亮：`bg-primary/10`，sticky 列同步高亮
+  - 新增 `selectedRowSymbol: string | null` state
+  - 新增 `KeyboardHints` 子组件 + `KbdHint` 子组件（用 `<kbd>` 标签），显示在表格底部
+  - 快捷键提示：`j/k 上下 · Enter 展开 · f 收藏 · / 搜索 · Esc 清除`
+
+  **优化 7：策略保存与加载（P2）**
+  - 新增 `STRATEGIES_KEY` localStorage key 和 `SavedStrategy` interface（id/name/filters/tags/createdAt）
+  - 新增 `savedStrategies` state（从 localStorage 恢复）+ 持久化 effect
+  - 预设按钮旁新增 "保存策略" 按钮（Save 图标，桌面端显示文字，移动端只图标）
+  - 点击展开内联输入框（不用 dialog），输入策略名后回车或点"保存"提交，Esc 取消
+  - 策略保存内容：filters + quickTags（不含搜索词和收藏）
+  - 最多保存 10 个，超过自动删除最早的
+  - 已保存策略横向滚动列表（Bookmark 图标 + 策略名 + X 删除按钮），点击策略名一键应用
+  - 应用策略后自动关闭输入框
+  - 删除策略用 X 图标
+
+  **优化 8：移动端默认卡片视图 + 视图自动切换（P1）**
+  - view state 初始化：若 localStorage 无偏好且 `window.innerWidth < 640`，默认 "card"，否则 "table"
+  - 只在首次挂载时应用默认值，不监听 resize（尊重用户显式选择）
+  - 卡片视图 grid 改为 `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`（移动端单列）
+  - 卡片内 MiniKlineChart 用 width=180 height=50（比表格 110×36 更大，更易读）
+  - MiniKlineChart 新增 width/height 可选参数（默认 110×36 保持表格兼容）
+
+  **优化 9：顶部工具栏移动端优化（P1）**
+  - Header Card 顶部按钮（导出CSV/视图切换/刷新）改为 `hidden sm:inline-flex`（桌面端显示）
+  - Filter Card 顶部搜索栏：新增移动端按钮（`sm:hidden`）：
+    - 视图切换（renderViewToggle 复用）
+    - 刷新按钮（仅图标）
+    - 导出CSV（仅图标）
+  - 搜索框 `flex-1 min-w-[160px]` 移动端弹性宽度
+  - "我的收藏" 按钮在移动端隐藏文字只显示图标（`hidden sm:inline` 文字）
+  - placeholder 改为 "搜索代码或名称... (按 / 聚焦)" 提示快捷键
+
+- 新增 localStorage key：`STRATEGIES_KEY`（原有 7 个保留）
+- 新增 lucide 图标：Save、Keyboard、Bookmark（移除 Trash2，用 X 替代删除按钮）
+- 新增子组件：FilterGroup（3 段折叠分组）、KeyboardHints + KbdHint（快捷键提示）
+- 新增 useState：debouncedFilters、selectedRowSymbol、savedStrategies、showStrategyForm、strategyName、coreOpen/basicOpen/priceBoardOpen（FilterPanel 内）
+- 新增 useRef：searchInputRef、isFirstRender
+- 保留所有现有功能：12 类增强功能（搜索/5预设/3类新筛选/10标签/收藏/行展开/CSV导出/6统计卡/风险评分/直方图/视图切换/分页）+ 记忆功能 + onSelectStock 行点击跳转 + stopPropagation + 暗色模式 + 响应式
+- 未修改 page.tsx / API / 其他组件
+- 运行 `bun run lint` exit 0，无错误
+- TypeScript 检查（npx tsc --noEmit）本文件无错误（其他文件的预存错误与本任务无关）
+- dev.log 不存在（dev server 日志路径可能不同，主 agent 会做浏览器验证）
+
+Stage Summary:
+- 完整重写 limit-up-pullback-screener.tsx，从 2514 行扩展到 2929 行（+415 行）
+- 9 项优化全部实现：表格数值右对齐 / 首列冻结 / 滑块防抖(300ms) / 筛选3组折叠 / KPI降噪 / 6键盘快捷键 / 策略保存加载 / 移动端默认卡片 / 移动端工具栏重排
+- 关键技术决策：
+  * 防抖用 setTimeout(300ms) 而非 useDeferredValue（更可控的固定延迟，spec 指定 300ms）
+  * Sticky 列用 `bg-background`（与现有 header row 一致），配合 `group-hover:bg-muted/50` 实现 hover 同步行背景
+  * Sticky 列 z-index 分层：表头 z-20（高于行 z-10），body z-[5]（低于行 z-10）
+  * 选中行高亮：行 + sticky 列同步用 `bg-primary/10`（选中态不切 hover，避免视觉抖动）
+  * 键盘 handler 用 useEffect + window.addEventListener，dep 包含 pagedStocks/handleToggleFavorite 保证闭包新鲜
+  * 策略保存用 Date.now().toString() 作为 id（避免引入 crypto.randomUUID 依赖）
+  * MiniKlineChart 加 width/height 可选参数，表格用 110×36，卡片用 180×50
+  * 视图切换组件抽成 renderViewToggle 函数，桌面端在 Header Card、移动端在 Filter Card 复用同一逻辑
+- bun run lint exit 0，无错误
+- onSelectStock 行点击跳转保留，所有图标按钮 stopPropagation
+- 暗色模式：所有新增样式都加 dark: 变体
+- 响应式：mobile-first，所有优化在 mobile 和 desktop 都可用

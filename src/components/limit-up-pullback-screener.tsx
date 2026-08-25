@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,9 @@ import {
   AlertTriangle,
   X,
   Layers,
+  Save,
+  Keyboard,
+  Bookmark,
   type LucideIcon,
 } from "lucide-react";
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
@@ -169,6 +172,17 @@ const LAST_TAGS_KEY = "limit-up-pullback-screener-last-tags";
 const FAVORITES_KEY = "limit-up-pullback-screener-favorites";
 const LAST_VIEW_KEY = "limit-up-pullback-screener-last-view";
 const LAST_PAGE_SIZE_KEY = "limit-up-pullback-screener-last-page-size";
+const STRATEGIES_KEY = "limit-up-pullback-screener-saved-strategies";
+
+// ── Saved strategies ───────────────────────────────────
+
+interface SavedStrategy {
+  id: string;
+  name: string;
+  filters: PullbackFilters;
+  tags: string[];
+  createdAt: string;
+}
 
 // ── Presets ────────────────────────────────────────────
 
@@ -366,17 +380,17 @@ function csvEscape(val: string | number): string {
 
 // ── Sub-Components ─────────────────────────────────────
 
-function MiniKlineChart({ kline, limitUpDate, preLimitUpClose }: {
+function MiniKlineChart({ kline, limitUpDate, preLimitUpClose, width = 110, height = 36 }: {
   kline: KLineDay[];
   limitUpDate: string;
   preLimitUpClose: number;
+  width?: number;
+  height?: number;
 }) {
   if (!kline || kline.length < 3) {
     return <span className="text-[10px] text-muted-foreground">无数据</span>;
   }
 
-  const width = 110;
-  const height = 36;
   const padding = 2;
 
   const allPrices = kline.flatMap(d => [d.high, d.low, preLimitUpClose]);
@@ -392,7 +406,7 @@ function MiniKlineChart({ kline, limitUpDate, preLimitUpClose }: {
   const refY = toY(preLimitUpClose);
 
   return (
-    <svg width={width} height={height} className="shrink-0">
+    <svg width={width} height={height} className="shrink-0 max-w-full">
       <line x1={padding} y1={refY} x2={width - padding} y2={refY}
         stroke="currentColor" strokeWidth="0.5" strokeDasharray="2,2" className="text-muted-foreground/60" />
       <path d={closePath} fill="none" stroke="#10b981" strokeWidth="1" />
@@ -566,7 +580,7 @@ function ApproachBar({ pct }: { pct: number }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center gap-1.5 w-full min-w-[110px]">
+          <div className="flex items-center gap-1.5 w-full min-w-[110px] ml-auto">
             <div className="flex-1">
               <div className={`h-2 rounded-full border ${style.bg}`}>
                 <div
@@ -627,7 +641,7 @@ function SummaryCard({
       title: "扫描总数",
       value: String(totalScanned),
       subtitle: "涨停候选股",
-      bg: "bg-red-500/5 border-red-500/10",
+      bg: "bg-red-500/[0.04] border-red-500/15",
       fg: "text-red-600 dark:text-red-400",
     },
     {
@@ -635,7 +649,7 @@ function SummaryCard({
       title: "符合筛选",
       value: String(total),
       subtitle: "满足全部条件",
-      bg: "bg-emerald-500/5 border-emerald-500/10",
+      bg: "bg-emerald-500/[0.04] border-emerald-500/15",
       fg: "text-emerald-600 dark:text-emerald-400",
     },
     {
@@ -643,7 +657,7 @@ function SummaryCard({
       title: "深度回踩",
       value: String(deepPullback),
       subtitle: "回踩 ≥ 70%",
-      bg: "bg-orange-500/5 border-orange-500/10",
+      bg: "bg-orange-500/[0.04] border-orange-500/15",
       fg: "text-orange-600 dark:text-orange-400",
     },
     {
@@ -651,7 +665,7 @@ function SummaryCard({
       title: "平均回踩",
       value: `${avgApproach.toFixed(0)}%`,
       subtitle: "符合筛选均值",
-      bg: "bg-yellow-500/5 border-yellow-500/10",
+      bg: "bg-yellow-500/[0.04] border-yellow-500/15",
       fg: "text-yellow-600 dark:text-yellow-400",
     },
     {
@@ -659,7 +673,7 @@ function SummaryCard({
       title: "今日上涨",
       value: `${todayUpCount}/${total}`,
       subtitle: "今日反弹占比",
-      bg: "bg-emerald-500/5 border-emerald-500/10",
+      bg: "bg-emerald-500/[0.04] border-emerald-500/15",
       fg: "text-emerald-600 dark:text-emerald-400",
     },
     {
@@ -667,7 +681,7 @@ function SummaryCard({
       title: "平均最大回撤",
       value: `-${avgMaxPullback.toFixed(1)}%`,
       subtitle: "符合筛选均值",
-      bg: "bg-red-500/5 border-red-500/10",
+      bg: "bg-red-500/[0.04] border-red-500/15",
       fg: "text-red-600 dark:text-red-400",
     },
   ];
@@ -679,14 +693,14 @@ function SummaryCard({
         return (
           <div
             key={i}
-            className={`flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg border ${c.bg}`}
+            className={`flex flex-col items-center gap-1 px-4 py-3 rounded-lg border ${c.bg}`}
           >
             <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Icon className="w-3 h-3" />
+              <Icon className="w-3.5 h-3.5" />
               <span>{c.title}</span>
             </div>
-            <span className={`text-lg font-bold font-mono ${c.fg}`}>{c.value}</span>
-            <span className="text-[10px] text-muted-foreground">{c.subtitle}</span>
+            <span className={`text-xl font-bold font-mono ${c.fg}`}>{c.value}</span>
+            <span className="text-[11px] text-muted-foreground">{c.subtitle}</span>
           </div>
         );
       })}
@@ -843,6 +857,48 @@ function QuickTagChips({
   );
 }
 
+// ── Filter Group (Collapsible sub-section) ─────────────
+
+function FilterGroup({
+  title,
+  icon: Icon,
+  open,
+  onOpenChange,
+  count,
+  children,
+}: {
+  title: string;
+  icon: LucideIcon;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  count: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <CollapsibleTrigger asChild>
+        <button className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-muted/40 rounded-md transition-colors">
+          <div className="flex items-center gap-2">
+            <Icon className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-medium">{title}</span>
+            {count > 0 && (
+              <Badge variant="secondary" className="text-[10px] py-0 px-1.5 bg-primary/10 text-primary">
+                {count}
+              </Badge>
+            )}
+          </div>
+          {open
+            ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
+            : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-2">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 // ── Filter Panel ───────────────────────────────────────
 
 function FilterPanel({
@@ -864,333 +920,354 @@ function FilterPanel({
     setFilters({ ...filters, limitUpBoardTypes: next });
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Row 1: Approach slider + Days input */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Approach depth */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs flex items-center gap-1.5">
-              <Target className="w-3.5 h-3.5 text-orange-500" />
-              回踩深度阈值
-              <span className="text-muted-foreground font-normal">(approachPct 最小值)</span>
-            </Label>
-            <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-orange-500/5 border-orange-500/20 text-orange-600 dark:text-orange-400">
-              ≥ {filters.minApproachPct}%
-            </Badge>
-          </div>
-          <Slider
-            value={[filters.minApproachPct]}
-            min={0}
-            max={100}
-            step={5}
-            onValueChange={(v) => setFilters({ ...filters, minApproachPct: v[0] })}
-            className="w-full"
-          />
-          <div className="flex justify-between text-[10px] text-muted-foreground">
-            <span>0% (全部)</span>
-            <span>100% (回到起涨点)</span>
-          </div>
-        </div>
+  // Local collapsible states for the 3 filter groups
+  const [coreOpen, setCoreOpen] = useState(true);
+  const [basicOpen, setBasicOpen] = useState(false);
+  const [priceBoardOpen, setPriceBoardOpen] = useState(false);
 
-        {/* Days since limit up */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-blue-500" />
-              距涨停最大天数
-              <span className="text-muted-foreground font-normal">(交易日)</span>
-            </Label>
-            <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400">
-              ≤ {filters.maxDaysSinceLimitUp} 天
-            </Badge>
+  // Count non-default fields per group (for the badge next to group title)
+  const coreCount =
+    (filters.minApproachPct !== DEFAULT_FILTERS.minApproachPct ? 1 : 0) +
+    (filters.maxDaysSinceLimitUp !== DEFAULT_FILTERS.maxDaysSinceLimitUp ? 1 : 0);
+  const basicCount =
+    (filters.maxMarketCap !== DEFAULT_FILTERS.maxMarketCap ? 1 : 0) +
+    (filters.minTurnover !== DEFAULT_FILTERS.minTurnover ? 1 : 0) +
+    (filters.minVolumeRatio !== DEFAULT_FILTERS.minVolumeRatio ? 1 : 0) +
+    (filters.excludeST !== DEFAULT_FILTERS.excludeST ? 1 : 0);
+  const priceBoardCount =
+    (filters.minPrice !== DEFAULT_FILTERS.minPrice ? 1 : 0) +
+    (filters.maxPrice !== DEFAULT_FILTERS.maxPrice ? 1 : 0) +
+    (filters.minTodayChangePct !== DEFAULT_FILTERS.minTodayChangePct ? 1 : 0) +
+    (filters.maxTodayChangePct !== DEFAULT_FILTERS.maxTodayChangePct ? 1 : 0) +
+    (JSON.stringify(filters.limitUpBoardTypes) !== JSON.stringify(DEFAULT_FILTERS.limitUpBoardTypes) ? 1 : 0);
+
+  return (
+    <div className="space-y-3">
+      {/* Group 1: Core (default open) */}
+      <FilterGroup title="核心筛选" icon={Target} open={coreOpen} onOpenChange={setCoreOpen} count={coreCount}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Approach depth */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5 text-orange-500" />
+                回踩深度阈值
+                <span className="text-muted-foreground font-normal">(approachPct 最小值)</span>
+              </Label>
+              <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-orange-500/5 border-orange-500/20 text-orange-600 dark:text-orange-400">
+                ≥ {filters.minApproachPct}%
+              </Badge>
+            </div>
+            <Slider
+              value={[filters.minApproachPct]}
+              min={0}
+              max={100}
+              step={5}
+              onValueChange={(v) => setFilters({ ...filters, minApproachPct: v[0] })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>0% (全部)</span>
+              <span>100% (回到起涨点)</span>
+            </div>
           </div>
-          <Slider
-            value={[filters.maxDaysSinceLimitUp]}
-            min={1}
-            max={15}
-            step={1}
-            onValueChange={(v) => setFilters({ ...filters, maxDaysSinceLimitUp: v[0] })}
-            className="w-full"
-          />
-          <div className="flex justify-between text-[10px] text-muted-foreground">
-            <span>1 天</span>
-            <span>15 天</span>
+
+          {/* Days since limit up */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-blue-500" />
+                距涨停最大天数
+                <span className="text-muted-foreground font-normal">(交易日)</span>
+              </Label>
+              <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400">
+                ≤ {filters.maxDaysSinceLimitUp} 天
+              </Badge>
+            </div>
+            <Slider
+              value={[filters.maxDaysSinceLimitUp]}
+              min={1}
+              max={15}
+              step={1}
+              onValueChange={(v) => setFilters({ ...filters, maxDaysSinceLimitUp: v[0] })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>1 天</span>
+              <span>15 天</span>
+            </div>
           </div>
         </div>
-      </div>
+      </FilterGroup>
 
       <Separator />
 
-      {/* Row 2: market cap + turnover */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Max market cap */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs flex items-center gap-1.5">
-              <PieChart className="w-3.5 h-3.5 text-purple-500" />
-              最大市值上限
-              <span className="text-muted-foreground font-normal">(亿)</span>
-            </Label>
-            <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-purple-500/5 border-purple-500/20 text-purple-600 dark:text-purple-400">
-              {filters.maxMarketCap === 0 ? "不限" : `≤ ${filters.maxMarketCap} 亿`}
-            </Badge>
-          </div>
-          <Slider
-            value={[filters.maxMarketCap]}
-            min={0}
-            max={10000}
-            step={50}
-            onValueChange={(v) => setFilters({ ...filters, maxMarketCap: v[0] })}
-            className="w-full"
-          />
-          <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-            <span>0 (不限)</span>
-            <Input
-              type="number"
+      {/* Group 2: Basic fundamentals (default collapsed) */}
+      <FilterGroup title="基本面筛选" icon={PieChart} open={basicOpen} onOpenChange={setBasicOpen} count={basicCount}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Max market cap */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs flex items-center gap-1.5">
+                <PieChart className="w-3.5 h-3.5 text-purple-500" />
+                最大市值上限
+                <span className="text-muted-foreground font-normal">(亿)</span>
+              </Label>
+              <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-purple-500/5 border-purple-500/20 text-purple-600 dark:text-purple-400">
+                {filters.maxMarketCap === 0 ? "不限" : `≤ ${filters.maxMarketCap} 亿`}
+              </Badge>
+            </div>
+            <Slider
+              value={[filters.maxMarketCap]}
               min={0}
               max={10000}
-              value={filters.maxMarketCap}
-              onChange={(e) => {
-                const v = Math.max(0, Math.min(10000, Number(e.target.value) || 0));
-                setFilters({ ...filters, maxMarketCap: v });
-              }}
-              className="h-6 w-20 text-[11px] font-mono"
+              step={50}
+              onValueChange={(v) => setFilters({ ...filters, maxMarketCap: v[0] })}
+              className="w-full"
             />
-            <span>10000 亿</span>
-          </div>
-        </div>
-
-        {/* Min turnover */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-emerald-500" />
-              最小换手率
-              <span className="text-muted-foreground font-normal">(%)</span>
-            </Label>
-            <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-              ≥ {filters.minTurnover.toFixed(1)}%
-            </Badge>
-          </div>
-          <Slider
-            value={[filters.minTurnover]}
-            min={0}
-            max={50}
-            step={0.5}
-            onValueChange={(v) => setFilters({ ...filters, minTurnover: v[0] })}
-            className="w-full"
-          />
-          <div className="flex justify-between text-[10px] text-muted-foreground">
-            <span>0%</span>
-            <span>50%</span>
-          </div>
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Row 3: volume ratio + ST exclude */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Min volume ratio */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5 text-amber-500" />
-              量比下限
-            </Label>
-            <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-amber-500/5 border-amber-500/20 text-amber-600 dark:text-amber-400">
-              ≥ {filters.minVolumeRatio.toFixed(1)}
-            </Badge>
-          </div>
-          <Slider
-            value={[filters.minVolumeRatio]}
-            min={0}
-            max={10}
-            step={0.1}
-            onValueChange={(v) => setFilters({ ...filters, minVolumeRatio: v[0] })}
-            className="w-full"
-          />
-          <div className="flex justify-between text-[10px] text-muted-foreground">
-            <span>0</span>
-            <span>10</span>
-          </div>
-        </div>
-
-        {/* Exclude ST */}
-        <div className="space-y-2">
-          <Label className="text-xs flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-rose-500" />
-            排除规则
-          </Label>
-          <div className="flex items-center gap-2 h-[36px] px-3 rounded-md border border-border bg-background">
-            <Checkbox
-              id="exclude-st"
-              checked={filters.excludeST}
-              onCheckedChange={(v) => setFilters({ ...filters, excludeST: v === true })}
-            />
-            <Label htmlFor="exclude-st" className="text-xs cursor-pointer">
-              排除 ST / *ST 股票
-            </Label>
-          </div>
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Row 4: price range + today change range (NEW) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Price range */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs flex items-center gap-1.5">
-              <Target className="w-3.5 h-3.5 text-cyan-500" />
-              价格区间
-              <span className="text-muted-foreground font-normal">(元, 0=不限)</span>
-            </Label>
-            <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-cyan-500/5 border-cyan-500/20 text-cyan-600 dark:text-cyan-400">
-              {filters.minPrice === 0 && filters.maxPrice === 0
-                ? "不限"
-                : `${filters.minPrice || 0} ~ ${filters.maxPrice === 0 ? "∞" : filters.maxPrice}`}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Input
-              type="number"
-              min={0}
-              value={filters.minPrice === 0 ? "" : filters.minPrice}
-              placeholder="最低"
-              onChange={(e) => {
-                const v = Math.max(0, Number(e.target.value) || 0);
-                setFilters({ ...filters, minPrice: v });
-              }}
-              className="h-7 text-xs font-mono"
-            />
-            <span className="text-muted-foreground text-xs">~</span>
-            <Input
-              type="number"
-              min={0}
-              value={filters.maxPrice === 0 ? "" : filters.maxPrice}
-              placeholder="最高"
-              onChange={(e) => {
-                const v = Math.max(0, Number(e.target.value) || 0);
-                setFilters({ ...filters, maxPrice: v });
-              }}
-              className="h-7 text-xs font-mono"
-            />
-          </div>
-        </div>
-
-        {/* Today change range */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-rose-500" />
-              今日涨跌幅区间
-              <span className="text-muted-foreground font-normal">(%)</span>
-            </Label>
-            <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-400">
-              {filters.minTodayChangePct}% ~ {filters.maxTodayChangePct}%
-            </Badge>
-          </div>
-          <Slider
-            value={[filters.minTodayChangePct, filters.maxTodayChangePct]}
-            min={-10}
-            max={10}
-            step={0.5}
-            onValueChange={(v) =>
-              setFilters({
-                ...filters,
-                minTodayChangePct: v[0],
-                maxTodayChangePct: v[1],
-              })
-            }
-            className="w-full"
-          />
-          <div className="flex items-center justify-between gap-2 text-[10px]">
-            <span className="text-muted-foreground">-10%</span>
-            <div className="flex gap-1">
-              <button
-                onClick={() =>
-                  setFilters({
-                    ...filters,
-                    minTodayChangePct: 0,
-                    maxTodayChangePct: 10,
-                  })
-                }
-                className="px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-muted text-[10px]"
-              >
-                今日反弹
-              </button>
-              <button
-                onClick={() =>
-                  setFilters({
-                    ...filters,
-                    minTodayChangePct: -10,
-                    maxTodayChangePct: 0,
-                  })
-                }
-                className="px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-muted text-[10px]"
-              >
-                今日下跌
-              </button>
+            <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+              <span>0 (不限)</span>
+              <Input
+                type="number"
+                min={0}
+                max={10000}
+                value={filters.maxMarketCap}
+                onChange={(e) => {
+                  const v = Math.max(0, Math.min(10000, Number(e.target.value) || 0));
+                  setFilters({ ...filters, maxMarketCap: v });
+                }}
+                className="h-6 w-20 text-[11px] font-mono"
+              />
+              <span>10000 亿</span>
             </div>
-            <span className="text-muted-foreground">+10%</span>
+          </div>
+
+          {/* Min turnover */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5 text-emerald-500" />
+                最小换手率
+                <span className="text-muted-foreground font-normal">(%)</span>
+              </Label>
+              <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                ≥ {filters.minTurnover.toFixed(1)}%
+              </Badge>
+            </div>
+            <Slider
+              value={[filters.minTurnover]}
+              min={0}
+              max={50}
+              step={0.5}
+              onValueChange={(v) => setFilters({ ...filters, minTurnover: v[0] })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>0%</span>
+              <span>50%</span>
+            </div>
           </div>
         </div>
-      </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          {/* Min volume ratio */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                量比下限
+              </Label>
+              <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-amber-500/5 border-amber-500/20 text-amber-600 dark:text-amber-400">
+                ≥ {filters.minVolumeRatio.toFixed(1)}
+              </Badge>
+            </div>
+            <Slider
+              value={[filters.minVolumeRatio]}
+              min={0}
+              max={10}
+              step={0.1}
+              onValueChange={(v) => setFilters({ ...filters, minVolumeRatio: v[0] })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>0</span>
+              <span>10</span>
+            </div>
+          </div>
+
+          {/* Exclude ST */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-rose-500" />
+              排除规则
+            </Label>
+            <div className="flex items-center gap-2 h-[36px] px-3 rounded-md border border-border bg-background">
+              <Checkbox
+                id="exclude-st"
+                checked={filters.excludeST}
+                onCheckedChange={(v) => setFilters({ ...filters, excludeST: v === true })}
+              />
+              <Label htmlFor="exclude-st" className="text-xs cursor-pointer">
+                排除 ST / *ST 股票
+              </Label>
+            </div>
+          </div>
+        </div>
+      </FilterGroup>
 
       <Separator />
 
-      {/* Row 5: Board types (NEW) */}
-      <div className="space-y-2">
-        <Label className="text-xs flex items-center gap-1.5">
-          <Layers className="w-3.5 h-3.5 text-violet-500" />
-          涨停板类型
-          <span className="text-muted-foreground font-normal">(按代码前缀自动判断)</span>
-        </Label>
-        <div className="flex flex-wrap items-center gap-3">
-          {[
-            { type: "10%", label: "主板 (10%)", hint: "60/00 开头" },
-            { type: "20%", label: "创业板/科创板 (20%)", hint: "688/30 开头" },
-            { type: "30%", label: "北交所 (30%)", hint: "8 开头" },
-          ].map(({ type, label, hint }) => {
-            const checked = filters.limitUpBoardTypes.includes(type);
-            return (
-              <div
-                key={type}
-                className={`flex items-center gap-2 h-[34px] px-3 rounded-md border transition-colors ${
-                  checked
-                    ? "border-violet-500/40 bg-violet-500/5"
-                    : "border-border bg-background"
-                }`}
-              >
-                <Checkbox
-                  id={`board-${type}`}
-                  checked={checked}
-                  onCheckedChange={() => toggleBoardType(type)}
-                />
-                <Label htmlFor={`board-${type}`} className="text-xs cursor-pointer flex items-center gap-1.5">
-                  <span className="font-medium">{label}</span>
-                  <span className="text-[10px] text-muted-foreground">{hint}</span>
-                </Label>
+      {/* Group 3: Price & Board (default collapsed) */}
+      <FilterGroup title="价格与板块" icon={SlidersHorizontal} open={priceBoardOpen} onOpenChange={setPriceBoardOpen} count={priceBoardCount}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Price range */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5 text-cyan-500" />
+                价格区间
+                <span className="text-muted-foreground font-normal">(元, 0=不限)</span>
+              </Label>
+              <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-cyan-500/5 border-cyan-500/20 text-cyan-600 dark:text-cyan-400">
+                {filters.minPrice === 0 && filters.maxPrice === 0
+                  ? "不限"
+                  : `${filters.minPrice || 0} ~ ${filters.maxPrice === 0 ? "∞" : filters.maxPrice}`}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={0}
+                value={filters.minPrice === 0 ? "" : filters.minPrice}
+                placeholder="最低"
+                onChange={(e) => {
+                  const v = Math.max(0, Number(e.target.value) || 0);
+                  setFilters({ ...filters, minPrice: v });
+                }}
+                className="h-7 text-xs font-mono"
+              />
+              <span className="text-muted-foreground text-xs">~</span>
+              <Input
+                type="number"
+                min={0}
+                value={filters.maxPrice === 0 ? "" : filters.maxPrice}
+                placeholder="最高"
+                onChange={(e) => {
+                  const v = Math.max(0, Number(e.target.value) || 0);
+                  setFilters({ ...filters, maxPrice: v });
+                }}
+                className="h-7 text-xs font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Today change range */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5 text-rose-500" />
+                今日涨跌幅区间
+                <span className="text-muted-foreground font-normal">(%)</span>
+              </Label>
+              <Badge variant="outline" className="text-[11px] py-0 px-1.5 font-mono bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-400">
+                {filters.minTodayChangePct}% ~ {filters.maxTodayChangePct}%
+              </Badge>
+            </div>
+            <Slider
+              value={[filters.minTodayChangePct, filters.maxTodayChangePct]}
+              min={-10}
+              max={10}
+              step={0.5}
+              onValueChange={(v) =>
+                setFilters({
+                  ...filters,
+                  minTodayChangePct: v[0],
+                  maxTodayChangePct: v[1],
+                })
+              }
+              className="w-full"
+            />
+            <div className="flex items-center justify-between gap-2 text-[10px]">
+              <span className="text-muted-foreground">-10%</span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() =>
+                    setFilters({
+                      ...filters,
+                      minTodayChangePct: 0,
+                      maxTodayChangePct: 10,
+                    })
+                  }
+                  className="px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-muted text-[10px]"
+                >
+                  今日反弹
+                </button>
+                <button
+                  onClick={() =>
+                    setFilters({
+                      ...filters,
+                      minTodayChangePct: -10,
+                      maxTodayChangePct: 0,
+                    })
+                  }
+                  className="px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-muted text-[10px]"
+                >
+                  今日下跌
+                </button>
               </div>
-            );
-          })}
-          {filters.limitUpBoardTypes.length === 0 && (
-            <span className="text-[11px] text-amber-600 dark:text-amber-400">
-              未选中任何板块，将不显示结果
-            </span>
-          )}
+              <span className="text-muted-foreground">+10%</span>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <div className="space-y-2 mt-4">
+          <Label className="text-xs flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-violet-500" />
+            涨停板类型
+            <span className="text-muted-foreground font-normal">(按代码前缀自动判断)</span>
+          </Label>
+          <div className="flex flex-wrap items-center gap-3">
+            {[
+              { type: "10%", label: "主板 (10%)", hint: "60/00 开头" },
+              { type: "20%", label: "创业板/科创板 (20%)", hint: "688/30 开头" },
+              { type: "30%", label: "北交所 (30%)", hint: "8 开头" },
+            ].map(({ type, label, hint }) => {
+              const checked = filters.limitUpBoardTypes.includes(type);
+              return (
+                <div
+                  key={type}
+                  className={`flex items-center gap-2 h-[34px] px-3 rounded-md border transition-colors ${
+                    checked
+                      ? "border-violet-500/40 bg-violet-500/5"
+                      : "border-border bg-background"
+                  }`}
+                >
+                  <Checkbox
+                    id={`board-${type}`}
+                    checked={checked}
+                    onCheckedChange={() => toggleBoardType(type)}
+                  />
+                  <Label htmlFor={`board-${type}`} className="text-xs cursor-pointer flex items-center gap-1.5">
+                    <span className="font-medium">{label}</span>
+                    <span className="text-[10px] text-muted-foreground">{hint}</span>
+                  </Label>
+                </div>
+              );
+            })}
+            {filters.limitUpBoardTypes.length === 0 && (
+              <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                未选中任何板块，将不显示结果
+              </span>
+            )}
+          </div>
+        </div>
+      </FilterGroup>
 
       {/* Reset */}
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <SlidersHorizontal className="w-3 h-3" />
-          <span>所有筛选条件 + 预设 + 标签自动保存到本地</span>
+          <span>所有筛选条件 + 预设 + 标签 + 策略自动保存到本地</span>
         </div>
         <Button
           variant="ghost"
@@ -1216,6 +1293,7 @@ function SortableHead({
   order,
   onSort,
   className,
+  align = "left",
 }: {
   label: string;
   field: SortField;
@@ -1223,14 +1301,15 @@ function SortableHead({
   order: SortOrder;
   onSort: (f: SortField) => void;
   className?: string;
+  align?: "left" | "right";
 }) {
   const active = current === field;
   return (
     <TableHead
-      className={`text-[11px] font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors ${className ?? ""}`}
+      className={`text-[11px] font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors ${align === "right" ? "text-right" : ""} ${className ?? ""}`}
       onClick={() => onSort(field)}
     >
-      <div className="flex items-center gap-1">
+      <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>
         <span>{label}</span>
         {active ? (
           order === "desc"
@@ -1531,12 +1610,14 @@ function StockCardViewItem({
           </button>
         </div>
 
-        {/* Mini K-line chart (larger) */}
+        {/* Mini K-line chart (responsive: bigger on desktop via wrapper) */}
         <div className="flex justify-center bg-muted/20 rounded p-1">
           <MiniKlineChart
             kline={stock.klineSummary}
             limitUpDate={stock.limitUpDate}
             preLimitUpClose={stock.preLimitUpClose}
+            width={180}
+            height={50}
           />
         </div>
 
@@ -1583,12 +1664,53 @@ function StockCardViewItem({
   );
 }
 
+// ── Keyboard shortcut hints ────────────────────────────
+
+function KbdHint({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="px-1 py-0 rounded border border-border bg-background font-mono text-[10px] text-foreground">
+      {children}
+    </kbd>
+  );
+}
+
+function KeyboardHints() {
+  return (
+    <div className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1">
+      <Keyboard className="w-3 h-3" />
+      <span className="hidden sm:inline">快捷键:</span>
+      <span className="inline-flex items-center gap-1">
+        <KbdHint>j</KbdHint>
+        <KbdHint>k</KbdHint>
+        上下
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <KbdHint>Enter</KbdHint>
+        展开
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <KbdHint>f</KbdHint>
+        收藏
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <KbdHint>/</KbdHint>
+        搜索
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <KbdHint>Esc</KbdHint>
+        清除
+      </span>
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────
 
 export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreener({
   onSelectStock,
 }: LimitUpPullbackScreenerProps) {
   const cacheKey = "pullback-screener:default";
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize from localStorage so last query result shows instantly on mount
   const [result, setResult] = useState<PullbackResult | null>(() => {
@@ -1604,7 +1726,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   const [isFromCache, setIsFromCache] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState<string>("");
 
-  // Filters (with localStorage persistence)
+  // Filters (live "draft" state - what sliders/Badges display, updated immediately on slider drag)
   const [filters, setFilters] = useState<PullbackFilters>(() => {
     if (typeof window === "undefined") return DEFAULT_FILTERS;
     try {
@@ -1613,6 +1735,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     } catch {}
     return DEFAULT_FILTERS;
   });
+  // Debounced filters - what actually drives filteredStocks (300ms after slider stops)
+  const [debouncedFilters, setDebouncedFilters] = useState<PullbackFilters>(filters);
   const [filtersExpanded, setFiltersExpanded] = useState(true);
 
   // Sort
@@ -1650,13 +1774,14 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   });
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
-  // View mode
+  // View mode - default card on mobile if no saved preference
   const [view, setView] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "table";
     try {
       const saved = localStorage.getItem(LAST_VIEW_KEY);
       if (saved === "card" || saved === "table") return saved;
     } catch {}
+    if (typeof window !== "undefined" && window.innerWidth < 640) return "card";
     return "table";
   });
 
@@ -1677,6 +1802,21 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   // Expanded rows (not persisted)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
+  // Selected row symbol (keyboard navigation highlight)
+  const [selectedRowSymbol, setSelectedRowSymbol] = useState<string | null>(null);
+
+  // Saved strategies
+  const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem(STRATEGIES_KEY);
+      if (saved) return JSON.parse(saved) as SavedStrategy[];
+    } catch {}
+    return [];
+  });
+  const [showStrategyForm, setShowStrategyForm] = useState(false);
+  const [strategyName, setStrategyName] = useState("");
+
   const handleSort = useCallback((field: SortField) => {
     if (field === sortField) {
       setSortOrder(prev => (prev === "desc" ? "asc" : "desc"));
@@ -1685,6 +1825,19 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       setSortOrder("desc");
     }
   }, [sortField]);
+
+  // ── Debounce filters: 300ms after slider stops ──────
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const t = setTimeout(() => {
+      setDebouncedFilters(filters);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [filters]);
 
   // ── Fetch data ────────────────────────────────────────
   const fetchData = useCallback(async (forceRefresh = false) => {
@@ -1737,12 +1890,12 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     fetchData();
   }, [fetchData]);
 
-  // Persist filters / search / tags / favorites / view / pageSize to localStorage
+  // Persist debouncedFilters (NOT live draft) to localStorage to avoid storing mid-drag state
   useEffect(() => {
     try {
-      localStorage.setItem(LAST_FILTERS_KEY, JSON.stringify(filters));
+      localStorage.setItem(LAST_FILTERS_KEY, JSON.stringify(debouncedFilters));
     } catch {}
-  }, [filters]);
+  }, [debouncedFilters]);
 
   useEffect(() => {
     try {
@@ -1774,10 +1927,17 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     } catch {}
   }, [pageSize]);
 
+  // Persist saved strategies
+  useEffect(() => {
+    try {
+      localStorage.setItem(STRATEGIES_KEY, JSON.stringify(savedStrategies));
+    } catch {}
+  }, [savedStrategies]);
+
   // Reset to page 1 when filters/search/tags/sort/favorite-mode change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters, searchTerm, quickTags, sortField, sortOrder, showFavoritesOnly]);
+  }, [debouncedFilters, searchTerm, quickTags, sortField, sortOrder, showFavoritesOnly]);
 
   const handleResetFilters = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
@@ -1816,7 +1976,42 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     setFilters({ ...preset.filters });
   }, []);
 
+  // Strategy save/load handlers
+  const handleSaveStrategy = useCallback(() => {
+    const name = strategyName.trim();
+    if (!name) return;
+    const newStrat: SavedStrategy = {
+      id: Date.now().toString(),
+      name,
+      filters: { ...filters },
+      tags: [...quickTags],
+      createdAt: new Date().toISOString(),
+    };
+    setSavedStrategies(prev => {
+      let next = [...prev, newStrat];
+      // Keep at most 10 strategies, drop oldest
+      if (next.length > 10) {
+        next = next.slice(next.length - 10);
+      }
+      return next;
+    });
+    setStrategyName("");
+    setShowStrategyForm(false);
+  }, [strategyName, filters, quickTags]);
+
+  const handleApplyStrategy = useCallback((s: SavedStrategy) => {
+    setFilters({ ...s.filters });
+    setQuickTags([...s.tags]);
+    setShowStrategyForm(false);
+    setStrategyName("");
+  }, []);
+
+  const handleDeleteStrategy = useCallback((id: string) => {
+    setSavedStrategies(prev => prev.filter(s => s.id !== id));
+  }, []);
+
   // ── Apply filters + sort + search + tags + favorites mode ────
+  // Uses debouncedFilters so slider drags don't cause page jank
   const filteredStocks = useMemo(() => {
     if (!result?.stocks) return [];
     const search = searchTerm.trim().toLowerCase();
@@ -1824,24 +2019,24 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
 
     const filtered = result.stocks.filter((s) => {
       // Existing filters
-      if (s.approachPct < filters.minApproachPct) return false;
-      if (s.daysSinceLimitUp > filters.maxDaysSinceLimitUp) return false;
-      if (filters.maxMarketCap > 0 && s.marketCap > filters.maxMarketCap) return false;
-      if (s.turnover < filters.minTurnover) return false;
-      if (s.volumeRatio < filters.minVolumeRatio) return false;
-      if (filters.excludeST && (s.name.includes("ST") || s.name.includes("*ST"))) return false;
+      if (s.approachPct < debouncedFilters.minApproachPct) return false;
+      if (s.daysSinceLimitUp > debouncedFilters.maxDaysSinceLimitUp) return false;
+      if (debouncedFilters.maxMarketCap > 0 && s.marketCap > debouncedFilters.maxMarketCap) return false;
+      if (s.turnover < debouncedFilters.minTurnover) return false;
+      if (s.volumeRatio < debouncedFilters.minVolumeRatio) return false;
+      if (debouncedFilters.excludeST && (s.name.includes("ST") || s.name.includes("*ST"))) return false;
 
       // New filters: price range
-      if (filters.minPrice > 0 && s.currentPrice < filters.minPrice) return false;
-      if (filters.maxPrice > 0 && s.currentPrice > filters.maxPrice) return false;
+      if (debouncedFilters.minPrice > 0 && s.currentPrice < debouncedFilters.minPrice) return false;
+      if (debouncedFilters.maxPrice > 0 && s.currentPrice > debouncedFilters.maxPrice) return false;
 
       // New filters: today change range
-      if (s.currentChangePct < filters.minTodayChangePct) return false;
-      if (s.currentChangePct > filters.maxTodayChangePct) return false;
+      if (s.currentChangePct < debouncedFilters.minTodayChangePct) return false;
+      if (s.currentChangePct > debouncedFilters.maxTodayChangePct) return false;
 
       // New filters: board types (empty array → show nothing)
-      if (filters.limitUpBoardTypes.length === 0) return false;
-      if (!filters.limitUpBoardTypes.includes(getBoardType(s.symbol))) return false;
+      if (debouncedFilters.limitUpBoardTypes.length === 0) return false;
+      if (!debouncedFilters.limitUpBoardTypes.includes(getBoardType(s.symbol))) return false;
 
       // Quick tags (AND logic - all selected tags must match)
       if (tagsToApply.length > 0) {
@@ -1874,8 +2069,9 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       return (aVal as number) - (bVal as number);
     });
     return sorted;
-  }, [result, filters, sortField, sortOrder, searchTerm, quickTags, showFavoritesOnly, favorites]);
+  }, [result, debouncedFilters, sortField, sortOrder, searchTerm, quickTags, showFavoritesOnly, favorites]);
 
+  // isDefaultFilters / activePreset use the live `filters` (draft) for instant UI feedback
   const isDefaultFilters = useMemo(
     () => JSON.stringify(filters) === JSON.stringify(DEFAULT_FILTERS),
     [filters]
@@ -1893,6 +2089,72 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     const start = (safePage - 1) * pageSize;
     return filteredStocks.slice(start, start + pageSize);
   }, [filteredStocks, safePage, pageSize]);
+
+  // ── Keyboard shortcuts ────────────────────────────────
+  // j/ArrowDown: next row · k/ArrowUp: prev row · Enter: expand selected ·
+  // f: toggle favorite · / : focus search · Esc: clear selection + collapse
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target?.isContentEditable ?? false);
+
+      // Esc works everywhere (including inside inputs - blur + clear selection + collapse all)
+      if (e.key === "Escape") {
+        setSelectedRowSymbol(null);
+        setExpandedRows(new Set());
+        if (isInput && target instanceof HTMLElement) {
+          (target as HTMLElement).blur();
+        }
+        return;
+      }
+
+      // Skip remaining shortcuts when an input/textarea/select is focused
+      if (isInput) return;
+
+      // Enter: toggle expand on the currently selected row
+      if (e.key === "Enter" && selectedRowSymbol) {
+        e.preventDefault();
+        setExpandedRows(prev => {
+          const next = new Set(prev);
+          if (next.has(selectedRowSymbol)) {
+            next.delete(selectedRowSymbol);
+          } else {
+            next.add(selectedRowSymbol);
+          }
+          return next;
+        });
+        return;
+      }
+
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedRowSymbol(prev => {
+          const idx = pagedStocks.findIndex(s => s.symbol === prev);
+          if (idx < 0) return pagedStocks[0]?.symbol ?? null;
+          return pagedStocks[Math.min(idx + 1, pagedStocks.length - 1)]?.symbol ?? null;
+        });
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedRowSymbol(prev => {
+          const idx = pagedStocks.findIndex(s => s.symbol === prev);
+          if (idx <= 0) return pagedStocks[0]?.symbol ?? null;
+          return pagedStocks[idx - 1]?.symbol ?? null;
+        });
+      } else if (e.key === "f" && selectedRowSymbol) {
+        e.preventDefault();
+        handleToggleFavorite(selectedRowSymbol);
+      } else if (e.key === "/") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [pagedStocks, selectedRowSymbol, handleToggleFavorite]);
 
   // ── CSV Export ────────────────────────────────────────
   const handleExportCSV = useCallback(() => {
@@ -1948,6 +2210,34 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     return <ErrorState error={error} onRetry={() => fetchData(true)} />;
   }
 
+  // Shared view-toggle component (rendered in different positions for desktop/mobile)
+  const renderViewToggle = (className = "") => (
+    <div className={`inline-flex items-center rounded-md border border-border bg-background p-0.5 ${className}`}>
+      <button
+        onClick={() => setView("table")}
+        className={`px-2 py-0.5 text-[11px] rounded-sm inline-flex items-center gap-1 transition-colors ${
+          view === "table"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:bg-muted"
+        }`}
+      >
+        <TableIcon className="w-3 h-3" />
+        表格
+      </button>
+      <button
+        onClick={() => setView("card")}
+        className={`px-2 py-0.5 text-[11px] rounded-sm inline-flex items-center gap-1 transition-colors ${
+          view === "card"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:bg-muted"
+        }`}
+      >
+        <LayoutGrid className="w-3 h-3" />
+        卡片
+      </button>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       {/* ── Header Card ──────────────────────────────── */}
@@ -1965,6 +2255,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 <span className="text-xs text-muted-foreground">{result.date}</span>
               )}
             </div>
+            {/* Desktop-only buttons here; mobile buttons live in the Filter Card */}
             <div className="flex items-center gap-2 flex-wrap">
               {isFromCache && (
                 <Badge variant="outline" className="text-[10px] py-0 px-1.5 gap-1 bg-muted/50 text-muted-foreground">
@@ -1975,49 +2266,26 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
               {lastFetchTime && (
                 <span className="text-[11px] text-muted-foreground hidden sm:inline">{lastFetchTime}</span>
               )}
-              {/* Export CSV */}
+              {/* Export CSV - desktop only here (mobile shows in filter card) */}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleExportCSV}
                 disabled={filteredStocks.length === 0}
-                className="h-7 text-xs gap-1"
+                className="hidden sm:inline-flex h-7 text-xs gap-1"
               >
                 <Download className="w-3 h-3" />
                 导出CSV
               </Button>
-              {/* View toggle */}
-              <div className="inline-flex items-center rounded-md border border-border bg-background p-0.5">
-                <button
-                  onClick={() => setView("table")}
-                  className={`px-2 py-0.5 text-[11px] rounded-sm inline-flex items-center gap-1 transition-colors ${
-                    view === "table"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  <TableIcon className="w-3 h-3" />
-                  表格
-                </button>
-                <button
-                  onClick={() => setView("card")}
-                  className={`px-2 py-0.5 text-[11px] rounded-sm inline-flex items-center gap-1 transition-colors ${
-                    view === "card"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  <LayoutGrid className="w-3 h-3" />
-                  卡片
-                </button>
-              </div>
-              {/* Refresh */}
+              {/* View toggle - desktop only here */}
+              {renderViewToggle("hidden sm:inline-flex")}
+              {/* Refresh - desktop only here */}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => fetchData(true)}
                 disabled={loading}
-                className="h-7 text-xs gap-1"
+                className="hidden sm:inline-flex h-7 text-xs gap-1"
               >
                 {loading
                   ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -2047,14 +2315,15 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
 
       {/* ── Search + Presets + Chips + Filter Panel ── */}
       <Card className="border-border/50 shadow-sm">
-        {/* Search + Favorites toggle */}
-        <div className="flex items-center gap-2 p-3 border-b border-border/50">
-          <div className="relative flex-1">
+        {/* Row 1: Search (flex-1) + mobile-only view-toggle + refresh + favorites + mobile-only CSV */}
+        <div className="flex flex-wrap items-center gap-2 p-3 border-b border-border/50">
+          <div className="relative flex-1 min-w-[160px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
             <Input
+              ref={searchInputRef}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="搜索代码或名称..."
+              placeholder="搜索代码或名称... (按 / 聚焦)"
               className="h-8 pl-8 pr-7 text-xs"
             />
             {searchTerm && (
@@ -2067,6 +2336,25 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
               </button>
             )}
           </div>
+
+          {/* Mobile-only view toggle */}
+          {renderViewToggle("sm:hidden")}
+
+          {/* Mobile-only refresh */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchData(true)}
+            disabled={loading}
+            className="sm:hidden h-8 px-2"
+            aria-label="刷新"
+          >
+            {loading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <RefreshCw className="w-3.5 h-3.5" />}
+          </Button>
+
+          {/* Favorites toggle (always visible) */}
           <Button
             variant={showFavoritesOnly ? "default" : "outline"}
             size="sm"
@@ -2086,15 +2374,126 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
               {favorites.length}
             </Badge>
           </Button>
+
+          {/* Mobile-only CSV export */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCSV}
+            disabled={filteredStocks.length === 0}
+            className="sm:hidden h-8 px-2"
+            aria-label="导出CSV"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </Button>
         </div>
 
-        {/* Presets */}
-        <div className="p-3 border-b border-border/50">
-          <PresetButtons
-            filters={filters}
-            onApply={handleApplyPreset}
-            activePresetId={activePreset?.id ?? null}
-          />
+        {/* Row 2: Presets + Save Strategy button */}
+        <div className="p-3 border-b border-border/50 space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <PresetButtons
+                filters={filters}
+                onApply={handleApplyPreset}
+                activePresetId={activePreset?.id ?? null}
+              />
+            </div>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowStrategyForm(v => !v);
+                      if (!showStrategyForm) setStrategyName("");
+                    }}
+                    className="h-7 text-xs gap-1 shrink-0"
+                  >
+                    <Save className="w-3 h-3" />
+                    <span className="hidden sm:inline">保存策略</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  保存当前筛选条件 + 标签为新策略（最多 10 个）
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          {/* Inline save-strategy form */}
+          {showStrategyForm && (
+            <div className="flex items-center gap-2">
+              <Input
+                value={strategyName}
+                onChange={(e) => setStrategyName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleSaveStrategy();
+                  } else if (e.key === "Escape") {
+                    setShowStrategyForm(false);
+                    setStrategyName("");
+                  }
+                }}
+                placeholder="策略名称（如：激进短线）"
+                className="h-7 text-xs flex-1"
+                maxLength={20}
+                autoFocus
+              />
+              <Button
+                onClick={handleSaveStrategy}
+                size="sm"
+                disabled={!strategyName.trim()}
+                className="h-7 text-xs gap-1"
+              >
+                <Save className="w-3 h-3" />
+                保存
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowStrategyForm(false);
+                  setStrategyName("");
+                }}
+                className="h-7 text-xs"
+              >
+                取消
+              </Button>
+            </div>
+          )}
+
+          {/* Saved strategies list (horizontal scrollable) */}
+          {savedStrategies.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pullback-screener-scroll-x">
+              <span className="text-[11px] text-muted-foreground shrink-0 flex items-center gap-1">
+                <Bookmark className="w-3 h-3" />
+                已保存:
+              </span>
+              {savedStrategies.map(s => (
+                <div
+                  key={s.id}
+                  className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-border bg-background text-[11px]"
+                >
+                  <button
+                    onClick={() => handleApplyStrategy(s)}
+                    className="hover:text-primary transition-colors"
+                    title={`应用策略: ${s.name}（点击应用）`}
+                  >
+                    {s.name}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteStrategy(s.id)}
+                    className="text-muted-foreground hover:text-red-500 transition-colors"
+                    aria-label="删除策略"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Quick tags */}
@@ -2163,40 +2562,51 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent sticky top-0 bg-background z-10">
-                      <TableHead className="text-[11px] font-medium w-[36px]" />
-                      <TableHead className="text-[11px] font-medium w-[110px]">代码 / 名称</TableHead>
+                      {/* Sticky col 1: expand icon */}
+                      <TableHead className="text-[11px] font-medium w-[36px] text-center sticky left-0 z-20 bg-background border-r border-border/40" />
+                      {/* Sticky col 2: code/name */}
+                      <TableHead
+                        className="text-[11px] font-medium w-[110px] sticky z-20 bg-background border-r border-border/40"
+                        style={{ left: "36px" }}
+                      >
+                        代码 / 名称
+                      </TableHead>
                       <TableHead className="text-[11px] font-medium w-[80px]">涨停日</TableHead>
-                      <SortableHead label="涨停涨幅" field="limitUpPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" />
-                      <SortableHead label="涨停价" field="limitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" />
-                      <SortableHead label="起涨点" field="preLimitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" />
-                      <SortableHead label="当前价" field="currentPrice" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" />
-                      <SortableHead label="今日涨跌" field="currentChangePct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" />
-                      <SortableHead label="回踩深度" field="approachPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[130px]" />
-                      <SortableHead label="距涨停" field="daysSinceLimitUp" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" />
-                      <SortableHead label="最大回撤" field="maxPullbackPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" />
-                      <SortableHead label="风险" field="riskScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[78px]" />
-                      <SortableHead label="换手率" field="turnover" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" />
-                      <SortableHead label="市值" field="marketCap" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" />
-                      <SortableHead label="量比" field="volumeRatio" current={sortField} order={sortOrder} onSort={handleSort} className="w-[50px]" />
+                      <SortableHead label="涨停涨幅" field="limitUpPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
+                      <SortableHead label="涨停价" field="limitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
+                      <SortableHead label="起涨点" field="preLimitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
+                      <SortableHead label="当前价" field="currentPrice" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
+                      <SortableHead label="今日涨跌" field="currentChangePct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
+                      <SortableHead label="回踩深度" field="approachPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[130px]" align="right" />
+                      <SortableHead label="距涨停" field="daysSinceLimitUp" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
+                      <SortableHead label="最大回撤" field="maxPullbackPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
+                      <SortableHead label="风险" field="riskScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[78px]" align="right" />
+                      <SortableHead label="换手率" field="turnover" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
+                      <SortableHead label="市值" field="marketCap" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
+                      <SortableHead label="量比" field="volumeRatio" current={sortField} order={sortOrder} onSort={handleSort} className="w-[50px]" align="right" />
                       <TableHead className="text-[11px] font-medium w-[110px]">走势</TableHead>
-                      <TableHead className="text-[11px] font-medium w-[40px]">收藏</TableHead>
+                      <TableHead className="text-[11px] font-medium w-[40px] text-center">收藏</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pagedStocks.map((stock) => {
-                      const approachStyle = getApproachStyle(stock.approachPct);
                       const riskScore = calcRiskScore(stock);
                       const isFav = favorites.includes(stock.symbol);
                       const isExpanded = expandedRows.has(stock.symbol);
+                      const isSelected = selectedRowSymbol === stock.symbol;
+                      const stickyBg = isSelected
+                        ? "bg-primary/10"
+                        : "bg-background group-hover:bg-muted/50";
+
                       return (
                         <React.Fragment key={stock.symbol}>
                           <TableRow
-                            className="cursor-pointer hover:bg-muted/50 transition-colors"
+                            className={`group cursor-pointer transition-colors ${isSelected ? "bg-primary/10" : "hover:bg-muted/50"}`}
                             onClick={() => onSelectStock?.(stock.symbol)}
                           >
-                            {/* Expand toggle */}
+                            {/* Expand toggle - sticky col 1 */}
                             <TableCell
-                              className="py-2 px-1 text-center"
+                              className={`py-2 px-1 text-center sticky left-0 z-[5] border-r border-border/40 ${stickyBg}`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleToggleExpand(stock.symbol);
@@ -2212,8 +2622,11 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               </button>
                             </TableCell>
 
-                            {/* 代码/名称 */}
-                            <TableCell className="py-2 pr-2">
+                            {/* 代码/名称 - sticky col 2 */}
+                            <TableCell
+                              className={`py-2 pr-2 sticky z-[5] border-r border-border/40 ${stickyBg}`}
+                              style={{ left: "36px" }}
+                            >
                               <div className="flex flex-col gap-0.5">
                                 <span className="text-[11px] font-mono text-foreground">{stock.symbol}</span>
                                 <TooltipProvider>
@@ -2231,7 +2644,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               </div>
                             </TableCell>
 
-                            {/* 涨停日 */}
+                            {/* 涨停日 - text-left */}
                             <TableCell className="text-[11px] font-mono py-2">
                               <div className="flex items-center gap-0.5">
                                 <TrendingUp className="w-3 h-3 text-red-500" />
@@ -2239,73 +2652,73 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               </div>
                             </TableCell>
 
-                            {/* 涨停涨幅 */}
-                            <TableCell className="text-[11px] font-mono py-2 font-medium text-red-500">
+                            {/* 涨停涨幅 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 font-medium text-red-500 text-right">
                               +{stock.limitUpPct.toFixed(2)}%
                             </TableCell>
 
-                            {/* 涨停价 */}
-                            <TableCell className="text-[11px] font-mono py-2 text-red-500/80">
+                            {/* 涨停价 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 text-red-500/80 text-right">
                               {stock.limitUpClose.toFixed(2)}
                             </TableCell>
 
-                            {/* 起涨点 */}
-                            <TableCell className="text-[11px] font-mono py-2 text-muted-foreground">
+                            {/* 起涨点 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 text-muted-foreground text-right">
                               {stock.preLimitUpClose.toFixed(2)}
                             </TableCell>
 
-                            {/* 当前价 */}
-                            <TableCell className={`text-[11px] font-mono py-2 font-medium ${stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500"}`}>
+                            {/* 当前价 - text-right */}
+                            <TableCell className={`text-[11px] font-mono py-2 font-medium text-right ${stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500"}`}>
                               {stock.currentPrice.toFixed(2)}
                             </TableCell>
 
-                            {/* 今日涨跌 */}
-                            <TableCell className={`text-[11px] font-mono py-2 font-medium ${stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500"}`}>
+                            {/* 今日涨跌 - text-right (with explicit + / - prefix) */}
+                            <TableCell className={`text-[11px] font-mono py-2 font-medium text-right ${stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500"}`}>
                               {stock.currentChangePct >= 0 ? "+" : ""}{stock.currentChangePct.toFixed(2)}%
                             </TableCell>
 
-                            {/* 回踩深度 (with progress bar) */}
-                            <TableCell className="py-2 pr-2">
+                            {/* 回踩深度 - text-right (ApproachBar keeps internal layout) */}
+                            <TableCell className="py-2 pr-2 text-right">
                               <ApproachBar pct={stock.approachPct} />
                             </TableCell>
 
-                            {/* 距涨停 */}
-                            <TableCell className="text-[11px] font-mono py-2 text-muted-foreground">
-                              <div className="flex items-center gap-0.5">
+                            {/* 距涨停 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 text-muted-foreground text-right">
+                              <div className="flex items-center justify-end gap-0.5">
                                 <Clock className="w-3 h-3" />
                                 {stock.daysSinceLimitUp}天
                               </div>
                             </TableCell>
 
-                            {/* 最大回撤 */}
-                            <TableCell className="text-[11px] font-mono py-2 text-red-500/80">
-                              <div className="flex items-center gap-0.5">
+                            {/* 最大回撤 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 text-red-500/80 text-right">
+                              <div className="flex items-center justify-end gap-0.5">
                                 <ArrowDownRight className="w-3 h-3" />
                                 -{stock.maxPullbackPct.toFixed(1)}%
                               </div>
                             </TableCell>
 
-                            {/* 风险评分 */}
-                            <TableCell className="py-2">
+                            {/* 风险评分 - text-right */}
+                            <TableCell className="py-2 text-right">
                               <RiskBadge score={riskScore} />
                             </TableCell>
 
-                            {/* 换手率 */}
-                            <TableCell className="text-[11px] font-mono py-2 text-foreground">
+                            {/* 换手率 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 text-foreground text-right">
                               {stock.turnover > 0 ? `${stock.turnover.toFixed(2)}%` : "--"}
                             </TableCell>
 
-                            {/* 市值 */}
-                            <TableCell className="text-[11px] font-mono py-2 text-foreground">
+                            {/* 市值 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 text-foreground text-right">
                               {stock.marketCap > 0 ? formatMarketCap(stock.marketCap) : "--"}
                             </TableCell>
 
-                            {/* 量比 */}
-                            <TableCell className={`text-[11px] font-mono py-2 ${stock.volumeRatio >= 1.5 ? "text-amber-600 dark:text-amber-400 font-medium" : "text-foreground"}`}>
+                            {/* 量比 - text-right */}
+                            <TableCell className={`text-[11px] font-mono py-2 text-right ${stock.volumeRatio >= 1.5 ? "text-amber-600 dark:text-amber-400 font-medium" : "text-foreground"}`}>
                               {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(2) : "--"}
                             </TableCell>
 
-                            {/* 走势 mini chart */}
+                            {/* 走势 mini chart - text-left */}
                             <TableCell className="py-2">
                               <MiniKlineChart
                                 kline={stock.klineSummary}
@@ -2314,7 +2727,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               />
                             </TableCell>
 
-                            {/* 收藏 */}
+                            {/* 收藏 - text-center */}
                             <TableCell
                               className="py-2 text-center"
                               onClick={(e) => {
@@ -2352,7 +2765,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
             </CardContent>
           </Card>
         ) : (
-          // Card view
+          // Card view - mobile 1 col, sm 2 cols, lg 3 cols
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {pagedStocks.map((stock) => (
               <StockCardViewItem
@@ -2426,6 +2839,11 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         />
       )}
 
+      {/* ── Keyboard shortcut hints ──────────────────── */}
+      {view === "table" && filteredStocks.length > 0 && (
+        <KeyboardHints />
+      )}
+
       {/* ── Data timestamp & cache info ─────────────── */}
       {result && (
         <Card className="border-border/50 shadow-sm">
@@ -2462,7 +2880,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 <b>涨停回踩</b>：近半月内曾涨停的股票，此后持续回调，逐渐逼近涨停前起涨点。
                 回踩深度越高，说明涨幅回吐越多，可能存在支撑位反弹机会。
                 本筛选器在 API 原始 30% 阈值基础上，进一步支持按天数、市值、换手、量比、ST、价格、今日涨跌、板块类型等多维度精细筛选，
-                并提供快捷预设、快速标签、风险评分、行内展开详情、CSV 导出、视图切换与分页等增强功能。
+                并提供快捷预设、快速标签、风险评分、行内展开详情、CSV 导出、视图切换、策略保存与分页等增强功能。
               </p>
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
                 <span className="text-[11px] flex items-center gap-1">
