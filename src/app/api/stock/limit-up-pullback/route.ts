@@ -71,14 +71,19 @@ interface RawStock {
 }
 
 // ── Helper: Fetch all A-share stocks from EastMoney ────
+// Note: f2/f3/f4 are real-time quote fields. Outside trading hours these return "-"
+// (parsed as NaN → 0). We request f18 (previous close) as a fallback so price-based
+// candidate filtering still works outside trading hours. The K-line analysis below
+// independently determines limit-up + pullback status from sina daily K-line data.
 async function fetchAllStocks(): Promise<RawStock[]> {
   const allStocks: RawStock[] = [];
   const pageSize = 500;
   let page = 1;
+  const fields = "f2,f3,f4,f12,f14,f18";
 
   try {
     // First page to get total count
-    const firstUrl = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f4,f12,f14`;
+    const firstUrl = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
     const firstRes = await fetch(firstUrl, {
       next: { revalidate: 0 },
       signal: AbortSignal.timeout(10000),
@@ -92,12 +97,16 @@ async function fetchAllStocks(): Promise<RawStock[]> {
       for (const item of firstDiff) {
         const code = String(item.f12 || "");
         if (!code) continue;
+        // f2 = current price (real-time, "-" outside trading hours)
+        // f18 = previous close (always available)
+        const price = parseFloat(item.f2) || parseFloat(item.f18) || 0;
+        const prevClose = parseFloat(item.f4) || parseFloat(item.f18) || 0;
         allStocks.push({
           code,
           name: String(item.f14 || ""),
-          price: parseFloat(item.f2) || 0,
+          price,
           changePct: parseFloat(item.f3) || 0,
-          prevClose: parseFloat(item.f4) || 0,
+          prevClose,
         });
       }
     }
@@ -107,7 +116,7 @@ async function fetchAllStocks(): Promise<RawStock[]> {
     if (totalPages > 1) {
       const pagePromises = [];
       for (page = 2; page <= totalPages; page++) {
-        const url = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f4,f12,f14`;
+        const url = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
         pagePromises.push(
           fetch(url, {
             next: { revalidate: 0 },
@@ -121,12 +130,14 @@ async function fetchAllStocks(): Promise<RawStock[]> {
                 for (const item of diff) {
                   const code = String(item.f12 || "");
                   if (!code) continue;
+                  const price = parseFloat(item.f2) || parseFloat(item.f18) || 0;
+                  const prevClose = parseFloat(item.f4) || parseFloat(item.f18) || 0;
                   allStocks.push({
                     code,
                     name: String(item.f14 || ""),
-                    price: parseFloat(item.f2) || 0,
+                    price,
                     changePct: parseFloat(item.f3) || 0,
-                    prevClose: parseFloat(item.f4) || 0,
+                    prevClose,
                   });
                 }
               }
@@ -140,7 +151,9 @@ async function fetchAllStocks(): Promise<RawStock[]> {
     // ignore
   }
 
-  return allStocks.filter(s => s.price > 0);
+  // Filter by prevClose (works outside trading hours via f18 fallback) to remove penny stocks.
+  // Keep all valid 6-digit codes; changePct filter is skipped because it's 0 outside trading hours.
+  return allStocks.filter(s => /^\d{6}$/.test(s.code) && s.prevClose >= 2);
 }
 
 // ── Helper: Fetch daily K-line via Sina ────────────────
@@ -250,27 +263,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(emptyResult);
     }
 
-    // Step 2: Filter candidates - stocks currently negative or small positive (potential pullback)
-    // We look at stocks with current change <= +3% (they've been declining from a recent high)
-    // and price > 2 (filter out very cheap stocks)
+    // Step 2: Filter candidates.
+    // Only filter by name (ST) here. Price/changePct filtering is skipped because real-time
+    // quote fields are "-" outside trading hours (parsed as 0). The K-line analysis below
+    // independently determines whether a stock had a limit-up + pullback, so we don't need
+    // real-time quotes at this stage. Real-time enrichment happens in Step 4.
     const candidates = allStocks.filter(s => {
-      // Must have valid price
-      if (s.price < 2) return false;
-      // Current change should be small or negative (suggests pullback from a high)
-      if (s.changePct > 5) return false; // still surging, not pulling back
       // Exclude ST stocks (names containing ST)
       if (s.name.includes("ST") || s.name.includes("*ST")) return false;
-      // Must be a proper stock code (6 digits)
+      // Must be a proper stock code (6 digits) - already enforced in fetchAllStocks but keep as safety
       if (!/^\d{6}$/.test(s.code)) return false;
       return true;
     });
 
     // Step 3: For candidates, fetch K-line data to find limit-up days in past 2 weeks
-    // Process in batches to avoid overwhelming the API
+    // Process in batches to avoid overwhelming the API.
+    // NOTE: Outside trading hours changePct is 0 for all stocks, so the candidate list
+    // is much larger (~5000 vs a few hundred during trading hours). We use a higher
+    // batch size and a total time budget to keep response time reasonable.
     const pullbackStocks: PullbackStock[] = [];
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 25; // higher concurrency to speed up off-hours scanning
+    const TOTAL_BUDGET_MS = 55_000; // ~55s budget; return what we have if exceeded
+    const startTime = Date.now();
 
     for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+      if (Date.now() - startTime > TOTAL_BUDGET_MS) break;
       const batch = candidates.slice(i, i + BATCH_SIZE);
       const klineResults = await Promise.allSettled(
         batch.map(s => fetchDailyKline(s.code, 15))

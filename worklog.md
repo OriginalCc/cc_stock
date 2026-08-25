@@ -997,3 +997,48 @@ Stage Summary:
 - 菜单从 9 项缩减为 8 项
 - page.tsx 移除 TrendingUp 图标导入（避免未使用变量 lint 错误）
 - bun run lint 通过，页面正常加载无错误
+
+---
+Task ID: 19
+Agent: main
+Task: 修复回踩选股页面非交易时段无数据问题
+
+Work Log:
+- 问题诊断：API 返回 {success:true, stocks:[], totalScanned:0}
+- 根因分析：东方财富 push2delay 接口的 f2(现价)/f3(涨跌幅)/f4(前收) 在非交易时段返回 "-"
+  * parseFloat("-") = NaN → || 0 → 0
+  * fetchAllStocks() 末尾 allStocks.filter(s => s.price > 0) 把所有股票过滤掉
+  * 候选股为空 → 无 K线分析 → 返回空结果
+- 发现 f18(昨收) 在非交易时段有值（f9 量比也有值，但 f2/f3/f4/f10/f15/f16/f17 都是 "-"）
+- 修改 src/app/api/stock/limit-up-pullback/route.ts：
+  1. fetchAllStocks():
+     * 请求字段加 f18（昨收）：fields = "f2,f3,f4,f12,f14,f18"
+     * price 改为 parseFloat(f2) || parseFloat(f18) || 0（f2 为空时 fallback 到昨收）
+     * prevClose 改为 parseFloat(f4) || parseFloat(f18) || 0（同理）
+     * 末尾过滤改为 /^\d{6}$/.test(code) && prevClose >= 2（用昨收做价格下限，不用 price）
+     * 不再过滤 changePct（非交易时段全是 0，过滤无意义）
+  2. Step 2 候选股筛选：
+     * 移除 s.price < 2 过滤（price 在非交易时段可能为 0）
+     * 移除 s.changePct > 5 过滤（非交易时段全是 0，会把所有股票都保留反而正确）
+     * 只保留 ST 过滤和代码格式校验
+  3. Step 3 K线批次分析：
+     * BATCH_SIZE 从 10 提到 25（非交易时段候选股从几百变 5000+，提高并发加速）
+     * 新增 TOTAL_BUDGET_MS = 55000 总时间预算（55秒），超时则 break 返回已获取结果
+     * startTime = Date.now()，每批次开头检查 Date.now() - startTime > TOTAL_BUDGET_MS
+- 验证结果：
+  * curl /api/stock/limit-up-pullback?refresh=1 返回真实数据：totalScanned=1154, totalPullback=82, stocks=82只
+    （1154 是因为 55 秒预算内只扫了部分候选股，非交易时段本来有 5000+）
+  * 页面显示 58 只（默认筛选 approachPct>=30%, daysSinceLimitUp<=10, excludeST）
+  * 直方图分布正常：30-50%(7) / 50-70%(6) / 70-90%(13) / 90-100%(2) / 回到起涨点(30) = 58
+  * 点击直方图"回到起涨点"柱子 → 筛选到 30 只 ✓
+  * 换手率/市值/量比显示为 "--"（非交易时段实时字段为空，符合预期）
+  * 浏览器控制台无错误
+  * bun run lint 通过
+
+Stage Summary:
+- 根因：东方财富实时行情字段(f2/f3/f4)非交易时段返回"-"，parse 后为 0，被 price>0 过滤掉
+- 修复：用 f18(昨收) 作为 price/prevClose 的 fallback，过滤改用 prevClose>=2
+- 候选股不再依赖实时涨跌幅过滤，K线分析独立判断涨停+回踩
+- 非交易时段候选股增多(5000+)，BATCH_SIZE 10→25 + 55秒总预算保护响应时间
+- API 恢复返回 82 只真实回踩股票，页面正常显示 58 只（默认筛选后）
+- bun run lint 通过，浏览器无错误
