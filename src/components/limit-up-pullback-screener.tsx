@@ -740,54 +740,68 @@ function Histogram({
   const counts = HISTOGRAM_BINS.map(b =>
     stocks.filter(s => isApproachInBin(s.approachPct, b)).length
   );
+  const total = stocks.length;
   const maxCount = Math.max(...counts, 1);
   const hasSelection = selectedBins.length > 0;
 
   return (
     <Card className="border-border/50 shadow-sm">
-      <CardContent className="py-3 px-4">
-        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <CardContent className="py-3.5 px-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-1.5 text-xs font-medium">
             <BarChart3 className="w-3.5 h-3.5 text-primary" />
             <span>回踩深度分布</span>
-            <span className="text-[10px] text-muted-foreground font-normal">（点击柱子筛选该区间）</span>
+            <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">（点击柱子筛选该区间）</span>
           </div>
           <div className="flex items-center gap-2">
             {hasSelection && (
               <button
                 onClick={onClear}
-                className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+                className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors px-1.5 py-0.5 rounded bg-primary/5 border border-primary/20"
               >
-                <X className="w-3 h-3" />
-                清空选中 ({selectedBins.length})
+                <X className="w-2.5 h-2.5" />
+                清空 ({selectedBins.length})
               </button>
             )}
             <span className="text-[10px] text-muted-foreground">
-              共 {stocks.length} 只 · 按回踩深度区间统计
+              共 {total} 只
             </span>
           </div>
         </div>
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-5 gap-2 sm:gap-3">
           {HISTOGRAM_BINS.map((b, i) => {
             const isActive = selectedBins.includes(b.min);
             const isDimmed = hasSelection && !isActive;
+            const pct = total > 0 ? (counts[i] / total) * 100 : 0;
             return (
               <button
                 key={i}
                 onClick={() => onToggleBin(b.min)}
-                title={`筛选 ${b.range} 区间（共 ${counts[i]} 只）`}
-                className={`group flex flex-col items-center gap-1 rounded-md p-1 transition-all cursor-pointer hover:bg-muted/40 ${isActive ? "ring-2 ring-primary/50 bg-primary/5" : ""} ${isDimmed ? "opacity-50" : ""}`}
+                title={`${b.range} 区间：${counts[i]} 只（占 ${pct.toFixed(1)}%）${isActive ? " · 点击取消" : " · 点击筛选"}`}
+                className={`group relative flex flex-col items-center gap-1.5 rounded-lg p-1.5 transition-all cursor-pointer hover:bg-muted/40 ${isActive ? "ring-2 ring-primary/60 bg-primary/5" : ""} ${isDimmed ? "opacity-40" : ""}`}
               >
-                <span className={`text-xs font-mono font-medium ${isActive ? "text-primary" : "text-foreground"}`}>
-                  {counts[i]}
-                </span>
-                <div className="w-full h-16 flex items-end rounded-sm bg-muted/40 overflow-hidden group-hover:bg-muted/60 transition-colors">
-                  <div
-                    className={`w-full ${isActive ? b.activeColor : b.color} transition-all ${hasSelection && !isActive ? "opacity-40" : ""} group-hover:opacity-90`}
-                    style={{ height: `${(counts[i] / maxCount) * 100}%` }}
-                  />
+                {/* Count + percentage */}
+                <div className="flex flex-col items-center leading-none">
+                  <span className={`text-base font-bold font-mono tabular-nums transition-colors ${isActive ? "text-primary" : "text-foreground"}`}>
+                    {counts[i]}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">
+                    {pct.toFixed(0)}%
+                  </span>
                 </div>
-                <span className={`text-[10px] text-center leading-tight ${isActive ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                {/* Bar - fixed height container, bar fills proportionally */}
+                <div className="w-full h-20 flex items-end rounded-md bg-muted/30 overflow-hidden group-hover:bg-muted/50 transition-colors relative">
+                  <div
+                    className={`w-full ${isActive ? b.activeColor : b.color} transition-all duration-200 ${hasSelection && !isActive ? "opacity-50" : ""} ${counts[i] === 0 ? "opacity-0" : "group-hover:brightness-110"}`}
+                    style={{ height: `${Math.max((counts[i] / maxCount) * 100, counts[i] > 0 ? 6 : 0)}%` }}
+                  />
+                  {/* Active indicator dot at top of bar */}
+                  {isActive && counts[i] > 0 && (
+                    <span className="absolute top-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary shadow-sm" />
+                  )}
+                </div>
+                {/* Range label */}
+                <span className={`text-[10px] text-center leading-tight transition-colors ${isActive ? "text-primary font-semibold" : "text-muted-foreground"}`}>
                   {b.range}
                 </span>
               </button>

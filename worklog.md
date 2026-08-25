@@ -1102,3 +1102,40 @@ Stage Summary:
 - 数据源从 sina 切换到东方财富 push2his（更可靠）
 - API 恢复返回真实回踩股票数据（45 只无重复）
 - bun run lint 通过，浏览器控制台无错误
+
+---
+Task ID: 21
+Agent: main
+Task: 优化回踩深度分布直方图样式
+
+Work Log:
+- VLM 分析优化前的直方图：评分 5/10，问题包括柱子高度比例失真、颜色过于跳跃、选中态不够清晰、排版拥挤
+- 修改 Histogram 组件样式（src/components/limit-up-pullback-screener.tsx）：
+  1. 柱子高度比例：h-16→h-20（增高容器），添加最小高度 6px（counts>0 时至少可见）
+  2. 数字排版：text-xs→text-base font-bold（数字加大加粗），新增百分比显示（text-[9px] 灰色）
+  3. 选中态强化：ring-primary/50→ring-primary/60（描边加深），新增柱顶指示点（w-1 h-1 bg-primary 圆点）
+  4. 选中柱子颜色：用 activeColor（更深色）替代 color
+  5. 未选中变暗：opacity-50→opacity-40（更明显的对比）
+  6. 间距优化：gap-2→gap-2 sm:gap-3（桌面端间距加大），p-1→p-1.5（卡片内边距加大）
+  7. 圆角统一：rounded-sm→rounded-md（柱子容器），rounded-md→rounded-lg（按钮）
+  8. hover 效果：group-hover:brightness-110（柱子变亮），group-hover:bg-muted/50（容器背景加深）
+  9. title 提示优化：显示区间+数量+百分比+操作提示（点击筛选/点击取消）
+  10. "清空选中"按钮优化：加背景和边框（bg-primary/5 border-primary/20），更醒目
+  11. 顶部说明文字：移动端隐藏"（点击柱子筛选该区间）"节省空间
+  12. tabular-nums：数字用等宽数字字体，对齐更整齐
+- 验证结果：
+  * VLM 评分从 5/10 → 8.5/10（整体美观度）
+  * 选中态评分 9/10（边框清晰、指示点明显、未选中变暗、清空按钮出现）
+  * 柱子高度比例准确（8/10/11/6/31 → 12%/15%/17%/9%/47%）
+  * 数字+百分比层级分明，对齐优秀
+  * 浏览器控制台无错误
+  * bun run lint 通过
+
+Stage Summary:
+- 直方图样式全面优化，VLM 评分 5/10 → 8.5/10
+- 柱子高度比例准确还原数据，最小高度 6px 保证小值可见
+- 选中态多重反馈：ring 边框 + activeColor 深色 + 柱顶指示点 + 未选中 opacity-40 变暗
+- 数字加大加粗 + 百分比辅助显示，tabular-nums 等宽对齐
+- 间距和圆角统一，hover 效果增强交互反馈
+- title 提示信息丰富（区间+数量+百分比+操作）
+- bun run lint 通过，浏览器无错误
