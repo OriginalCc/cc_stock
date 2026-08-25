@@ -963,3 +963,37 @@ Stage Summary:
 - handleResetFilters / handleApplyStrategy 都会清空 histogramBins
 - 文件从 2929 行 → 3037 行（+108 行）
 - bun run lint 通过，dev server 编译成功，浏览器控制台无错误
+
+---
+Task ID: 18
+Agent: main
+Task: 删除回踩页面，保留回踩选股页面
+
+Work Log:
+- 分析 page.tsx 菜单配置：两个回踩相关菜单项
+  * "回踩" (mode="limit-up") → LimitUpAnalysis 组件（单维度回踩深度按钮筛选，旧版）
+  * "回踩选股" (mode="limit-up-pullback") → LimitUpPullbackScreener 组件（12类增强功能+9项优化+直方图点击筛选，新版）
+- 用户要求删除"回踩"（旧版），保留"回踩选股"（新版）
+- 修改 src/app/page.tsx（6 处）：
+  1. 删除 LimitUpAnalysis 的 dynamic import（line 11）
+  2. 从 lucide-react import 移除 TrendingUp 图标（仅 limit-up 菜单使用，删除后变未使用）
+  3. 从 pageMode 联合类型移除 "limit-up"
+  4. 从菜单 mode 数组移除 "limit-up"
+  5. 删除菜单标签 `{mode === "limit-up" && <><TrendingUp />回踩</>}`
+  6. 删除条件渲染分支 `pageMode === "limit-up" ? (<LimitUpAnalysis .../>) :`
+- 删除组件文件：src/components/limit-up-analysis.tsx（33KB，旧版回踩分析组件）
+- 删除 API 目录：src/app/api/stock/limit-up/（旧版回踩分析 API，不再被引用）
+  * 保留 src/app/api/stock/limit-up-pullback/（新版回踩选股 API）
+- 验证：
+  * grep 确认 LimitUpAnalysis / "limit-up" / TrendingUp 在 page.tsx 中无残留
+  * grep 确认 /api/stock/limit-up 不再被任何代码引用
+  * bun run lint 通过 exit 0
+  * Agent Browser 验证：菜单从 9 项变 8 项（做T/选股/低开/分时选股/轮动/早盘选股/回踩选股/部署），"回踩"已消失，"回踩选股"保留且可正常进入
+  * 浏览器控制台无错误
+
+Stage Summary:
+- 删除旧版"回踩"页面（LimitUpAnalysis 组件 + /api/stock/limit-up API）
+- 保留新版"回踩选股"页面（LimitUpPullbackScreener 组件 + /api/stock/limit-up-pullback API）
+- 菜单从 9 项缩减为 8 项
+- page.tsx 移除 TrendingUp 图标导入（避免未使用变量 lint 错误）
+- bun run lint 通过，页面正常加载无错误
