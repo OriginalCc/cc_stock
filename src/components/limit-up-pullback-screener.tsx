@@ -173,6 +173,23 @@ const FAVORITES_KEY = "limit-up-pullback-screener-favorites";
 const LAST_VIEW_KEY = "limit-up-pullback-screener-last-view";
 const LAST_PAGE_SIZE_KEY = "limit-up-pullback-screener-last-page-size";
 const STRATEGIES_KEY = "limit-up-pullback-screener-saved-strategies";
+const LAST_HISTOGRAM_BINS_KEY = "limit-up-pullback-screener-last-histogram-bins";
+
+// ── Histogram bins (shared between Histogram component and filter logic) ──
+const HISTOGRAM_BINS = [
+  { range: "30-50%", min: 30, max: 50, color: "bg-emerald-500", activeColor: "bg-emerald-600" },
+  { range: "50-70%", min: 50, max: 70, color: "bg-yellow-500", activeColor: "bg-yellow-600" },
+  { range: "70-90%", min: 70, max: 90, color: "bg-orange-500", activeColor: "bg-orange-600" },
+  { range: "90-100%", min: 90, max: 100, color: "bg-red-500", activeColor: "bg-red-600" },
+  { range: "回到起涨点", min: 100, max: Number.POSITIVE_INFINITY, color: "bg-rose-700", activeColor: "bg-rose-800" },
+] as const;
+
+/** Check if a stock's approachPct falls into the given bin */
+function isApproachInBin(approachPct: number, bin: { min: number; max: number }): boolean {
+  return bin.max === Number.POSITIVE_INFINITY
+    ? approachPct >= bin.min
+    : approachPct >= bin.min && approachPct < bin.max;
+}
 
 // ── Saved strategies ───────────────────────────────────
 
@@ -708,54 +725,74 @@ function SummaryCard({
   );
 }
 
-/** Histogram of approach depth distribution */
-function Histogram({ stocks }: { stocks: PullbackStock[] }) {
-  const bins = [
-    { range: "30-50%", min: 30, max: 50, color: "bg-emerald-500" },
-    { range: "50-70%", min: 50, max: 70, color: "bg-yellow-500" },
-    { range: "70-90%", min: 70, max: 90, color: "bg-orange-500" },
-    { range: "90-100%", min: 90, max: 100, color: "bg-red-500" },
-    { range: "回到起涨点", min: 100, max: Number.POSITIVE_INFINITY, color: "bg-rose-700" },
-  ];
-
-  const counts = bins.map(b =>
-    stocks.filter(s =>
-      b.max === Number.POSITIVE_INFINITY
-        ? s.approachPct >= b.min
-        : s.approachPct >= b.min && s.approachPct < b.max
-    ).length
+/** Histogram of approach depth distribution - clickable to filter by bin */
+function Histogram({
+  stocks,
+  selectedBins,
+  onToggleBin,
+  onClear,
+}: {
+  stocks: PullbackStock[];
+  selectedBins: number[];
+  onToggleBin: (min: number) => void;
+  onClear: () => void;
+}) {
+  const counts = HISTOGRAM_BINS.map(b =>
+    stocks.filter(s => isApproachInBin(s.approachPct, b)).length
   );
   const maxCount = Math.max(...counts, 1);
+  const hasSelection = selectedBins.length > 0;
 
   return (
     <Card className="border-border/50 shadow-sm">
       <CardContent className="py-3 px-4">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div className="flex items-center gap-1.5 text-xs font-medium">
             <BarChart3 className="w-3.5 h-3.5 text-primary" />
             <span>回踩深度分布</span>
+            <span className="text-[10px] text-muted-foreground font-normal">（点击柱子筛选该区间）</span>
           </div>
-          <span className="text-[10px] text-muted-foreground">
-            共 {stocks.length} 只 · 按回踩深度区间统计
-          </span>
+          <div className="flex items-center gap-2">
+            {hasSelection && (
+              <button
+                onClick={onClear}
+                className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+              >
+                <X className="w-3 h-3" />
+                清空选中 ({selectedBins.length})
+              </button>
+            )}
+            <span className="text-[10px] text-muted-foreground">
+              共 {stocks.length} 只 · 按回踩深度区间统计
+            </span>
+          </div>
         </div>
         <div className="grid grid-cols-5 gap-2">
-          {bins.map((b, i) => (
-            <div key={i} className="flex flex-col items-center gap-1">
-              <span className="text-xs font-mono font-medium text-foreground">
-                {counts[i]}
-              </span>
-              <div className="w-full h-16 flex items-end rounded-sm bg-muted/40 overflow-hidden">
-                <div
-                  className={`w-full ${b.color} transition-all`}
-                  style={{ height: `${(counts[i] / maxCount) * 100}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-muted-foreground text-center leading-tight">
-                {b.range}
-              </span>
-            </div>
-          ))}
+          {HISTOGRAM_BINS.map((b, i) => {
+            const isActive = selectedBins.includes(b.min);
+            const isDimmed = hasSelection && !isActive;
+            return (
+              <button
+                key={i}
+                onClick={() => onToggleBin(b.min)}
+                title={`筛选 ${b.range} 区间（共 ${counts[i]} 只）`}
+                className={`group flex flex-col items-center gap-1 rounded-md p-1 transition-all cursor-pointer hover:bg-muted/40 ${isActive ? "ring-2 ring-primary/50 bg-primary/5" : ""} ${isDimmed ? "opacity-50" : ""}`}
+              >
+                <span className={`text-xs font-mono font-medium ${isActive ? "text-primary" : "text-foreground"}`}>
+                  {counts[i]}
+                </span>
+                <div className="w-full h-16 flex items-end rounded-sm bg-muted/40 overflow-hidden group-hover:bg-muted/60 transition-colors">
+                  <div
+                    className={`w-full ${isActive ? b.activeColor : b.color} transition-all ${hasSelection && !isActive ? "opacity-40" : ""} group-hover:opacity-90`}
+                    style={{ height: `${(counts[i] / maxCount) * 100}%` }}
+                  />
+                </div>
+                <span className={`text-[10px] text-center leading-tight ${isActive ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                  {b.range}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -1774,6 +1811,37 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   });
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
+  // Histogram bin selection (clickable histogram bars to filter by approach range)
+  const [histogramBins, setHistogramBins] = useState<number[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem(LAST_HISTOGRAM_BINS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const validMins = HISTOGRAM_BINS.map(b => b.min);
+          return parsed.filter((v: unknown) => typeof v === "number" && validMins.includes(v));
+        }
+      }
+    } catch {}
+    return [];
+  });
+
+  // Persist histogram bins to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAST_HISTOGRAM_BINS_KEY, JSON.stringify(histogramBins));
+    } catch {}
+  }, [histogramBins]);
+
+  const handleToggleBin = useCallback((min: number) => {
+    setHistogramBins(prev =>
+      prev.includes(min) ? prev.filter(v => v !== min) : [...prev, min]
+    );
+  }, []);
+
+  const handleClearBins = useCallback(() => setHistogramBins([]), []);
+
   // View mode - default card on mobile if no saved preference
   const [view, setView] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "table";
@@ -1934,14 +2002,15 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     } catch {}
   }, [savedStrategies]);
 
-  // Reset to page 1 when filters/search/tags/sort/favorite-mode change
+  // Reset to page 1 when filters/search/tags/sort/favorite-mode/histogram-bins change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedFilters, searchTerm, quickTags, sortField, sortOrder, showFavoritesOnly]);
+  }, [debouncedFilters, searchTerm, quickTags, sortField, sortOrder, showFavoritesOnly, histogramBins]);
 
   const handleResetFilters = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
     setQuickTags([]);
+    setHistogramBins([]);
   }, []);
 
   const handleToggleFavorite = useCallback((symbol: string) => {
@@ -2002,6 +2071,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   const handleApplyStrategy = useCallback((s: SavedStrategy) => {
     setFilters({ ...s.filters });
     setQuickTags([...s.tags]);
+    setHistogramBins([]);
     setShowStrategyForm(false);
     setStrategyName("");
   }, []);
@@ -2071,6 +2141,16 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     return sorted;
   }, [result, debouncedFilters, sortField, sortOrder, searchTerm, quickTags, showFavoritesOnly, favorites]);
 
+  // ── Apply histogram bin filter on top of filteredStocks ──
+  // Histogram receives `filteredStocks` (stable counts), table/cards/pagination use `displayedStocks`
+  const displayedStocks = useMemo(() => {
+    if (histogramBins.length === 0) return filteredStocks;
+    const selectedBinObjs = HISTOGRAM_BINS.filter(b => histogramBins.includes(b.min));
+    return filteredStocks.filter(s =>
+      selectedBinObjs.some(b => isApproachInBin(s.approachPct, b))
+    );
+  }, [filteredStocks, histogramBins]);
+
   // isDefaultFilters / activePreset use the live `filters` (draft) for instant UI feedback
   const isDefaultFilters = useMemo(
     () => JSON.stringify(filters) === JSON.stringify(DEFAULT_FILTERS),
@@ -2083,12 +2163,12 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   );
 
   // ── Pagination ────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(filteredStocks.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(displayedStocks.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
   const pagedStocks = useMemo(() => {
     const start = (safePage - 1) * pageSize;
-    return filteredStocks.slice(start, start + pageSize);
-  }, [filteredStocks, safePage, pageSize]);
+    return displayedStocks.slice(start, start + pageSize);
+  }, [displayedStocks, safePage, pageSize]);
 
   // ── Keyboard shortcuts ────────────────────────────────
   // j/ArrowDown: next row · k/ArrowUp: prev row · Enter: expand selected ·
@@ -2158,13 +2238,13 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
 
   // ── CSV Export ────────────────────────────────────────
   const handleExportCSV = useCallback(() => {
-    if (filteredStocks.length === 0) return;
+    if (displayedStocks.length === 0) return;
     const headers = [
       "代码", "名称", "涨停日", "涨停涨幅%", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
       "最大回撤%", "换手率%", "市值(亿)", "量比",
     ];
-    const rows = filteredStocks.map(s => [
+    const rows = displayedStocks.map(s => [
       s.symbol,
       s.name,
       s.limitUpDate,
@@ -2198,7 +2278,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [filteredStocks]);
+  }, [displayedStocks]);
 
   // ── Render ────────────────────────────────────────────
 
@@ -2271,7 +2351,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 variant="outline"
                 size="sm"
                 onClick={handleExportCSV}
-                disabled={filteredStocks.length === 0}
+                disabled={displayedStocks.length === 0}
                 className="hidden sm:inline-flex h-7 text-xs gap-1"
               >
                 <Download className="w-3 h-3" />
@@ -2303,14 +2383,19 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       {/* ── Summary ──────────────────────────────────── */}
       {result && (
         <SummaryCard
-          stocks={filteredStocks}
+          stocks={displayedStocks}
           totalScanned={result.summary.totalScanned}
         />
       )}
 
-      {/* ── Histogram ───────────────────────────────── */}
+      {/* ── Histogram (clickable bars filter by approach range) ── */}
       {result && filteredStocks.length > 0 && (
-        <Histogram stocks={filteredStocks} />
+        <Histogram
+          stocks={filteredStocks}
+          selectedBins={histogramBins}
+          onToggleBin={handleToggleBin}
+          onClear={handleClearBins}
+        />
       )}
 
       {/* ── Search + Presets + Chips + Filter Panel ── */}
@@ -2380,7 +2465,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
             variant="outline"
             size="sm"
             onClick={handleExportCSV}
-            disabled={filteredStocks.length === 0}
+            disabled={displayedStocks.length === 0}
             className="sm:hidden h-8 px-2"
             aria-label="导出CSV"
           >
@@ -2513,7 +2598,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 <SlidersHorizontal className="w-4 h-4 text-primary" />
                 <span className="text-sm font-medium">筛选条件</span>
                 <Badge variant="outline" className="text-[10px] py-0 px-1.5">
-                  {filteredStocks.length} 只
+                  {displayedStocks.length} 只
                 </Badge>
                 {!isDefaultFilters && (
                   <Badge variant="secondary" className="text-[10px] py-0 px-1.5 bg-primary/10 text-primary">
@@ -2554,7 +2639,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       </Card>
 
       {/* ── Stock Table / Card View ─────────────────── */}
-      {result && filteredStocks.length > 0 ? (
+      {result && displayedStocks.length > 0 ? (
         view === "table" ? (
           <Card className="border-border/50 shadow-sm">
             <CardContent className="p-0">
@@ -2780,7 +2865,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         )
       ) : result && result.stocks.length === 0 ? (
         <EmptyState totalScanned={result.summary.totalScanned} />
-      ) : result && showFavoritesOnly && filteredStocks.length === 0 ? (
+      ) : result && showFavoritesOnly && displayedStocks.length === 0 ? (
         <Card className="border-border/50 shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <Star className="w-8 h-8 mb-2 text-muted-foreground/50" />
@@ -2805,32 +2890,52 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
             )}
           </CardContent>
         </Card>
-      ) : result && filteredStocks.length === 0 ? (
+      ) : result && displayedStocks.length === 0 ? (
         <Card className="border-border/50 shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <Filter className="w-8 h-8 mb-2" />
-            <p className="text-sm font-medium text-foreground">当前筛选条件下无结果</p>
-            <p className="text-xs mt-1">原始数据 {result.stocks.length} 只，可尝试降低回踩深度阈值或重置筛选</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetFilters}
-              className="mt-3 h-7 text-xs gap-1"
-            >
-              <RotateCcw className="w-3 h-3" />
-              重置筛选
-            </Button>
+            <p className="text-sm font-medium text-foreground">
+              {filteredStocks.length > 0 && histogramBins.length > 0
+                ? "当前直方图选中区间无股票"
+                : "当前筛选条件下无结果"}
+            </p>
+            <p className="text-xs mt-1">
+              {filteredStocks.length > 0 && histogramBins.length > 0
+                ? `已筛选出 ${filteredStocks.length} 只，但未选中任何回踩深度区间`
+                : `原始数据 ${result.stocks.length} 只，可尝试降低回踩深度阈值或重置筛选`}
+            </p>
+            {filteredStocks.length > 0 && histogramBins.length > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearBins}
+                className="mt-3 h-7 text-xs gap-1"
+              >
+                <X className="w-3 h-3" />
+                清空直方图选中
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetFilters}
+                className="mt-3 h-7 text-xs gap-1"
+              >
+                <RotateCcw className="w-3 h-3" />
+                重置筛选
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : null}
 
       {/* ── Pagination ─────────────────────────────────── */}
-      {result && filteredStocks.length > 0 && (
+      {result && displayedStocks.length > 0 && (
         <Pagination
           currentPage={safePage}
           totalPages={totalPages}
           pageSize={pageSize}
-          totalItems={filteredStocks.length}
+          totalItems={displayedStocks.length}
           onPageChange={(p) => setCurrentPage(Math.max(1, Math.min(totalPages, p)))}
           onPageSizeChange={(s) => {
             setPageSize(s);
@@ -2840,7 +2945,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       )}
 
       {/* ── Keyboard shortcut hints ──────────────────── */}
-      {view === "table" && filteredStocks.length > 0 && (
+      {view === "table" && displayedStocks.length > 0 && (
         <KeyboardHints />
       )}
 

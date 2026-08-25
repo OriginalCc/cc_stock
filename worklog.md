@@ -913,3 +913,53 @@ Stage Summary:
 - onSelectStock 行点击跳转保留，所有图标按钮 stopPropagation
 - 暗色模式：所有新增样式都加 dark: 变体
 - 响应式：mobile-first，所有优化在 mobile 和 desktop 都可用
+
+---
+Task ID: 17
+Agent: main
+Task: 让回踩深度分布直方图可以点击筛选
+
+Work Log:
+- 分析现有 Histogram 组件：纯展示组件，5 个柱子（30-50%/50-70%/70-90%/90-100%/回到起涨点），无交互
+- 设计方案：柱子变成可点击 button，支持多选 OR 筛选，与现有 filters/quickTags 解耦，独立 localStorage 记忆
+- 抽取 HISTOGRAM_BINS 模块级常量（min/max/color/activeColor），供 Histogram 组件和 filteredStocks 过滤逻辑共享
+- 新增 isApproachInBin 辅助函数判断 approachPct 是否落在指定 bin 区间
+- 修改 Histogram 组件：
+  * 加 props: selectedBins: number[], onToggleBin: (min) => void, onClear: () => void
+  * 每个柱子改为 <button>，cursor-pointer + hover:bg-muted/40 + title 提示"筛选 X 区间（共 N 只）"
+  * 选中的柱子：ring-2 ring-primary/50 bg-primary/5 + 用 activeColor（更深色）+ 文字变 primary
+  * 未选中的柱子（当有选中时）：opacity-50 变暗 + 柱子填充 opacity-40
+  * 顶部标题加"（点击柱子筛选该区间）"提示文字
+  * 右侧显示"✕ 清空选中 (N)"按钮（仅当 selectedBins.length > 0 时）
+- 主组件新增：
+  * histogramBins: number[] state（从 localStorage 恢复，过滤无效值）
+  * localStorage 持久化（key: limit-up-pullback-screener-last-histogram-bins）
+  * handleToggleBin / handleClearBins 回调
+  * displayedStocks useMemo：在 filteredStocks 基础上追加 histogramBins 过滤（OR 逻辑，多选）
+  * filteredStocks（不含 histogramBins）传给 Histogram 保持柱子数量稳定
+  * 表格/卡片/分页/统计卡/CSV导出/空状态 全部改用 displayedStocks
+  * 空状态区分两种情况：筛选条件无结果 vs 直方图选中区间无股票（显示不同提示+不同按钮）
+  * 分页重置 useEffect 依赖加 histogramBins
+  * handleResetFilters 加 setHistogramBins([])（重置时清空直方图）
+  * handleApplyStrategy 加 setHistogramBins([])（应用策略时清空直方图）
+- 新增 localStorage key：LAST_HISTOGRAM_BINS_KEY
+- Agent Browser 验证（注入 mock 数据因 API 上游限流）：
+  * 12 只股票分布在 5 个区间（3/2/3/2/2）
+  * 点击"70-90%"柱子 → 表格 12→3 只 ✓，"清空选中 (1)" 按钮出现 ✓
+  * 多选"90-100%" → 表格 3→5 只 ✓，"清空选中 (2)" ✓
+  * 再次点击"90-100%"取消 → 表格 5→3 只 ✓，"清空选中 (1)" ✓
+  * 点击"清空选中" → 表格恢复 12 只 ✓，按钮消失 ✓
+  * 记忆功能：选中"70-90%"后刷新页面 → histogramBins 从 localStorage 恢复 [70] ✓，自动只显示 3 只 ✓
+  * VLM 视觉验证：选中柱子有 ring 边框+橙红色高亮 ✓，未选中柱子 opacity 降低 ✓，清空按钮显示 ✓，表格只显示 3 只 ✓，评分 9/10
+  * 浏览器控制台无错误 ✓
+
+Stage Summary:
+- 回踩深度分布直方图支持点击筛选，多选 OR 逻辑
+- Histogram 组件从纯展示升级为交互组件，柱子可点击切换选中
+- 选中柱子高亮（ring+activeColor），未选中柱子变暗（opacity-50）
+- 独立 localStorage 记忆，刷新页面恢复选中区间
+- 与 filters/quickTags 解耦，作为"三级过滤"叠加在 filteredStocks 之上
+- 空状态智能区分："直方图选中区间无股票" vs "筛选条件无结果"，提供不同提示和操作按钮
+- handleResetFilters / handleApplyStrategy 都会清空 histogramBins
+- 文件从 2929 行 → 3037 行（+108 行）
+- bun run lint 通过，dev server 编译成功，浏览器控制台无错误
