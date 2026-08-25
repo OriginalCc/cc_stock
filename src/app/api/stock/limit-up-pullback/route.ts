@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { toSinaSymbol } from "@/lib/ashare-api";
 
 export const dynamic = "force-dynamic";
 
@@ -77,75 +76,84 @@ interface RawStock {
 // independently determines limit-up + pullback status from sina daily K-line data.
 async function fetchAllStocks(): Promise<RawStock[]> {
   const allStocks: RawStock[] = [];
-  const pageSize = 500;
-  let page = 1;
+  // push2delay caps each page at 100 items regardless of pz param, so use 100
+  const pageSize = 100;
   const fields = "f2,f3,f4,f12,f14,f18";
+
+  // Parse a single page response and append stocks to allStocks
+  const appendFromJson = (json: any) => {
+    const diff = json?.data?.diff;
+    if (!Array.isArray(diff)) return;
+    for (const item of diff) {
+      const code = String(item.f12 || "");
+      if (!code) continue;
+      // f2 = current price (real-time, "-" outside trading hours)
+      // f18 = previous close (always available, this is the YESTERDAY CLOSE price)
+      // f4 = change amount (元, NOT previous close!) - do NOT use as prevClose fallback
+      // f3 = change percentage
+      const price = parseFloat(item.f2) || 0;
+      const prevClose = parseFloat(item.f18) || 0;
+      allStocks.push({
+        code,
+        name: String(item.f14 || ""),
+        price,
+        changePct: parseFloat(item.f3) || 0,
+        prevClose,
+      });
+    }
+  };
 
   try {
     // First page to get total count
-    const firstUrl = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
+    const firstUrl = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
     const firstRes = await fetch(firstUrl, {
-      next: { revalidate: 0 },
       signal: AbortSignal.timeout(10000),
       headers: { "Referer": "https://quote.eastmoney.com/" },
+      cache: "no-store" as RequestCache,
     });
     if (!firstRes.ok) return [];
     const firstJson = await firstRes.json();
     const total = firstJson?.data?.total || 0;
-    const firstDiff = firstJson?.data?.diff;
-    if (Array.isArray(firstDiff)) {
-      for (const item of firstDiff) {
-        const code = String(item.f12 || "");
-        if (!code) continue;
-        // f2 = current price (real-time, "-" outside trading hours)
-        // f18 = previous close (always available)
-        const price = parseFloat(item.f2) || parseFloat(item.f18) || 0;
-        const prevClose = parseFloat(item.f4) || parseFloat(item.f18) || 0;
-        allStocks.push({
-          code,
-          name: String(item.f14 || ""),
-          price,
-          changePct: parseFloat(item.f3) || 0,
-          prevClose,
-        });
-      }
-    }
+    appendFromJson(firstJson);
 
-    // Fetch remaining pages in parallel
+    // Fetch remaining pages in small batches to avoid push2delay rate-limiting.
+    // push2delay aggressively drops concurrent requests, so we use CONCURRENCY=3
+    // and a short delay between batches. Each page is retried once on failure.
     const totalPages = Math.ceil(total / pageSize);
-    if (totalPages > 1) {
-      const pagePromises = [];
-      for (page = 2; page <= totalPages; page++) {
-        const url = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
-        pagePromises.push(
-          fetch(url, {
-            next: { revalidate: 0 },
+    const CONCURRENCY = 3;
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    const fetchPage = async (page: number): Promise<void> => {
+      const url = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const res = await fetch(url, {
             signal: AbortSignal.timeout(10000),
             headers: { "Referer": "https://quote.eastmoney.com/" },
-          })
-            .then(r => r.json())
-            .then(json => {
-              const diff = json?.data?.diff;
-              if (Array.isArray(diff)) {
-                for (const item of diff) {
-                  const code = String(item.f12 || "");
-                  if (!code) continue;
-                  const price = parseFloat(item.f2) || parseFloat(item.f18) || 0;
-                  const prevClose = parseFloat(item.f4) || parseFloat(item.f18) || 0;
-                  allStocks.push({
-                    code,
-                    name: String(item.f14 || ""),
-                    price,
-                    changePct: parseFloat(item.f3) || 0,
-                    prevClose,
-                  });
-                }
-              }
-            })
-            .catch(() => {})
-        );
+            cache: "no-store" as RequestCache,
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const json = await res.json();
+          const diff = json?.data?.diff;
+          if (!Array.isArray(diff) || diff.length === 0) throw new Error("empty diff");
+          appendFromJson(json);
+          return; // success
+        } catch {
+          // retry once after a short delay
+          if (attempt === 0) await sleep(200);
+        }
       }
-      await Promise.allSettled(pagePromises);
+    };
+
+    for (let startPage = 2; startPage <= totalPages; startPage += CONCURRENCY) {
+      const batch: Promise<void>[] = [];
+      const endPage = Math.min(startPage + CONCURRENCY - 1, totalPages);
+      for (let page = startPage; page <= endPage; page++) {
+        batch.push(fetchPage(page));
+      }
+      await Promise.allSettled(batch);
+      // Small delay between batches to avoid rate-limiting
+      if (endPage < totalPages) await sleep(150);
     }
   } catch {
     // ignore
@@ -153,45 +161,55 @@ async function fetchAllStocks(): Promise<RawStock[]> {
 
   // Filter by prevClose (works outside trading hours via f18 fallback) to remove penny stocks.
   // Keep all valid 6-digit codes; changePct filter is skipped because it's 0 outside trading hours.
-  return allStocks.filter(s => /^\d{6}$/.test(s.code) && s.prevClose >= 2);
+  // Deduplicate by code (push2delay pagination can return overlapping entries at page boundaries).
+  const seen = new Set<string>();
+  const filtered = allStocks.filter(s => {
+    if (!/^\d{6}$/.test(s.code) || s.prevClose < 2) return false;
+    if (seen.has(s.code)) return false;
+    seen.add(s.code);
+    return true;
+  });
+  return filtered;
 }
 
-// ── Helper: Fetch daily K-line via Sina ────────────────
+// ── Helper: Fetch daily K-line via EastMoney push2his ──
+// Uses push2his.eastmoney.com (more reliable than sina which gets IP-banned easily).
+// secid format: 1.{code} for Shanghai (6xx/688), 0.{code} for Shenzhen (0xx/30x/8xx).
+// beg is set to ~30 calendar days ago to ensure >=15 trading days coverage.
 async function fetchDailyKline(symbol: string, datalen: number = 15): Promise<KLineDay[]> {
   try {
-    const sinaSymbol = toSinaSymbol(symbol);
-    const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaSymbol}&scale=240&ma=no&datalen=${datalen}`;
+    const secid = symbol.startsWith("6") ? `1.${symbol}` : `0.${symbol}`;
+    // Compute beg date ~35 calendar days ago to cover ~15 trading days
+    const now = new Date();
+    const begDate = new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000);
+    const beg = `${begDate.getFullYear()}${String(begDate.getMonth() + 1).padStart(2, "0")}${String(begDate.getDate()).padStart(2, "0")}`;
+
+    const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=0&beg=${beg}&end=20500101&fields1=f1&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61`;
     const res = await fetch(url, {
-      headers: { "Referer": "https://finance.sina.com.cn" },
-      next: { revalidate: 0 },
-      signal: AbortSignal.timeout(6000),
+      headers: { "Referer": "https://quote.eastmoney.com/" },
+      cache: "no-store" as RequestCache,
+      signal: AbortSignal.timeout(8000),
     });
-    const text = await res.text();
-    if (!text || text === "null") return [];
-    const data = JSON.parse(text);
-    if (!Array.isArray(data)) return [];
+    if (!res.ok) return [];
+    const json = await res.json();
+    const klines: string[] = json?.data?.klines;
+    if (!Array.isArray(klines) || klines.length === 0) return [];
 
-    // Parse K-line and compute daily change % using close vs previous close
-    const parsed = data.map((item: any) => ({
-      date: item.day || item.date || "",
-      open: parseFloat(item.open) || 0,
-      close: parseFloat(item.close) || 0,
-      high: parseFloat(item.high) || 0,
-      low: parseFloat(item.low) || 0,
-      changePct: 0, // will be calculated below
-    })).filter((d: KLineDay) => d.close > 0);
+    // Each kline entry: "date,open,close,high,low,volume,amount,amplitude,changePct,changeAmt,turnover"
+    const parsed: KLineDay[] = klines.map((line: string) => {
+      const parts = line.split(",");
+      return {
+        date: parts[0] || "",
+        open: parseFloat(parts[1]) || 0,
+        close: parseFloat(parts[2]) || 0,
+        high: parseFloat(parts[3]) || 0,
+        low: parseFloat(parts[4]) || 0,
+        changePct: parseFloat(parts[8]) || 0, // f59 = change percent
+      };
+    }).filter((d: KLineDay) => d.close > 0);
 
-    // Calculate daily change pct: (close - prevClose) / prevClose
-    for (let i = 0; i < parsed.length; i++) {
-      if (i === 0) {
-        parsed[i].changePct = 0;
-      } else {
-        const prevClose = parsed[i - 1].close;
-        parsed[i].changePct = prevClose > 0 ? ((parsed[i].close - prevClose) / prevClose) * 100 : 0;
-      }
-    }
-
-    return parsed;
+    // Return last `datalen` entries (or all if fewer)
+    return parsed.slice(-datalen);
   } catch {
     return [];
   }
@@ -242,10 +260,15 @@ async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string, { pri
 
 // ── Main handler ──────────────────────────────────────
 export async function GET(request: NextRequest) {
+  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
   const cacheKey = `pullback-${getTodayKey()}`;
   const cached = cache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return NextResponse.json({ ...cached.data, cached: true });
+  }
+  // If forceRefresh, invalidate the stale cache entry so a fresh result gets stored
+  if (forceRefresh) {
+    cache.delete(cacheKey);
   }
 
   try {

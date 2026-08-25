@@ -1042,3 +1042,63 @@ Stage Summary:
 - 非交易时段候选股增多(5000+)，BATCH_SIZE 10→25 + 55秒总预算保护响应时间
 - API 恢复返回 82 只真实回踩股票，页面正常显示 58 只（默认筛选后）
 - bun run lint 通过，浏览器无错误
+
+---
+Task ID: 20
+Agent: main
+Task: 修复回踩选股页面再次无数据问题（彻底修复）
+
+Work Log:
+- 问题诊断：API 返回 totalScanned=55, totalPullback=0
+- 根因 1：服务端缓存忽略了 ?refresh=1 参数
+  * GET handler 只检查自己的 cache Map，不检查 request query param
+  * 客户端点"刷新"按钮传 ?refresh=1，但服务端 10 分钟内一直返回旧缓存
+  * 修复：GET handler 检查 request.nextUrl.searchParams.get("refresh") === "1"，若为 true 则 cache.delete(cacheKey)
+- 根因 2：push2delay 每页限制 100 条，但代码请求 pz=500
+  * totalPages = ceil(5553/500) = 12，但每页实际只返回 100 条
+  * 12 页只能拿到 1200 条而非 5553 只
+  * 修复：pageSize 从 500 改为 100，totalPages = ceil(5553/100) = 56 页
+- 根因 3：f4 字段被误用为"前收盘价"
+  * 东方财富字段：f4 = 涨跌额（元），不是前收盘价！f18 = 昨收价
+  * 代码：prevClose = parseFloat(item.f4) || parseFloat(item.f18) || 0
+  * 因为 f4 大部分有值（涨跌额），|| 运算符不会 fallback 到 f18
+  * 导致 prevClose = 涨跌额（如 1.42 元），而非昨收价（如 11.75 元）
+  * 过滤 prevClose >= 2 时，5000+ 只股票只剩 257 只（大部分涨跌额 < 2 元）
+  * 修复：直接用 f18 作为 prevClose，不用 f4
+- 根因 4：sina K线接口 IP 被封
+  * sina 返回"拒绝访问"HTML 页面（IP 存在异常访问）
+  * 所有 fetchDailyKline 调用失败，totalPullback=0
+  * 修复：换用东方财富 push2his.eastmoney.com K线接口
+    - URL: push2his.eastmoney.com/api/qt/stock/kline/get?secid={1|0}.{code}&klt=101&fqt=0&beg={YYYYMMDD}&end=20500101&fields1=f1&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61
+    - secid: 6开头=1.{code}（沪市），其他=0.{code}（深市/北交所）
+    - beg = 当前日期往前推 35 天（确保覆盖 15 个交易日）
+    - 返回格式：逗号分隔 "日期,开,收,高,低,量,额,振幅,涨跌幅,涨跌额,换手率"
+    - f59 = 涨跌幅（直接用，不需手算）
+- 根因 5：分页去重
+  * push2delay 分页边界可能有重叠股票
+  * 修复：fetchAllStocks 末尾用 Set 去重 by code
+- 并发优化：
+  * CONCURRENCY=3 + 150ms 批次间延迟，避免 push2delay 限流
+  * fetchPage 加 retry 一次逻辑（失败后等 200ms 重试）
+  * K线分析 BATCH_SIZE=25 + 55 秒总预算
+  * 移除 next: { revalidate: 0 }，加 cache: "no-store"
+- 移除 toSinaSymbol import（不再用 sina）
+- 移除 _debug 调试字段和 fetchAllStocksDebug 计数器
+- 验证结果：
+  * curl API: totalScanned=4833, totalPullback=45, duplicates=0
+  * 页面显示 30 只（默认筛选 approachPct>=30%, daysSinceLimitUp<=10, excludeST 后）
+  * 数据完整：换手率/市值/量比都有值（交易时段实时数据可用）
+  * 直方图正常：30-50%(14)/50-70%(8)/70-90%(12)/90-100%(3)/回到起涨点(44)
+  * 浏览器控制台无错误
+  * bun run lint 通过
+
+Stage Summary:
+- 彻底修复回踩选股无数据问题，共修复 5 个根因：
+  1. 服务端缓存忽略 ?refresh=1 → 现在检查并跳过缓存
+  2. pageSize=500 与 push2delay 实际限制 100 不符 → 改为 100
+  3. f4(涨跌额) 被误用为前收 → 改用 f18(昨收)
+  4. sina K线接口 IP 被封 → 换用东方财富 push2his
+  5. 分页边界重复股票 → 加 Set 去重
+- 数据源从 sina 切换到东方财富 push2his（更可靠）
+- API 恢复返回真实回踩股票数据（45 只无重复）
+- bun run lint 通过，浏览器控制台无错误
