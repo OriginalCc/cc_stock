@@ -61,6 +61,9 @@ import {
   Save,
   Keyboard,
   Bookmark,
+  Lightbulb,
+  Award,
+  Flame,
   type LucideIcon,
 } from "lucide-react";
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
@@ -153,7 +156,9 @@ type SortField =
   | "currentPrice"
   | "limitUpClose"
   | "preLimitUpClose"
-  | "riskScore";
+  | "riskScore"
+  | "qualityScore"
+  | "limitUpStreak";
 
 type SortOrder = "asc" | "desc";
 
@@ -387,6 +392,99 @@ function getRiskStyle(score: number): { bg: string; text: string; label: string 
   return { bg: "bg-emerald-500/10 border-emerald-500/40", text: "text-emerald-600 dark:text-emerald-400", label: "低" };
 }
 
+/** Quality score 0-100 (higher = better buy value) */
+function calcQualityScore(s: PullbackStock): number {
+  // 位置优势 (35分满分): approachPct <= 100 时直接用，> 100 (破位) 时扣分
+  const positionRaw = s.approachPct <= 100
+    ? s.approachPct
+    : Math.max(0, 100 - (s.approachPct - 100) * 2);
+  const position = positionRaw * 0.35;
+
+  // 量能配合 (25分满分): volumeRatio 越低越好，< 1 为缩量
+  // No data (volumeRatio === 0) → neutral midpoint (12.5)
+  const volume = s.volumeRatio > 0
+    ? Math.max(0, Math.min(25, (2 - Math.min(s.volumeRatio, 2)) * 12.5))
+    : 12.5;
+
+  // 回踩天数适中 (20分满分): 3-7 天最佳，太短或太长都扣分
+  const days = s.daysSinceLimitUp >= 3 && s.daysSinceLimitUp <= 7
+    ? 20
+    : Math.max(0, 20 - Math.abs(s.daysSinceLimitUp - 5) * 3);
+
+  // 今日表现 (20分满分): 0~3% 微涨(止跌企稳)最佳，大跌或大涨都扣分
+  const today = s.currentChangePct >= 0 && s.currentChangePct <= 3
+    ? 20
+    : s.currentChangePct < 0
+    ? Math.max(0, 20 + s.currentChangePct * 2)
+    : Math.max(0, 20 - (s.currentChangePct - 3) * 3);
+
+  return Math.min(100, Math.max(0, Math.round(position + volume + days + today)));
+}
+
+/** Quality score breakdown (4 contributions) for detail card */
+function getQualityScoreBreakdown(s: PullbackStock): {
+  position: number;
+  volume: number;
+  days: number;
+  today: number;
+} {
+  const positionRaw = s.approachPct <= 100
+    ? s.approachPct
+    : Math.max(0, 100 - (s.approachPct - 100) * 2);
+  return {
+    position: positionRaw * 0.35,
+    volume: s.volumeRatio > 0
+      ? Math.max(0, Math.min(25, (2 - Math.min(s.volumeRatio, 2)) * 12.5))
+      : 12.5,
+    days: s.daysSinceLimitUp >= 3 && s.daysSinceLimitUp <= 7
+      ? 20
+      : Math.max(0, 20 - Math.abs(s.daysSinceLimitUp - 5) * 3),
+    today: s.currentChangePct >= 0 && s.currentChangePct <= 3
+      ? 20
+      : s.currentChangePct < 0
+      ? Math.max(0, 20 + s.currentChangePct * 2)
+      : Math.max(0, 20 - (s.currentChangePct - 3) * 3),
+  };
+}
+
+function getQualityStyle(score: number): { bg: string; text: string; label: string } {
+  if (score >= 70) return { bg: "bg-emerald-500/10 border-emerald-500/40", text: "text-emerald-600 dark:text-emerald-400", label: "优秀" };
+  if (score >= 50) return { bg: "bg-yellow-500/10 border-yellow-500/40", text: "text-yellow-600 dark:text-yellow-400", label: "良好" };
+  if (score >= 30) return { bg: "bg-orange-500/10 border-orange-500/40", text: "text-orange-600 dark:text-orange-400", label: "一般" };
+  return { bg: "bg-red-500/10 border-red-500/40", text: "text-red-600 dark:text-red-400", label: "较差" };
+}
+
+/** Calculate consecutive limit-up days ending at limitUpDate (inclusive). */
+function calcLimitUpStreak(kline: KLineDay[], limitUpDate: string): number {
+  if (!kline || kline.length === 0) return 0;
+  const limitUpIdx = kline.findIndex(d => d.date.startsWith(limitUpDate));
+  if (limitUpIdx < 0) return 0;
+
+  // Infer board-type threshold from the limit-up day's changePct
+  const limitUpChange = kline[limitUpIdx].changePct;
+  const threshold = limitUpChange >= 29.5 ? 29.5
+    : limitUpChange >= 19.5 ? 19.5
+    : 9.5;
+
+  let streak = 0;
+  for (let i = limitUpIdx; i >= 0; i--) {
+    if (kline[i].changePct >= threshold) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+function getLimitUpStreakStyle(streak: number): { bg: string; text: string; label: string } {
+  if (streak >= 4) return { bg: "bg-rose-700/10 border-rose-700/40", text: "text-rose-700 dark:text-rose-400", label: `${streak}B+` };
+  if (streak === 3) return { bg: "bg-red-500/10 border-red-500/40", text: "text-red-600 dark:text-red-400", label: "3B" };
+  if (streak === 2) return { bg: "bg-orange-500/10 border-orange-500/40", text: "text-orange-600 dark:text-orange-400", label: "2B" };
+  if (streak === 1) return { bg: "bg-slate-500/10 border-slate-500/40", text: "text-slate-600 dark:text-slate-400", label: "1B" };
+  return { bg: "bg-muted/30 border-border", text: "text-muted-foreground", label: "--" };
+}
+
 function csvEscape(val: string | number): string {
   const s = String(val);
   if (s.includes(",") || s.includes("\"") || s.includes("\n")) {
@@ -397,10 +495,12 @@ function csvEscape(val: string | number): string {
 
 // ── Sub-Components ─────────────────────────────────────
 
-function MiniKlineChart({ kline, limitUpDate, preLimitUpClose, width = 110, height = 36 }: {
+function MiniKlineChart({ kline, limitUpDate, preLimitUpClose, limitUpClose, currentPrice, width = 110, height = 36 }: {
   kline: KLineDay[];
   limitUpDate: string;
   preLimitUpClose: number;
+  limitUpClose?: number;
+  currentPrice?: number;
   width?: number;
   height?: number;
 }) {
@@ -410,7 +510,11 @@ function MiniKlineChart({ kline, limitUpDate, preLimitUpClose, width = 110, heig
 
   const padding = 2;
 
-  const allPrices = kline.flatMap(d => [d.high, d.low, preLimitUpClose]);
+  // Include all reference prices in range calculation so all 3 lines are visible
+  const refPrices: number[] = [preLimitUpClose];
+  if (limitUpClose && limitUpClose > 0) refPrices.push(limitUpClose);
+  if (currentPrice && currentPrice > 0) refPrices.push(currentPrice);
+  const allPrices = kline.flatMap(d => [d.high, d.low, ...refPrices]);
   const minP = Math.min(...allPrices);
   const maxP = Math.max(...allPrices);
   const range = maxP - minP || 1;
@@ -424,9 +528,22 @@ function MiniKlineChart({ kline, limitUpDate, preLimitUpClose, width = 110, heig
 
   return (
     <svg width={width} height={height} className="shrink-0 max-w-full">
+      {/* 起涨点 (gray dashed) */}
       <line x1={padding} y1={refY} x2={width - padding} y2={refY}
         stroke="currentColor" strokeWidth="0.5" strokeDasharray="2,2" className="text-muted-foreground/60" />
+      {/* 涨停价 (red dashed, lighter) */}
+      {limitUpClose && limitUpClose > 0 && (
+        <line x1={padding} y1={toY(limitUpClose)} x2={width - padding} y2={toY(limitUpClose)}
+          stroke="#ef4444" strokeWidth="0.5" strokeDasharray="1,1" opacity="0.5" />
+      )}
+      {/* 当前价 (blue solid, lighter) */}
+      {currentPrice && currentPrice > 0 && (
+        <line x1={padding} y1={toY(currentPrice)} x2={width - padding} y2={toY(currentPrice)}
+          stroke="#3b82f6" strokeWidth="0.5" opacity="0.6" />
+      )}
+      {/* Close-price trend line */}
       <path d={closePath} fill="none" stroke="#10b981" strokeWidth="1" />
+      {/* Limit-up day red dot */}
       {limitUpIdx >= 0 && (
         <circle cx={toX(limitUpIdx)} cy={toY(kline[limitUpIdx].close)} r="2" fill="#ef4444" />
       )}
@@ -449,10 +566,15 @@ function LargeKlineChart({ kline, limitUpDate, preLimitUpClose, currentPrice }: 
   const height = 120;
   const padX = 6;
   const padY = 6;
-  const plotW = width - 2 * padX;
+  const labelW = 52; // reserve right side for price annotations
+  const plotW = width - 2 * padX - labelW;
   const plotH = height - 2 * padY;
 
-  const allPrices = kline.flatMap(d => [d.high, d.low, preLimitUpClose, currentPrice]);
+  const limitUpIdx = kline.findIndex(d => d.date.startsWith(limitUpDate));
+  // Derive 涨停价 from kline (close on limit-up day) so we don't need an extra prop
+  const limitUpClose = limitUpIdx >= 0 ? kline[limitUpIdx].close : 0;
+
+  const allPrices = kline.flatMap(d => [d.high, d.low, preLimitUpClose, currentPrice, ...(limitUpClose > 0 ? [limitUpClose] : [])]);
   const minP = Math.min(...allPrices);
   const maxP = Math.max(...allPrices);
   const range = maxP - minP || 1;
@@ -461,21 +583,38 @@ function LargeKlineChart({ kline, limitUpDate, preLimitUpClose, currentPrice }: 
   const candleW = Math.max(3, (plotW / kline.length) * 0.6);
   const slot = plotW / kline.length;
 
-  const limitUpIdx = kline.findIndex(d => d.date.startsWith(limitUpDate));
   const refY = toY(preLimitUpClose);
   const curY = toY(currentPrice);
+  const limitY = limitUpClose > 0 ? toY(limitUpClose) : null;
+  const rightLabelX = width - padX - 2;
+  const plotRightX = width - padX - labelW;
 
   return (
     <svg width={width} height={height} className="shrink-0 rounded border border-border bg-background">
-      {/* pre-limit-up close (起涨点) horizontal line */}
-      <line x1={padX} y1={refY} x2={width - padX} y2={refY}
+      {/* 起涨点 (gray dashed) */}
+      <line x1={padX} y1={refY} x2={plotRightX} y2={refY}
         stroke="#64748b" strokeWidth="0.8" strokeDasharray="3,2" />
-      <text x={padX + 2} y={refY - 2} fontSize="8" fill="#64748b">起涨点 {preLimitUpClose.toFixed(2)}</text>
+      <text x={rightLabelX} y={refY - 2} fontSize="7" fill="#64748b" textAnchor="end">
+        起涨 {preLimitUpClose.toFixed(2)}
+      </text>
 
-      {/* current price horizontal line */}
-      <line x1={padX} y1={curY} x2={width - padX} y2={curY}
-        stroke="#3b82f6" strokeWidth="0.8" strokeDasharray="3,2" />
-      <text x={width - padX - 60} y={curY - 2} fontSize="8" fill="#3b82f6">当前 {currentPrice.toFixed(2)}</text>
+      {/* 涨停价 (red dashed) */}
+      {limitY !== null && (
+        <>
+          <line x1={padX} y1={limitY} x2={plotRightX} y2={limitY}
+            stroke="#ef4444" strokeWidth="0.8" strokeDasharray="2,2" opacity="0.7" />
+          <text x={rightLabelX} y={limitY - 2} fontSize="7" fill="#ef4444" textAnchor="end">
+            涨停 {limitUpClose.toFixed(2)}
+          </text>
+        </>
+      )}
+
+      {/* 当前价 (blue solid) */}
+      <line x1={padX} y1={curY} x2={plotRightX} y2={curY}
+        stroke="#3b82f6" strokeWidth="0.8" opacity="0.8" />
+      <text x={rightLabelX} y={curY + 8} fontSize="7" fill="#3b82f6" textAnchor="end">
+        当前 {currentPrice.toFixed(2)}
+      </text>
 
       {/* candlesticks */}
       {kline.map((d, i) => {
@@ -504,6 +643,7 @@ function LargeKlineChart({ kline, limitUpDate, preLimitUpClose, currentPrice }: 
           </g>
         );
       })}
+      {/* "涨停" label above the limit-up candlestick */}
       {limitUpIdx >= 0 && (
         <text x={padX + slot * limitUpIdx + slot / 2} y={padY + 8}
           fontSize="8" fill="#fbbf24" textAnchor="middle">涨停</text>
@@ -1399,12 +1539,69 @@ function RiskBadge({ score }: { score: number }) {
   );
 }
 
+// ── Quality Score cell ────────────────────────────────────
+
+function QualityBadge({ score }: { score: number }) {
+  const style = getQualityStyle(score);
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border ${style.bg} ${style.text}`}>
+            <Award className="w-2.5 h-2.5" />
+            <span className="text-[11px] font-mono font-medium">{score}</span>
+            <span className="text-[10px] opacity-80">{style.label}</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          <div>回踩质量评分: {score}/100 — {style.label}</div>
+          <div className="text-muted-foreground text-[10px] mt-1">
+            综合位置优势、量能配合、回踩天数、今日表现（高分=买入价值高）
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+// ── Limit-up Streak cell ──────────────────────────────────
+
+function LimitUpStreakBadge({ kline, limitUpDate }: { kline: KLineDay[]; limitUpDate: string }) {
+  const streak = calcLimitUpStreak(kline, limitUpDate);
+  const style = getLimitUpStreakStyle(streak);
+  const hasData = streak >= 1;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={`inline-flex items-center gap-0.5 px-1 py-0.5 rounded border ${style.bg} ${style.text}`}>
+            <Flame className="w-2.5 h-2.5" />
+            <span className="text-[10px] font-mono font-medium">{style.label}</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          <div>涨停连板: {hasData ? `${streak} 连板` : "无法计算"}</div>
+          <div className="text-muted-foreground text-[10px] mt-1">
+            从涨停日往前数，连续涨停的天数（1B=首板，2B=二连板，3B=三连板，4B+=四连板及以上）
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // ── Expanded Row Detail ────────────────────────────────
 
 function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
   const riskScore = calcRiskScore(stock);
   const riskStyle = getRiskStyle(riskScore);
   const approachStyle = getApproachStyle(stock.approachPct);
+
+  const qualityScore = calcQualityScore(stock);
+  const qualityStyle = getQualityStyle(qualityScore);
+  const qualityContrib = getQualityScoreBreakdown(stock);
+
+  const streak = calcLimitUpStreak(stock.klineSummary, stock.limitUpDate);
 
   const contrib = {
     approach: stock.approachPct * 0.35,
@@ -1416,6 +1613,7 @@ function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
   const dataRows: { label: string; value: string; cls?: string }[] = [
     { label: "涨停日", value: stock.limitUpDate },
     { label: "涨停涨幅", value: `+${stock.limitUpPct.toFixed(2)}%`, cls: "text-red-500" },
+    { label: "涨停连板", value: streak >= 1 ? `${streak} 连板` : "--", cls: streak >= 3 ? "text-rose-500" : streak === 2 ? "text-orange-500" : "text-muted-foreground" },
     { label: "涨停价", value: stock.limitUpClose.toFixed(2), cls: "text-red-500/80" },
     { label: "起涨点", value: stock.preLimitUpClose.toFixed(2), cls: "text-muted-foreground" },
     { label: "当前价", value: stock.currentPrice.toFixed(2), cls: stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500" },
@@ -1441,7 +1639,7 @@ function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
           preLimitUpClose={stock.preLimitUpClose}
           currentPrice={stock.currentPrice}
         />
-        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-wrap">
           <span className="flex items-center gap-1">
             <span className="w-2 h-0.5 bg-yellow-400 inline-block" />
             涨停日
@@ -1449,6 +1647,10 @@ function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
           <span className="flex items-center gap-1">
             <span className="w-2 h-0.5 bg-slate-500 inline-block" style={{ borderTop: "1px dashed" }} />
             起涨点
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-0.5 bg-red-500 inline-block" style={{ borderTop: "1px dashed" }} />
+            涨停价
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2 h-0.5 bg-blue-500 inline-block" />
@@ -1482,37 +1684,75 @@ function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
         </div>
       </div>
 
-      {/* Right: Risk score card */}
-      <div className={`flex flex-col gap-2 p-3 rounded-lg border ${riskStyle.bg}`}>
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <AlertTriangle className="w-3 h-3" />
-          <span>综合风险评分</span>
+      {/* Right: Risk + Quality score cards (stacked) */}
+      <div className="flex flex-col gap-3">
+        {/* Risk score card */}
+        <div className={`flex flex-col gap-2 p-3 rounded-lg border ${riskStyle.bg}`}>
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <AlertTriangle className="w-3 h-3" />
+            <span>综合风险评分</span>
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className={`text-3xl font-bold font-mono ${riskStyle.text}`}>{riskScore}</span>
+            <span className="text-xs text-muted-foreground">/100</span>
+            <Badge variant="outline" className={`ml-auto text-[10px] ${riskStyle.bg} ${riskStyle.text}`}>
+              {riskStyle.label}风险
+            </Badge>
+          </div>
+          <Separator className="my-1" />
+          <div className="space-y-1 text-[10px]">
+            <div className="text-muted-foreground font-medium mb-1">评分构成:</div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">回踩深度 × 0.35</span>
+              <span className="font-mono text-foreground">+{contrib.approach.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">最大回撤 × 0.25</span>
+              <span className="font-mono text-foreground">+{contrib.maxPullback.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">距涨停天数 × 0.15</span>
+              <span className="font-mono text-foreground">+{contrib.days.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">今日跌幅 × 0.25</span>
+              <span className="font-mono text-foreground">+{contrib.todayDrop.toFixed(1)}</span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-baseline gap-1">
-          <span className={`text-3xl font-bold font-mono ${riskStyle.text}`}>{riskScore}</span>
-          <span className="text-xs text-muted-foreground">/100</span>
-          <Badge variant="outline" className={`ml-auto text-[10px] ${riskStyle.bg} ${riskStyle.text}`}>
-            {riskStyle.label}风险
-          </Badge>
-        </div>
-        <Separator className="my-1" />
-        <div className="space-y-1 text-[10px]">
-          <div className="text-muted-foreground font-medium mb-1">评分构成:</div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">回踩深度 × 0.35</span>
-            <span className="font-mono text-foreground">+{contrib.approach.toFixed(1)}</span>
+
+        {/* Quality score card (high = good, opposite color semantics vs risk) */}
+        <div className={`flex flex-col gap-2 p-3 rounded-lg border ${qualityStyle.bg}`}>
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Award className="w-3 h-3" />
+            <span>回踩质量评分</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">最大回撤 × 0.25</span>
-            <span className="font-mono text-foreground">+{contrib.maxPullback.toFixed(1)}</span>
+          <div className="flex items-baseline gap-1">
+            <span className={`text-3xl font-bold font-mono ${qualityStyle.text}`}>{qualityScore}</span>
+            <span className="text-xs text-muted-foreground">/100</span>
+            <Badge variant="outline" className={`ml-auto text-[10px] ${qualityStyle.bg} ${qualityStyle.text}`}>
+              {qualityStyle.label}
+            </Badge>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">距涨停天数 × 0.15</span>
-            <span className="font-mono text-foreground">+{contrib.days.toFixed(1)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">今日跌幅 × 0.25</span>
-            <span className="font-mono text-foreground">+{contrib.todayDrop.toFixed(1)}</span>
+          <Separator className="my-1" />
+          <div className="space-y-1 text-[10px]">
+            <div className="text-muted-foreground font-medium mb-1">评分构成:</div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">位置优势 / 35</span>
+              <span className="font-mono text-foreground">{qualityContrib.position.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">量能配合 / 25</span>
+              <span className="font-mono text-foreground">{qualityContrib.volume.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">回踩天数 / 20</span>
+              <span className="font-mono text-foreground">{qualityContrib.days.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">今日表现 / 20</span>
+              <span className="font-mono text-foreground">{qualityContrib.today.toFixed(1)}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1615,6 +1855,7 @@ function StockCardViewItem({
 }) {
   const approachStyle = getApproachStyle(stock.approachPct);
   const riskScore = calcRiskScore(stock);
+  const qualityScore = calcQualityScore(stock);
   const boardType = getBoardType(stock.symbol);
 
   return (
@@ -1667,6 +1908,8 @@ function StockCardViewItem({
             kline={stock.klineSummary}
             limitUpDate={stock.limitUpDate}
             preLimitUpClose={stock.preLimitUpClose}
+            limitUpClose={stock.limitUpClose}
+            currentPrice={stock.currentPrice}
             width={180}
             height={50}
           />
@@ -1674,10 +1917,11 @@ function StockCardViewItem({
 
         {/* Data grid */}
         <div className="grid grid-cols-2 gap-1 text-[11px]">
-          <div className="flex items-center gap-1 text-muted-foreground">
+          <div className="flex items-center gap-1 text-muted-foreground col-span-2">
             <TrendingUp className="w-2.5 h-2.5 text-red-500" />
             涨停:
             <span className="font-mono text-foreground">{stock.limitUpDate.slice(5)}</span>
+            <LimitUpStreakBadge kline={stock.klineSummary} limitUpDate={stock.limitUpDate} />
           </div>
           <div className="flex items-center gap-1 text-muted-foreground">
             当前价:
@@ -1685,13 +1929,16 @@ function StockCardViewItem({
               {stock.currentPrice.toFixed(2)}
             </span>
           </div>
+          <div className="flex items-center justify-end">
+            <RiskBadge score={riskScore} />
+          </div>
           <div className="flex items-center gap-1 text-muted-foreground">
             <Clock className="w-2.5 h-2.5" />
             距涨停:
             <span className="font-mono text-foreground">{stock.daysSinceLimitUp}天</span>
           </div>
           <div className="flex items-center justify-end">
-            <RiskBadge score={riskScore} />
+            <QualityBadge score={qualityScore} />
           </div>
         </div>
 
@@ -1751,6 +1998,97 @@ function KeyboardHints() {
         <KbdHint>Esc</KbdHint>
         清除
       </span>
+    </div>
+  );
+}
+
+// ── Smart Suggestions (empty-state optimization) ────────
+
+/** Compute how many new stocks each loosened filter would bring in. */
+function computeSmartSuggestions(
+  stocks: PullbackStock[],
+  filters: PullbackFilters,
+): { id: string; label: string; added: number; patch: Partial<PullbackFilters> }[] {
+  // 1. 放宽回踩深度阈值
+  const newMinApproach = Math.max(0, filters.minApproachPct - 10);
+  const approachAdded = filters.minApproachPct > 0
+    ? stocks.filter(s => s.approachPct >= newMinApproach && s.approachPct < filters.minApproachPct).length
+    : 0;
+
+  // 2. 延长距涨停天数
+  const newMaxDays = Math.min(15, filters.maxDaysSinceLimitUp + 3);
+  const daysAdded = newMaxDays > filters.maxDaysSinceLimitUp
+    ? stocks.filter(s => s.daysSinceLimitUp > filters.maxDaysSinceLimitUp && s.daysSinceLimitUp <= newMaxDays).length
+    : 0;
+
+  // 3. 放宽市值上限
+  const newMaxCap = filters.maxMarketCap === 0 ? 0 : Math.min(10000, filters.maxMarketCap * 2);
+  const capAdded = filters.maxMarketCap > 0
+    ? stocks.filter(s => s.marketCap > filters.maxMarketCap && (newMaxCap === 0 || s.marketCap <= newMaxCap)).length
+    : 0;
+
+  // 4. 取消排除 ST
+  const stAdded = filters.excludeST
+    ? stocks.filter(s => s.name.includes("ST") || s.name.includes("*ST")).length
+    : 0;
+
+  const capLabel = newMaxCap === 0 ? "不限" : `${newMaxCap}亿`;
+
+  return [
+    { id: "approach", label: `放宽回踩深度到 ${newMinApproach}%`, added: approachAdded, patch: { minApproachPct: newMinApproach } },
+    { id: "days", label: `延长距涨停天数到 ${newMaxDays} 天`, added: daysAdded, patch: { maxDaysSinceLimitUp: newMaxDays } },
+    { id: "cap", label: `放宽市值上限到 ${capLabel}`, added: capAdded, patch: { maxMarketCap: newMaxCap } },
+    { id: "st", label: `取消排除 ST`, added: stAdded, patch: { excludeST: false } },
+  ]
+    .filter(s => s.added > 0)
+    .sort((a, b) => b.added - a.added)
+    .slice(0, 4);
+}
+
+function SmartSuggestions({
+  stocks,
+  filters,
+  onApply,
+}: {
+  stocks: PullbackStock[];
+  filters: PullbackFilters;
+  onApply: (patch: Partial<PullbackFilters>) => void;
+}) {
+  const suggestions = useMemo(
+    () => computeSmartSuggestions(stocks, filters),
+    [stocks, filters],
+  );
+
+  if (suggestions.length === 0) {
+    return (
+      <div className="mt-4 px-4 py-2 rounded-md border border-amber-500/30 bg-amber-500/5 text-[11px] text-amber-700 dark:text-amber-300 flex items-center gap-1.5 max-w-[420px]">
+        <AlertCircle className="w-3 h-3 shrink-0" />
+        <span>原始数据仅 {stocks.length} 只，建议刷新数据或等待交易日</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 flex flex-col items-center gap-2">
+      <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+        <Lightbulb className="w-3 h-3 text-amber-500" />
+        <span>智能调整建议（点击应用单条调整）</span>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-[460px]">
+        {suggestions.map(s => (
+          <button
+            key={s.id}
+            onClick={() => onApply(s.patch)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-500/30 bg-amber-500/5 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 hover:border-amber-500/50 transition-colors"
+          >
+            <Lightbulb className="w-2.5 h-2.5 shrink-0" />
+            <span>{s.label}</span>
+            <Badge variant="secondary" className="text-[10px] py-0 px-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+              +{s.added}
+            </Badge>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2145,9 +2483,17 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     sorted.sort((a, b) => {
       const aVal = sortField === "riskScore"
         ? calcRiskScore(a)
+        : sortField === "qualityScore"
+        ? calcQualityScore(a)
+        : sortField === "limitUpStreak"
+        ? calcLimitUpStreak(a.klineSummary, a.limitUpDate)
         : a[sortField];
       const bVal = sortField === "riskScore"
         ? calcRiskScore(b)
+        : sortField === "qualityScore"
+        ? calcQualityScore(b)
+        : sortField === "limitUpStreak"
+        ? calcLimitUpStreak(b.klineSummary, b.limitUpDate)
         : b[sortField];
       if (sortOrder === "desc") return (bVal as number) - (aVal as number);
       return (aVal as number) - (bVal as number);
@@ -2254,15 +2600,16 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   const handleExportCSV = useCallback(() => {
     if (displayedStocks.length === 0) return;
     const headers = [
-      "代码", "名称", "涨停日", "涨停涨幅%", "涨停价", "起涨点",
+      "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
-      "最大回撤%", "换手率%", "市值(亿)", "量比",
+      "最大回撤%", "风险评分", "质量评分", "换手率%", "市值(亿)", "量比",
     ];
     const rows = displayedStocks.map(s => [
       s.symbol,
       s.name,
       s.limitUpDate,
       s.limitUpPct.toFixed(2),
+      calcLimitUpStreak(s.klineSummary, s.limitUpDate),
       s.limitUpClose.toFixed(2),
       s.preLimitUpClose.toFixed(2),
       s.currentPrice.toFixed(2),
@@ -2270,6 +2617,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       s.approachPct.toFixed(1),
       s.daysSinceLimitUp,
       s.maxPullbackPct.toFixed(2),
+      calcRiskScore(s),
+      calcQualityScore(s),
       s.turnover.toFixed(2),
       s.marketCap.toFixed(2),
       s.volumeRatio.toFixed(2),
@@ -2671,6 +3020,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                         代码 / 名称
                       </TableHead>
                       <TableHead className="text-[11px] font-medium w-[80px]">涨停日</TableHead>
+                      <SortableHead label="连板" field="limitUpStreak" current={sortField} order={sortOrder} onSort={handleSort} className="w-[52px]" align="right" />
                       <SortableHead label="涨停涨幅" field="limitUpPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
                       <SortableHead label="涨停价" field="limitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="起涨点" field="preLimitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
@@ -2680,6 +3030,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                       <SortableHead label="距涨停" field="daysSinceLimitUp" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="最大回撤" field="maxPullbackPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
                       <SortableHead label="风险" field="riskScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[78px]" align="right" />
+                      <SortableHead label="质量" field="qualityScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[78px]" align="right" />
                       <SortableHead label="换手率" field="turnover" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
                       <SortableHead label="市值" field="marketCap" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
                       <SortableHead label="量比" field="volumeRatio" current={sortField} order={sortOrder} onSort={handleSort} className="w-[50px]" align="right" />
@@ -2690,6 +3041,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                   <TableBody>
                     {pagedStocks.map((stock) => {
                       const riskScore = calcRiskScore(stock);
+                      const qualityScore = calcQualityScore(stock);
                       const isFav = favorites.includes(stock.symbol);
                       const isExpanded = expandedRows.has(stock.symbol);
                       const isSelected = selectedRowSymbol === stock.symbol;
@@ -2751,6 +3103,13 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               </div>
                             </TableCell>
 
+                            {/* 涨停连板 - text-right */}
+                            <TableCell className="py-2 text-right">
+                              <div className="flex justify-end">
+                                <LimitUpStreakBadge kline={stock.klineSummary} limitUpDate={stock.limitUpDate} />
+                              </div>
+                            </TableCell>
+
                             {/* 涨停涨幅 - text-right */}
                             <TableCell className="text-[11px] font-mono py-2 font-medium text-red-500 text-right">
                               +{stock.limitUpPct.toFixed(2)}%
@@ -2802,6 +3161,11 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               <RiskBadge score={riskScore} />
                             </TableCell>
 
+                            {/* 质量评分 - text-right */}
+                            <TableCell className="py-2 text-right">
+                              <QualityBadge score={qualityScore} />
+                            </TableCell>
+
                             {/* 换手率 - text-right */}
                             <TableCell className="text-[11px] font-mono py-2 text-foreground text-right">
                               {stock.turnover > 0 ? `${stock.turnover.toFixed(2)}%` : "--"}
@@ -2823,6 +3187,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                                 kline={stock.klineSummary}
                                 limitUpDate={stock.limitUpDate}
                                 preLimitUpClose={stock.preLimitUpClose}
+                                limitUpClose={stock.limitUpClose}
+                                currentPrice={stock.currentPrice}
                               />
                             </TableCell>
 
@@ -2850,7 +3216,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                           {/* Expanded detail row */}
                           {isExpanded && (
                             <TableRow className="hover:bg-transparent">
-                              <TableCell colSpan={17} className="p-0">
+                              <TableCell colSpan={19} className="p-0">
                                 <ExpandedRowDetail stock={stock} />
                               </TableCell>
                             </TableRow>
@@ -2929,15 +3295,24 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 清空直方图选中
               </Button>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleResetFilters}
-                className="mt-3 h-7 text-xs gap-1"
-              >
-                <RotateCcw className="w-3 h-3" />
-                重置筛选
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetFilters}
+                  className="mt-3 h-7 text-xs gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  重置筛选
+                </Button>
+                {result.stocks.length > 0 && (
+                  <SmartSuggestions
+                    stocks={result.stocks}
+                    filters={debouncedFilters}
+                    onApply={(patch) => setFilters({ ...filters, ...patch })}
+                  />
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -2999,7 +3374,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 <b>涨停回踩</b>：近半月内曾涨停的股票，此后持续回调，逐渐逼近涨停前起涨点。
                 回踩深度越高，说明涨幅回吐越多，可能存在支撑位反弹机会。
                 本筛选器在 API 原始 30% 阈值基础上，进一步支持按天数、市值、换手、量比、ST、价格、今日涨跌、板块类型等多维度精细筛选，
-                并提供快捷预设、快速标签、风险评分、行内展开详情、CSV 导出、视图切换、策略保存与分页等增强功能。
+                并提供快捷预设、快速标签、风险评分、回踩质量评分、涨停连板标签、智能宽松建议、行内展开详情、CSV 导出、视图切换、策略保存与分页等增强功能。
               </p>
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
                 <span className="text-[11px] flex items-center gap-1">
@@ -3021,6 +3396,14 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 <span className="text-[11px] flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 text-emerald-500" />
                   风险评分 0-100 (低/中/高/极高)
+                </span>
+                <span className="text-[11px] flex items-center gap-1">
+                  <Award className="w-3 h-3 text-emerald-500" />
+                  质量评分 0-100 (较差/一般/良好/优秀)
+                </span>
+                <span className="text-[11px] flex items-center gap-1">
+                  <Flame className="w-3 h-3 text-orange-500" />
+                  连板标签 (1B/2B/3B/4B+)
                 </span>
               </div>
             </div>

@@ -1139,3 +1139,90 @@ Stage Summary:
 - 间距和圆角统一，hover 效果增强交互反馈
 - title 提示信息丰富（区间+数量+百分比+操作）
 - bun run lint 通过，浏览器无错误
+
+---
+Task ID: 22
+Agent: full-stack-developer
+Task: 优化回踩选股页面功能（4 项功能优化）
+
+Work Log:
+- 读取 worklog.md 了解 Task 15-21 演进历史；读取 limit-up-pullback-screener.tsx 全文（3051 行）了解现有架构
+- 优化 1（智能宽松建议）：
+  * 新增 computeSmartSuggestions(stocks, filters) 纯函数：计算 4 种放宽方案各自能新增多少只股票
+    - 放宽回踩深度阈值（min -10，统计 approachPct 落在新旧区间内的数量）
+    - 延长距涨停天数（max +3 上限 15，统计 daysSinceLimitUp 落在新旧区间内的数量）
+    - 放宽市值上限（×2 上限 10000，统计 marketCap 落在新旧区间内的数量）
+    - 取消排除 ST（统计 ST 股票数量）
+  * 新增 SmartSuggestions 组件：useMemo 缓存建议列表，按 added 降序取 top 4，按钮带 Lightbulb 图标 + emerald 色徽章显示 "+N"
+  * 若所有建议 added=0（原始数据少），显示 amber 警示框"原始数据仅 N 只，建议刷新或等待交易日"
+  * 在空状态卡片"重置筛选"分支下方渲染（仅当 result.stocks.length > 0 时）
+- 优化 2（回踩质量评分）：
+  * 新增 calcQualityScore(s)：0-100 评分，4 维加权（位置优势 35 + 量能配合 25 + 回踩天数 20 + 今日表现 20）
+    - 位置优势：approachPct <= 100 直接用，> 100 破位时扣 2 倍
+    - 量能配合：volumeRatio 越低越好；volumeRatio=0（无数据）取中点 12.5（避免误判为满分）
+    - 回踩天数：3-7 天最佳，偏离 5 天基准按 |差| × 3 扣分
+    - 今日表现：0-3% 微涨最佳（止跌企稳），大跌按 |跌| × 2 扣分，大涨按 (涨-3) × 3 扣分
+  * 新增 getQualityStyle(score)：≥70 emerald 优秀 / ≥50 yellow 良好 / ≥30 orange 一般 / <30 red 较差
+  * 新增 getQualityScoreBreakdown(s)：返回 4 项分项贡献（用于详情卡显示）
+  * 新增 QualityBadge 组件（Award 图标 + 评分 + 等级）
+  * 表格新增"质量"列（在"风险"之后，78px，可排序）
+  * 行展开详情右侧新增"回踩质量"评分卡（在风险评分卡下方），显示 4 项贡献分解
+  * 卡片视图新增 QualityBadge
+- 优化 3（迷你K线标注增强）：
+  * MiniKlineChart：新增 limitUpClose / currentPrice 两个可选 prop
+    - 新增涨停价水平线（红色 strokeDasharray="1,1" strokeWidth="0.5" opacity="0.5"）
+    - 新增当前价水平线（蓝色实线 strokeWidth="0.5" opacity="0.6"）
+    - 起涨点线保持灰色虚线
+    - 3 条线 + 走势线 + 涨停红点在 36px 高度内用不同颜色+透明度区分
+    - 价格范围计算扩展为 kline.high/low + 3 条参考线，确保所有线可见
+  * LargeKlineChart（不新增 prop，从 kline[limitUpIdx].close 推导涨停价）：
+    - 新增涨停价水平线（红色虚线 strokeDasharray="2,2" opacity="0.7"）
+    - 当前价线改为蓝色实线（之前是虚线）
+    - 右侧 52px 区域标注 3 条线的价格数值（小字号 7px，textAnchor="end"）
+    - 涨停日 K 线上方保留"涨停"小标签
+    - 起涨点线保持灰色虚线
+    - 图例新增"涨停价"红色虚线项
+  * 更新调用处：表格走势列 + 卡片视图都传 limitUpClose + currentPrice 给 MiniKlineChart
+- 优化 4（涨停板强度标签）：
+  * 新增 calcLimitUpStreak(kline, limitUpDate)：从 limitUpDate 往前数连续涨停天数
+    - 涨停阈值从 limitUpDate 当天 changePct 推断：≥29.5 用 29.5 / ≥19.5 用 19.5 / 否则 9.5（适配主板/创业板/北交所）
+    - 返回连板数（1=首板，2=二连板...）
+  * 新增 getLimitUpStreakStyle(streak)：1B slate灰 / 2B orange橙 / 3B red红 / ≥4 rose-700深红 / 0 muted"--"
+  * 新增 LimitUpStreakBadge 组件（Flame 图标 + 等级标签 + Tooltip 说明）
+  * 表格新增"连板"列（在"涨停日"之后，52px，可排序）
+  * 行展开详情数据表新增"涨停连板"行（streak ≥3 rose红 / 2 orange橙 / 其他 muted）
+  * 卡片视图新增 LimitUpStreakBadge（紧贴涨停日期）
+- 排序逻辑：filteredStocks useMemo 扩展 sortField === "qualityScore" / "limitUpStreak" 分支，分别调用 calcQualityScore / calcLimitUpStreak
+- SortField 类型扩展："qualityScore" | "limitUpStreak"
+- CSV 导出：新增 3 列（涨停连板 / 风险评分 / 质量评分），header 14 → 17 项
+- 表格 colSpan 17 → 19（新增 2 列：连板 + 质量）
+- 策略说明卡：新增质量评分 + 连板标签的图例说明
+- 新增 lucide-react 导入：Lightbulb / Award / Flame
+- 验证：bun run lint exit 0；curl localhost:3000/ 返回 200 无错误
+
+Stage Summary:
+- 文件行数：3051 → 3434（+383 行）
+- 4 项优化全部实现：
+  1. 智能宽松建议（SmartSuggestions 组件，4 条建议 top-N，amber 风格按钮，点击直接 setFilters）
+  2. 回踩质量评分（calcQualityScore 0-100，4 维加权，新增质量列 + 详情卡 + 卡片视图 badge）
+  3. 迷你K线标注增强（MiniKlineChart 3 条水平线，LargeKlineChart 涨停价线 + 右侧价格标注）
+  4. 涨停板强度标签（calcLimitUpStreak，LimitUpStreakBadge 1B/2B/3B/4B+，新增连板列 + 详情行 + 卡片视图 badge）
+- 新增 5 个组件：QualityBadge、LimitUpStreakBadge、SmartSuggestions（+ 内部 computeSmartSuggestions、getQualityScoreBreakdown 辅助函数）
+- 新增 4 个 helper：calcQualityScore、getQualityStyle、calcLimitUpStreak、getLimitUpStreakStyle
+- 排序扩展：qualityScore / limitUpStreak 两个新 SortField，均可在表头点击排序
+- CSV 导出扩展：新增 3 列（涨停连板、风险评分、质量评分）
+- 表格列从 17 列扩展到 19 列，colSpan 同步更新
+- 兼容 dark mode（所有新增样式都带 dark: 变体）
+- 响应式：mobile-first，所有新增在 mobile 和 desktop 都可用
+- bun run lint 通过 exit 0，dev server 正常运行无错误
+
+### 主 Agent 验证结果（Task 22）
+- bun run lint 通过 exit 0
+- Agent Browser 验证（注入 mock 数据因 API 上游 K线接口限流返回空）：
+  * 表格新增"质量"列：显示评分+等级badge（71优秀/62良好等）✓
+  * 表格新增"连板"列：显示 1B/2B 等标签 ✓
+  * 迷你K线标注：涨停价红线+起涨点灰虚线+当前价蓝线 ✓
+  * 行展开详情：风险评分卡 + 质量评分卡（含4项分解）+ 大K线图标注 ✓
+  * 智能宽松建议：空结果时显示"放宽回踩深度到60%(+3只)"等按钮，可点击应用 ✓
+  * VLM 评分：功能完整性 9/10，智能建议 9/10
+  * 浏览器控制台无错误
