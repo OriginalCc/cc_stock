@@ -1365,3 +1365,46 @@ Stage Summary:
 - 核心信息不丢失：strong 因子信号、优先买卖点、VWAP 标注、5日最低在两种模式下均完整显示；
   PV 标记细节通过原生 SVG <title> 悬停可查
 - 默认简洁模式对新用户生效，老用户可通过「简洁|详细」切换并自动记忆
+
+---
+
+Task ID: 25
+Agent: Main Claude (Z.ai Code)
+Task: 分时图刷新后标签延迟出现 + 闪顿（闪烁）修复
+
+Work Log:
+- 用户反馈：分时图刷新之后，标签好像后出来，然后有一个闪顿的效果
+- 根因分析（三个问题叠加）：
+  1. page.tsx 两阶段渲染：自动刷新多为「纯报价 tick」（无新分钟slot，2.5s/次），
+     signals 经 useDeferredValue(liveTimeline) 延迟 → 价格曲线当帧更新、
+     标签在第二帧才重算位移 → 肉眼可见的「标签后出来 + 跳动」
+  2. time-sharing-panel.tsx overlay 缓存指纹缺陷：buildOverlayFingerprint 只含
+     点数/末点像素/信号数量，不含信号内容 → deferred 的 signals 提交时
+     （几何不变、数量不变）指纹不变 → 缓存命中返回旧标签，
+     直到下一次价格 tick 才重算 → 标签永远慢一个刷新周期（"后出来"的直接原因）
+  3. pvMarkers（脉冲/量能标记）指纹含末5个价格 → 每个报价 tick 都重算，
+     右端标记频繁出现/消失 → 闪烁
+- 修复 1（page.tsx）：删除 useDeferredValue 两阶段机制，改为「冻结信号级 timeline」：
+  signalTimelineRef 按 symbol 记录最近一次参与信号计算的 timeline，
+  纯报价 tick 复用旧值（deps 不变 → signals/MACD memo 完全不重算），
+  新分钟 slot 到达时与 data 同帧更新 → 标签与曲线原子性同步，永不滞后
+  （同时消除切换股票时同 slot 数撞车导致的旧股标签串场问题）
+- 修复 2（page.tsx）：pvMarkers 改用冻结的 liveTimelineForSignals，
+  标记标签与因子信号同节奏（按分钟）更新，报价 tick 期间完全静止
+- 修复 3（time-sharing-panel.tsx）：buildOverlayFingerprint 追加信号内容哈希
+  （type/strength/reason/description + pv标记 type/time）→ 几何不变但内容变化时
+  （如 regime 变化引发信号文案更新）缓存必定失效，杜绝陈旧标签
+- 验证（Agent Browser + fetch mock 注入模拟实时报价 tick，茅台 600519）：
+  * 交易时段真实数据：10 秒（4 个刷新周期）两次采样，44 个标签位置像素级完全一致
+  * mock 报价 tick（4 次纯价格 tick + 1 次新 slot，共 5 个刷新周期）：
+    price 变化 1442.81→1441.48、曲线末点位移（实时性保持 ✓），
+    既有 48 个标签文字与坐标零漂移，新 slot 的 3 个新标签原子性出现
+  * 简洁/详细模式切换正常（labelMode 仍在 overlay 指纹中，缓存正确失效）
+  * 控制台无错误；bun run lint 通过
+
+Stage Summary:
+- 分时图标签层更新模型从「每 tick 延迟两帧」改为「按分钟 slot 原子更新」：
+  报价 tick 只动曲线不动标签（零闪顿），新分钟到达时曲线+标签同帧刷新（零滞后）
+- 附带收益：每 2.5s 省去一次 ~7000 次条件评估的 generateTimelineSignals 重算
+  （纯报价 tick 下 deps 恒等，memo 直接跳过），行情活跃时 CPU 占用同步下降
+- 涉及文件：src/app/page.tsx、src/components/time-sharing-panel.tsx

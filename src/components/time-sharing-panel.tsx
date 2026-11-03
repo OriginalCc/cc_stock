@@ -2017,8 +2017,9 @@ function computeRecentLowPill(
 }
 
 // ── Build a lightweight fingerprint from formattedGraphicalItems ──
-// Only checks the price line's last point position and signal/marker counts.
-// If these haven't changed, the expensive computation can be skipped.
+// Checks the price line's last point position, signal/marker counts AND their
+// content (type/strength/reason, marker type/time). If none of these changed,
+// the expensive overlay computation is skipped.
 function buildOverlayFingerprint(
   formattedGraphicalItems: any[],
   xAxisMap: any,
@@ -2030,6 +2031,7 @@ function buildOverlayFingerprint(
   let lastX = 0, lastY = 0;
   let signalCount = 0;
   let pvCount = 0;
+  let sigContent = "";
   for (const item of formattedGraphicalItems) {
     if (item?.props?.points && Array.isArray(item.props.points)) {
       const stroke = item.props.stroke || item?.props?.lineProps?.stroke;
@@ -2041,18 +2043,32 @@ function buildOverlayFingerprint(
           lastX = pts[pts.length - 1].x;
           lastY = pts[pts.length - 1].y;
         }
-        // Count signals and pv markers in one pass
+        // Count signals and pv markers in one pass, and hash their CONTENT.
+        // Counting alone was not enough: when the signals prop changed without
+        // changing geometry (same count, same last pixel — e.g. a deferred or
+        // regime-driven signals update), the fingerprint stayed identical and this
+        // cache served STALE labels until the next price tick — labels appeared
+        // one refresh cycle late ("标签后出来"). Hashing type/strength/reason
+        // (and pv marker type/time) invalidates the cache the moment any label
+        // text/point actually changes.
         for (const p of pts) {
-          if (p?.payload?.tSignal) signalCount++;
+          const s = p?.payload?.tSignal;
+          if (s) {
+            signalCount++;
+            sigContent += `${s.type},${s.strength},${s.reason ?? ""},${s.description ?? ""};`;
+          }
           const pv = p?.payload?.pvMarker;
-          if (pv && Array.isArray(pv)) pvCount += pv.length;
+          if (pv && Array.isArray(pv)) {
+            pvCount++;
+            for (const m of pv) sigContent += `pv:${m?.type ?? ""}@${m?.time ?? ""};`;
+          }
         }
       }
     }
   }
   // Include expanded IDs in fingerprint so toggleExpand triggers re-render
   const expandedKey = expandedIds.size > 0 ? Array.from(expandedIds).sort().join(",") : "";
-  return `${priceLineLen}:${(lastX ?? 0).toFixed(1)}:${(lastY ?? 0).toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}`;
+  return `${priceLineLen}:${(lastX ?? 0).toFixed(1)}:${(lastY ?? 0).toFixed(1)}:${signalCount}:${pvCount}:${expandedKey}:${sigContent}`;
 }
 
 // ── VWAP (均线) 禁止买卖标注 ─────────────────────────────

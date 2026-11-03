@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useMemo, useEffect, startTransition, useDeferredValue } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect, startTransition } from "react";
 import dynamic from "next/dynamic";
 import { useStockData, type TimeInterval, type StockSearchResult, type KLineItem, type TimelineItem, type ChartMode } from "@/hooks/use-stock-data";
 
@@ -662,20 +662,26 @@ export default function StockTAssistant() {
   }, [timeline, quote, isTimelineActive]);
 
   // ── Quote-only tick detection ──
-  // When only the last price changes (no new time slot), we can skip the
-  // heaviest computations (signal generation). The chart still renders
-  // immediately with the new price, and signals catch up on the next real data update.
+  // A "quote-only tick" = auto-refresh moved the last price but added no new minute
+  // slot (most 1.5s refreshes). Recomputing labels (signals/MACD/pv markers) on
+  // such ticks used to happen in a SECOND render pass (they were deferred behind
+  // useDeferredValue), so labels visibly popped in late and shifted after each
+  // refresh — perceived as 闪烁/闪顿.
   const prevTimelineLenRef = useRef(0);
   const isQuoteOnlyTick = liveTimeline.length > 0 && liveTimeline.length === prevTimelineLenRef.current;
   useEffect(() => { prevTimelineLenRef.current = liveTimeline.length; }, [liveTimeline.length]);
 
-  // ── Deferred signal computation ──
-  // Always call useDeferredValue (hooks can't be conditional), but only use the
-  // deferred version for signal computation when it's a quote-only tick.
-  // On real data updates (new time slot), the deferred value will already be
-  // up-to-date because React processes updates in order.
-  const deferredTimeline = useDeferredValue(liveTimeline);
-  const liveTimelineForSignals = isQuoteOnlyTick ? deferredTimeline : liveTimeline;
+  // ── Frozen signal-grade timeline ──
+  // On quote-only ticks, reuse the LAST timeline that label computation ran on
+  // (keyed by symbol so switching stocks never reuses the previous stock's labels).
+  // Labels therefore change ATOMICALLY with the chart line in the same render
+  // whenever a new minute slot lands; mid-minute price ticks only move the price
+  // line while the label layer stays perfectly still — no lag, no jump, no flash.
+  const signalTimelineRef = useRef<{ symbol: string; data: TimelineItem[] }>({ symbol: "", data: [] });
+  if (!isQuoteOnlyTick || signalTimelineRef.current.symbol !== symbol) {
+    signalTimelineRef.current = { symbol, data: liveTimeline };
+  }
+  const liveTimelineForSignals = signalTimelineRef.current.data;
 
   const tlLastDataIdx = useMemo(() => {
     if (liveTimeline.length === 0) return -1;
@@ -730,16 +736,17 @@ export default function StockTAssistant() {
       generateTimelineSignals(liveTimelineForSignals, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, quote?.open)
     );
   }, [liveTimelineForSignals, timelineMACDData, timelinePrevClose, factorOverrides, szIndexRegime, customFactors, sectorRegime, isTimelineActive, quote?.open]);
-  // NOTE: Removed useDeferredValue — it was causing labels to appear with visible delay.
-  // The fingerprint caching above makes recomputation cheap when data hasn't changed,
-  // so deferred rendering is no longer needed and directly using values is faster.
+  // NOTE: Signals no longer use useDeferredValue. liveTimelineForSignals is FROZEN
+  // on quote-only ticks (see signalTimelineRef above), so label inputs only change
+  // when a real minute slot arrives — labels then update atomically with the chart.
   const pvMarkers = useMemo(() => {
-    if (!isTimelineActive || liveTimeline.length < 5 || timelinePrevClose <= 0) return [];
-    // Fingerprint includes volume data to avoid stale results when algorithm changes
-    const fp = `${liveTimeline.length}:${liveTimeline.slice(-5).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',')}:${timelinePrevClose}`;
-    return pvFingerprintCache.compute(fp, () => detectPulseVolumeMarkers(liveTimeline, timelinePrevClose));
-  }, [liveTimeline, timelinePrevClose, isTimelineActive]);
-  // NOTE: Removed useDeferredValue for pvMarkers — same reason as signals above.
+    if (!isTimelineActive || liveTimelineForSignals.length < 5 || timelinePrevClose <= 0) return [];
+    // Fingerprint includes volume data to avoid stale results when algorithm changes.
+    // Uses the frozen signal-grade timeline so pulse/volume marker labels also stay
+    // still on mid-minute price ticks (they used to pop in/out on every refresh).
+    const fp = `${liveTimelineForSignals.length}:${liveTimelineForSignals.slice(-5).map(d => `${(d.price ?? 0).toFixed(2)}:${d.volume}`).join(',')}:${timelinePrevClose}`;
+    return pvFingerprintCache.compute(fp, () => detectPulseVolumeMarkers(liveTimelineForSignals, timelinePrevClose));
+  }, [liveTimelineForSignals, timelinePrevClose, isTimelineActive]);
   const latestTimelineSignal = useMemo(() => { for (let i = timelineSignals.length - 1; i >= 0; i--) { if (timelineSignals[i]) return timelineSignals[i]; } return null; }, [timelineSignals]);
 
   // ── Recent signals for SignalSummaryPanel (memoized to avoid .slice() creating new array each render) ──
