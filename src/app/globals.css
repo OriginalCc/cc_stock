@@ -139,3 +139,12 @@
 .recharts-cursor {
   fill: transparent !important;
 }
+
+/* Anti-flicker: promote recharts wrappers to their own compositor layer.
+   During auto-refresh (every 2.5s) the chart's SVG is repainted; without layer
+   promotion the repaint invalidates the whole page stacking context and the
+   chart can visually "blink" for a frame. translateZ(0) isolates repaints. */
+.recharts-wrapper {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}

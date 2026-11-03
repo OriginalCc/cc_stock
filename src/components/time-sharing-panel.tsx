@@ -2550,6 +2550,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   // ── Build full-day timeline template (240 minutes total) ──
   // A-share trading day: 09:30-11:30 (120min) + 13:00-15:00 (120min)
   // Performance: fingerprint cache to skip rebuilding 242 objects when data hasn't meaningfully changed.
+
   const { fullDayData, timeTicks } = useMemo(() => {
     if (data.length === 0) return { fullDayData: [], timeTicks: [] };
 
@@ -2917,12 +2918,16 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
 
     const iz = visibleMinutes < totalSlots;
 
-    // Smart Y-axis auto-scaling
+    // ── Y-axis domain: based on FULL-DAY range, not just the visible slice ──
+    // This is the standard timeline-chart behavior (Eastmoney/同花顺 style): the Y-axis
+    // stays stable within the trading day and only expands when the price makes a new
+    // high/low. Using the visible slice instead causes the axis to rescale on every
+    // auto-refresh tick — perceived as flickering. Also keeps zoom stable.
     const spc = prevClose > 0 ? prevClose : data[0]?.price ?? 0;
-    const visiblePrices = zd.filter(d => d.hasData && d.price != null).map(d => d.price!);
-    const visibleAvgPrices = zd.filter(d => d.hasData && d.avgPrice != null).map(d => d.avgPrice!);
-    const ap = visiblePrices.length > 0 ? visiblePrices : data.map((d) => d.price);
-    const aap = visibleAvgPrices.length > 0 ? visibleAvgPrices : data.filter(d => d.avgPrice != null).map(d => d.avgPrice!);
+    const fullPrices = fullDayData.filter(d => d.hasData && d.price != null).map(d => d.price!);
+    const fullAvgPrices = fullDayData.filter(d => d.hasData && d.avgPrice != null).map(d => d.avgPrice!);
+    const ap = fullPrices.length > 0 ? fullPrices : data.map((d) => d.price);
+    const aap = fullAvgPrices.length > 0 ? fullAvgPrices : data.filter(d => d.avgPrice != null).map(d => d.avgPrice!);
 
     // Use reduce for min/max to avoid call stack issues with spread on large arrays
     const allVals = [...ap, ...aap];

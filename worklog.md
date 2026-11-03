@@ -1226,3 +1226,44 @@ Stage Summary:
   * 智能宽松建议：空结果时显示"放宽回踩深度到60%(+3只)"等按钮，可点击应用 ✓
   * VLM 评分：功能完整性 9/10，智能建议 9/10
   * 浏览器控制台无错误
+
+---
+Task ID: 23
+Agent: main
+Task: 修复分时页面"一闪一闪"问题（数据获取已是ajax，修复渲染层抖动）
+
+Work Log:
+- 问题诊断：用户反馈分时页面总是一闪一闪的，希望改成 ajax 刷新
+- 排查发现：数据获取早已是 ajax（use-stock-data.ts 每 1.5s setInterval + fetch API），不是页面刷新
+- 真正的闪烁来源是渲染层：
+  1. Y 轴 domain 抖动（主因）：yMin/yMax 基于"可见数据"的 min/max 每 1.5s 重算，
+     新 tick 价格变化 → Y 轴缩放微调 → 整个图表坐标系跳动 → 视觉"一闪一闪"
+  2. 重绘频率过高：1.5s 一次全量 SVG 重绘（价格图+成交量+MACD+信号层）
+  3. 重绘扩散：recharts-wrapper 无合成层隔离，重绘失效扩散到整页 stacking context
+- 修复 1（time-sharing-panel.tsx）：Y 轴 domain 改为基于"全天数据"范围而非"可见切片"
+  * 标准分时图行为（东方财富/同花顺风格）：Y 轴在交易日内稳定，只在创新高/新低时扩展
+  * 纯函数计算（全天 min/max），无缓存副作用，兼容 React Compiler lint 规则
+  * fallback：fullDayData 为空时回退到 data（与原逻辑一致）
+- 修复 2（five-day-timeline-panel.tsx）：同样改用"全 5 日数据"范围计算 Y 轴
+  * priceSource = items.length > visibleItems.length ? items : visibleItems
+- 中途尝试过"模块级 Map 缓存粘性 domain"方案，因 react-hooks/preserve-manual-memoization
+  lint 错误（React Compiler 无法编译 useMemo 内的 Map 副作用）而放弃，改为上述纯函数方案
+- 修复 3（use-stock-data.ts）：轮询频率 TIMELINE_REFRESH_INTERVAL 1.5s → 2.5s
+  * 平衡实时性（做T需要）与重绘成本（频率降低 40%）
+- 修复 4（page.tsx）："实时刷新 1.5s" 文案同步改为 "实时刷新 2.5s"
+- 修复 5（globals.css）：.recharts-wrapper 加 transform: translateZ(0) + backface-visibility: hidden
+  * 提升为独立合成层，重绘失效不再扩散到整页
+- 验证：
+  * bun run lint 通过 exit 0
+  * 登录后分时/分时倒影 tab 正常渲染（信号标签/5日最低pill/MA5/参考线都在）
+  * 浏览器控制台无错误
+  * 对比验证：stash 修改后原代码图表同样存在"价格线被5日最低线压缩到顶部"现象（Y轴含1322-1452大范围），
+    说明该现象是原有设计（5日最低线纳入Y轴）而非本次修改引入
+- 注：闪烁需在交易时段才能复现验证，本次修复基于代码分析定位根因（Y轴抖动+重绘频率+重绘扩散）
+
+Stage Summary:
+- 分时页面闪烁根因是渲染层（Y轴domain每tick重算+1.5s全量重绘+重绘扩散），数据获取早已是ajax
+- Y 轴 domain 改为全天数据范围（主分时+5日分时），交易日内坐标系稳定，只在创新高/低时扩展
+- 轮询频率 1.5s → 2.5s（重绘频率 -40%），文案同步更新
+- recharts-wrapper 提升合成层（translateZ(0)），重绘不再扩散
+- bun run lint 通过，浏览器无错误

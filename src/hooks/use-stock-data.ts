@@ -86,7 +86,11 @@ const TIMELINE_CACHE_TTL = 1000; // 1s for timeline data
 const HISTORY_CACHE_TTL = 30_000; // 30s for K-line history
 
 // ── Auto-refresh interval ──
-const TIMELINE_REFRESH_INTERVAL = 1500; // 1.5s for timeline/quote auto-refresh during trading hours
+// 2.5s: balances realtime feel (T-trading needs fresh data) with render cost.
+// Every tick triggers a full SVG repaint of the timeline chart; at 1.5s the repaints
+// were frequent enough to be perceived as flickering. Y-axis is sticky (see
+// time-sharing-panel.tsx) so data updates now only extend the curve instead of rescaling.
+const TIMELINE_REFRESH_INTERVAL = 2500;
 
 // ── Helper: Try to read cached timeline+quote data for a symbol ──
 function tryGetCachedTimelineQuote(sym: string): { items: TimelineItem[]; prevClose: number; quote?: StockQuote } | null {

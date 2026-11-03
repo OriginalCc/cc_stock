@@ -890,11 +890,17 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
   }, []);
 
   // ── Computed values based on visible slice ──
+  // Y-axis domain: based on the FULL 5-day data range (not just the visible slice).
+  // Standard timeline-chart behavior: the axis stays stable and only expands when a
+  // new high/low appears. Computing from the visible slice instead rescales the whole
+  // chart on every 2.5s auto-refresh tick — perceived as flickering.
   const { minPrice, maxPrice, refClose: chartRefClose, yTicks } = useMemo(() => {
     if (visibleItems.length === 0) return { minPrice: 0, maxPrice: 100, refClose: 0, yTicks: undefined as number[] | undefined };
     const refP = firstDayRefClose || visibleItems[0]?.price || 100;
+    // Use all items (full 5-day data) rather than the visible window for a stable axis
+    const priceSource = items.length > visibleItems.length ? items : visibleItems;
     let maxDeviation = 0;
-    for (const item of visibleItems) {
+    for (const item of priceSource) {
       if (item.price == null || item.price <= 0) continue;
       const dev = Math.abs(item.price - refP);
       if (dev > maxDeviation) maxDeviation = dev;
@@ -912,7 +918,7 @@ export const FiveDayTimelinePanel = React.memo(function FiveDayTimelinePanel({ s
     const range = maxP - minP;
     const step = range / 4;
     return { minPrice: minP, maxPrice: maxP, refClose: refP, yTicks: [refP - 2 * step, refP - step, refP, refP + step, refP + 2 * step] };
-  }, [visibleItems, firstDayRefClose, recentDayLows]);
+  }, [items, visibleItems, firstDayRefClose, recentDayLows]);
 
   const maxVolume = useMemo(() => visibleItems.reduce((mx, d) => Math.max(mx, d.displayVolume), 1), [visibleItems]);
 
