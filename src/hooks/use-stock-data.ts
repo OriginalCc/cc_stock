@@ -104,7 +104,11 @@ function tryGetCachedTimelineQuote(sym: string): { items: TimelineItem[]; prevCl
 
 // ── Hook ──────────────────────────────────────────────
 
-export function useStockData() {
+export function useStockData(options?: { autoRefresh?: boolean }) {
+  // When false (e.g. screener panels are active), the 2.5s trading-hours polling
+  // is paused so background panel pages don't re-render the whole app.
+  const autoRefreshEnabled = options?.autoRefresh !== false;
+
   // Read from localStorage during initialization to avoid hydration race
   const [symbol, setSymbol] = useState<string>(() => {
     if (typeof window === 'undefined') return DEFAULT_SYMBOL;
@@ -436,6 +440,8 @@ export function useStockData() {
 
   // ── Auto-refresh: 1.5s interval for timeline/quote during trading hours ──
   useEffect(() => {
+    // Pause polling entirely when the host page requests it (panel modes)
+    if (!autoRefreshEnabled) return;
     // Only auto-refresh when in timeline mode for A-share stocks
     if (chartMode === "kline") return;
     if (!checkAShare(symbol)) return;
@@ -477,7 +483,7 @@ export function useStockData() {
         refreshTimerRef.current = null;
       }
     };
-  }, [symbol, chartMode, checkAShare, fetchTimelineWithQuote, fetchQuote]);
+  }, [symbol, chartMode, checkAShare, fetchTimelineWithQuote, fetchQuote, autoRefreshEnabled]);
 
   return {
     symbol,

@@ -220,6 +220,218 @@ function getPatternTagChartColor(tag: string): string {
   return "#6b7280";
 }
 
+// ── Memoized Table Row (incremental rendering) ────────
+// Rows only re-render when their own data / index / watchlist / preview state
+// actually changes, so a background refresh never re-renders the whole table.
+
+interface StockRowProps {
+  stock: IntradayStock;
+  idx: number;
+  inWatchlist: boolean;
+  isPreviewActive: boolean;
+  onSelectStock?: (symbol: string) => void;
+  onToggleWatchlist: (stock: IntradayStock, e: React.MouseEvent) => void;
+  onPreview: (stock: IntradayStock, e: React.MouseEvent) => void;
+}
+
+function areStockRowsEqual(prev: StockRowProps, next: StockRowProps): boolean {
+  if (prev.idx !== next.idx) return false;
+  if (prev.inWatchlist !== next.inWatchlist) return false;
+  if (prev.isPreviewActive !== next.isPreviewActive) return false;
+  if (prev.onSelectStock !== next.onSelectStock) return false;
+  if (prev.onToggleWatchlist !== next.onToggleWatchlist) return false;
+  if (prev.onPreview !== next.onPreview) return false;
+  const a = prev.stock;
+  const b = next.stock;
+  if (a === b) return true;
+  // All stock fields are primitives — shallow-compare every key
+  for (const k in a) {
+    if (Object.prototype.hasOwnProperty.call(a, k) && (a as unknown as Record<string, unknown>)[k] !== (b as unknown as Record<string, unknown>)[k]) return false;
+  }
+  return true;
+}
+
+const StockRow = React.memo(function StockRow({ stock, idx, inWatchlist, isPreviewActive, onSelectStock, onToggleWatchlist, onPreview }: StockRowProps) {
+  const isUp = stock.changePercent >= 0;
+  const priceColor = isUp ? "text-red-500" : "text-green-500";
+  const tagStyle = getPatternTagStyle(stock.patternTag);
+  const rowBg = idx % 2 === 1 ? "bg-muted/20" : "";
+  // Rank badge for top 3
+  const rankBadge = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : null;
+
+  return (
+    <TableRow
+      className={`cursor-pointer hover:bg-muted/50 transition-colors group ${rowBg}`}
+      onClick={() => onSelectStock?.(stock.symbol)}
+    >
+      <TableCell className="text-center text-[10px] text-muted-foreground py-2">
+        {rankBadge ? (
+          <span className="text-sm">{rankBadge}</span>
+        ) : (
+          idx + 1
+        )}
+      </TableCell>
+      <TableCell className="py-2">
+        <div className="flex items-center gap-2">
+          <div>
+            <div className="text-xs font-medium">{stock.name}</div>
+            <div className="text-[10px] text-muted-foreground font-mono">{stock.symbol}</div>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="py-2">
+        <div className="flex items-center gap-1.5">
+          <div className={`text-sm font-bold tabular-nums ${getScoreColor(stock.compositeScore)}`}>
+            {stock.compositeScore}
+          </div>
+          <Badge variant="outline" className={`text-[9px] h-4 px-1 ${getScoreBg(stock.compositeScore)}`}>
+            {getCompositeLabel(stock.compositeScore)}
+          </Badge>
+        </div>
+      </TableCell>
+      <TableCell className="py-2">
+        {stock.patternTag ? (
+          <Badge variant="outline" className={`text-[9px] h-4 px-1.5 ${tagStyle.bg} ${tagStyle.text}`}>
+            {stock.patternTag}
+          </Badge>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">--</span>
+        )}
+      </TableCell>
+      <TableCell className="py-2">
+        <div className={`flex items-center gap-0.5 text-xs font-medium tabular-nums ${priceColor}`}>
+          {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+          {stock.changePercent > 0 ? "+" : ""}{(stock.changePercent ?? 0).toFixed(2)}%
+        </div>
+        <div className="text-[10px] text-muted-foreground font-mono">{(stock.price ?? 0).toFixed(2)}</div>
+      </TableCell>
+      <TableCell className="py-2">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.vwapScore)}`}>
+                {stock.vwapScore}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[200px]">
+              <p className="text-xs">{stock.vwapDetail || "无详情"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </TableCell>
+      <TableCell className="py-2">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.volumePatternScore)}`}>
+                {stock.volumePatternScore}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[200px]">
+              <p className="text-xs">{stock.volumePatternDetail || "无详情"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </TableCell>
+      <TableCell className="py-2">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.trendPatternScore)}`}>
+                {stock.trendPatternScore}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[200px]">
+              <p className="text-xs">{stock.trendPatternDetail || "无详情"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </TableCell>
+      <TableCell className="py-2">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.macdScore)}`}>
+                {stock.macdScore}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[200px]">
+              <p className="text-xs">{stock.macdDetail || "无详情"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </TableCell>
+      <TableCell className="py-2">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.capitalFlowScore)}`}>
+                {stock.capitalFlowScore}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[200px]">
+              <p className="text-xs">{stock.capitalFlowDetail || "无详情"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </TableCell>
+      <TableCell className="py-2">
+        <span className="text-xs font-medium tabular-nums">
+          {stock.volumeRatio > 0 ? (stock.volumeRatio ?? 0).toFixed(2) : "--"}
+        </span>
+      </TableCell>
+      <TableCell className="py-2">
+        <span className="text-xs tabular-nums">{stock.turnover > 0 ? (stock.turnover ?? 0).toFixed(2) : "--"}</span>
+      </TableCell>
+      <TableCell className="py-2">
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          {formatMarketCap(stock.marketCap)}
+        </span>
+      </TableCell>
+      <TableCell className="py-2">
+        <div className="flex items-center gap-0.5">
+          {/* Star / Watchlist button */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-6 w-6 p-0 transition-opacity ${inWatchlist ? "opacity-100 text-amber-500" : "opacity-0 group-hover:opacity-100"}`}
+                  onClick={(e) => onToggleWatchlist(stock, e)}
+                >
+                  <Star className={`w-3 h-3 ${inWatchlist ? "fill-amber-500" : ""}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {inWatchlist ? "移出自选" : "加入自选"}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          {/* Eye / Preview button */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ${isPreviewActive ? "text-emerald-500 opacity-100" : ""}`}
+                  onClick={(e) => onPreview(stock, e)}
+                >
+                  <Eye className="w-3 h-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                分时预览
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}, areStockRowsEqual);
+
 // ── Component ──────────────────────────────────────────
 
 const LAST_FILTERS_KEY = "intraday-screener-last-filters";
@@ -454,8 +666,8 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
     return Math.max(0, Math.ceil((180_000 - elapsed) / 1000));
   }, [lastFetchTime, isFromCache]);
 
-  // Watchlist toggle handler
-  const handleToggleWatchlist = (stock: IntradayStock, e: React.MouseEvent) => {
+  // Watchlist toggle handler (stable ref so memoized rows skip re-render)
+  const handleToggleWatchlist = useCallback((stock: IntradayStock, e: React.MouseEvent) => {
     e.stopPropagation();
     if (isInWatchlist(stock.symbol)) {
       removeFromWatchlist(stock.symbol);
@@ -463,12 +675,19 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
       addToWatchlist(stock.symbol, stock.name, "intraday", stock.price, stock.changePercent);
     }
     setWatchlist(loadWatchlist());
-  };
+  }, []);
 
-  // Mini timeline preview handler
-  const handlePreview = async (stock: IntradayStock, e: React.MouseEvent) => {
+  // Fast lookup set for watchlist membership
+  const watchlistSymbols = useMemo(() => new Set(watchlist.map((w) => w.symbol)), [watchlist]);
+
+  // Mirror previewStock into a ref so handlePreview stays referentially stable
+  const previewStockRef = useRef<IntradayStock | null>(null);
+  useEffect(() => { previewStockRef.current = previewStock; }, [previewStock]);
+
+  // Mini timeline preview handler (stable ref so memoized rows skip re-render)
+  const handlePreview = useCallback(async (stock: IntradayStock, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (previewStock?.symbol === stock.symbol) {
+    if (previewStockRef.current?.symbol === stock.symbol) {
       setPreviewStock(null);
       setPreviewData(null);
       setPreviewPos(null);
@@ -492,7 +711,7 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
     } finally {
       setPreviewLoading(false);
     }
-  };
+  }, []);
 
   // Close preview on outside click
   useEffect(() => {
@@ -1154,188 +1373,18 @@ export const IntradayScreener = React.memo(function IntradayScreener({ onSelectS
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedStocks.map((stock, idx) => {
-                    const isUp = stock.changePercent >= 0;
-                    const priceColor = isUp ? "text-red-500" : "text-green-500";
-                    const tagStyle = getPatternTagStyle(stock.patternTag);
-                    const inWatchlist = watchlist.some((w) => w.symbol === stock.symbol);
-                    const rowBg = idx % 2 === 1 ? "bg-muted/20" : "";
-                    // Rank badge for top 3
-                    const rankBadge = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : null;
-
-                    return (
-                      <TableRow
-                        key={stock.symbol}
-                        className={`cursor-pointer hover:bg-muted/50 transition-colors group ${rowBg}`}
-                        onClick={() => onSelectStock?.(stock.symbol)}
-                      >
-                        <TableCell className="text-center text-[10px] text-muted-foreground py-2">
-                          {rankBadge ? (
-                            <span className="text-sm">{rankBadge}</span>
-                          ) : (
-                            idx + 1
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <div className="flex items-center gap-2">
-                            <div>
-                              <div className="text-xs font-medium">{stock.name}</div>
-                              <div className="text-[10px] text-muted-foreground font-mono">{stock.symbol}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <div className="flex items-center gap-1.5">
-                            <div className={`text-sm font-bold tabular-nums ${getScoreColor(stock.compositeScore)}`}>
-                              {stock.compositeScore}
-                            </div>
-                            <Badge variant="outline" className={`text-[9px] h-4 px-1 ${getScoreBg(stock.compositeScore)}`}>
-                              {getCompositeLabel(stock.compositeScore)}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          {stock.patternTag ? (
-                            <Badge variant="outline" className={`text-[9px] h-4 px-1.5 ${tagStyle.bg} ${tagStyle.text}`}>
-                              {stock.patternTag}
-                            </Badge>
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground">--</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <div className={`flex items-center gap-0.5 text-xs font-medium tabular-nums ${priceColor}`}>
-                            {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                            {stock.changePercent > 0 ? "+" : ""}{(stock.changePercent ?? 0).toFixed(2)}%
-                          </div>
-                          <div className="text-[10px] text-muted-foreground font-mono">{(stock.price ?? 0).toFixed(2)}</div>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.vwapScore)}`}>
-                                  {stock.vwapScore}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[200px]">
-                                <p className="text-xs">{stock.vwapDetail || "无详情"}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.volumePatternScore)}`}>
-                                  {stock.volumePatternScore}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[200px]">
-                                <p className="text-xs">{stock.volumePatternDetail || "无详情"}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.trendPatternScore)}`}>
-                                  {stock.trendPatternScore}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[200px]">
-                                <p className="text-xs">{stock.trendPatternDetail || "无详情"}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.macdScore)}`}>
-                                  {stock.macdScore}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[200px]">
-                                <p className="text-xs">{stock.macdDetail || "无详情"}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className={`text-xs font-medium tabular-nums cursor-help ${getScoreColor(stock.capitalFlowScore)}`}>
-                                  {stock.capitalFlowScore}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[200px]">
-                                <p className="text-xs">{stock.capitalFlowDetail || "无详情"}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <span className="text-xs font-medium tabular-nums">
-                            {stock.volumeRatio > 0 ? (stock.volumeRatio ?? 0).toFixed(2) : "--"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <span className="text-xs tabular-nums">{stock.turnover > 0 ? (stock.turnover ?? 0).toFixed(2) : "--"}</span>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <span className="text-[10px] text-muted-foreground tabular-nums">
-                            {formatMarketCap(stock.marketCap)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <div className="flex items-center gap-0.5">
-                            {/* Star / Watchlist button */}
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className={`h-6 w-6 p-0 transition-opacity ${inWatchlist ? "opacity-100 text-amber-500" : "opacity-0 group-hover:opacity-100"}`}
-                                    onClick={(e) => handleToggleWatchlist(stock, e)}
-                                  >
-                                    <Star className={`w-3 h-3 ${inWatchlist ? "fill-amber-500" : ""}`} />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="text-xs">
-                                  {inWatchlist ? "移出自选" : "加入自选"}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                            {/* Eye / Preview button */}
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className={`h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ${previewStock?.symbol === stock.symbol ? "text-emerald-500 opacity-100" : ""}`}
-                                    onClick={(e) => handlePreview(stock, e)}
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="text-xs">
-                                  分时预览
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {sortedStocks.map((stock, idx) => (
+                    <StockRow
+                      key={stock.symbol}
+                      stock={stock}
+                      idx={idx}
+                      inWatchlist={watchlistSymbols.has(stock.symbol)}
+                      isPreviewActive={previewStock?.symbol === stock.symbol}
+                      onSelectStock={onSelectStock}
+                      onToggleWatchlist={handleToggleWatchlist}
+                      onPreview={handlePreview}
+                    />
+                  ))}
                   {sortedStocks.length === 0 && !loading && (
                     <TableRow>
                       <TableCell colSpan={14} className="text-center py-8 text-sm text-muted-foreground">

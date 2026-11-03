@@ -59,14 +59,17 @@ import {
 } from "lucide-react";
 
 export default function StockTAssistant() {
+  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "intraday-screener" | "sector-rotation" | "early-screen" | "low-open" | "baota-deploy" | "limit-up-pullback">("t-assistant");
+  // Pause all market-data polling (timeline/quote/sector/index) while a screener
+  // panel is active — their data is only rendered in T-assistant mode, and the
+  // every-2.5s setState used to re-render the whole page (flickering tables).
   const {
     symbol, quote, history, timeline, timelinePrevClose, interval, chartMode,
     mirrored, setMirrored,
     loading, timelineLoading, error, latestSignal, selectStock, changeInterval, changeChartMode,
     searchStocks, isAShare: isAShareStock,
-  } = useStockData();
+  } = useStockData({ autoRefresh: pageMode === "t-assistant" });
 
-  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "intraday-screener" | "sector-rotation" | "early-screen" | "low-open" | "baota-deploy" | "limit-up-pullback">("t-assistant");
   const [screenerSubView, setScreenerSubView] = useState<"screener" | "history">("screener");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
@@ -185,6 +188,9 @@ export default function StockTAssistant() {
   }, [fetchIndexDataRef]);
 
   useEffect(() => {
+    // Index data is only rendered in T-assistant chart panels — skip polling
+    // entirely in screener/panel modes to avoid full-page re-render flicker.
+    if (pageMode !== "t-assistant") return;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     // Defer index fetch to avoid competing with stock timeline for connection pool
@@ -201,7 +207,7 @@ export default function StockTAssistant() {
       intervalId = setInterval(() => { if (!document.hidden && isTradingHours()) fetchIndexDataRef(); }, 15000);
     }
     return () => { if (intervalId) clearInterval(intervalId); };
-  }, [fetchIndexDataRef]);
+  }, [fetchIndexDataRef, pageMode]);
 
   // ── Market Breadth (涨跌家数) ──
   useEffect(() => {
@@ -270,6 +276,11 @@ export default function StockTAssistant() {
   const szIndexRegime = indexRegimes[activeIndexKey];
   const cycleIndexKey = useCallback(() => { setActiveIndexKey(prev => { const idx = INDEX_KEYS.indexOf(prev); return INDEX_KEYS[(idx + 1) % INDEX_KEYS.length]; }); }, []);
 
+  // Stable callback shared by all screener panels — keeps their React.memo effective
+  // so page-level state updates don't re-render the heavy table components.
+  // (Panel rows jump back to T-assistant on click; header search uses handleSelectStock below.)
+  const handlePanelSelectStock = useCallback((sym: string) => { selectStock(sym); setPageMode("t-assistant"); }, [selectStock]);
+
   // ── Sector Regime Detection ──
   const [sectorInfoRaw, setSectorInfoRaw] = useState<{ code: string; name: string } | null>(null);
   const [sectorRegimeRaw, setSectorRegimeRaw] = useState<RegimeDetail | null>(null);
@@ -282,6 +293,9 @@ export default function StockTAssistant() {
   const fetchSectorDataRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => {
+    // Sector data is only rendered in T-assistant chart panels — skip the
+    // every-5s polling in screener/panel modes (was causing flicker).
+    if (pageMode !== "t-assistant") return;
     if (!symbol || !isAShareStock) return;
     let cancelled = false;
     let abortCtrl: AbortController | null = null;
@@ -390,7 +404,7 @@ export default function StockTAssistant() {
       if (!cancelled) fetchSectorData();
     }, 5000);
     return () => { cancelled = true; abortCtrl?.abort(); clearInterval(refreshInterval); };
-  }, [symbol, isAShareStock]);
+  }, [symbol, isAShareStock, pageMode]);
 
   // Retry function for manual sector fetch
   const retrySectorFetch = useCallback(() => {
@@ -795,6 +809,7 @@ export default function StockTAssistant() {
   // ── Lowest price among last 5 trading days (independent fast fetch with retry) ──
   const [recentDayLows, setRecentDayLows] = useState<{ date: string; low: number }[]>([]);
   useEffect(() => {
+    if (pageMode !== "t-assistant") return;
     if (!isAShareStock || !symbol) { setRecentDayLows([]); return; }
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -847,7 +862,7 @@ export default function StockTAssistant() {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [symbol, isAShareStock]);
+  }, [symbol, isAShareStock, pageMode]);
 
   const isUp = quote ? quote.change >= 0 : true;
   const priceColor = isUp ? "text-red-500" : "text-green-500";
@@ -993,8 +1008,8 @@ export default function StockTAssistant() {
           </div>
         )}
         {pageMode === "baota-deploy" ? (<BaotaDeployGuide />) : screenerSubView === "history" && pageMode !== "t-assistant" && pageMode !== "sector-rotation" ? (
-          <ScreenerHistoryPanel onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />
-        ) : pageMode === "screener" ? (<StockScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "intraday-screener" ? (<IntradayScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "sector-rotation" ? (<SectorRotationPanel onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "early-screen" ? (<EarlyTradingScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "low-open" ? (<LowOpenScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : pageMode === "limit-up-pullback" ? (<LimitUpPullbackScreener onSelectStock={(sym) => { selectStock(sym); setPageMode("t-assistant"); }} />) : (
+          <ScreenerHistoryPanel onSelectStock={handlePanelSelectStock} />
+        ) : pageMode === "screener" ? (<StockScreener onSelectStock={handlePanelSelectStock} />) : pageMode === "intraday-screener" ? (<IntradayScreener onSelectStock={handlePanelSelectStock} />) : pageMode === "sector-rotation" ? (<SectorRotationPanel onSelectStock={handlePanelSelectStock} />) : pageMode === "early-screen" ? (<EarlyTradingScreener onSelectStock={handlePanelSelectStock} />) : pageMode === "low-open" ? (<LowOpenScreener onSelectStock={handlePanelSelectStock} />) : pageMode === "limit-up-pullback" ? (<LimitUpPullbackScreener onSelectStock={handlePanelSelectStock} />) : (
         <>
         {/* Stock Info Bar */}
         <Card className={`mb-4 transition-all ${flashSignal === 'buy' ? 'animate-flash-green' : flashSignal ? 'animate-flash-red' : ''}`}>

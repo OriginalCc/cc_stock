@@ -1267,3 +1267,58 @@ Stage Summary:
 - 轮询频率 1.5s → 2.5s（重绘频率 -40%），文案同步更新
 - recharts-wrapper 提升合成层（translateZ(0)），重绘不再扩散
 - bun run lint 通过，浏览器无错误
+
+---
+
+Task ID: 23
+Agent: Z.ai Code (main)
+Task: 修复分时选股页面闪烁问题，改为 AJAX 增量刷新
+
+Work Log:
+- 用户反馈：分时页面总是一闪一闪的，希望改成 ajax 刷新
+- 根因分析（三层轮询 × memo 失效）：
+  1. useStockData() 的 timeline/quote 轮询（TIMELINE_REFRESH_INTERVAL=2.5s，交易时段）在 page 顶层运行，
+     无 pageMode 感知 → 每 2.5 秒 setTimeline/setQuote → page 全量重渲染
+  2. 板块数据轮询（page.tsx sector useEffect，每 5 秒）无 pageMode 守卫 → setSectorLoading(true/false)
+     每轮 2 次必然触发全页渲染（数据只被 T 助手图表面板使用）
+  3. 指数数据轮询（page.tsx index useEffect，每 15 秒）同样无 pageMode 守卫
+  4. page 重渲染时面板组件的 onSelectStock 是内联箭头函数（每次新引用）→ React.memo 完全失效 →
+     intraday-screener（1473 行，50 行 × 每行 7 个 Tooltip/TooltipProvider ≈ 数千组件实例）跟着全量 diff
+  5. 综合效果：交易时段每 2.5-5 秒一次全页重渲染风暴 → 主线程阻塞 → hover 效果丢失、Tooltip 闪关、
+     表格视觉"一闪一闪"
+- 修复 1（use-stock-data.ts）：useStockData 加 options.autoRefresh 开关（默认 true 向后兼容），
+  autoRefresh=false 时跳过 2.5s 轮询 effect；依赖数组加 autoRefreshEnabled（切回页面自动恢复轮询）
+- 修复 2（page.tsx）：
+  * pageMode useState 移到 useStockData 之前，传入 { autoRefresh: pageMode === "t-assistant" }
+  * 指数轮询 useEffect 加 pageMode !== "t-assistant" 守卫（依赖 +pageMode）
+  * 板块轮询 useEffect 加同样守卫（依赖 +pageMode）
+  * recentDayLows 拉取 useEffect 加同样守卫（依赖 +pageMode）
+  * 新增 handlePanelSelectStock = useCallback（selectStock + setPageMode("t-assistant")），替换 7 处
+    面板内联 onSelectStock（ScreenerHistoryPanel/StockScreener/IntradayScreener/SectorRotationPanel/
+    EarlyTradingScreener/LowOpenScreener/LimitUpPullbackScreener），保持各面板 React.memo 生效；
+    header 搜索/菜单栏沿用原有 handleSelectStock（含指纹缓存失效，语义不同故分开命名）
+- 修复 3（intraday-screener.tsx）行级增量渲染：
+  * 表格行抽成模块级 StockRow = React.memo(..., areStockRowsEqual)
+  * areStockRowsEqual：比较 idx/inWatchlist/isPreviewActive/3 个回调引用 + stock 对象全字段浅比较
+    （所有字段均为原始值，浅比较安全）
+  * handleToggleWatchlist/handlePreview 改为 useCallback([])；previewStock 镜像到 ref 避免回调依赖
+  * watchlist.some 每行调用改为 watchlistSymbols: Set（useMemo）
+  * 效果：数据刷新时只有字段真正变化的行重渲染；组件内部 state 变化（预览/自选）不再波及全部行
+- 踩坑：page.tsx 原有 handleSelectStock（fingerprint 缓存失效版）与新加的重名导致 turbopack 编译 500，
+  改名 handlePanelSelectStock 后恢复
+- 验证：
+  * bun run lint 通过
+  * Agent Browser 登录（密码 888888，AppConfig 表为空回落默认值）→ 分时选股页表格 18 行正常渲染
+  * 点刷新按钮：/api/stock/intraday-screener?...&refresh=1 返回 200，表格数据平滑更新、无骨架屏闪现
+  * 行 hover + 眼睛按钮：分时预览弹层正常弹出，迷你走势图渲染正常
+  * 分时页面静置 12 秒 network 请求数 124 → 124（零轮询；修复前每 2.5-15 秒会有多次 sector/index/timeline 请求）
+  * 切回 T 助手页面：分时倒影图、信号标注、买卖点提示全部正常，无 console 错误
+- 注：本次修复的是"面板模式下后台轮询引发的全页重渲染"；此前 Task 已修复过 T 助手分时图本身的
+  Y 轴抖动 + 重绘扩散问题，两者互补
+
+Stage Summary:
+- 分时页面闪烁根因 = 面板模式下 3 组后台轮询（2.5s/5s/15s）仍在跑 + 面板 onSelectStock 内联函数使 memo 失效
+- 数据获取本来就是 AJAX（fetch + setState），无需改造；问题是每次 setState 都重渲染整个 page
+- 面板模式下暂停全部行情轮询（autoRefresh 开关 + pageMode 守卫），T 助手模式自动恢复
+- 表格行 memo 化实现真正的增量渲染：数据无变化的行完全跳过重渲染
+- bun run lint 通过；浏览器验证分时页面 12 秒零轮询、刷新/预览/hover/页面切换全部正常
