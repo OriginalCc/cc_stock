@@ -188,7 +188,72 @@ const TimelineMACDTooltip = ({ active, payload }: any) => {
 
 // ── Extract Pulse/Volume marker data from chart points (shared by standalone & combined renderers) ──
 
-function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; y: number; marker: PulseVolumeMarker }[] {
+// Aggregated PV marker: same-type adjacent markers merged into one (label noise reduction)
+type AggregatedPvMarker = PulseVolumeMarker & {
+  mergedCount?: number;   // number of original markers merged (undefined/1 = not merged)
+  mergedTimes?: string[]; // original times of merged markers (for hover tooltip)
+};
+
+// Merge same-type markers whose x distance <= AGG_MERGE_PX into one representative.
+// Representative = highest score; count & times accumulated for ×N display / tooltip.
+const AGG_MERGE_PX = 24;
+
+function aggregatePvMarkerPoints(
+  points: { x: number; y: number; marker: PulseVolumeMarker }[],
+): { x: number; y: number; marker: AggregatedPvMarker }[] {
+  if (points.length === 0) return [];
+  // Group indices by type
+  const byType = new Map<string, number[]>();
+  points.forEach((pt, idx) => {
+    const list = byType.get(pt.marker.type) || [];
+    list.push(idx);
+    byType.set(pt.marker.type, list);
+  });
+
+  const consumed = new Set<number>();
+  const result: { x: number; y: number; marker: AggregatedPvMarker }[] = [];
+
+  for (const [, indices] of byType) {
+    // Sort this type's markers by x
+    const sorted = [...indices].sort((a, b) => points[a].x - points[b].x);
+    // Build clusters of consecutive markers within AGG_MERGE_PX
+    const clusters: number[][] = [];
+    for (const idx of sorted) {
+      const last = clusters[clusters.length - 1];
+      if (last && points[idx].x - points[last[last.length - 1]].x <= AGG_MERGE_PX) {
+        last.push(idx);
+      } else {
+        clusters.push([idx]);
+      }
+    }
+    for (const cluster of clusters) {
+      cluster.forEach(i => consumed.add(i));
+      if (cluster.length === 1) {
+        const pt = points[cluster[0]];
+        result.push({ x: pt.x, y: pt.y, marker: pt.marker });
+      } else {
+        // Representative = highest score (ties → earliest)
+        let best = cluster[0];
+        for (const i of cluster) {
+          if (points[i].marker.score > points[best].marker.score) best = i;
+        }
+        const bp = points[best];
+        result.push({
+          x: bp.x,
+          y: bp.y,
+          marker: {
+            ...bp.marker,
+            mergedCount: cluster.length,
+            mergedTimes: cluster.map(i => points[i].marker.time),
+          },
+        });
+      }
+    }
+  }
+  return result;
+}
+
+function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; y: number; marker: AggregatedPvMarker }[] {
   let priceLineData: any[] = [];
   for (const item of formattedGraphicalItems) {
     if (item?.props?.points && Array.isArray(item.props.points)) {
@@ -222,13 +287,14 @@ function extractPulseVolumePoints(formattedGraphicalItems: any[]): { x: number; 
   for (const p of priceLineData) {
     if (p?.payload?.time) timeMap.set(p.payload.time, p);
   }
-  const result: { x: number; y: number; marker: PulseVolumeMarker }[] = [];
+  const rawPoints: { x: number; y: number; marker: PulseVolumeMarker }[] = [];
   for (const marker of markers) {
     const matchPoint = timeMap.get(marker.time);
     if (!matchPoint) continue;
-    result.push({ x: matchPoint.x, y: matchPoint.y, marker });
+    rawPoints.push({ x: matchPoint.x, y: matchPoint.y, marker });
   }
-  return result;
+  // Aggregate same-type adjacent markers to reduce label noise (×N merged)
+  return aggregatePvMarkerPoints(rawPoints);
 }
 
 // ── Render a single Pulse/Volume marker as prominent SVG ──
@@ -244,14 +310,15 @@ interface PvLabelLayout {
   displayLabel: string;
 }
 
-function computePvLabelLayout(x: number, y: number, marker: PulseVolumeMarker): PvLabelLayout {
+function computePvLabelLayout(x: number, y: number, marker: AggregatedPvMarker): PvLabelLayout {
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
   const isVolRise = marker.type === "vol_rise";
   const isAbove = isPulse || isProgressiveVol || isVolRise;
 
   const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
-  const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
+  const countSuffix = marker.mergedCount && marker.mergedCount > 1 ? ` ×${marker.mergedCount}` : "";
+  const displayLabel = amountStr ? `${marker.label}${countSuffix} ${amountStr}` : `${marker.label}${countSuffix}`;
 
   const estimatedCharWidth = 7.5;
   const pillW = Math.max(84, Math.min(160, Math.round(displayLabel.length * estimatedCharWidth + 8)));
@@ -288,14 +355,14 @@ interface PlacedLabel {
   idx: number;
   x: number;         // marker x (original price point)
   y: number;         // marker y (price point)
-  marker: PulseVolumeMarker;
+  marker: AggregatedPvMarker;
   layout: PvLabelLayout;
   adjustedLabelY: number; // may be shifted for overlap avoidance
   adjustedX: number;     // label x may be shifted horizontally for same-time markers
 }
 
 function resolvePvLabelOverlaps(
-  markerPoints: { x: number; y: number; marker: PulseVolumeMarker }[],
+  markerPoints: { x: number; y: number; marker: AggregatedPvMarker }[],
 ): PlacedLabel[] {
   if (markerPoints.length === 0) return [];
 
@@ -425,10 +492,11 @@ function resolvePvLabelOverlaps(
 function renderPulseVolumeMarker(
   x: number,
   y: number,
-  marker: PulseVolumeMarker,
+  marker: AggregatedPvMarker,
   idx: number,
   adjustedLabelY?: number,
   adjustedX?: number,
+  compact: boolean = false,
 ): React.ReactNode {
   const isPulse = marker.type === "pulse";
   const isProgressiveVol = marker.type === "progressive_vol";
@@ -440,6 +508,17 @@ function renderPulseVolumeMarker(
   const isVolRise = marker.type === "vol_rise";
   const isShrinkRise = marker.type === "shrink_rise";
   const isDecline = isPulseDecline || isVolumeDecline || isEarlyVolDrop || isSlowDecline;
+
+  // ── Hover tooltip text (native SVG <title>, works in both modes) ──
+  const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
+  const countSuffix = marker.mergedCount && marker.mergedCount > 1 ? ` ×${marker.mergedCount}` : "";
+  const tipLines: string[] = [`${marker.time} ${marker.label}${countSuffix}`];
+  if (amountStr) tipLines.push(`成交额 ${amountStr}`);
+  if (marker.score) tipLines.push(`强度 ${Math.round(marker.score)}`);
+  if (marker.mergedTimes && marker.mergedTimes.length > 1) {
+    tipLines.push(`合并 ${marker.mergedTimes.length} 个相邻信号: ${marker.mergedTimes.join("、")}`);
+  }
+  const hoverTip = tipLines.join("\n");
 
   // Color schemes — A股惯例：上涨=红色，下跌=绿色
   // 上涨类(pulse, progressive_vol, vol_rise)用红色，下跌类(pulse_decline, volume_decline, early_vol_drop)用绿色
@@ -534,8 +613,8 @@ function renderPulseVolumeMarker(
   }
 
   // Format amount for display
-  const amountStr = marker.amount > 0 ? formatAmount(marker.amount) : "";
-  const displayLabel = amountStr ? `${marker.label} ${amountStr}` : marker.label;
+  const countSuffixFull = countSuffix;
+  const displayLabel = amountStr ? `${marker.label}${countSuffixFull} ${amountStr}` : `${marker.label}${countSuffixFull}`;
 
   // Dynamic pill width based on label length
   const estimatedCharWidth = 7.5;
@@ -543,8 +622,60 @@ function renderPulseVolumeMarker(
   const pillH = 16;
   const pillRx = 4;
 
+  // ── 简洁模式（compact）：标签降噪 ──────────────────────
+  // 按 score 分级：≥60 小圆点+短胶囊(不含金额)；30~59 仅圆点；<30 微型半透明点
+  // 去掉光晕环/连接线/白底 glow，悬停显示完整信息（原生 SVG title）
+  if (compact) {
+    const score = Math.abs(marker.score ?? 0);
+    const tier: "high" | "mid" | "low" = score >= 60 ? "high" : score >= 30 ? "mid" : "low";
+    const dotR = tier === "high" ? 5 : tier === "mid" ? 3.5 : 2.2;
+    const groupOpacity = tier === "low" ? 0.55 : 1;
+
+    // 短胶囊：仅 high 档显示，文本不含金额（×N 保留）
+    const shortLabel = `${marker.label}${countSuffixFull}`;
+    const shortW = Math.max(40, Math.min(120, Math.round(shortLabel.length * 7.5 + 8)));
+    const shortH = 14;
+
+    // 放量下跌 danger halo：仅高强度保留一个淡环
+    const keepDangerHalo = isVolumeDecline && volDeclineStrength >= 50;
+
+    return (
+      <g key={`pv-${marker.type}-${idx}`} opacity={groupOpacity}>
+        <title>{hoverTip}</title>
+        {keepDangerHalo && (
+          <circle cx={x} cy={y} r={13} fill="rgba(22, 163, 74, 0.07)" stroke="none" />
+        )}
+        <circle
+          cx={x} cy={y} r={dotR}
+          fill={tier === "low" ? bgColor : iconColor}
+          fillOpacity={tier === "low" ? 0.6 : tier === "mid" ? 0.85 : 1}
+          stroke={tier === "high" ? "white" : "none"}
+          strokeWidth={tier === "high" ? 1.2 : 0}
+          style={{ cursor: "default" }}
+        />
+        {tier === "high" && (
+          <>
+            <rect
+              x={labelX - shortW / 2} y={isAbove ? labelY - shortH / 2 - 2 : labelY - 2}
+              width={shortW} height={shortH} rx={3} ry={3}
+              fill={bgColor} stroke={borderColor} strokeWidth={0.8} fillOpacity={0.92}
+            />
+            <text
+              x={labelX} y={isAbove ? labelY : labelY + 6.5}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize={8} fontWeight={700} fill={textColor}
+            >
+              {shortLabel}
+            </text>
+          </>
+        )}
+      </g>
+    );
+  }
+
   return (
     <g key={`pv-${marker.type}-${idx}`}>
+      <title>{hoverTip}</title>
       {/* 放量下跌危险区域：绿色半透明光晕（A股：下跌=绿） */}
       {isVolumeDecline && (
         <>
@@ -650,6 +781,7 @@ function computeTimelineSignalElements(
   expandedIds: Set<string>,
   toggleExpand: (id: string) => void,
   mirrored: boolean = false,
+  labelMode: "compact" | "detailed" = "detailed",
 ): { signalElements: React.ReactNode[]; prioritySignalElements: React.ReactNode[]; bubbleElements: React.ReactNode[]; labelRects: { x: number; y: number; width: number; height: number }[]; priceLineData: any[] } | null {
   if (!formattedGraphicalItems || !xAxisMap || !yAxisMap) return null;
 
@@ -849,9 +981,14 @@ function computeTimelineSignalElements(
   const assignedLabels = new Map<number, LabelPlan>();
 
   // strong 信号优先放置，medium 其次，按 x 位置排序
+  // v7: 简洁模式（compact）下仅 strong 信号显示文字标签，medium/weak 只保留圆点
   const labeledIndices = merged
     .map((_, i) => i)
-    .filter((i) => merged[i].strength === "strong" || merged[i].strength === "medium")
+    .filter((i) => {
+      const st = merged[i].strength;
+      if (st === "strong") return true;
+      return labelMode === "detailed" && st === "medium";
+    })
     .sort((a, b) => {
       // strong 排前面，同 strength 按 x 排序
       const sa = merged[a].strength === "strong" ? 0 : 1;
@@ -2170,7 +2307,7 @@ function VwapBanAnnotations({ vwapPoints, pricePoints }: { vwapPoints: any[]; pr
 //   Layer 3 (top):    Expanded bubbles (interactive, must be on top for usability)
 
 function CombinedChartOverlay(props: any) {
-  const { formattedGraphicalItems, xAxisMap, yAxisMap, mirrored, recentDayLows, offset } = props;
+  const { formattedGraphicalItems, xAxisMap, yAxisMap, mirrored, recentDayLows, offset, labelMode = "detailed" } = props;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggleExpand = useCallback((id: string) => {
@@ -2242,18 +2379,18 @@ function CombinedChartOverlay(props: any) {
   // hasn't changed. The fingerprint is cheap to compute (one pass over points) and
   // lets us skip the heavy signal extraction + overlap resolution when data is the same.
   // OVERLAY_FP_VERSION: bump when placement/label logic changes to invalidate stale cache.
-  const OVERLAY_FP_VERSION = "v12-lowpill-liney-avoid";
+  const OVERLAY_FP_VERSION = "v13-label-density";
   const recentLowsKey = recentDayLows && recentDayLows.length > 0
     ? recentDayLows.map(d => `${d.date}:${d.low}`).join("|")
     : "none";
   const fp = buildOverlayFingerprint(formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds)
-    + `:${OVERLAY_FP_VERSION}:${mirrored ? "m" : "n"}:rl=${recentLowsKey}`;
+    + `:${OVERLAY_FP_VERSION}:${mirrored ? "m" : "n"}:rl=${recentLowsKey}:lm=${labelMode}`;
 
   const { signalResult, pvPlacedLabels, recentLowPill } = fp !== "empty"
     ? overlayCache.compute(fp, () => {
         // Compute signal elements (factor signals)
         const sr = computeTimelineSignalElements(
-          formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand, mirrored
+          formattedGraphicalItems, xAxisMap, yAxisMap, expandedIds, toggleExpand, mirrored, labelMode
         );
 
         // Compute PV marker points (screener markers)
@@ -2319,7 +2456,7 @@ function CombinedChartOverlay(props: any) {
       {/* Layer 2 (middle): 选股标记 pulse/volume markers — ON TOP of factor signals */}
       {pvPlacedLabels.length > 0 && (
         <g className="pulse-volume-markers">
-          {pvPlacedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY, p.adjustedX))}
+          {pvPlacedLabels.map((p) => renderPulseVolumeMarker(p.x, p.y, p.marker, p.idx, p.adjustedLabelY, p.adjustedX, labelMode === "compact"))}
         </g>
       )}
       {/* Layer 3: 优先信号（高开卖出/放量下跌买点）— 确保显示在最前面，不被PV标签遮挡 */}
@@ -2546,6 +2683,26 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
   const priceDps = (prevClose > 0 && prevClose < 5) ? 3 : 2;
   const priceFmt = (v: number | undefined | null) => v != null ? v.toFixed(priceDps) : "--";
   const priceFmtVal = (v: number) => v.toFixed(priceDps);
+
+  // ── 标签密度模式（Task 24: 分时图标签降噪）──
+  // compact = 简洁模式（默认）：PV标记按强度分级渲染（强→短胶囊 / 中→圆点 / 弱→微点），
+  //           因子信号仅 strong 显示文字；detailed = 详细模式：全部标签完整显示
+  const [labelMode, setLabelModeState] = useState<"compact" | "detailed">(() => {
+    if (typeof window === "undefined") return "compact";
+    try {
+      return window.localStorage.getItem("timesharing-label-mode") === "detailed" ? "detailed" : "compact";
+    } catch {
+      return "compact";
+    }
+  });
+  const setLabelMode = useCallback((mode: "compact" | "detailed") => {
+    setLabelModeState(mode);
+    try {
+      window.localStorage.setItem("timesharing-label-mode", mode);
+    } catch {
+      // ignore storage errors (private mode etc.)
+    }
+  }, []);
 
   // ── Build full-day timeline template (240 minutes total) ──
   // A-share trading day: 09:30-11:30 (120min) + 13:00-15:00 (120min)
@@ -3839,6 +3996,39 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
         })()}
         {/* Zoom Controls - timeline panel */}
         <div className="ml-auto flex items-center gap-1">
+          {/* 标签密度切换（Task 24: 分时图标签降噪）*/}
+          <div
+            className="flex items-center rounded-md border border-border overflow-hidden mr-1"
+            role="group"
+            aria-label="标注显示密度"
+          >
+            <button
+              type="button"
+              onClick={() => setLabelMode("compact")}
+              className={`h-6 px-1.5 text-[10px] font-medium transition-colors ${
+                labelMode === "compact"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              title="简洁模式：仅显示核心标注，弱信号只留圆点（悬停圆点可看详情）"
+              aria-pressed={labelMode === "compact"}
+            >
+              简洁
+            </button>
+            <button
+              type="button"
+              onClick={() => setLabelMode("detailed")}
+              className={`h-6 px-1.5 text-[10px] font-medium transition-colors ${
+                labelMode === "detailed"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              title="详细模式：显示全部标注文字与金额"
+              aria-pressed={labelMode === "detailed"}
+            >
+              详细
+            </button>
+          </div>
           {isZoomed && (
             <Button
               variant="outline"
@@ -4742,7 +4932,7 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
                 }} />
               );
             })()}
-            <Customized component={CombinedChartOverlay} mirrored={mirrored} recentDayLows={recentDayLows} />
+            <Customized component={CombinedChartOverlay} mirrored={mirrored} recentDayLows={recentDayLows} labelMode={labelMode} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

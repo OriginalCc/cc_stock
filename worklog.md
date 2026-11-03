@@ -1322,3 +1322,46 @@ Stage Summary:
 - 面板模式下暂停全部行情轮询（autoRefresh 开关 + pageMode 守卫），T 助手模式自动恢复
 - 表格行 memo 化实现真正的增量渲染：数据无变化的行完全跳过重渲染
 - bun run lint 通过；浏览器验证分时页面 12 秒零轮询、刷新/预览/hover/页面切换全部正常
+
+---
+Task ID: 24
+Agent: Main Claude (Z.ai Code)
+Task: 分时图标签降噪 — 简洁/详细双模式 + 同类型标记聚合
+
+Work Log:
+- 问题分析：分时图 6 层标注叠加（VWAP禁止买卖/因子信号/选股PV标记/优先信号/展开气泡/5日最低），
+  其中选股 PV 标记为最大噪音源：9 类标记每个都渲染「圆点+图标+光晕环+虚线连接线+白底文字胶囊+金额」，
+  活跃行情下 10~20 个胶囊直接盖住曲线；因子信号 medium 级别也带文字标签
+- 改造 1（同类型相邻聚合）：extractPulseVolumePoints 末尾新增 aggregatePvMarkerPoints，
+  同类型标记横向距离 ≤24px 合并为一个（AGG_MERGE_PX=24），保留 score 最高者的位置，
+  mergedCount/mergedTimes 记录合并信息；标签追加 ×N；新增 AggregatedPvMarker 类型贯穿
+  computePvLabelLayout / resolvePvLabelOverlaps / renderPulseVolumeMarker / PlacedLabel
+- 改造 2（简洁模式渲染）：renderPulseVolumeMarker 新增 compact 参数，
+  按 score 分级：≥60 → 圆点+短胶囊（不含金额）；30~59 → 仅圆点(r3.5)；<30 → 微型半透明点(r2.2, opacity0.55)；
+  去掉光晕环/连接线/白底 glow；放量下跌 danger halo 仅 score≥50 保留一个淡环
+- 改造 3（因子信号降噪）：computeTimelineSignalElements 新增 labelMode 参数，
+  compact 下 labeledIndices 仅保留 strong（medium/weak 只渲染圆点无文字）
+- 改造 4（悬停提示）：两种模式下每个 PV 标记 g 内加 SVG <title>（时间+类型+×N+成交额+强度+合并明细），
+  鼠标悬停圆点即可看完整信息，弥补简洁模式隐藏的文字
+- 改造 5（模式切换 UI）：TimeSharingPanel 头部缩放控件左侧新增「简洁|详细」分段按钮
+  （role=group aria-label=标注显示密度，aria-pressed 状态）；
+  labelMode state 默认 compact，localStorage key=timesharing-label-mode 持久化（SSR 安全初始化）
+- 改造 6（缓存失效）：CombinedChartOverlay 接收 labelMode prop，overlay 指纹追加 :lm={labelMode}，
+  OVERLAY_FP_VERSION 升级 v13-label-density；切换模式时 overlay 缓存正确重算
+- 验证：
+  * 聚合函数单测（bun）：相邻合并/异类型不合并/链式合并+远端保留 全部通过
+  * bun run lint 通过
+  * Agent Browser 实测（茅台 600519，11 个 PV 标记）：
+    - 详细模式：11 个完整胶囊（含金额）+ 29 circle（含光晕）+ medium 信号标签
+    - 简洁模式：仅 3 个短胶囊（score≥60：强递增69/强放量拉升85/量增价涨70）+ 12 circle，
+      8 个低分标记变纯圆点，medium 信号标签（微脉冲拉升(中)等）全部隐藏，
+      6 个 strong 因子信号标签保留，11 个悬停提示完整
+  * 分时倒影模式行为不变（无 PV 标记/保留 VWAP 标注+优先信号+5日最低，原有设计）
+  * localStorage 刷新后记忆模式选择；程序化 click 不触发 Radix Tabs（用原生 click 验证）
+
+Stage Summary:
+- 分时图标签噪音根治：简洁模式（默认）= 强信号分级显示 + 弱信号纯圆点 + 悬停看详情；
+  详细模式 = 原有完整标签；两种模式均受益于同类型相邻标记聚合（×N）
+- 核心信息不丢失：strong 因子信号、优先买卖点、VWAP 标注、5日最低在两种模式下均完整显示；
+  PV 标记细节通过原生 SVG <title> 悬停可查
+- 默认简洁模式对新用户生效，老用户可通过「简洁|详细」切换并自动记忆
