@@ -11,7 +11,9 @@ function getSectorCacheTTL(): number {
   if (!isWeekday) return 300000;
   const isTrading = ((chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35)) ||
     (chinaHour === 13 || chinaHour === 14 || (chinaHour === 15 && chinaMinute <= 5));
-  return isTrading ? 4000 : 300000; // 4s during trading (supports 5s client refresh), 5min otherwise
+  return isTrading ? 15000 : 300000; // 15s during trading — the sector trend is a slow reference
+  // overlay; 15s keeps us ~4 req/min per sector (the trends2 endpoint family
+  // rate-limits aggressively — see the note in ashare-timeline/route.ts)
 }
 
 /**

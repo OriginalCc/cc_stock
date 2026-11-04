@@ -1408,3 +1408,59 @@ Stage Summary:
 - 附带收益：每 2.5s 省去一次 ~7000 次条件评估的 generateTimelineSignals 重算
   （纯报价 tick 下 deps 恒等，memo 直接跳过），行情活跃时 CPU 占用同步下降
 - 涉及文件：src/app/page.tsx、src/components/time-sharing-panel.tsx
+
+---
+
+Task ID: 26
+Agent: Main Claude (Z.ai Code)
+Task: 分时图不显示修复 — 数据源降级（腾讯WAF+新浪5分钟退化）+ Y域拉伸压缩曲线
+
+Work Log:
+- 用户反馈：分时图还是有 bug，现在分时图不显示了
+- 排查过程（Agent Browser 截图 + DOM + API 三层定位）：
+  1. 图表 DOM 中价格 Line 路径存在但全是「M x,y Z」孤立点（0 个连续 C 段），
+     相邻点 X 间隔 ≈22.9px = 5 分钟/点 → 分时数据退化为 5 分钟级
+  2. curl 验证 /api/stock/ashare-timeline 返回 22 个 5 分钟间隔点（09:35-11:20）
+  3. 根因链：腾讯分时 API（原主源）被 WAF 拦截（501 页面）→ 走新浪 5 分钟 K 线回退
+     → 5 分钟稀疏点 + connectNulls=false → 曲线退化为散点 → "图不显示"
+- 修复 1（新模块 src/lib/em-timeline-server.ts，server-only）：
+  主数据源切换为东财 trends2/get（http://push2.eastmoney.com，1 分钟级、自带真实 VWAP，
+  与板块面板同款路径；注意不带 /get 的 /trends2 在所有 EM 主机 404）
+  * 原生 node:http 客户端（绕过 Next 补丁过的 global fetch——dev server 内
+    push2 系统性 "other side closed" 而独立 node 正常）
+  * 容忍"响应后立即 RST"：body 累积后在 close 事件校验 JSON，避免 undici 丢弃已收到的 body
+  * 多 IP 重试：dns.resolve4 解析 A 记录逐个尝试（轮询后端好坏不一）
+  * 午休衔接点 ensureLunchContinuity（13:00 补 morning close，腾讯路径共用）
+  * lastGood 降级守卫：EM+腾讯都失败时返回最近一次 1 分钟级数据（≤15min），
+    杜绝退化为新浪 5 分钟散点；新浪仅作冷启动兜底
+  * isOneMinuteGrade 校验相邻间隔 ≥60% 为 1 分钟才入库 lastGood
+- 修复 2（Y 轴域拉伸钳制，time-sharing-panel.tsx）：
+  5日最低价（茅台 1322 vs 今日 1452-1480）曾把 Y 域拉到 175 点跨度，
+  价格线被压到底部 ~16% 区域，默认滚动位置看不到曲线（次要根因）
+  → 域扩展设上限（≤60% 日内跨度），越界的 5日最低 pill 改为边缘钳制渲染
+  （连接线/圆点 clamp 到绘图区边缘，候选锚点用钳制后位置，fallback 双向 clamp）
+  → 价格线占面板比例 16% → ~70%
+- 修复 3（EM 限流再平衡）：
+  该端点族按 IP 突发限流（timeline 24/min + sector 12/min + 指数 12/min ≈ 48/min 触发多分钟重置窗口）
+  → ashare-timeline 路由交易时段 TTL 1s→8s（盘中实时性由 quote 每 2.5s 合并尾点保证，
+  quote 补尾 slot 的 avgPrice 改继承上一 slot 的 VWAP，避免均线尾尖跳到现价）
+  → ashare-sector 路由 4s→15s（板块趋势为慢参考层）
+- 验证（茅台 600519，午休时段完整上午数据）：
+  * API 连续 3 次探测：122 items、120 个 1 分钟间隔、09:30→13:00 ✓
+  * 浏览器 DOM：价格 Line 121 个连续 C 段、0 散点；线宽 555px 高 331px ✓
+  * 分时倒影 + 分时两种模式截图：曲线/均线/VWAP带/信号标签/十字光标 tooltip 完整 ✓
+  * VOL 量能柱、MACD 双线柱完整 ✓；5日最低 pill 边缘钳制显示 ✓
+  * 控制台无图表相关错误（SectorTopBottom 500 为 EM clist 端点坏窗口的
+    既有独立问题，EM 恢复后自愈，未纳入本次范围）
+  * bun run lint 通过
+
+Stage Summary:
+- 分时图"不显示"的真正根因是数据源层：腾讯 WAF → 新浪 5 分钟降级 → 散点化，
+  叠加 Y 域被远低参考价拉伸导致的"空白图表"视觉；两者都已修复
+- 数据链路新秩序：EM trends2/get（1分钟主源，raw http 客户端）→ 腾讯 →
+  lastGood(≤15min) → 新浪 5 分钟；EM 请求预算 ~20/min 避免再触发限流
+- 已知残留：东财端点坏窗口期内 sector-top-bottom 卡片（clist 端点）可能 500，
+  属既有独立问题，如持续可复用 raw http 客户端治理
+- 涉及文件：src/lib/em-timeline-server.ts（新）、src/lib/ashare-api.ts、
+  src/app/api/stock/ashare-timeline/route.ts、src/app/api/stock/ashare-sector/route.ts、
+  src/components/time-sharing-panel.tsx、src/app/page.tsx

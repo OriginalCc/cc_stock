@@ -439,56 +439,39 @@ export async function searchAShare(query: string): Promise<AShareSearchResult[]>
   return results;
 }
 
-// ── Timeline / 分时 Data ──────────────────────────────
+// ── Timeline / 分时 Data ──────────────────────────
+
 
 /**
- * Get intraday timeline data for 分时图
- * Primary: Tencent minute API (provides real-time 1-min data)
- * Fallback: Sina 5-min K-line data (when Tencent API is unavailable)
+ * Handle lunch break transition: keep a 13:00 entry for line continuity.
+ * The 13:00 entry carries the morning close price (volume 0) so the timeline
+ * line doesn't visually break between 11:30 and the first afternoon point.
  */
-export async function getAShareTimeline(
-  symbol: string,
-  prevCloseFromQuote?: number
-): Promise<{ items: AShareTimelineItem[]; prevClose: number }> {
-  const sinaSymbol = toSinaSymbol(symbol);
+function ensureLunchContinuity(items: AShareTimelineItem[]): void {
+  const has1300 = items.some(item => item.time === "13:00");
+  if (has1300 || items.length === 0) return;
 
-  // If prevClose is provided externally, skip the separate quote fetch
-  const quotePromise = prevCloseFromQuote
-    ? Promise.resolve({ prevClose: prevCloseFromQuote } as any)
-    : getAShareQuote(symbol);
-  
-  // Try Tencent minute API first (provides real 1-minute data)
-  try {
-    const [quote, tencentResult] = await Promise.all([
-      quotePromise,
-      getTencentMinuteData(sinaSymbol, prevCloseFromQuote || 0, symbol), // prevClose=0, will adjust later
-    ]);
-    const prevClose = quote?.prevClose || tencentResult.prevClose || 0;
-    if (tencentResult.items.length > 0) {
-      // Adjust changePercent with correct prevClose
-      if (prevClose > 0 && tencentResult.items.some(item => item.changePercent === 0)) {
-        for (const item of tencentResult.items) {
-          item.changePercent = Number((((item.price - prevClose) / prevClose) * 100).toFixed(2));
-        }
-      }
-      return { items: tencentResult.items, prevClose };
-    }
-  } catch (error) {
-    console.error("Tencent minute data fetch error:", error);
-  }
+  const lastMorningItem = [...items].reverse().find(item => {
+    const hour = parseInt(item.time.split(":")[0]);
+    return hour <= 11;
+  });
+  if (!lastMorningItem) return;
 
-  // Fallback with quote
-  try {
-    const quote = await quotePromise;
-    const prevClose = quote?.prevClose || 0;
-    const sinaResult = await getSinaTimelineFallback(sinaSymbol, prevClose);
-    if (sinaResult.items.length > 0) {
-      return sinaResult;
-    }
-    return { items: [], prevClose };
-  } catch (error) {
-    console.error("Sina timeline fallback error:", error);
-    return { items: [], prevClose: 0 };
+  const insertIdx = items.findIndex(item => {
+    const hour = parseInt(item.time.split(":")[0]);
+    return hour >= 13;
+  });
+  const new1300: AShareTimelineItem = {
+    time: "13:00",
+    price: lastMorningItem.price,
+    avgPrice: lastMorningItem.avgPrice,
+    volume: 0,
+    changePercent: lastMorningItem.changePercent,
+  };
+  if (insertIdx >= 0) {
+    items.splice(insertIdx, 0, new1300);
+  } else {
+    items.push(new1300);
   }
 }
 
@@ -496,7 +479,7 @@ export async function getAShareTimeline(
  * Tencent minute data API - provides real-time 1-minute intraday data
  * Format: "HHMM price cumulative_volume cumulative_amount"
  */
-async function getTencentMinuteData(
+export async function getTencentMinuteData(
   sinaSymbol: string,
   prevClose: number,
   originalSymbol?: string
@@ -586,36 +569,8 @@ async function getTencentMinuteData(
   }
 
   // Handle lunch break transition: keep 13:00 entry for line continuity
-  // The 13:00 entry often has volume=0 (no new trades yet in afternoon session)
-  // but it carries a valid price that's needed to connect the timeline
-  // If 13:00 is missing entirely, add it using the 11:30 closing price
-  const has1300 = items.some(item => item.time === "13:00");
-  if (!has1300 && items.length > 0) {
-    // Find the last morning session price (11:30 or earlier)
-    const lastMorningItem = [...items].reverse().find(item => {
-      const hour = parseInt(item.time.split(":")[0]);
-      return hour <= 11;
-    });
-    if (lastMorningItem) {
-      // Insert 13:00 entry at the right position with the morning close price
-      const insertIdx = items.findIndex(item => {
-        const hour = parseInt(item.time.split(":")[0]);
-        return hour >= 13;
-      });
-      const new1300: AShareTimelineItem = {
-        time: "13:00",
-        price: lastMorningItem.price,
-        avgPrice: lastMorningItem.avgPrice,
-        volume: 0,
-        changePercent: lastMorningItem.changePercent,
-      };
-      if (insertIdx >= 0) {
-        items.splice(insertIdx, 0, new1300);
-      } else {
-        items.push(new1300);
-      }
-    }
-  }
+  // (shared helper — also used by the EastMoney timeline path)
+  ensureLunchContinuity(items);
 
   return { items, prevClose };
 }
@@ -624,7 +579,7 @@ async function getTencentMinuteData(
  * Fallback: Use Sina 5-minute K-line data for timeline
  * Used when Tencent minute API is unavailable
  */
-async function getSinaTimelineFallback(
+export async function getSinaTimelineFallback(
   sinaSymbol: string,
   prevClose: number
 ): Promise<{ items: AShareTimelineItem[]; prevClose: number }> {

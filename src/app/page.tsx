@@ -656,7 +656,11 @@ export default function StockTAssistant() {
     }
     if (isTradingHours) {
       const changePercent = quote.prevClose > 0 ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : 0;
-      return [...truncated, { time: curMin, price: quote.price, avgPrice: quote.price, volume: 0, changePercent: Number((changePercent ?? 0).toFixed(2)) }];
+      // The timeline feed refreshes every ~8s (rate-limit budget); between refreshes the
+      // real-time quote appends the current-minute slot here. Carry the PREVIOUS slot's
+      // VWAP forward — jumping avgPrice to quote.price would make the 均线 tail spike to
+      // the price line for up to 8s until the real slot lands.
+      return [...truncated, { time: curMin, price: quote.price, avgPrice: last.avgPrice || quote.price, volume: 0, changePercent: Number((changePercent ?? 0).toFixed(2)) }];
     }
     return truncated;
   }, [timeline, quote, isTimelineActive]);

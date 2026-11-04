@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAShareTimeline, getAShareQuote, isAShare } from "@/lib/ashare-api";
+import { getAShareQuote, isAShare } from "@/lib/ashare-api";
+import { getAShareTimeline } from "@/lib/em-timeline-server";
 import { fetchGuarded } from "@/lib/fetch-guard";
 
 /**
@@ -20,7 +21,12 @@ function getTimelineCacheTTL(): number {
   const isMorningSession = (chinaHour === 9 && chinaMinute >= 25) || chinaHour === 10 || (chinaHour === 11 && chinaMinute <= 35);
   const isAfternoonSession = (chinaHour === 13) || (chinaHour === 14) || (chinaHour === 15 && chinaMinute <= 5);
 
-  if (isMorningSession || isAfternoonSession) return 1000; // 1s during trading (1.5s client refresh)
+  if (isMorningSession || isAfternoonSession) return 8000; // 8s during trading
+  // Rate-limit note: the EastMoney trends endpoint family aggressively rate-limits
+  // per IP (bursts of ~50 req/min from timeline + sector + index polls trigger
+  // multi-minute connection-reset windows). 8s keeps us ~7.5 req/min per symbol —
+  // intra-minute price movement still renders live because the client merges the
+  // real-time quote into the last slot every 2.5s (see liveTimeline in page.tsx).
   return 300000; // 5 min outside trading hours
 }
 

@@ -1886,12 +1886,18 @@ function computeRecentLowPill(
     const parts = item.date.split("-");
     const dateLabel = parts.length >= 3 ? `${parts[1]}/${parts[2]}` : item.date;
     const lineY = yAxis.scale(item.low);
+    // 当 5日最低价超出 Y 轴域时（Y 轴不再为远低的参考价拉伸，见 zoom memo），
+    // scale(low) 会落在绘图区外 — 连接线/圆点钳制到绘图区边缘，避免画到图表外。
+    const lineYClamped = Math.min(Math.max(lineY, chartTop), chartBottom);
 
     // 始终把标签偏离5日最低线，并添加虚线连接线指向5日最低线。
     // 偏离方向：优先选择空间更大的一侧（避免越界），然后避让信号标签和分时曲线。
     const spaceAbove = lineY - chartTop;
     const spaceBelow = chartBottom - lineY;
     const preferAbove = spaceAbove >= spaceBelow;
+    // 5日最低价越界时，真实 lineY 可能距绘图区上千像素 — 候选位置改以钳制后的
+    // 边缘位置为锚点，保证 pill 始终落在绘图区内（方向偏好仍参考真实 lineY）。
+    const anchorY = lineYClamped;
 
     // 候选位置生成策略：紧贴5日最低线（小偏移）优先，X方向扫描找空位避开其他标签。
     // 在 mirrored 模式下5日最低线接近顶部，上方可能有买点标签，下方有曲线，
@@ -1912,10 +1918,10 @@ function computeRecentLowPill(
     // 对每个Y偏移，preferred侧和other side都尝试，X方向扫描
     for (const off of Y_OFFSETS) {
       // preferred侧
-      const prefY = preferAbove ? lineY - PILL_H - off : lineY + off;
+      const prefY = preferAbove ? anchorY - PILL_H - off : anchorY + off;
       for (const xp of xPositions) candidates.push({ x: xp, y: prefY });
       // other side
-      const otherY = preferAbove ? lineY + off : lineY - PILL_H - off;
+      const otherY = preferAbove ? anchorY + off : anchorY - PILL_H - off;
       for (const xp of xPositions) candidates.push({ x: xp, y: otherY });
     }
 
@@ -1945,10 +1951,10 @@ function computeRecentLowPill(
         }
       }
       if (!bestRect) {
-        // 所有候选都越界，用preferred侧小偏移
+        // 所有候选都越界，用preferred侧小偏移，并钳制到绘图区内
         const fallbackY = preferAbove
-          ? Math.max(chartTop + 2, lineY - PILL_H - 10)
-          : Math.min(chartBottom - PILL_H - 2, lineY + 10);
+          ? Math.min(Math.max(chartTop + 2, anchorY - PILL_H - 10), chartBottom - PILL_H - 2)
+          : Math.max(Math.min(chartBottom - PILL_H - 2, anchorY + 10), chartTop + 2);
         bestRect = { x: PILL_X, y: fallbackY, width: PILL_W, height: PILL_H };
       }
       pillRect = bestRect;
@@ -1956,7 +1962,7 @@ function computeRecentLowPill(
 
     // 标签始终偏离5日最低线，因此始终需要虚线连接线
     const pillCenterY = pillRect.y + PILL_H / 2;
-    const pillIsAbove = pillCenterY < lineY;
+    const pillIsAbove = pillCenterY < lineYClamped;
     // 连接线X位置跟随标签实际位置（标签可能在X方向偏移过）
     const connectorX = pillRect.x + PILL_W / 2;
     // 连接线起点：标签靠5日最低线那一侧的边
@@ -1964,19 +1970,19 @@ function computeRecentLowPill(
 
     elements.push(
       <g key={`recent-low-pill-${li}`}>
-        {/* 虚线连接线：始终从标签连到5日最低线，指向5日最低线 */}
+        {/* 虚线连接线：始终从标签连到5日最低线，指向5日最低线（越界时钳制到绘图区边缘） */}
         <line
           x1={connectorX}
           y1={connectorY1}
           x2={connectorX}
-          y2={lineY}
+          y2={lineYClamped}
           stroke="#dc2626"
           strokeWidth={1.3}
           strokeDasharray="3 2"
           opacity={0.85}
         />
         {/* 5日最低线上的连接点圆点（强调指向位置） */}
-        <circle cx={connectorX} cy={lineY} r={2.5} fill="#dc2626" stroke="white" strokeWidth={0.8} />
+        <circle cx={connectorX} cy={lineYClamped} r={2.5} fill="#dc2626" stroke="white" strokeWidth={0.8} />
         {/* 标签发光层 */}
         <rect
           x={pillRect.x - 2}
@@ -3115,10 +3121,23 @@ export const TimeSharingPanel = React.memo(function TimeSharingPanel({
     if (spc < ymn) ymn = spc - pcm;
     else if (spc > ymx) ymx = spc + pcm;
 
-    // Ensure 5-day low line is always within Y-axis domain
+    // 5-day low reference: only stretch the Y-axis domain down to the low when it
+    // sits reasonably close to today's range (total extension <= 60% of the padded
+    // day span). When a stock has rallied far above its recent lows (e.g. day range
+    // ~28pt while the 5-day low sits ~125pt below), the old unconditional stretch
+    // compressed the intraday line into a ~15% sliver at the panel edge — at the
+    // default scroll position the chart body looked EMPTY ("分时图不显示").
+    // Off-scale lows now render as edge-clamped pills instead (see
+    // computeRecentLowPill), and the other y-references (MA5 / 支撑压力) already
+    // guard with yMin/yMax filters.
     if (recentDayLows && recentDayLows.length > 0) {
-      for (const dl of recentDayLows) {
-        if (dl.low > 0 && dl.low < ymn) ymn = dl.low - pcm;
+      const ymn0 = ymn;
+      const maxDrop = (ymx - ymn0) * 0.6;
+      const lows = recentDayLows
+        .filter(dl => dl.low > 0 && dl.low < ymn0 && ymn0 - dl.low <= maxDrop)
+        .sort((a, b) => b.low - a.low); // highest (nearest) low first
+      for (const dl of lows) {
+        ymn = Math.min(ymn, dl.low - pcm);
       }
     }
 
