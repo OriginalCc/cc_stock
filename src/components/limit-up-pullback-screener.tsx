@@ -875,8 +875,8 @@ function SummaryCard({
       title: "机会股",
       value: String(oppCount),
       subtitle: `风险股 ${riskCount} 只`,
-      bg: "bg-emerald-500/[0.04] border-emerald-500/15",
-      fg: "text-emerald-600 dark:text-emerald-400",
+      bg: "bg-red-500/[0.04] border-red-500/15",
+      fg: "text-red-600 dark:text-red-400",
     },
     {
       icon: ArrowDownRight,
@@ -1773,7 +1773,7 @@ function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
       {/* Right: Signal + Risk + Quality score cards (stacked) */}
       <div className="flex flex-col gap-3">
         {/* Signal card (机会/观察/风险, rules from 共性归纳) */}
-        <div className={`flex flex-col gap-2 p-3 rounded-lg border ${signalMeta.badge}`}>
+        <div className={`flex flex-col gap-2 p-3 rounded-lg border ${signalMeta.card}`}>
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             {signal.type === "opportunity"
               ? <TrendingUp className="w-3 h-3" />
@@ -3548,8 +3548,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                   连板标签 (1B/2B/3B/4B+)
                 </span>
                 <span className="text-[11px] flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3 text-emerald-500" />
-                  信号: 机会 / 观察 / 风险 (评分≥65 且反弹确认 → 机会；≤38 → 风险)
+                  <TrendingUp className="w-3 h-3 text-red-500" />
+                  信号: 机会(实底红) / 观察 / 风险 (评分≥65 且反弹确认 → 机会；≤38 → 风险)
                 </span>
               </div>
             </div>

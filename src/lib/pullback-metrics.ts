@@ -103,22 +103,27 @@ export interface StockSignal {
 
 export const SIGNAL_META: Record<SignalType, {
   label: string;
-  badge: string;
+  badge: string; // 行内小徽章（表格/卡片/分布行）
+  card: string;  // 展开详情大卡片容器（低饱和底色，不用实底徽章色）
   desc: string;
 }> = {
   opportunity: {
     label: "机会",
-    badge: "bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+    // 鲜艳实底红（A股语义：红=涨/机会），白字 + 微光晕，表格中最醒目
+    badge: "bg-red-500 border-red-500 text-white shadow-sm shadow-red-500/40",
+    card: "bg-red-500/[0.07] border-red-500/40",
     desc: "反弹确认 + 企稳信号共振",
   },
   watch: {
     label: "观察",
     badge: "bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400",
+    card: "bg-amber-500/[0.06] border-amber-500/30",
     desc: "具备部分条件，等待反弹确认",
   },
   risk: {
     label: "风险",
     badge: "bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400",
+    card: "bg-red-500/[0.06] border-red-500/30",
     desc: "反弹乏力或阴跌未止",
   },
 };

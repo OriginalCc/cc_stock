@@ -1628,3 +1628,23 @@ Work Log:
 - 涉及文件：src/lib/pullback-metrics.ts（新建）、
   src/components/pullback-commonality.tsx（重构+信号分布行）、
   src/components/limit-up-pullback-screener.tsx（信号列/徽章/筛选/导出/统计卡/图例）
+
+---
+
+Task ID: 32
+Agent: Main Claude (Z.ai Code)
+Task: 机会信号改为鲜艳实底红标注（用户要求红色高亮）
+
+Work Log:
+- 用户需求：信号为"机会"时用更鲜艳的颜色（如红色）标注
+- 修改 src/lib/pullback-metrics.ts SIGNAL_META：
+  1. opportunity.badge: 浅绿底 → 实底红（bg-red-500 text-white shadow-red-500/40
+     光晕），表格中最醒目，符合 A 股"红=涨/机会"语义
+  2. 新增 card 字段与 badge 分离：展开详情信号卡容器改用低饱和红底
+     （bg-red-500/[0.07]），避免整卡变实红色块；观察/风险卡样式同步迁移
+- 同步配色：统计卡"机会股"emerald → red；策略说明图例注明"机会(实底红)"
+- 页尾共性归纳的信号分布徽章复用 SIGNAL_META.badge，自动跟随变实底红
+- 验证（agent-browser）：表格机会徽章 computed bg=red-500/白字 ✓；
+  与琥珀色"观察"对比鲜明 ✓；展开详情卡为浅红底非实底 ✓；
+  页尾"机会 191 只（75%）"实底红 ✓；lint 通过
+- 涉及文件：src/lib/pullback-metrics.ts、src/components/limit-up-pullback-screener.tsx
