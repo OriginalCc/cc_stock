@@ -1561,3 +1561,36 @@ Work Log:
 - 修复：bg-rose-700/800 → bg-rose-500/600，与其余四桶配色规范一致
 - 验证：DOM class 确认为 bg-rose-500，截图柱子呈明亮玫瑰红；lint 通过
 - 涉及文件：src/components/limit-up-pullback-screener.tsx（1 行）
+
+---
+
+Task ID: 30
+Agent: Main Claude (Z.ai Code)
+Task: 回踩选股页尾新增「共性归纳」板块 — 归纳涨停后回踩又上涨股票的共性
+
+Work Log:
+- 用户需求：归纳涨停后回踩又上涨股票的共性，总结到页尾
+- 新建 src/components/pullback-commonality.tsx：全部指标从当前扫描样本动态计算
+  （非写死文案），随每轮扫描自动更新；样本 <5 只不渲染
+- 分析口径（每只股票由 klineSummary 派生）：
+  1. 反弹幅度 = 现价相对涨停后最低收盘价的涨幅
+  2. 低点窗口 = 回踩低点距涨停日的交易日数；反弹启动 = 低点距最新交易日数
+  3. 连板数 = 涨停日向前连续涨停天数（19.5%/9.5% 阈值按涨停日涨幅推断板块）
+- 内容结构：6 统计芯片（样本/自低点反弹/今日收涨/中位反弹/首板占比/低点窗口）
+  + 分组洞察（反弹动能/回踩结构/时间窗口/涨停质量/资金画像/风险甄别）
+  + 「一句话共性」高亮框 + 口径说明
+- 实测共性（255 样本）：69% 自低点反弹≥3%（中位+5.0%）、89% 今日收涨、
+  83% 完全回吐涨幅（最大回撤中位 23.1%）、低点距涨停中位 6 天且 88% 落在 3-8 天、
+  低点后中位 1 天即反抽、首板占 85%
+- 优雅降级：行情富化（换手/量比/市值）缺失时（ulist.np 间歇不可用），
+  有效样本 <30% 则资金画像条目自动隐藏，其余洞察不受影响
+- 顺带修复 API 字段映射 bug：fetchRealtimeQuotes 误用 f9（市盈率）当量比、
+  f10（量比）当市值 → 改为 f10=量比、f20（元）/1e8=市值（亿）；
+  该 bug 同时污染表格市值列、量比列与回踩质量评分
+- 验证（agent-browser）：页尾渲染 ✓；富化缺失时资金画像隐藏 ✓；
+  移动端 390px 芯片自动 2 列、卡片 356px 无溢出（页面级横向滚动为原表格
+  overflow-x-auto 设计）✓；控制台无错误 ✓
+- bun run lint 通过
+- 涉及文件：src/components/pullback-commonality.tsx（新建）、
+  src/components/limit-up-pullback-screener.tsx（导入 + 页尾挂载）、
+  src/app/api/stock/limit-up-pullback/route.ts（字段映射修复）

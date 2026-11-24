@@ -67,6 +67,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
+import { PullbackCommonality } from "@/components/pullback-commonality";
 
 // ── Types (matching API response) ─────────────────────
 
@@ -3454,8 +3455,13 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
               </div>
             </div>
           </div>
-        </CardContent>
+      </CardContent>
       </Card>
+
+      {/* ── 共性归纳 (page footer) ───────────────────── */}
+      {result && result.success && (result.stocks?.length ?? 0) >= 5 && (
+        <PullbackCommonality stocks={result.stocks} timestamp={result.timestamp} />
+      )}
 
       {/* Custom scrollbar styles */}
       <style dangerouslySetInnerHTML={{ __html: `
