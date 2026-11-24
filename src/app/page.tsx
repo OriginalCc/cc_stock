@@ -59,7 +59,7 @@ import {
 } from "lucide-react";
 
 export default function StockTAssistant() {
-  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "intraday-screener" | "sector-rotation" | "early-screen" | "low-open" | "baota-deploy" | "limit-up-pullback">("t-assistant");
+  const [pageMode, setPageMode] = useState<"t-assistant" | "screener" | "intraday-screener" | "sector-rotation" | "early-screen" | "low-open" | "baota-deploy" | "limit-up-pullback">("limit-up-pullback");
   // Pause all market-data polling (timeline/quote/sector/index) while a screener
   // panel is active — their data is only rendered in T-assistant mode, and the
   // every-2.5s setState used to re-render the whole page (flickering tables).
