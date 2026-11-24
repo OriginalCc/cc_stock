@@ -1736,3 +1736,21 @@ Work Log:
 - 验证（agent-browser，重新登录 888888）：菜单栏顺序 ✓；回踩选股首位且默认高亮 ✓；
   页面正常渲染（盘前研判横幅/统计卡）✓；lint 通过
 - 涉及文件：src/app/page.tsx
+
+---
+
+Task ID: 36
+Agent: Main Claude (Z.ai Code)
+Task: 表格列顺序调整 — 涨停涨幅移到走势列前、今日涨跌移到连板列后
+
+Work Log:
+- 用户需求：回踩选股列表中 1) 涨停涨幅放到走势列前面 2) 今日涨跌放到连板列后面
+- 修改 src/components/limit-up-pullback-screener.tsx 表格视图（表头+表体同步移动，共 6 处编辑）：
+  新列序：展开 | 代码/名称 | 信号 | 涨停日 | 连板 | 今日涨跌 | 涨停价 | 起涨点 | 当前价 |
+  回踩深度 | 距涨停 | 最大回撤 | 风险 | 质量 | 换手率 | 市值 | 量比 | 涨停涨幅 | 走势 | 收藏
+- 排序字段不变（currentChangePct / limitUpPct），SortableHead 排序、CSV 导出、卡片视图、
+  展开详情均不受影响（CSV 保持数据逻辑顺序，未随视觉列序变动）
+- 验证（agent-browser，重新登录 888888）：表头顺序 ✓；首行单元格逐列对齐
+  （连板 2B → +1.45% 今日涨跌 → 13.96 涨停价 …；量比 0.98 → +10.01% 涨停涨幅 → 走势）✓；
+  今日涨跌列点击排序（升序箭头生效）✓；lint 通过
+- 涉及文件：src/components/limit-up-pullback-screener.tsx

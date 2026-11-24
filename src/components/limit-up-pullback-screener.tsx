@@ -3481,11 +3481,10 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                       <SortableHead label="信号" field="signalScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[70px]" align="right" />
                       <TableHead className="text-[11px] font-medium w-[80px]">涨停日</TableHead>
                       <SortableHead label="连板" field="limitUpStreak" current={sortField} order={sortOrder} onSort={handleSort} className="w-[52px]" align="right" />
-                      <SortableHead label="涨停涨幅" field="limitUpPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
+                      <SortableHead label="今日涨跌" field="currentChangePct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
                       <SortableHead label="涨停价" field="limitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="起涨点" field="preLimitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="当前价" field="currentPrice" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
-                      <SortableHead label="今日涨跌" field="currentChangePct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
                       <SortableHead label="回踩深度" field="approachPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[130px]" align="right" />
                       <SortableHead label="距涨停" field="daysSinceLimitUp" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="最大回撤" field="maxPullbackPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
@@ -3494,6 +3493,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                       <SortableHead label="换手率" field="turnover" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
                       <SortableHead label="市值" field="marketCap" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
                       <SortableHead label="量比" field="volumeRatio" current={sortField} order={sortOrder} onSort={handleSort} className="w-[50px]" align="right" />
+                      <SortableHead label="涨停涨幅" field="limitUpPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
                       <TableHead className="text-[11px] font-medium w-[110px]">走势</TableHead>
                       <TableHead className="text-[11px] font-medium w-[40px] text-center">收藏</TableHead>
                     </TableRow>
@@ -3578,9 +3578,9 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               </div>
                             </TableCell>
 
-                            {/* 涨停涨幅 - text-right */}
-                            <TableCell className="text-[11px] font-mono py-2 font-medium text-red-500 text-right">
-                              +{stock.limitUpPct.toFixed(2)}%
+                            {/* 今日涨跌 - text-right (with explicit + / - prefix) */}
+                            <TableCell className={`text-[11px] font-mono py-2 font-medium text-right ${stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500"}`}>
+                              {stock.currentChangePct >= 0 ? "+" : ""}{stock.currentChangePct.toFixed(2)}%
                             </TableCell>
 
                             {/* 涨停价 - text-right */}
@@ -3596,11 +3596,6 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                             {/* 当前价 - text-right */}
                             <TableCell className={`text-[11px] font-mono py-2 font-medium text-right ${stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500"}`}>
                               {stock.currentPrice.toFixed(2)}
-                            </TableCell>
-
-                            {/* 今日涨跌 - text-right (with explicit + / - prefix) */}
-                            <TableCell className={`text-[11px] font-mono py-2 font-medium text-right ${stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500"}`}>
-                              {stock.currentChangePct >= 0 ? "+" : ""}{stock.currentChangePct.toFixed(2)}%
                             </TableCell>
 
                             {/* 回踩深度 - text-right (ApproachBar keeps internal layout) */}
@@ -3647,6 +3642,11 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                             {/* 量比 - text-right */}
                             <TableCell className={`text-[11px] font-mono py-2 text-right ${stock.volumeRatio >= 1.5 ? "text-amber-600 dark:text-amber-400 font-medium" : "text-foreground"}`}>
                               {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(2) : "--"}
+                            </TableCell>
+
+                            {/* 涨停涨幅 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 font-medium text-red-500 text-right">
+                              +{stock.limitUpPct.toFixed(2)}%
                             </TableCell>
 
                             {/* 走势 mini chart - text-left */}
