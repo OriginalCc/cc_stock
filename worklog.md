@@ -1720,3 +1720,19 @@ Work Log:
   创建；当前库中已有 1 条留痕（11-23 基准日），首个定时产物将于下一交易日 08:35 生成
 - 涉及文件：src/app/api/stock/premarket-signals/history/route.ts（新建）、
   src/components/limit-up-pullback-screener.tsx
+
+---
+
+Task ID: 35
+Agent: Main Claude (Z.ai Code)
+Task: 回踩选股移到菜单栏第一位
+
+Work Log:
+- 用户需求：把回踩选股放到菜单栏的第一位
+- 修改 src/app/page.tsx 顶部导航 tab 数组顺序：「limit-up-pullback」从第 7 位提前到第 1 位
+  （新顺序：回踩选股 → 做T → 选股 → 低开 → 分时选股 → 轮动 → 早盘选股 → 部署）
+- 默认落地图已是回踩选股（pageMode 初始值即为 limit-up-pullback），此次仅调整视觉顺序，
+  其余逻辑（setPageMode / 子视图重置）不受影响
+- 验证（agent-browser，重新登录 888888）：菜单栏顺序 ✓；回踩选股首位且默认高亮 ✓；
+  页面正常渲染（盘前研判横幅/统计卡）✓；lint 通过
+- 涉及文件：src/app/page.tsx
