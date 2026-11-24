@@ -70,7 +70,16 @@ export default function StockTAssistant() {
     searchStocks, isAShare: isAShareStock,
   } = useStockData({ autoRefresh: pageMode === "t-assistant" });
 
-  const [screenerSubView, setScreenerSubView] = useState<"screener" | "history">("screener");
+  // 回踩选股子视图（选股结果/历史验证）— 记住上次选择，刷新后恢复
+  const [screenerSubView, setScreenerSubView] = useState<"screener" | "history">(() => {
+    if (typeof window === "undefined") return "screener";
+    try {
+      return localStorage.getItem("limit-up-pullback-screener-subview") === "history" ? "history" : "screener";
+    } catch { return "screener"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("limit-up-pullback-screener-subview", screenerSubView); } catch {}
+  }, [screenerSubView]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
   const [showSearch, setShowSearch] = useState(false);

@@ -1519,3 +1519,31 @@ Stage Summary:
   3.8s 实测，上游请求量降 ~20 倍，K线依赖从单一 EM 变为 新浪主+EM兜底
 - 涉及文件：src/lib/em-raw-client.ts（新）、src/lib/em-timeline-server.ts（复用重构）、
   src/app/api/stock/limit-up-pullback/route.ts（重写）
+
+---
+
+Task ID: 28
+Agent: Main Claude (Z.ai Code)
+Task: 回踩选股页面全量按钮记忆 — UI 状态 JSON 持久化
+
+Work Log:
+- 用户需求：回踩选股页面所有按钮加记忆，存 JSON，刷新不回初始值
+- 现状盘点（组件 9 项已有持久化）：结果/筛选/搜索/标签/收藏/直方图区间/
+  视图(表格卡片)/每页数/已存策略 均已走 localStorage JSON
+- 缺口补齐（新增 UI_STATE_KEY = "limit-up-pullback-screener-ui-state"
+  单一 JSON blob，readUiState/writeUiState merge 读写防互相覆盖）：
+  1. FilterPanel 三个折叠组：核心筛选/基本面筛选/价格与板块 (coreOpen/basicOpen/priceBoardOpen)
+  2. 筛选条件面板整体折叠 filtersExpanded
+  3. 排序 sortField/sortOrder（恢复值经 SORT_FIELDS 白名单校验，防脏数据）
+  4. 只看收藏 showFavoritesOnly
+  5. page.tsx 选股结果/历史验证子 tab screenerSubView
+     （key: limit-up-pullback-screener-subview；菜单点击仍重置为结果视图，属显式操作）
+- 实测（agent-browser）：折叠筛选面板→刷新→保持折叠 ✓；切历史验证→刷新→
+  选中保持（bg-primary 校验通过）✓；点"最大回撤"列头→JSON 更新为
+  sortField:maxPullbackPct 且其他键保留→刷新→箭头在该列、数据按 -43.3%→-42.0% 降序 ✓
+- bun run lint 通过
+
+Stage Summary:
+- 回踩选股页所有状态型控件（折叠组、面板折叠、排序、收藏过滤、子 tab）全部
+  持久化到 localStorage JSON；加上原有 9 项，页面 14 类状态刷新后全部恢复
+- 涉及文件：src/components/limit-up-pullback-screener.tsx、src/app/page.tsx

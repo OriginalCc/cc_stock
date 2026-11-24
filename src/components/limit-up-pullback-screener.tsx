@@ -179,6 +179,35 @@ const LAST_VIEW_KEY = "limit-up-pullback-screener-last-view";
 const LAST_PAGE_SIZE_KEY = "limit-up-pullback-screener-last-page-size";
 const STRATEGIES_KEY = "limit-up-pullback-screener-saved-strategies";
 const LAST_HISTOGRAM_BINS_KEY = "limit-up-pullback-screener-last-histogram-bins";
+const UI_STATE_KEY = "limit-up-pullback-screener-ui-state";
+
+// Valid sort fields (for validating values restored from localStorage)
+const SORT_FIELDS: readonly string[] = [
+  "approachPct", "daysSinceLimitUp", "marketCap", "turnover", "volumeRatio",
+  "pullbackPct", "maxPullbackPct", "currentChangePct", "limitUpPct",
+  "currentPrice", "limitUpClose", "preLimitUpClose", "riskScore", "qualityScore", "limitUpStreak",
+];
+
+/** Read the persisted UI-state JSON blob (accordion opens, sort, toggles). */
+function readUiState(): Record<string, unknown> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(UI_STATE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    }
+  } catch {}
+  return {};
+}
+
+/** Merge-write one slice of the UI-state blob (keys written by other panels preserved). */
+function writeUiState(patch: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(UI_STATE_KEY, JSON.stringify({ ...readUiState(), ...patch }));
+  } catch {}
+}
 
 // ── Histogram bins (shared between Histogram component and filter logic) ──
 const HISTOGRAM_BINS = [
@@ -1111,10 +1140,17 @@ function FilterPanel({
     setFilters({ ...filters, limitUpBoardTypes: next });
   };
 
-  // Local collapsible states for the 3 filter groups
-  const [coreOpen, setCoreOpen] = useState(true);
-  const [basicOpen, setBasicOpen] = useState(false);
-  const [priceBoardOpen, setPriceBoardOpen] = useState(false);
+  // Local collapsible states for the 3 filter groups — restored from the
+  // persisted UI-state JSON so a refresh keeps the panel layout
+  const savedUi = readUiState();
+  const [coreOpen, setCoreOpen] = useState<boolean>(savedUi.coreOpen !== undefined ? Boolean(savedUi.coreOpen) : true);
+  const [basicOpen, setBasicOpen] = useState<boolean>(savedUi.basicOpen !== undefined ? Boolean(savedUi.basicOpen) : false);
+  const [priceBoardOpen, setPriceBoardOpen] = useState<boolean>(savedUi.priceBoardOpen !== undefined ? Boolean(savedUi.priceBoardOpen) : false);
+
+  // Persist accordion open/close state
+  useEffect(() => {
+    writeUiState({ coreOpen, basicOpen, priceBoardOpen });
+  }, [coreOpen, basicOpen, priceBoardOpen]);
 
   // Count non-default fields per group (for the badge next to group title)
   const coreCount =
@@ -2126,11 +2162,16 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   });
   // Debounced filters - what actually drives filteredStocks (300ms after slider stops)
   const [debouncedFilters, setDebouncedFilters] = useState<PullbackFilters>(filters);
-  const [filtersExpanded, setFiltersExpanded] = useState(true);
+  const savedUiState = readUiState();
+  const [filtersExpanded, setFiltersExpanded] = useState<boolean>(savedUiState.filtersExpanded !== undefined ? Boolean(savedUiState.filtersExpanded) : true);
 
-  // Sort
-  const [sortField, setSortField] = useState<SortField>("approachPct");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  // Sort — restored from the persisted UI-state JSON (validated)
+  const [sortField, setSortField] = useState<SortField>(
+    typeof savedUiState.sortField === "string" && SORT_FIELDS.includes(savedUiState.sortField)
+      ? (savedUiState.sortField as SortField)
+      : "approachPct"
+  );
+  const [sortOrder, setSortOrder] = useState<SortOrder>(savedUiState.sortOrder === "asc" ? "asc" : "desc");
 
   // Search (二级过滤, 独立于 filters)
   const [searchTerm, setSearchTerm] = useState<string>(() => {
@@ -2161,7 +2202,12 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     } catch {}
     return [];
   });
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(savedUiState.showFavoritesOnly !== undefined ? Boolean(savedUiState.showFavoritesOnly) : false);
+
+  // Persist UI toggles (panel collapse / sort / favorites-only) as one JSON blob
+  useEffect(() => {
+    writeUiState({ filtersExpanded, sortField, sortOrder, showFavoritesOnly });
+  }, [filtersExpanded, sortField, sortOrder, showFavoritesOnly]);
 
   // Histogram bin selection (clickable histogram bars to filter by approach range)
   const [histogramBins, setHistogramBins] = useState<number[]>(() => {
