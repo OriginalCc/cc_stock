@@ -1690,3 +1690,33 @@ Work Log:
   src/app/api/stock/premarket-signals/route.ts（新建）、prisma/schema.prisma（PremarketSignalSnapshot）、
   src/components/limit-up-pullback-screener.tsx、src/components/pullback-commonality.tsx、
   src/app/api/stock/limit-up-pullback/route.ts（改用共享管道）
+
+---
+
+Task ID: 34
+Agent: Main Claude (Z.ai Code)
+Task: 盘前研判「每日 08:35 自动计算」机制在页面上可视化（自动计算标识 + 历史留痕弹层）
+
+Work Log:
+- 用户需求：把盘前研判自动计算（每日 08:35）的功能也在页面上体现出来（此前定时任务只在后台跑，页面无感知）
+- 新增历史快照 API（src/app/api/stock/premarket-signals/history/route.ts）：
+  GET 返回最近 12 个基准交易日的快照（basisDate/computedAt/stockCount/stats），
+  PremarketSignalSnapshot 按 basisDate 唯一键天然去重，一行 = 一天的自动计算留痕
+- 前端（limit-up-pullback-screener.tsx）：
+  - 新增 PremarketHistoryItem 接口 + premarketHistory 状态 + fetchPremarketHistory
+    （挂载时与主快照并行拉取；手动重算完成后自动刷新留痕）
+  - PremarketBanner 新增绿色徽章「每日 08:35 自动计算」（Clock 图标，悬浮说明定时任务三要点：
+    每交易日 08:35 触发/周末跳过、按基准日入库留痕、全天复用同一快照不漂移）；
+    说明行追加「下一交易日 08:35 自动更新」
+  - 新增「历史 N 天」按钮 + PremarketHistoryPopover 弹层（w-360，max-h-72 滚动）：
+    每行显示基准日｜计算时间｜机会/观察/风险迷你徽章｜覆盖数；
+    09:15 前生成的行带日出图标（= 08:35 定时任务产物），底部注明判定口径
+  - 时区修正：formatTimestamp/formatShortTimestamp/isPreMarketCompute 统一固定
+    Asia/Shanghai（此前依赖浏览器时区，UTC 环境会显示 04:16 并误判盘前标记）
+- 验证（agent-browser）：绿色徽章渲染+悬浮说明 ✓；历史弹层渲染（11-23｜11/24 12:16
+  北京时间｜机会175/观察63/风险17｜255只）✓；中午手动计算的快照正确不带日出图标 ✓；
+  390px 移动端横幅换行正常、弹层无溢出 ✓；控制台无错误 ✓；lint 通过
+- 说明：定时任务本体（每日 08:35 POST /api/stock/premarket-signals，周末跳过）已于 Task 33
+  创建；当前库中已有 1 条留痕（11-23 基准日），首个定时产物将于下一交易日 08:35 生成
+- 涉及文件：src/app/api/stock/premarket-signals/history/route.ts（新建）、
+  src/components/limit-up-pullback-screener.tsx

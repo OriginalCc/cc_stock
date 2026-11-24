@@ -30,6 +30,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   TrendingUp,
   TrendingDown,
   RefreshCw,
@@ -66,6 +71,7 @@ import {
   Flame,
   Eye,
   Sunrise,
+  History,
   type LucideIcon,
 } from "lucide-react";
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
@@ -137,6 +143,14 @@ interface PremarketSnapshot {
   signals: Record<string, PremarketEntry>;
   stats: Record<SignalType, number>;
   stale?: boolean;   // 计算失败时返回的旧快照
+}
+
+// 历史快照（每日 08:35 定时任务留痕，按基准日去重）
+interface PremarketHistoryItem {
+  basisDate: string;
+  computedAt: string;
+  stockCount: number;
+  stats: Record<SignalType, number>;
 }
 
 // ── Filters ────────────────────────────────────────────
@@ -422,9 +436,45 @@ function formatMarketCap(val: number): string {
 function formatTimestamp(iso: string): string {
   try {
     const d = new Date(iso);
-    return d.toLocaleString("zh-CN", { hour12: false });
+    // A股场景统一用中国时区展示，避免浏览器时区不同导致时间像 04:16（UTC）而非北京时间
+    return d.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
   } catch {
     return iso;
+  }
+}
+
+/** 紧凑时间格式（历史快照行）：MM-DD HH:mm（固定中国时区） */
+function formatShortTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/** 该快照是否在盘前（09:15 之前，中国时区）生成 —— 每日 08:35 定时任务产物 */
+function isPreMarketCompute(iso: string): boolean {
+  try {
+    const parts = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date(iso));
+    const get = (t: string) => Number(parts.find(p => p.type === t)?.value ?? "0");
+    const h = get("hour");
+    const m = get("minute");
+    return h < 9 || (h === 9 && m <= 15);
+  } catch {
+    return false;
   }
 }
 
@@ -1681,13 +1731,112 @@ function SignalBadge({ signal, basisDate }: { signal: StockSignal; basisDate?: s
 
 // ── 盘前研判快照横幅 ─────────────────────────────────────
 
+// 每日 08:35 定时任务标识（让"自动计算"在页面上可见）
+function PremarketScheduleBadge() {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            className="text-[9px] py-0 px-1 gap-0.5 bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400 cursor-default"
+          >
+            <Clock className="w-2 h-2" />
+            每日 08:35 自动计算
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-[280px]">
+          <div className="text-xs font-medium">定时任务：盘前研判自动计算</div>
+          <ul className="mt-1.5 space-y-1 text-[11px] text-muted-foreground">
+            <li>每个交易日盘前 08:35 自动触发服务端重算（周六/周日跳过）</li>
+            <li>结果按基准交易日写入数据库留存，「历史」弹层可查看每日留痕</li>
+            <li>全天复用同一份快照，盘中不漂移；收盘后基准日自动滚动</li>
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+// 历史快照留痕弹层（每日自动计算的累积记录）
+function PremarketHistoryPopover({ history }: { history: PremarketHistoryItem[] }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs gap-1"
+          aria-label="查看盘前研判历史快照"
+        >
+          <History className="w-3 h-3" />
+          历史{history.length > 0 ? ` ${history.length} 天` : ""}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[360px] p-0">
+        <div className="px-3 py-2 border-b">
+          <div className="text-xs font-semibold flex items-center gap-1.5">
+            <Clock className="w-3 h-3 text-emerald-500" />
+            自动计算留痕 · 近 {history.length} 个交易日
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">
+            每日 08:35 定时任务生成，一行 = 一个基准交易日的盘前快照
+          </div>
+        </div>
+        <div className="max-h-72 overflow-y-auto py-1">
+          {history.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+              暂无历史快照（定时任务首个交易日 08:35 后生成）
+            </div>
+          ) : (
+            history.map((h) => (
+              <div
+                key={h.basisDate}
+                className="px-3 py-1.5 flex items-center gap-2 text-xs hover:bg-muted/50"
+              >
+                <span className="font-mono text-[11px] w-[70px] shrink-0">
+                  {h.basisDate.slice(5)}
+                </span>
+                <span className="text-[10px] text-muted-foreground w-[88px] shrink-0 flex items-center gap-1">
+                  {isPreMarketCompute(h.computedAt) && (
+                    <Sunrise className="w-2.5 h-2.5 text-red-500 shrink-0" aria-label="盘前生成" />
+                  )}
+                  {formatShortTimestamp(h.computedAt)}
+                </span>
+                <span className="flex items-center gap-1 flex-wrap">
+                  {(["opportunity", "watch", "risk"] as SignalType[]).map(t => (
+                    <span
+                      key={t}
+                      className={`px-1 py-0.5 rounded border text-[9px] font-mono ${SIGNAL_META[t].badge}`}
+                    >
+                      {SIGNAL_META[t].label} {h.stats?.[t] ?? 0}
+                    </span>
+                  ))}
+                </span>
+                <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
+                  {h.stockCount}只
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="px-3 py-1.5 border-t text-[10px] text-muted-foreground">
+          日出图标 = 09:15 前盘前生成，通常为 08:35 定时任务产物；同基准日重复计算自动去重
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function PremarketBanner({
   snapshot,
   loading,
+  history,
   onRecompute,
 }: {
   snapshot: PremarketSnapshot;
   loading: boolean;
+  history: PremarketHistoryItem[];
   onRecompute: () => void;
 }) {
   const signalTypes: SignalType[] = ["opportunity", "watch", "risk"];
@@ -1699,11 +1848,12 @@ function PremarketBanner({
             <Sunrise className="w-4 h-4 text-red-500" />
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+            <div className="text-xs font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
               盘前研判快照
               <Badge variant="outline" className="text-[9px] py-0 px-1 gap-0.5 bg-red-500/10 border-red-500/25 text-red-600 dark:text-red-400">
                 T-1 收盘口径
               </Badge>
+              <PremarketScheduleBadge />
               {snapshot.stale && (
                 <Badge variant="outline" className="text-[9px] py-0 px-1 bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400">
                   旧快照
@@ -1712,7 +1862,7 @@ function PremarketBanner({
             </div>
             <div className="text-[10px] text-muted-foreground mt-0.5">
               基于 {snapshot.basisDate} 收盘数据 · 计算于 {formatTimestamp(snapshot.computedAt)} · 覆盖 {snapshot.stockCount} 只 ·
-              仅用涨停池+K线判定，不含今日盘中涨跌，盘中结果不漂移
+              仅用涨停池+K线判定，不含今日盘中涨跌，盘中结果不漂移 · 下一交易日 08:35 自动更新
             </div>
           </div>
         </div>
@@ -1726,6 +1876,7 @@ function PremarketBanner({
               {SIGNAL_META[t].label} {snapshot.stats?.[t] ?? 0}
             </Badge>
           ))}
+          <PremarketHistoryPopover history={history} />
           <Button
             variant="outline"
             size="sm"
@@ -2332,6 +2483,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   // ── 盘前研判快照（服务端预计算，T-1 收盘口径） ──────────
   const [premarket, setPremarket] = useState<PremarketSnapshot | null>(null);
   const [premarketLoading, setPremarketLoading] = useState(true);
+  const [premarketHistory, setPremarketHistory] = useState<PremarketHistoryItem[]>([]);
 
   const fetchPremarket = useCallback(async (force = false) => {
     setPremarketLoading(true);
@@ -2359,10 +2511,25 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     }
   }, []);
 
-  // Auto-fetch pre-market snapshot on mount
+  // ── 盘前研判历史快照（每日 08:35 定时任务留痕） ──────────
+  const fetchPremarketHistory = useCallback(async () => {
+    try {
+      const res = await fetch("/api/stock/premarket-signals/history");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.history)) {
+        setPremarketHistory(data.history as PremarketHistoryItem[]);
+      }
+    } catch {
+      // 历史留痕获取失败静默降级，不影响主快照
+    }
+  }, []);
+
+  // Auto-fetch pre-market snapshot (+ history trail) on mount
   useEffect(() => {
     fetchPremarket();
-  }, [fetchPremarket]);
+    fetchPremarketHistory();
+  }, [fetchPremarket, fetchPremarketHistory]);
 
   /**
    * 信号解析器：优先命中服务端盘前快照（全天稳定不漂移），
@@ -3026,7 +3193,11 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         <PremarketBanner
           snapshot={premarket}
           loading={premarketLoading}
-          onRecompute={() => fetchPremarket(true)}
+          history={premarketHistory}
+          onRecompute={async () => {
+            await fetchPremarket(true);
+            fetchPremarketHistory();
+          }}
         />
       )}
 
