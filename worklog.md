@@ -1754,3 +1754,19 @@ Work Log:
   （连板 2B → +1.45% 今日涨跌 → 13.96 涨停价 …；量比 0.98 → +10.01% 涨停涨幅 → 走势）✓；
   今日涨跌列点击排序（升序箭头生效）✓；lint 通过
 - 涉及文件：src/components/limit-up-pullback-screener.tsx
+
+---
+
+Task ID: 37
+Agent: Main Claude (Z.ai Code)
+Task: 距涨停列移动到涨停日列前面
+
+Work Log:
+- 用户需求：把距涨停这一列移动到涨停日前面
+- 修改 src/components/limit-up-pullback-screener.tsx 表格视图（表头+表体同步，4 处编辑）：
+  新列序：展开 | 代码/名称 | 信号 | 距涨停 | 涨停日 | 连板 | 今日涨跌 | 涨停价 | 起涨点 |
+  当前价 | 回踩深度 | 最大回撤 | 风险 | 质量 | 换手率 | 市值 | 量比 | 涨停涨幅 | 走势 | 收藏
+- 排序字段不变（daysSinceLimitUp 可排序），其余视图/导出不受影响
+- 验证（agent-browser，重新登录 888888）：表头顺序（信号→距涨停→涨停日）✓；
+  首行单元格对齐（83机会 → 8天 → 11-11 → 2B → +1.45% …）✓；视觉截图核对 ✓；lint 通过
+- 涉及文件：src/components/limit-up-pullback-screener.tsx

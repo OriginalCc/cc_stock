@@ -3479,6 +3479,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                         代码 / 名称
                       </TableHead>
                       <SortableHead label="信号" field="signalScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[70px]" align="right" />
+                      <SortableHead label="距涨停" field="daysSinceLimitUp" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <TableHead className="text-[11px] font-medium w-[80px]">涨停日</TableHead>
                       <SortableHead label="连板" field="limitUpStreak" current={sortField} order={sortOrder} onSort={handleSort} className="w-[52px]" align="right" />
                       <SortableHead label="今日涨跌" field="currentChangePct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
@@ -3486,7 +3487,6 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                       <SortableHead label="起涨点" field="preLimitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="当前价" field="currentPrice" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
                       <SortableHead label="回踩深度" field="approachPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[130px]" align="right" />
-                      <SortableHead label="距涨停" field="daysSinceLimitUp" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="最大回撤" field="maxPullbackPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
                       <SortableHead label="风险" field="riskScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[78px]" align="right" />
                       <SortableHead label="质量" field="qualityScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[78px]" align="right" />
@@ -3563,6 +3563,14 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               </div>
                             </TableCell>
 
+                            {/* 距涨停 - text-right */}
+                            <TableCell className="text-[11px] font-mono py-2 text-muted-foreground text-right">
+                              <div className="flex items-center justify-end gap-0.5">
+                                <Clock className="w-3 h-3" />
+                                {stock.daysSinceLimitUp}天
+                              </div>
+                            </TableCell>
+
                             {/* 涨停日 - text-left */}
                             <TableCell className="text-[11px] font-mono py-2">
                               <div className="flex items-center gap-0.5">
@@ -3601,14 +3609,6 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                             {/* 回踩深度 - text-right (ApproachBar keeps internal layout) */}
                             <TableCell className="py-2 pr-2 text-right">
                               <ApproachBar pct={stock.approachPct} />
-                            </TableCell>
-
-                            {/* 距涨停 - text-right */}
-                            <TableCell className="text-[11px] font-mono py-2 text-muted-foreground text-right">
-                              <div className="flex items-center justify-end gap-0.5">
-                                <Clock className="w-3 h-3" />
-                                {stock.daysSinceLimitUp}天
-                              </div>
                             </TableCell>
 
                             {/* 最大回撤 - text-right */}
