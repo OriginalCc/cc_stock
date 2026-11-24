@@ -67,6 +67,7 @@ interface PullbackStock {
   // 板块（行情富化阶段填充，数据源不可用时缺省 → 前端显示 --）
   sector?: string;          // 所属行业板块（东财 f100）
   concept?: string;         // 最贴切概念（slist 概念族，动量最强）
+  preTrend?: number;        // 涨停前均线结构：2=MA5>MA10>MA20 多头 1=MA10>MA20 0=其他（Task 40）
 }
 
 // ── Main handler ──────────────────────────────────────
@@ -146,8 +147,9 @@ export async function GET(request: NextRequest) {
     for (let i = 0; i < candList.length; i += BATCH_SIZE) {
       if (Date.now() - startTime > TOTAL_BUDGET_MS) break;
       const batch = candList.slice(i, i + BATCH_SIZE);
+      // Task 40: 40 个交易日（原 15）——涨停日往前需 ≥20 根 K 线计算 MA5/MA10/MA20 趋势结构
       const klineResults = await Promise.allSettled(
-        batch.map(s => fetchDailyKline(s.code, 15))
+        batch.map(s => fetchDailyKline(s.code, 40))
       );
 
       for (let j = 0; j < batch.length; j++) {
@@ -219,8 +221,19 @@ export async function GET(request: NextRequest) {
           close: d.close,
           high: d.high,
           low: d.low,
+          volume: d.volume,
           changePct: d.changePct,
         }));
+
+        // Task 40: 涨停前均线结构（趋势首板回踩可靠性 > 超跌反抽）
+        // 用涨停日之前的完整 K 线算 MA5/MA10/MA20：多头排列=2，MA10>MA20=1，其他=0
+        const before = kline.slice(0, targetIdx).map(d => d.close);
+        let preTrend: number | undefined;
+        if (before.length >= 20) {
+          const ma = (n: number) => before.slice(-n).reduce((a, b) => a + b, 0) / n;
+          const ma5 = ma(5), ma10 = ma(10), ma20 = ma(20);
+          preTrend = ma5 > ma10 && ma10 > ma20 ? 2 : ma10 > ma20 ? 1 : 0;
+        }
 
         pullbackStocks.push({
           symbol: stock.code,
@@ -237,6 +250,7 @@ export async function GET(request: NextRequest) {
           maxPullbackPct,
           maxPullbackDate,
           klineSummary,
+          preTrend,
           turnover: 0,
           marketCap: 0,
           volumeRatio: 0,
@@ -251,14 +265,22 @@ export async function GET(request: NextRequest) {
 
     // Step 4: Fetch real-time quotes for enriched data
     // 行情富化失败会导致 板块/换手率/市值/量比 全空，因此：
-    // 1) 整体失败时退避重试一次；2) 降级结果只短缓存（60s），下次请求自动重算。
+    // 1) 部分批次被限流失败 → 定向补抓缺失者（最多 2 轮）；
+    // 2) 富化率 < 70% 视为降级结果，只短缓存（60s），下次请求自动重算。
     let quotesEnriched = 0;
     if (pullbackStocks.length > 0) {
-      let quotes = await fetchRealtimeQuotes(pullbackStocks.map(s => s.symbol));
-      if (quotes.size === 0) {
-        // 行情接口整体不可用（限流/断连）→ 退避 1.2s 后重试一次
+      const allSymbols = pullbackStocks.map(s => s.symbol);
+      let quotes = await fetchRealtimeQuotes(allSymbols);
+      // 定向补抓：仅对未拿到行情的股票重试（整批被限流的典型场景是首批失败）
+      for (let pass = 0; pass < 2; pass++) {
+        const missingSymbols = pullbackStocks
+          .filter(s => !quotes.has(s.symbol))
+          .map(s => s.symbol);
+        if (missingSymbols.length === 0) break;
         await new Promise(r => setTimeout(r, 1200));
-        quotes = await fetchRealtimeQuotes(pullbackStocks.map(s => s.symbol));
+        const patch = await fetchRealtimeQuotes(missingSymbols);
+        if (patch.size === 0) break; // 补抓也无数据，避免无谓等待
+        for (const [k, v] of patch) quotes.set(k, v);
       }
       for (const stock of pullbackStocks) {
         const q = quotes.get(stock.symbol);
@@ -328,9 +350,9 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
 
-    // 行情富化完全失败（板块/换手/市值/量比全空）→ 只短缓存 60s，
-    // 避免降级数据在完整 TTL（10 分钟）内持续占据“最新结果”。
-    const degraded = quotesEnriched === 0;
+    // 行情富化率 < 70%（含完全失败）→ 只短缓存 60s，
+    // 避免部分降级数据（板块/换手/市值/量比缺失）在完整 TTL（10 分钟）内持续占据"最新结果"。
+    const degraded = quotesEnriched < pullbackStocks.length * 0.7;
     return storeAndReturn(result, degraded ? CACHE_TTL_EMPTY : undefined);
   } catch (error: any) {
     console.error("Limit-up pullback analysis error:", error);

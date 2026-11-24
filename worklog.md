@@ -1840,3 +1840,20 @@ Work Log:
   1. pullback-pipeline.ts fetchRealtimeQuotes：push2delay/push2 × http/https 四变体；批间 250ms 退避；整批失败 600ms 后重试一次；f100="-" 归一化为空串。
   2. limit-up-pullback/route.ts：PullbackStock 补 sector?/concept? 类型；行情整体失败退避 1.2s 重试一次；quotesEnriched=0 时结果只短缓存 60s（storeAndReturn 支持 ttlOverride）。
 - 验证：refresh=1 重算后 255/255 全部有板块（工业金属/光伏设备/消费电子等），换手/量比/市值同步恢复；浏览器登录 888888 后表格板块列渲染正常；lint 通过。
+
+## Task 40: 回踩选股算法智能化升级（量能结构+涨停前趋势+破位度）
+- 数据层：KLineDay 增加 volume（新浪原生返回但原先被丢弃；东财 f56 解析）；主管道/盘前管道 K 线 15→40 天（涨停前 MA20 需要）；EM 回看窗 35→60 自然日。
+- 新指标（buildExt 扩展，旧缓存/旧快照缺数据时取中性分平滑兼容）：
+  - volShrinkPct 回踩段均量较涨停日量萎缩度（缩量回踩=抛压枯竭，放量回踩=出逃迹象）
+  - recentVolRatio 近3日均量/回踩段均量；stabilized 企稳（低点已过≥1天且末根非大阴）
+  - brokenPct 起涨点失守度（不封顶，与 approachPct 100 封顶互补）；recent3DayDrop 近3日阴跌动能
+- 信号评分升级为 7 因子 100 分制（盘中/盘前同构）：
+  反弹确认35 + 当日/昨日动向15 + 回踩位置20 + 时间窗口8 + 板型弹性7 + 量能结构10 + 涨停前趋势5
+  - 量能结构：缩量≥50%满分、≥30%高分、放量回踩 0 分；盘中量比≥1.5 降级为标注
+  - 涨停前趋势 preTrend（route/premarket 用涨停日前完整K线算 MA5/MA10/MA20）：多头排列=5 分趋势首板，超跌反抽=1 分
+- 风险分重构：主因子从"回踩深度"改为"起涨点失守度"（修正与共性归纳 Task 30 "深回踩是主流机会形态"的矛盾），构成 破位40+近3日阴跌20+最大回撤15+今日续跌15+时间损耗10；详情卡 breakdown UI 同步。
+- 质量分量能项：改为"缩量结构60% + 量比适中40%"混合。
+- 默认排序 approachPct→signalScore（最值得关注排最前，而非跌最深排最前）；CSV 增列：量能萎缩%/起涨点失守%/涨停前趋势。
+- 附带修复：pullback-metrics 重复 SignalResolver 导出；前端本地 PullbackStock 补 sector/concept/preTrend 类型；盘前路由管道同步 40 天+volume+preTrend（原 15 天丢量）。
+- 行情富化韧性（Task 39 后续）：首批前退避 400ms、整批失败重试退避 600→1200ms；route 定向补抓缺失批次（最多2轮）；降级判定从"完全失败"改为"富化率<70%"→短缓存 60s（修复部分批次失败被完整缓存 10 分钟的问题）。
+- 验证：255/255 有量能、254/255 有 preTrend（86 多头/31 中期/137 超跌反抽）；盘前重算 133机会/103观察/17风险；板块列 0 缺失；默认信号分排序生效；详情卡显示"涨停前均线多头排列（趋势首板）"与新风险构成；lint 通过无 console 错误。

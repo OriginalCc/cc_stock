@@ -142,6 +142,7 @@ export function withChangePct(days: KLineDay[]): KLineDay[] {
 // (currently in a bad window / RST-happy) stays as fallback via the raw client.
 export async function fetchDailyKline(symbol: string, datalen: number = 15): Promise<KLineDay[]> {
   // 1) Sina daily kline (unadjusted — same basis as EM fqt=0)
+  // Task 40: 保留成交量（缩量回踩/放量出逃判定的数据基础），KLineDay.volume
   const sina = await getAShareKLine(symbol, 240, datalen);
   if (sina.length > 0) {
     return withChangePct(sina.map(d => ({
@@ -150,15 +151,17 @@ export async function fetchDailyKline(symbol: string, datalen: number = 15): Pro
       close: d.close,
       high: d.high,
       low: d.low,
+      volume: d.volume,
       changePct: 0,
     })));
   }
 
   // 2) EM push2his fallback (raw client: multi-IP + tolerate premature close)
+  // Task 40: 回看窗口 35→60 自然日（配合主流程取 40 个交易日：涨停前 MA20/趋势需要）
   try {
     const secid = symbol.startsWith("6") ? `1.${symbol}` : `0.${symbol}`;
     const now = new Date();
-    const begDate = new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000);
+    const begDate = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
     const beg = `${begDate.getFullYear()}${String(begDate.getMonth() + 1).padStart(2, "0")}${String(begDate.getDate()).padStart(2, "0")}`;
     const query = `/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=0&beg=${beg}&end=20500101&fields1=f1&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61`;
     const json = await emRawJson(
@@ -169,6 +172,7 @@ export async function fetchDailyKline(symbol: string, datalen: number = 15): Pro
     const klines: string[] = json?.data?.klines;
     if (!Array.isArray(klines) || klines.length === 0) return [];
 
+    // f51=日期 f52=开 f53=收 f54=高 f55=低 f56=成交量(手) f57=成交额 ...
     const parsed: KLineDay[] = klines.map((line: string) => {
       const parts = line.split(",");
       return {
@@ -177,6 +181,7 @@ export async function fetchDailyKline(symbol: string, datalen: number = 15): Pro
         close: parseFloat(parts[2]) || 0,
         high: parseFloat(parts[3]) || 0,
         low: parseFloat(parts[4]) || 0,
+        volume: parseFloat(parts[5]) || 0,
         changePct: parseFloat(parts[8]) || 0,
       };
     }).filter((d: KLineDay) => d.close > 0);
@@ -206,14 +211,14 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string
   for (let i = 0; i < symbols.length; i += 50) {
     const batch = symbols.slice(i, i + 50);
     const secIds = batch.map(code => `${code.startsWith("6") ? "1" : "0"}.${code}`).join(",");
-    // 批间退避 250ms：本调用紧跟在 K 线批量抓取之后，EM push2 族按突发限流，
-    // 无间隔连续请求会被 RST 导致整批失败（板块/换手/市值/量比全空）。
-    if (i > 0) await new Promise(r => setTimeout(r, 250));
+    // 批间退避：本调用紧跟在 K 线批量抓取之后，EM push2 族按突发限流。
+    // 首批前也退避 400ms——限流窗口内立即请求易被 RST，导致整批失败（板块/换手/市值/量比全空）。
+    await new Promise(r => setTimeout(r, i === 0 ? 400 : 250));
     const json = await emRawJson(QUOTE_URL_VARIANTS(secIds), 2, 8000);
     let diff = json?.data?.diff;
-    // 整批失败（限流/断连）→ 退避 600ms 后对同批做一次重试
+    // 整批失败（限流/断连）→ 退避 1.2s 后对同批做一次重试
     if (!Array.isArray(diff)) {
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 1200));
       const retry = await emRawJson(QUOTE_URL_VARIANTS(secIds), 1, 8000);
       diff = retry?.data?.diff;
       if (!Array.isArray(diff)) continue;

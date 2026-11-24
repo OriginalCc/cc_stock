@@ -102,8 +102,9 @@ async function computeSnapshot() {
   for (let i = 0; i < candList.length; i += BATCH_SIZE) {
     if (Date.now() - startTime > TOTAL_BUDGET_MS) break;
     const batch = candList.slice(i, i + BATCH_SIZE);
+    // Task 40: 40 个交易日（原 15）——涨停前 MA20/趋势结构 + 回踩段量能需要更长窗口
     const klineResults = await Promise.allSettled(
-      batch.map(s => fetchDailyKline(s.code, 15))
+      batch.map(s => fetchDailyKline(s.code, 40))
     );
 
     for (let j = 0; j < batch.length; j++) {
@@ -167,8 +168,18 @@ async function computeSnapshot() {
         close: d.close,
         high: d.high,
         low: d.low,
+        volume: d.volume,
         changePct: d.changePct,
       }));
+
+      // Task 40: 涨停前均线结构（与主管道同口径）：多头排列=2，MA10>MA20=1，其他=0
+      const before = kline.slice(0, targetIdx).map(d => d.close);
+      let preTrend: number | undefined;
+      if (before.length >= 20) {
+        const ma = (n: number) => before.slice(-n).reduce((a, b) => a + b, 0) / n;
+        const ma5 = ma(5), ma10 = ma(10), ma20 = ma(20);
+        preTrend = ma5 > ma10 && ma10 > ma20 ? 2 : ma10 > ma20 ? 1 : 0;
+      }
 
       const ps: PullbackStock = {
         symbol: code,
@@ -185,6 +196,7 @@ async function computeSnapshot() {
         maxPullbackPct,
         maxPullbackDate,
         klineSummary,
+        preTrend,
         turnover: 0,
         marketCap: 0,
         volumeRatio: 0,

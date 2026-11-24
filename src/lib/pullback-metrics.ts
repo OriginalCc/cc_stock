@@ -16,6 +16,7 @@ export interface KLineDay {
   high: number;
   low: number;
   changePct: number;
+  volume?: number; // 成交量（手/股，源数据口径）；旧缓存/旧快照可能缺省
 }
 
 export interface PullbackStock {
@@ -38,6 +39,7 @@ export interface PullbackStock {
   volumeRatio: number;
   sector?: string; // 所属行业板块（东财 f100，行情富化时填充，可能缺省）
   concept?: string; // 最贴切概念（slist 概念族剔除风格标签后取今日动量最强，可能缺省）
+  preTrend?: number; // 涨停前均线结构：2=MA5>MA10>MA20 多头排列 1=MA10>MA20 0=其他；旧数据缺省
 }
 
 /** Per-stock derived metrics (from kline) shared across analyses */
@@ -46,6 +48,12 @@ export interface StockExt {
   lowWindow: number;      // 回踩低点距涨停日的交易日数
   daysSinceLow: number;   // 低点距最新的交易日数(反弹启动耗时)
   streak: number;         // 连板数(涨停日向前连续涨停天数)
+  // ── Task 40: 量能结构 + 破位度（无量数据的旧缓存/快照 → 量能项 undefined，评分取中性） ──
+  volShrinkPct?: number;   // 回踩段均量较涨停日量的萎缩度(%，正=缩量/抛压枯竭，负=放量/出逃)
+  recentVolRatio?: number; // 近3日均量 / 回踩段均量（<1=近端继续缩量）
+  stabilized?: boolean;    // 企稳：低点已过去≥1天且最新一根非大阴线(>-3%)
+  brokenPct: number;       // 起涨点失守度(%，0=守住起涨点，不封顶；与 approachPct 的 100 封顶互补)
+  recent3DayDrop: number;  // 近3日累计跌幅(%，阴跌动能，风险分用)
 }
 
 export function buildExt(s: PullbackStock): StockExt {
@@ -77,7 +85,41 @@ export function buildExt(s: PullbackStock): StockExt {
       else break;
     }
   }
-  return { reboundFromLow, lowWindow, daysSinceLow, streak };
+
+  // ── 量能结构（Task 40）──
+  // 回踩段均量 vs 涨停日量：缩量回踩 = 抛压枯竭（健康），放量回踩 = 出逃迹象（危险）
+  const limitUpVol = luIdx >= 0 ? kline[luIdx].volume || 0 : 0;
+  const pullbackVols = after.map(k => k.volume || 0).filter(v => v > 0);
+  const avgPullbackVol = pullbackVols.length > 0
+    ? pullbackVols.reduce((a, b) => a + b, 0) / pullbackVols.length
+    : 0;
+  const volShrinkPct = limitUpVol > 0 && avgPullbackVol > 0
+    ? (1 - avgPullbackVol / limitUpVol) * 100
+    : undefined;
+  const recentVolRatio = avgPullbackVol > 0 && pullbackVols.length >= 2
+    ? (() => {
+        const recent = pullbackVols.slice(-3);
+        return recent.reduce((a, b) => a + b, 0) / recent.length / avgPullbackVol;
+      })()
+    : undefined;
+
+  // 破位度：现价跌破起涨点的幅度（不封顶，区分「贴着起涨点」和「深破位」）
+  const brokenPct = s.preLimitUpClose > 0
+    ? Math.max(0, ((s.preLimitUpClose - s.currentPrice) / s.preLimitUpClose) * 100)
+    : 0;
+
+  // 企稳：低点已过去 ≥1 天（近端未创新低）且最新一根非大阴线
+  const lastBar = kline[kline.length - 1];
+  const stabilized = after.length > 0 && daysSinceLow >= 1 && Boolean(lastBar) && lastBar.changePct > -3;
+
+  // 近3日累计跌幅（阴跌动能）
+  let recent3DayDrop = 0;
+  if (kline.length >= 4) {
+    const ref = kline[kline.length - 4].close;
+    recent3DayDrop = ref > 0 ? Math.max(0, ((ref - kline[kline.length - 1].close) / ref) * 100) : 0;
+  }
+
+  return { reboundFromLow, lowWindow, daysSinceLow, streak, volShrinkPct, recentVolRatio, stabilized, brokenPct, recent3DayDrop };
 }
 
 export function median(nums: number[]): number {
@@ -136,11 +178,53 @@ export const SIGNAL_META: Record<SignalType, {
 const REBOUND_CONFIRM = 3; // 反弹确认线(%), 与共性归纳一致
 
 /**
- * 机会/风险信号评分 (0-100)。构成:
- *   反弹确认 40 + 今日动向 20 + 回踩位置 20 + 时间窗口 10 + 板型弹性 10 + 量能确认 10
- * 判定: score >= 65 且反弹已确认(≥3%) → 机会; score <= 38 → 风险; 其余 → 观察。
+ * 量能结构评分 (0-10, Task 40): 回踩段均量较涨停日量的萎缩度。
+ * 缩量回踩 = 抛压枯竭（健康）；放量回踩 = 出逃迹象（危险）。
+ * 无量数据（旧缓存/旧快照）→ 中性 4 分。
  */
-export type SignalResolver = (s: PullbackStock) => StockSignal;
+function volumeStructureScore(ext: StockExt, reasons: string[]): number {
+  const v = ext.volShrinkPct;
+  if (v === undefined) {
+    reasons.push("量能数据缺失，量能结构未计入");
+    return 4;
+  }
+  if (v >= 50) {
+    reasons.push(`回踩段极度缩量（较涨停日量 -${v.toFixed(0)}%，抛压枯竭）`);
+    return 10;
+  }
+  if (v >= 30) {
+    reasons.push(`缩量回踩（较涨停日量 -${v.toFixed(0)}%，抛压有限）`);
+    return ext.recentVolRatio !== undefined && ext.recentVolRatio <= 0.85 ? 9 : 8;
+  }
+  if (v >= 10) {
+    reasons.push(`回踩量能温和（较涨停日量 -${v.toFixed(0)}%）`);
+    return 6;
+  }
+  if (v < 0) {
+    reasons.push(`回踩段不缩反放量（+${Math.abs(v).toFixed(0)}%，有出逃迹象）`);
+    return 0;
+  }
+  reasons.push("回踩量能与涨停日接近，未见明显缩量");
+  return 3;
+}
+
+/**
+ * 涨停前趋势评分 (0-5, Task 40): 涨停前 MA5/MA10/MA20 结构。
+ * 趋势首板（多头排列）的回踩可靠性高于超跌反抽。旧数据缺省 → 中性 2 分。
+ */
+function preTrendScore(s: PullbackStock, reasons: string[]): number {
+  if (s.preTrend === undefined) return 2;
+  if (s.preTrend >= 2) {
+    reasons.push("涨停前均线多头排列（趋势首板，回踩可靠性高）");
+    return 5;
+  }
+  if (s.preTrend === 1) {
+    reasons.push("涨停前中期趋势向上");
+    return 3;
+  }
+  reasons.push("涨停前非多头形态（超跌反抽，弹性依赖情绪）");
+  return 1;
+}
 
 // ── Pre-market (T-1 close) signal ──────────────────────
 // 用户要求：机会/风险必须盘前就算出来，而不是盘中看谁涨了就是机会。
@@ -203,9 +287,10 @@ export function deriveT1Stock(s: PullbackStock, basisDate?: string): PullbackSto
 }
 
 /**
- * 盘前研判信号（T-1 收盘口径，0-100）。
- * 构成: 反弹确认 40 + 昨日动向 20 + 回踩位置 20 + 时间窗口 10 + 板型弹性 10 + 昨日K线形态 10
- *   - "今日动向"改为"昨日动向"（T-1 涨跌幅），"量能确认"改为"昨日K线形态"（盘中量比不可用于盘前）
+ * 盘前研判信号（T-1 收盘口径，0-100，Task 40 升级为 7 因子）。
+ * 构成: 反弹确认 35 + 昨日动向 15 + 回踩位置 20 + 时间窗口 8 + 板型弹性 7 + 量能结构 10 + 涨停前趋势 5
+ *   - 量能结构用 T-1 截断后 K 线的回踩段萎缩度（替代原"昨日K线形态"），盘前可得且盘中不漂移
+ *   - 涨停前趋势为静态事实，盘前同样可得
  * 判定: score >= 65 且反弹已确认(≥3%) → 机会; score <= 38 → 风险; 其余 → 观察。
  * 门槛与 calcStockSignal 完全一致，便于两种口径对照。
  */
@@ -224,38 +309,38 @@ export function calcPremarketSignal(s: PullbackStock, basisDate?: string): Stock
   const reasons: string[] = [];
   let score = 0;
 
-  // ── 1. 反弹确认 (40): 截至昨收自回踩低点的反弹幅度, 核心因子 ──
+  // ── 1. 反弹确认 (35): 截至昨收自回踩低点的反弹幅度, 核心因子 ──
   const r = ext.reboundFromLow;
   if (r >= 10) {
-    score += 40;
+    score += 35;
     reasons.push(`截至昨收自低点反弹 +${r.toFixed(1)}%（强势修复）`);
   } else if (r >= 5) {
-    score += 32;
+    score += 28;
     reasons.push(`截至昨收自低点反弹 +${r.toFixed(1)}%`);
   } else if (r >= REBOUND_CONFIRM) {
-    score += 26;
+    score += 23;
     reasons.push(`截至昨收自低点反弹 +${r.toFixed(1)}%（反弹确认）`);
   } else if (r >= 1) {
-    score += 12;
+    score += 10;
     reasons.push(`截至昨收自低点仅反弹 +${r.toFixed(1)}%，反弹未确认`);
   } else if (r >= 0) {
-    score += 5;
+    score += 4;
     reasons.push("截至昨收仍在低点区域横盘");
   } else {
     score += 0;
     reasons.push(`截至昨收较前期低点再跌 ${Math.abs(r).toFixed(1)}%，阴跌未止`);
   }
 
-  // ── 2. 昨日动向 (20): T-1 涨跌幅（替代盘中"今日动向"） ──
+  // ── 2. 昨日动向 (15): T-1 涨跌幅（替代盘中"今日动向"） ──
   const c = t1.currentChangePct;
   if (c >= 9.5) {
-    score += 20;
+    score += 15;
     reasons.push(`昨日大涨 +${c.toFixed(1)}%（动能强劲）`);
   } else if (c >= 0) {
-    score += 18;
+    score += 13;
     reasons.push(c <= 3 ? `昨日微涨 +${c.toFixed(1)}%（止跌企稳）` : `昨日上涨 +${c.toFixed(1)}%`);
   } else if (c >= -3) {
-    score += 8;
+    score += 6;
     reasons.push(`昨日微跌 ${c.toFixed(1)}%`);
   } else {
     score += 0;
@@ -280,36 +365,32 @@ export function calcPremarketSignal(s: PullbackStock, basisDate?: string): Stock
     reasons.push(`浅回踩（仅回吐 ${t1.approachPct.toFixed(0)}% 涨幅），强势整理`);
   }
 
-  // ── 4. 时间窗口 (10): 低点落在涨停后 3-8 天为高发期 ──
+  // ── 4. 时间窗口 (8): 低点落在涨停后 3-8 天为高发期 ──
   if (ext.lowWindow >= 3 && ext.lowWindow <= 8) {
-    score += 10;
+    score += 8;
     reasons.push(`低点窗口 ${ext.lowWindow} 天（涨停后 3-8 天高发期）`);
   } else {
-    score += 5;
+    score += 4;
     reasons.push(`低点窗口 ${ext.lowWindow} 天（偏离主流节奏）`);
   }
 
-  // ── 5. 板型弹性 (10): 首板是回踩再涨的主力 ──
+  // ── 5. 板型弹性 (7): 首板是回踩再涨的主力 ──
   if (ext.streak === 1) {
-    score += 10;
+    score += 7;
     reasons.push("首板弹性（回踩再涨的主力）");
   } else if (ext.streak === 2) {
-    score += 7;
+    score += 5;
     reasons.push("2 板股，弹性适中");
   } else {
-    score += 3;
+    score += 2;
     reasons.push(`${ext.streak} 板高位，深回踩多属情绪退潮`);
   }
 
-  // ── 6. 昨日K线形态 (10, 替代盘中量比): 阳线加分 ──
-  const t1Bar = t1.klineSummary[t1.klineSummary.length - 1];
-  if (t1Bar && t1Bar.close > t1Bar.open) {
-    score += 10;
-    reasons.push("昨日收阳线（多头试探）");
-  } else {
-    score += 4;
-    reasons.push("昨日收阴/平，反弹待量能确认");
-  }
+  // ── 6. 量能结构 (10, Task 40): 回踩段缩量度（T-1 截断 K 线可得，盘前不漂移） ──
+  score += volumeStructureScore(ext, reasons);
+
+  // ── 7. 涨停前趋势 (5, Task 40): 趋势首板 > 超跌反抽 ──
+  score += preTrendScore(t1, reasons);
 
   // ── 硬性风险否决: 未脱离低点 + 昨日续跌 ──
   if (r < 1 && c < -1) {
@@ -327,51 +408,54 @@ export function calcPremarketSignal(s: PullbackStock, basisDate?: string): Stock
       : score <= 38 ? "risk"
       : "watch";
 
-  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 7) };
+  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 9) };
 }
 
 /**
- * 机会/风险信号评分 (0-100)。构成:
- *   反弹确认 40 + 今日动向 20 + 回踩位置 20 + 时间窗口 10 + 板型弹性 10 + 量能确认 10
+ * 机会/风险信号评分 (0-100, Task 40 升级为 7 因子)。
+ * 构成: 反弹确认 35 + 今日动向 15 + 回踩位置 20 + 时间窗口 8 + 板型弹性 7 + 量能结构 10 + 涨停前趋势 5
+ *   - 量能结构: 回踩段均量较涨停日量的萎缩度（缩量回踩=抛压枯竭；放量回踩=出逃迹象）
+ *   - 涨停前趋势: 涨停前均线多头排列（趋势首板）优于超跌反抽
  * 判定: score >= 65 且反弹已确认(≥3%) → 机会; score <= 38 → 风险; 其余 → 观察。
+ * 旧数据（K线无量/preTrend 缺失）对应项取中性分，与历史口径平滑兼容。
  */
 export function calcStockSignal(s: PullbackStock): StockSignal {
   const ext = buildExt(s);
   const reasons: string[] = [];
   let score = 0;
 
-  // ── 1. 反弹确认 (40): 自回踩低点的反弹幅度, 核心因子 ──
+  // ── 1. 反弹确认 (35): 自回踩低点的反弹幅度, 核心因子 ──
   const r = ext.reboundFromLow;
   if (r >= 10) {
-    score += 40;
+    score += 35;
     reasons.push(`自低点反弹 +${r.toFixed(1)}%（强势修复）`);
   } else if (r >= 5) {
-    score += 32;
+    score += 28;
     reasons.push(`自低点反弹 +${r.toFixed(1)}%`);
   } else if (r >= REBOUND_CONFIRM) {
-    score += 26;
+    score += 23;
     reasons.push(`自低点反弹 +${r.toFixed(1)}%（反弹确认）`);
   } else if (r >= 1) {
-    score += 12;
+    score += 10;
     reasons.push(`自低点仅反弹 +${r.toFixed(1)}%，反弹未确认`);
   } else if (r >= 0) {
-    score += 5;
+    score += 4;
     reasons.push("仍在低点区域横盘");
   } else {
     score += 0;
     reasons.push(`较前期低点再跌 ${Math.abs(r).toFixed(1)}%，阴跌未止`);
   }
 
-  // ── 2. 今日动向 (20) ──
+  // ── 2. 今日动向 (15) ──
   const c = s.currentChangePct;
   if (c >= 9.5) {
-    score += 20;
+    score += 15;
     reasons.push(`今日大涨 +${c.toFixed(1)}%（再度封板动能）`);
   } else if (c >= 0) {
-    score += 18;
+    score += 13;
     reasons.push(c <= 3 ? `今日微涨 +${c.toFixed(1)}%（止跌企稳）` : `今日上涨 +${c.toFixed(1)}%`);
   } else if (c >= -3) {
-    score += 8;
+    score += 6;
     reasons.push(`今日微跌 ${c.toFixed(1)}%`);
   } else {
     score += 0;
@@ -396,42 +480,35 @@ export function calcStockSignal(s: PullbackStock): StockSignal {
     reasons.push(`浅回踩（仅回吐 ${s.approachPct.toFixed(0)}% 涨幅），强势整理`);
   }
 
-  // ── 4. 时间窗口 (10): 低点落在涨停后 3-8 天为高发期 ──
+  // ── 4. 时间窗口 (8): 低点落在涨停后 3-8 天为高发期 ──
   if (ext.lowWindow >= 3 && ext.lowWindow <= 8) {
-    score += 10;
+    score += 8;
     reasons.push(`低点窗口 ${ext.lowWindow} 天（涨停后 3-8 天高发期）`);
   } else {
-    score += 5;
+    score += 4;
     reasons.push(`低点窗口 ${ext.lowWindow} 天（偏离主流节奏）`);
   }
 
-  // ── 5. 板型弹性 (10): 首板是回踩再涨的主力 ──
+  // ── 5. 板型弹性 (7): 首板是回踩再涨的主力 ──
   if (ext.streak === 1) {
-    score += 10;
+    score += 7;
     reasons.push("首板弹性（回踩再涨的主力）");
   } else if (ext.streak === 2) {
-    score += 7;
+    score += 5;
     reasons.push("2 板股，弹性适中");
   } else {
-    score += 3;
+    score += 2;
     reasons.push(`${ext.streak} 板高位，深回踩多属情绪退潮`);
   }
 
-  // ── 6. 量能确认 (10, 加分项): 行情富化缺失时取中性 ──
-  if (s.volumeRatio > 0) {
-    if (s.volumeRatio >= 1.5) {
-      score += 10;
-      reasons.push(`放量反抽（量比 ${s.volumeRatio.toFixed(1)}）`);
-    } else if (s.volumeRatio >= 1) {
-      score += 7;
-      reasons.push(`量能温和（量比 ${s.volumeRatio.toFixed(1)}）`);
-    } else {
-      score += 3;
-      reasons.push(`缩量反抽（量比 ${s.volumeRatio.toFixed(1)}），待量能确认`);
-    }
-  } else {
-    score += 4;
+  // ── 6. 量能结构 (10, Task 40): 回踩段缩量度；盘中量比降级为标注 ──
+  score += volumeStructureScore(ext, reasons);
+  if (s.volumeRatio >= 1.5) {
+    reasons.push(`今日放量反抽（量比 ${s.volumeRatio.toFixed(1)}，动能确认）`);
   }
+
+  // ── 7. 涨停前趋势 (5, Task 40): 趋势首板 > 超跌反抽 ──
+  score += preTrendScore(s, reasons);
 
   // ── 硬性风险否决: 未脱离低点 + 今日续跌 (共性归纳中的弱势特征) ──
   if (r < 1 && c < -1) {
@@ -449,5 +526,5 @@ export function calcStockSignal(s: PullbackStock): StockSignal {
       : score <= 38 ? "risk"
       : "watch";
 
-  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 7) };
+  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 9) };
 }

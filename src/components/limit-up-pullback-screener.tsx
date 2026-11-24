@@ -77,6 +77,7 @@ import {
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { PullbackCommonality } from "@/components/pullback-commonality";
 import {
+  buildExt,
   calcPremarketSignal,
   SIGNAL_META,
   type SignalResolver,
@@ -93,6 +94,7 @@ interface KLineDay {
   high: number;
   low: number;
   changePct: number;
+  volume?: number;
 }
 
 interface PullbackStock {
@@ -113,6 +115,9 @@ interface PullbackStock {
   turnover: number;
   marketCap: number;
   volumeRatio: number;
+  sector?: string;   // 所属行业板块（东财 f100）
+  concept?: string;  // 最贴切概念
+  preTrend?: number; // 涨停前均线结构：2=多头排列 1=中期向上 0=超跌反抽（Task 40）
 }
 
 interface PullbackResult {
@@ -485,13 +490,19 @@ function getBoardType(symbol: string): string {
   return "10%";
 }
 
-/** Risk score 0-100 (higher = more risky) */
+/** Risk score 0-100 (higher = more risky). Task 40 重构:
+ *  主因子从「回踩深度」改为「起涨点失守度」——深回踩但守住起涨点是机会主流形态
+ *  （共性归纳 Task 30），真正的结构风险是破位 + 阴跌不止。
+ *  构成: 破位深度 40 + 近3日阴跌动能 20 + 历史最大回撤 15 + 今日续跌 15 + 时间损耗 10
+ */
 function calcRiskScore(s: PullbackStock): number {
-  const score =
-    s.approachPct * 0.35 +
-    s.maxPullbackPct * 0.25 +
-    Math.min(s.daysSinceLimitUp * 3, 30) * 0.15 +
-    Math.max(0, -s.currentChangePct) * 0.25;
+  const ext = buildExt(s);
+  const broken = Math.min(ext.brokenPct, 25) / 25;                      // 起涨点失守（封顶 25%）
+  const drop3 = Math.min(ext.recent3DayDrop, 15) / 15;                  // 近3日累计跌幅（封顶 15%）
+  const mpb = Math.min(s.maxPullbackPct, 40) / 40;                      // 历史最大回撤（封顶 40%）
+  const today = Math.min(Math.max(0, -s.currentChangePct), 8) / 8;      // 今日续跌（封顶 -8%）
+  const days = Math.min(s.daysSinceLimitUp * 3, 30) / 30;               // 时间损耗
+  const score = broken * 40 + drop3 * 20 + mpb * 15 + today * 15 + days * 10;
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
@@ -502,19 +513,24 @@ function getRiskStyle(score: number): { bg: string; text: string; label: string 
   return { bg: "bg-emerald-500/10 border-emerald-500/40", text: "text-emerald-600 dark:text-emerald-400", label: "低" };
 }
 
-/** Quality score 0-100 (higher = better buy value) */
+/** Quality score 0-100 (higher = better buy value). Task 40: 量能项改为
+ *  「回踩段缩量结构 60% + 当前量比适中 40%」混合，缩量回踩（拋压枯竭）优先。 */
 function calcQualityScore(s: PullbackStock): number {
+  const ext = buildExt(s);
   // 位置优势 (35分满分): approachPct <= 100 时直接用，> 100 (破位) 时扣分
   const positionRaw = s.approachPct <= 100
     ? s.approachPct
     : Math.max(0, 100 - (s.approachPct - 100) * 2);
   const position = positionRaw * 0.35;
 
-  // 量能配合 (25分满分): volumeRatio 越低越好，< 1 为缩量
-  // No data (volumeRatio === 0) → neutral midpoint (12.5)
-  const volume = s.volumeRatio > 0
-    ? Math.max(0, Math.min(25, (2 - Math.min(s.volumeRatio, 2)) * 12.5))
-    : 12.5;
+  // 量能配合 (25分满分): 缩量结构 15 + 量比适中 10；无量数据取中性
+  const shrinkPart = ext.volShrinkPct !== undefined
+    ? Math.max(0, Math.min(1, ext.volShrinkPct / 50)) * 15
+    : 7.5;
+  const ratioPart = s.volumeRatio > 0
+    ? Math.max(0, Math.min(1, (2 - Math.min(s.volumeRatio, 2)) / 2)) * 10
+    : 5;
+  const volume = shrinkPart + ratioPart;
 
   // 回踩天数适中 (20分满分): 3-7 天最佳，太短或太长都扣分
   const days = s.daysSinceLimitUp >= 3 && s.daysSinceLimitUp <= 7
@@ -541,11 +557,16 @@ function getQualityScoreBreakdown(s: PullbackStock): {
   const positionRaw = s.approachPct <= 100
     ? s.approachPct
     : Math.max(0, 100 - (s.approachPct - 100) * 2);
+  const ext = buildExt(s);
   return {
     position: positionRaw * 0.35,
-    volume: s.volumeRatio > 0
-      ? Math.max(0, Math.min(25, (2 - Math.min(s.volumeRatio, 2)) * 12.5))
-      : 12.5,
+    // Task 40: 与 calcQualityScore 同口径（缩量结构 15 + 量比适中 10）
+    volume: (ext.volShrinkPct !== undefined
+      ? Math.max(0, Math.min(1, ext.volShrinkPct / 50)) * 15
+      : 7.5)
+      + (s.volumeRatio > 0
+        ? Math.max(0, Math.min(1, (2 - Math.min(s.volumeRatio, 2)) / 2)) * 10
+        : 5),
     days: s.daysSinceLimitUp >= 3 && s.daysSinceLimitUp <= 7
       ? 20
       : Math.max(0, 20 - Math.abs(s.daysSinceLimitUp - 5) * 3),
@@ -1936,11 +1957,14 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
 
   const streak = calcLimitUpStreak(stock.klineSummary, stock.limitUpDate);
 
+  // Task 40: 与 calcRiskScore 新公式同口径（破位深度主因子，而非回踩深度）
+  const extRisk = buildExt(stock);
   const contrib = {
-    approach: stock.approachPct * 0.35,
-    maxPullback: stock.maxPullbackPct * 0.25,
-    days: Math.min(stock.daysSinceLimitUp * 3, 30) * 0.15,
-    todayDrop: Math.max(0, -stock.currentChangePct) * 0.25,
+    broken: Math.min(extRisk.brokenPct, 25) / 25 * 40,             // 起涨点失守（封顶 25%）
+    drop3: Math.min(extRisk.recent3DayDrop, 15) / 15 * 20,         // 近3日阴跌动能
+    maxPullback: Math.min(stock.maxPullbackPct, 40) / 40 * 15,     // 历史最大回撤
+    todayDrop: Math.min(Math.max(0, -stock.currentChangePct), 8) / 8 * 15, // 今日续跌
+    days: Math.min(stock.daysSinceLimitUp * 3, 30) / 30 * 10,      // 时间损耗
   };
 
   const dataRows: { label: string; value: string; cls?: string }[] = [
@@ -2065,20 +2089,24 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
           <div className="space-y-1 text-[10px]">
             <div className="text-muted-foreground font-medium mb-1">评分构成:</div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">回踩深度 × 0.35</span>
-              <span className="font-mono text-foreground">+{contrib.approach.toFixed(1)}</span>
+              <span className="text-muted-foreground">起涨点失守 × 0.40</span>
+              <span className="font-mono text-foreground">+{contrib.broken.toFixed(1)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">最大回撤 × 0.25</span>
+              <span className="text-muted-foreground">近3日阴跌 × 0.20</span>
+              <span className="font-mono text-foreground">+{contrib.drop3.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">最大回撤 × 0.15</span>
               <span className="font-mono text-foreground">+{contrib.maxPullback.toFixed(1)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">距涨停天数 × 0.15</span>
-              <span className="font-mono text-foreground">+{contrib.days.toFixed(1)}</span>
+              <span className="text-muted-foreground">今日续跌 × 0.15</span>
+              <span className="font-mono text-foreground">+{contrib.todayDrop.toFixed(1)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">今日跌幅 × 0.25</span>
-              <span className="font-mono text-foreground">+{contrib.todayDrop.toFixed(1)}</span>
+              <span className="text-muted-foreground">时间损耗 × 0.10</span>
+              <span className="font-mono text-foreground">+{contrib.days.toFixed(1)}</span>
             </div>
           </div>
         </div>
@@ -2561,7 +2589,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   const [sortField, setSortField] = useState<SortField>(
     typeof savedUiState.sortField === "string" && SORT_FIELDS.includes(savedUiState.sortField)
       ? (savedUiState.sortField as SortField)
-      : "approachPct"
+      // Task 40: 默认按信号分降序——最值得关注的排最前，而非“跌得最深”的排最前
+      : "signalScore"
   );
   const [sortOrder, setSortOrder] = useState<SortOrder>(savedUiState.sortOrder === "asc" ? "asc" : "desc");
 
@@ -3046,6 +3075,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "板块", "概念", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
       "最大回撤%", "风险评分", "质量评分", "盘前信号", "盘前评分", "换手率%", "市值(亿)", "量比",
+      "量能萎缩%", "起涨点失守%", "涨停前趋势",
     ];
     const rows = displayedStocks.map(s => [
       s.symbol,
@@ -3069,6 +3099,10 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       s.turnover.toFixed(2),
       s.marketCap.toFixed(2),
       s.volumeRatio.toFixed(2),
+      // Task 40: 量能结构 / 破位度 / 涨停前趋势
+      buildExt(s).volShrinkPct !== undefined ? buildExt(s).volShrinkPct!.toFixed(1) : "",
+      buildExt(s).brokenPct.toFixed(2),
+      s.preTrend === undefined ? "" : s.preTrend === 2 ? "多头排列" : s.preTrend === 1 ? "中期向上" : "超跌反抽",
     ]);
 
     const BOM = "\uFEFF";
