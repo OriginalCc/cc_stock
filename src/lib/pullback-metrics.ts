@@ -37,6 +37,7 @@ export interface PullbackStock {
   marketCap: number;
   volumeRatio: number;
   sector?: string; // 所属行业板块（东财 f100，行情富化时填充，可能缺省）
+  concept?: string; // 最贴切概念（slist 概念族剔除风格标签后取今日动量最强，可能缺省）
 }
 
 /** Per-stock derived metrics (from kline) shared across analyses */

@@ -3,7 +3,7 @@
 // snapshot engine reuses the exact same data sources (Sina calendar/kline,
 // EM ZT pool, EM quotes) without duplicating request logic.
 import { getAShareKLine } from "@/lib/ashare-api";
-import { emRawJson } from "@/lib/em-raw-client";
+import { emRawJson, emRawFetch } from "@/lib/em-raw-client";
 import type { KLineDay } from "@/lib/pullback-metrics";
 
 export type { KLineDay };
@@ -217,4 +217,158 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string
     }
   }
   return result;
+}
+
+// ── 概念板块：个股所属概念（slist）+ 概念全集（clist m:90+t:3） ──
+
+export interface StockBoard {
+  code: string;   // BK 代码
+  name: string;   // 板块名称
+  changePct: number; // 板块当日涨跌幅%（用于挑选最活跃概念）
+}
+
+// 风格/资金/指数成分类"伪概念"（EM 把它们也归在 t:3 概念族里，需剔除）
+const STYLE_TAG_RE = /昨日|涨停|连板|多板|触板|首板|振幅|次新|重仓|减仓|增仓|持股|融资|融券|股通|MSCI|标普|富时|证金|汇金|QFII|社保|券商|保险|信托|基金|破净|市盈|市净|成长股|微盘|大盘股|中盘股|小盘股|百元股|低价股|高价股|高送转|分拆|举牌|回购|转债|白马|蓝筹|题材股|热股|人气|龙虎榜|大宗交易|高质押|转融券|连续上涨|连续下跌|连续亏损|连续盈利|新高|新低|预盈|预亏|茅指数|宁组合|AH股|AB股|GDR|ST/;
+// 模块级缓存：概念板块全集 BK 代码（1 小时，避免每次选股都翻 3 页全量列表）
+let conceptBoardCodesCache: { codes: Set<string>; ts: number } | null = null;
+
+// EM push2 系按突发限流：连续快速请求会被 RST。带退避间隔的 JSON 抓取（复用多 IP 原始客户端）
+async function fetchJsonWithBackoff(urlVariants: string[], maxAttempts = 3): Promise<any | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const url = urlVariants[i % urlVariants.length];
+    try {
+      const { status, body } = await emRawFetch(url, 6000);
+      if (status === 200) return JSON.parse(body);
+    } catch {
+      // RST/提前断连 → 退避后重试
+    }
+    await new Promise(r => setTimeout(r, 250 + i * 200));
+  }
+  return null;
+}
+
+/** 分页抓取东财板块列表的 BK 代码（fs=m:90+t:N；N=2 行业/3 概念；带退避重试+截止时间） */
+async function fetchBoardCodesPaged(fsFamily: string, maxPages: number, deadlineMs = 10_000): Promise<Set<string>> {
+  const codes = new Set<string>();
+  let total = 0;
+  const t0 = Date.now();
+  const pageUrls = (pn: number) => [
+    `http://push2delay.eastmoney.com/api/qt/clist/get?pn=${pn}&pz=200&po=1&np=1&fltt=2&invt=2&fid=f3&fs=${fsFamily}&fields=f12,f14`,
+    `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${pn}&pz=200&po=1&np=1&fltt=2&invt=2&fid=f3&fs=${fsFamily}&fields=f12,f14`,
+  ];
+  for (let pn = 1; pn <= maxPages; pn++) {
+    if (Date.now() - t0 > deadlineMs) break; // 被限流时尽快退出，降级后续模式
+    const json = await fetchJsonWithBackoff(pageUrls(pn));
+    const diff = json?.data?.diff;
+    if (!Array.isArray(diff) || diff.length === 0) break;
+    for (const it of diff) {
+      const c = String(it.f12 || "");
+      if (/^BK\d+/.test(c)) codes.add(c);
+    }
+    total = Number(json?.data?.total) || total;
+    if (total > 0 && codes.size >= total) break;
+  }
+  return codes;
+}
+
+/** 概念板块全集（t:3，554 个，缓存 1h）—— 用于把 slist 返回的板块精确归类为"概念" */
+export async function getConceptBoardCodes(): Promise<Set<string>> {
+  if (conceptBoardCodesCache && Date.now() - conceptBoardCodesCache.ts < 3600_000) {
+    return conceptBoardCodesCache.codes;
+  }
+  const codes = await fetchBoardCodesPaged("m:90+t:3", 6, 12_000);
+  if (codes.size > 0) conceptBoardCodesCache = { codes, ts: Date.now() };
+  return codes;
+}
+
+// 行业板块全集（t:2，仅 86 个，响应体小、抗限流）—— 降级模式下精确排除行业
+let industryBoardCodesCache: { codes: Set<string>; ts: number } | null = null;
+
+/** 行业板块全集（t:2，缓存 1h；仅用于排除，抓取失败时空集） */
+export async function getIndustryBoardCodes(): Promise<Set<string>> {
+  if (industryBoardCodesCache && Date.now() - industryBoardCodesCache.ts < 3600_000) {
+    return industryBoardCodesCache.codes;
+  }
+  const codes = await fetchBoardCodesPaged("m:90+t:2", 2, 8_000);
+  if (codes.size > 0) industryBoardCodesCache = { codes, ts: Date.now() };
+  return codes;
+}
+
+/** 个股所属全部板块（行业+概念+地区+风格，slist 单股接口，20 个以内） */
+export async function fetchStockBoards(symbol: string): Promise<StockBoard[]> {
+  const secid = symbol.startsWith("6") ? `1.${symbol}` : `0.${symbol}`;
+  const url = `http://push2.eastmoney.com/api/qt/slist/get?spt=3&fltt=2&invt=2&fields=f12,f14,f3&secid=${secid}&pn=1&po=1&np=1&ut=b2884a393a59ad64002292a3e90d46a5&fs=b:BK0000~`;
+  const json = await emRawJson(url, 2, 8000);
+  const diff = json?.data?.diff;
+  if (!Array.isArray(diff)) return [];
+  return diff
+    .map((it: any) => ({
+      code: String(it.f12 || ""),
+      name: String(it.f14 || ""),
+      changePct: parseFloat(it.f3) || 0,
+    }))
+    .filter((b: StockBoard) => /^BK\d+/.test(b.code));
+}
+
+// 模块级概念结果缓存：盘中板块归属不变，30 分钟内复用，避免每次选股重复发 255 个 slist 请求
+const conceptResultCache = new Map<string, { name: string; ts: number }>();
+const CONCEPT_RESULT_TTL = 30 * 60 * 1000;
+
+/** 带缓存的概念解析（slist + pickBestConcept；空结果不缓存，下次重试） */
+export async function resolveStockConcept(
+  symbol: string,
+  conceptCodes: Set<string> | null,
+  sector: string | undefined,
+  industryCodes: Set<string> | null
+): Promise<string> {
+  const hit = conceptResultCache.get(symbol);
+  if (hit && Date.now() - hit.ts < CONCEPT_RESULT_TTL) return hit.name;
+  const boards = await fetchStockBoards(symbol);
+  if (boards.length === 0) return ""; // 数据源不可用不缓存，下次请求重试
+  const name = pickBestConcept(boards, conceptCodes, sector, industryCodes);
+  if (name) conceptResultCache.set(symbol, { name, ts: Date.now() });
+  return name;
+}
+
+/**
+ * 挑"最贴切概念"：剔除风格/资金标签后取今日板块涨幅最高者
+ * （涨停回踩语境下，今日仍在涨的概念板块大概率就是该股的题材驱动）。
+ * - 精确模式：conceptCodes（t:3 概念族全集）可用 → 只认集合内板块
+ * - 降级模式：全集失败但 industryCodes（t:2 行业全集，体小抗限流）可用 → 排除行业+地区后取概念
+ * - 兑底模式：两者都失败 → 名称启发式（行业链排在 slist 最前，跳过 sector 及之前；再剔地区/风格）
+ * 无可用候选返回 ""。
+ */
+export function pickBestConcept(
+  boards: StockBoard[],
+  conceptCodes: Set<string> | null,
+  sector: string | undefined,
+  industryCodes?: Set<string> | null
+): string {
+  let pool: StockBoard[];
+  if (conceptCodes && conceptCodes.size > 0) {
+    pool = boards.filter(b => conceptCodes.has(b.code));
+  } else if (industryCodes && industryCodes.size > 0) {
+    pool = boards.filter(b =>
+      !industryCodes.has(b.code) &&
+      !b.name.endsWith("板块") &&
+      !/^[ABHN]股$/.test(b.name)
+    );
+  } else {
+    const sectorIdx = boards.findIndex(b => sector && b.name === sector);
+    const industryCut = sectorIdx >= 0 ? sectorIdx + 1 : 2;
+    const sectorBase = (sector || "").replace(/[ⅠⅡⅢⅣⅠ-Ⅳ]/g, "").trim();
+    pool = boards.filter((b, idx) =>
+      idx >= industryCut &&
+      !b.name.endsWith("板块") &&
+      !/^[ABHN]股$/.test(b.name) &&
+      !(sectorBase && (b.name.startsWith(sectorBase) || sectorBase.startsWith(b.name)))
+    );
+  }
+  pool = pool.filter(b => !STYLE_TAG_RE.test(b.name));
+  if (pool.length === 0) return "";
+  let best = pool[0];
+  for (const b of pool) {
+    if (b.changePct > best.changePct) best = b;
+  }
+  return best.name;
 }

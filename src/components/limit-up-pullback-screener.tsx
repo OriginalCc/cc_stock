@@ -3043,7 +3043,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   const handleExportCSV = useCallback(() => {
     if (displayedStocks.length === 0) return;
     const headers = [
-      "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "板块", "涨停价", "起涨点",
+      "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "板块", "概念", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
       "最大回撤%", "风险评分", "质量评分", "盘前信号", "盘前评分", "换手率%", "市值(亿)", "量比",
     ];
@@ -3054,6 +3054,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       s.limitUpPct.toFixed(2),
       calcLimitUpStreak(s.klineSummary, s.limitUpDate),
       s.sector || "",
+      s.concept || "",
       s.limitUpClose.toFixed(2),
       s.preLimitUpClose.toFixed(2),
       s.currentPrice.toFixed(2),
@@ -3485,6 +3486,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                       <SortableHead label="连板" field="limitUpStreak" current={sortField} order={sortOrder} onSort={handleSort} className="w-[52px]" align="right" />
                       <SortableHead label="今日涨跌" field="currentChangePct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
                       <TableHead className="text-[11px] font-medium w-[90px]">板块</TableHead>
+                      <TableHead className="text-[11px] font-medium w-[110px]">概念</TableHead>
                       <SortableHead label="涨停价" field="limitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="起涨点" field="preLimitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="当前价" field="currentPrice" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
@@ -3603,6 +3605,28 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                                     </TooltipTrigger>
                                     <TooltipContent side="top" className="text-xs">
                                       {stock.sector}（东财行业板块）
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : (
+                                <span className="text-muted-foreground/60">--</span>
+                              )}
+                            </TableCell>
+
+                            {/* 概念 - 最贴切概念（slist 概念族剔除风格标签后取今日动量最强） */}
+                            <TableCell className="py-2 text-[11px] text-muted-foreground">
+                              {stock.concept ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="max-w-[100px] truncate block cursor-default">{stock.concept}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-[260px] text-xs">
+                                      <div className="font-medium">{stock.concept}</div>
+                                      <div className="mt-1 text-[10px] text-muted-foreground">
+                                        东财概念板块：取该股所属概念中今日涨幅最高者（题材动量最强）；
+                                        融资融券/指数成分等风格标签已剔除
+                                      </div>
                                     </TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>

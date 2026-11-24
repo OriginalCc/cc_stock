@@ -4,6 +4,9 @@ import {
   fetchZTPool,
   fetchDailyKline,
   fetchRealtimeQuotes,
+  getConceptBoardCodes,
+  getIndustryBoardCodes,
+  resolveStockConcept,
   type KLineDay,
   type PoolCandidate,
 } from "@/lib/pullback-pipeline";
@@ -262,6 +265,41 @@ export async function GET(request: NextRequest) {
           stock.pullbackPct = ((stock.limitUpClose - stock.currentPrice) / stock.limitUpClose) * 100;
         }
       }
+    }
+
+    // Step 4.5: 概念板块（slist 单股接口 × 批量 25；风格/资金标签过滤后取今日动量最强概念）
+    // 独立降级：概念获取失败只影响「概念」列显示 --，不影响选股主流程；
+    // 概念全集（t:3）抓取失败时传 null，走名称启发式降级模式，概念列仍尽量有值
+    try {
+      const [conceptCodes, industryCodes] = await Promise.all([
+        getConceptBoardCodes(),   // t:3 全集（限流/失败时为空集）
+        getIndustryBoardCodes(),  // t:2 行业全集（体小抗限流，降级模式排除行业用）
+      ]);
+      const useConcepts = conceptCodes.size > 0 ? conceptCodes : null;
+      const useIndustries = industryCodes.size > 0 ? industryCodes : null;
+      // slist 是单股接口：低并发+批间隔，避免触发 EM 突发限流；概念结果模块级缓存 30 分钟
+      const CONCEPT_CONCURRENCY = 12;
+      const CONCEPT_BUDGET_MS = 30_000;
+      const CONCEPT_BATCH_DELAY_MS = 150;
+      const conceptT0 = Date.now();
+      for (let i = 0; i < pullbackStocks.length; i += CONCEPT_CONCURRENCY) {
+        if (Date.now() - conceptT0 > CONCEPT_BUDGET_MS) break;
+        const batch = pullbackStocks.slice(i, i + CONCEPT_CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(s => resolveStockConcept(s.symbol, useConcepts, s.sector, useIndustries))
+        );
+        for (let j = 0; j < batch.length; j++) {
+          const r = results[j];
+          if (r.status === "fulfilled" && r.value) {
+            batch[j].concept = r.value;
+          }
+        }
+        if (i + CONCEPT_CONCURRENCY < pullbackStocks.length) {
+          await new Promise(r2 => setTimeout(r2, CONCEPT_BATCH_DELAY_MS));
+        }
+      }
+    } catch {
+      // 概念板块获取失败 → 概念列显示 --，其余字段不受影响
     }
 
     // Step 5: Sort by approachPct descending (most pullback first)

@@ -1795,3 +1795,40 @@ Work Log:
   控制台无错误 ✓；lint 通过
 - 涉及文件：src/lib/pullback-pipeline.ts、src/lib/pullback-metrics.ts、
   src/app/api/stock/limit-up-pullback/route.ts、src/components/limit-up-pullback-screener.tsx
+
+---
+
+Task ID: 39
+Agent: Main Claude (Z.ai Code)
+Task: 表格板块列后新增「概念」列（股票最贴切概念）
+
+Work Log:
+- 用户需求：在板块这一列后面新增概念，列出股票最贴切的概念
+- 数据方案：东财 slist 单股接口（qt/slist/get spt=3，返回个股全部所属板块含 BK 代码+当日板块涨幅）；
+  概念全集 t:3（554 个）用于精确归类，t:2 行业全集（86 个）作降级排除
+- "最贴切"定义：剔除风格/资金标签（STYLE_TAG_RE：昨日涨停/融资融券/机构重仓/连续亏损/多板/新高
+  /茅指数…共 60+ 关键词）后，取该股所属概念中「今日板块涨幅最高」者（题材动量最强，
+  涨停回踩语境下大概率就是涨停驱动题材）
+- 三级降级（保证概念列尽量有值）：
+  1) 精确模式：t:3 全集可用 → 只认集合内板块（行业/地区/风格天然排除）
+  2) 降级模式：t:3 失败但 t:2 行业全集可用（体小抗限流）→ 排除行业+地区（「板块」后缀）+[ABHN]股
+  3) 兜底模式：两者都失败 → 名称启发式（行业链总在 slist 最前：跳过 sector 及其之前；再剔风格）
+- 工程细节（EM push2 突发限流应对）：
+  - clist 分页抓取走 emRawFetch（多 IP+容忍 RST）+ 退避重试 + 截止时间（t:3 12s / t:2 8s），
+    被限流时快速退出降级，不拖慢请求
+  - 概念结果模块级缓存 30 分钟（盘中板块归属不变；首次扫描 ~10s，二次 refresh 5.6s）
+  - slist 低并发 12 + 批间隔 150ms + 总预算 30s（此前 25 并发会触发 EM 限流全失败）
+  - 空结果不缓存，下次请求自动重试
+- 数据链：pipeline 新增 getConceptBoardCodes/getIndustryBoardCodes/fetchStockBoards/
+  pickBestConcept/resolveStockConcept；route Step 4.5 并行取两全集后批量解析 concept；
+  PullbackStock 增加 concept?: string（盘前快照路由不受影响）
+- 前端：板块列后新增「概念」列（w-110，截断+悬浮说明选取规则；无数据显示 --）；
+  CSV 导出同步加「概念」列（板块之后）
+- 新列序：展开 | 代码/名称 | 信号 | 距涨停 | 涨停日 | 连板 | 今日涨跌 | 板块 | 概念 | 涨停价 |
+  起涨点 | 当前价 | 回踩深度 | 最大回撤 | 风险 | 质量 | 换手率 | 市值 | 量比 | 涨停涨幅 | 走势 | 收藏
+- 验证：API 实测 255/255 全覆盖（达意隆=机器人概念、亚玛顿=特斯拉概念、瀛通通讯=智能音箱、
+  常铝股份=汽车热管理、惠发食品=预制菜概念…），风格标签误判已修复；
+  二次请求 5.6s（概念缓存生效）；agent-browser 表头+首行对齐（专用设备→机器人概念）✓；
+  视觉截图 ✓；控制台无错误 ✓；lint 通过
+- 涉及文件：src/lib/pullback-pipeline.ts、src/lib/pullback-metrics.ts、
+  src/app/api/stock/limit-up-pullback/route.ts、src/components/limit-up-pullback-screener.tsx
