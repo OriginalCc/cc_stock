@@ -1547,3 +1547,17 @@ Stage Summary:
 - 回踩选股页所有状态型控件（折叠组、面板折叠、排序、收藏过滤、子 tab）全部
   持久化到 localStorage JSON；加上原有 9 项，页面 14 类状态刷新后全部恢复
 - 涉及文件：src/components/limit-up-pullback-screener.tsx、src/app/page.tsx
+
+---
+
+Task ID: 29
+Agent: Main Claude (Z.ai Code)
+Task: 回踩深度分布直方图配色微调 — "回到起涨点"桶去黑化
+
+Work Log:
+- 用户反馈：直方图用黑色当背景色不好看
+- 根因：最后一个桶（回到起涨点，占比常达 ~88%）用 bg-rose-700（#be123c
+  深绯红），整根柱子填满后视觉接近黑色；其余桶均为 -500 亮色系
+- 修复：bg-rose-700/800 → bg-rose-500/600，与其余四桶配色规范一致
+- 验证：DOM class 确认为 bg-rose-500，截图柱子呈明亮玫瑰红；lint 通过
+- 涉及文件：src/components/limit-up-pullback-screener.tsx（1 行）

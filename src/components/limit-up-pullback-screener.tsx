@@ -215,7 +215,7 @@ const HISTOGRAM_BINS = [
   { range: "50-70%", min: 50, max: 70, color: "bg-yellow-500", activeColor: "bg-yellow-600" },
   { range: "70-90%", min: 70, max: 90, color: "bg-orange-500", activeColor: "bg-orange-600" },
   { range: "90-100%", min: 90, max: 100, color: "bg-red-500", activeColor: "bg-red-600" },
-  { range: "回到起涨点", min: 100, max: Number.POSITIVE_INFINITY, color: "bg-rose-700", activeColor: "bg-rose-800" },
+  { range: "回到起涨点", min: 100, max: Number.POSITIVE_INFINITY, color: "bg-rose-500", activeColor: "bg-rose-600" },
 ] as const;
 
 /** Check if a stock's approachPct falls into the given bin */
