@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAShareKLine } from "@/lib/ashare-api";
+import { emRawJson } from "@/lib/em-raw-client";
 
 export const dynamic = "force-dynamic";
 
 // ── Server-side Cache ───────────────────────────────────
-const cache = new Map<string, { data: PullbackResult; timestamp: number }>();
-const CACHE_TTL = 10 * 60 * 1000; // 10 min cache
+// Per-entry TTL: full results live 10 min; empty/failed results only 60 s so a
+// transient data-source outage never sticks as "no data" for 10 minutes.
+const cache = new Map<string, { data: PullbackResult; timestamp: number; ttl: number }>();
+const CACHE_TTL_FULL = 10 * 60 * 1000;
+const CACHE_TTL_EMPTY = 60 * 1000;
 
 function getTodayKey(): string {
   const now = new Date();
@@ -61,141 +66,100 @@ interface KLineDay {
   changePct: number;
 }
 
-interface RawStock {
+interface PoolCandidate {
   code: string;
   name: string;
-  price: number;
-  changePct: number;
-  prevClose: number;
+  poolDate: string; // "YYYY-MM-DD" — the (most recent) sealed limit-up day
 }
 
-// ── Helper: Fetch all A-share stocks from EastMoney ────
-// Note: f2/f3/f4 are real-time quote fields. Outside trading hours these return "-"
-// (parsed as NaN → 0). We request f18 (previous close) as a fallback so price-based
-// candidate filtering still works outside trading hours. The K-line analysis below
-// independently determines limit-up + pullback status from sina daily K-line data.
-async function fetchAllStocks(): Promise<RawStock[]> {
-  const allStocks: RawStock[] = [];
-  // push2delay caps each page at 100 items regardless of pz param, so use 100
-  const pageSize = 100;
-  const fields = "f2,f3,f4,f12,f14,f18";
-
-  // Parse a single page response and append stocks to allStocks
-  const appendFromJson = (json: any) => {
-    const diff = json?.data?.diff;
-    if (!Array.isArray(diff)) return;
-    for (const item of diff) {
-      const code = String(item.f12 || "");
-      if (!code) continue;
-      // f2 = current price (real-time, "-" outside trading hours)
-      // f18 = previous close (always available, this is the YESTERDAY CLOSE price)
-      // f4 = change amount (元, NOT previous close!) - do NOT use as prevClose fallback
-      // f3 = change percentage
-      const price = parseFloat(item.f2) || 0;
-      const prevClose = parseFloat(item.f18) || 0;
-      allStocks.push({
-        code,
-        name: String(item.f14 || ""),
-        price,
-        changePct: parseFloat(item.f3) || 0,
-        prevClose,
-      });
-    }
-  };
-
+// ── Helper: trading calendar via Sina index daily kline ──
+// Direct URL (NOT getAShareKLine) because toSinaSymbol maps "sh000001" to
+// sz000001 (平安银行) — the Shanghai index needs the sh prefix preserved.
+// Sina returns only trading days, so the bars ARE the trading calendar.
+async function fetchTradeDates(): Promise<string[]> {
   try {
-    // First page to get total count
-    const firstUrl = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
-    const firstRes = await fetch(firstUrl, {
-      signal: AbortSignal.timeout(10000),
-      headers: { "Referer": "https://quote.eastmoney.com/" },
-      cache: "no-store" as RequestCache,
-    });
-    if (!firstRes.ok) return [];
-    const firstJson = await firstRes.json();
-    const total = firstJson?.data?.total || 0;
-    appendFromJson(firstJson);
-
-    // Fetch remaining pages in small batches to avoid push2delay rate-limiting.
-    // push2delay aggressively drops concurrent requests, so we use CONCURRENCY=3
-    // and a short delay between batches. Each page is retried once on failure.
-    const totalPages = Math.ceil(total / pageSize);
-    const CONCURRENCY = 3;
-    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-    const fetchPage = async (page: number): Promise<void> => {
-      const url = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=${fields}`;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const res = await fetch(url, {
-            signal: AbortSignal.timeout(10000),
-            headers: { "Referer": "https://quote.eastmoney.com/" },
-            cache: "no-store" as RequestCache,
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const json = await res.json();
-          const diff = json?.data?.diff;
-          if (!Array.isArray(diff) || diff.length === 0) throw new Error("empty diff");
-          appendFromJson(json);
-          return; // success
-        } catch {
-          // retry once after a short delay
-          if (attempt === 0) await sleep(200);
-        }
-      }
-    };
-
-    for (let startPage = 2; startPage <= totalPages; startPage += CONCURRENCY) {
-      const batch: Promise<void>[] = [];
-      const endPage = Math.min(startPage + CONCURRENCY - 1, totalPages);
-      for (let page = startPage; page <= endPage; page++) {
-        batch.push(fetchPage(page));
-      }
-      await Promise.allSettled(batch);
-      // Small delay between batches to avoid rate-limiting
-      if (endPage < totalPages) await sleep(150);
-    }
-  } catch {
-    // ignore
-  }
-
-  // Filter by prevClose (works outside trading hours via f18 fallback) to remove penny stocks.
-  // Keep all valid 6-digit codes; changePct filter is skipped because it's 0 outside trading hours.
-  // Deduplicate by code (push2delay pagination can return overlapping entries at page boundaries).
-  const seen = new Set<string>();
-  const filtered = allStocks.filter(s => {
-    if (!/^\d{6}$/.test(s.code) || s.prevClose < 2) return false;
-    if (seen.has(s.code)) return false;
-    seen.add(s.code);
-    return true;
-  });
-  return filtered;
-}
-
-// ── Helper: Fetch daily K-line via EastMoney push2his ──
-// Uses push2his.eastmoney.com (more reliable than sina which gets IP-banned easily).
-// secid format: 1.{code} for Shanghai (6xx/688), 0.{code} for Shenzhen (0xx/30x/8xx).
-// beg is set to ~30 calendar days ago to ensure >=15 trading days coverage.
-async function fetchDailyKline(symbol: string, datalen: number = 15): Promise<KLineDay[]> {
-  try {
-    const secid = symbol.startsWith("6") ? `1.${symbol}` : `0.${symbol}`;
-    // Compute beg date ~35 calendar days ago to cover ~15 trading days
-    const now = new Date();
-    const begDate = new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000);
-    const beg = `${begDate.getFullYear()}${String(begDate.getMonth() + 1).padStart(2, "0")}${String(begDate.getDate()).padStart(2, "0")}`;
-
-    const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=0&beg=${beg}&end=20500101&fields1=f1&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61`;
+    const url = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sh000001&scale=240&ma=no&datalen=12";
     const res = await fetch(url, {
-      headers: { "Referer": "https://quote.eastmoney.com/" },
+      headers: { "Referer": "https://finance.sina.com.cn" },
       cache: "no-store" as RequestCache,
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return [];
-    const json = await res.json();
+    const text = await res.text();
+    if (!text || text === "null") return [];
+    const arr = JSON.parse(text);
+    if (!Array.isArray(arr)) return [];
+    return arr.map((d: any) => String(d?.day || "")).filter(Boolean).slice(-11);
+  } catch {
+    return [];
+  }
+}
+
+// ── Helper: EM 涨停股池 (sealed limit-up pool) for one date ──
+// push2ex serves the pool of stocks that SEALED a limit-up on the given date.
+// This replaces the old blind 5000-stock scan: candidates drop from ~5000 to
+// a few hundred, cutting both scan time and upstream request volume ~20x.
+async function fetchZTPool(dateCompact: string): Promise<{ code: string; name: string }[]> {
+  const url = `http://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1000&sort=fbt%3Aasc&date=${dateCompact}`;
+  const json = await emRawJson(url, 2, 8000);
+  const pool = json?.data?.pool;
+  if (!Array.isArray(pool)) return [];
+
+  const out: { code: string; name: string }[] = [];
+  for (const item of pool) {
+    const code = String(item?.c || "");
+    const name = String(item?.n || "");
+    if (!/^\d{6}$/.test(code)) continue;
+    // BSE (北交所 43/83/87/92) and B-shares were never in the old scan universe
+    if (code.startsWith("8") || code.startsWith("4") || code.startsWith("9")) continue;
+    if (name.includes("ST")) continue;
+    out.push({ code, name });
+  }
+  return out;
+}
+
+// ── Helper: compute per-day changePct from closes (sina kline lacks it) ──
+function withChangePct(days: KLineDay[]): KLineDay[] {
+  for (let i = 1; i < days.length; i++) {
+    const prev = days[i - 1].close;
+    days[i].changePct = prev > 0 ? ((days[i].close - prev) / prev) * 100 : 0;
+  }
+  if (days.length > 0) days[0].changePct = 0;
+  return days;
+}
+
+// ── Helper: daily K-line, Sina primary + EM push2his fallback ──
+// Sina CN_MarketData works inside the dev server with plain fetch and is a
+// different infrastructure from EM (diversified failure domains). EM push2his
+// (currently in a bad window / RST-happy) stays as fallback via the raw client.
+async function fetchDailyKline(symbol: string, datalen: number = 15): Promise<KLineDay[]> {
+  // 1) Sina daily kline (unadjusted — same basis as EM fqt=0)
+  const sina = await getAShareKLine(symbol, 240, datalen);
+  if (sina.length > 0) {
+    return withChangePct(sina.map(d => ({
+      date: d.date,
+      open: d.open,
+      close: d.close,
+      high: d.high,
+      low: d.low,
+      changePct: 0,
+    })));
+  }
+
+  // 2) EM push2his fallback (raw client: multi-IP + tolerate premature close)
+  try {
+    const secid = symbol.startsWith("6") ? `1.${symbol}` : `0.${symbol}`;
+    const now = new Date();
+    const begDate = new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000);
+    const beg = `${begDate.getFullYear()}${String(begDate.getMonth() + 1).padStart(2, "0")}${String(begDate.getDate()).padStart(2, "0")}`;
+    const query = `/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=0&beg=${beg}&end=20500101&fields1=f1&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61`;
+    const json = await emRawJson(
+      [`http://push2his.eastmoney.com${query}`, `https://push2his.eastmoney.com${query}`],
+      1,
+      8000
+    );
     const klines: string[] = json?.data?.klines;
     if (!Array.isArray(klines) || klines.length === 0) return [];
 
-    // Each kline entry: "date,open,close,high,low,volume,amount,amplitude,changePct,changeAmt,turnover"
     const parsed: KLineDay[] = klines.map((line: string) => {
       const parts = line.split(",");
       return {
@@ -204,56 +168,40 @@ async function fetchDailyKline(symbol: string, datalen: number = 15): Promise<KL
         close: parseFloat(parts[2]) || 0,
         high: parseFloat(parts[3]) || 0,
         low: parseFloat(parts[4]) || 0,
-        changePct: parseFloat(parts[8]) || 0, // f59 = change percent
+        changePct: parseFloat(parts[8]) || 0,
       };
     }).filter((d: KLineDay) => d.close > 0);
 
-    // Return last `datalen` entries (or all if fewer)
     return parsed.slice(-datalen);
   } catch {
     return [];
   }
 }
 
-// ── Helper: Fetch real-time quote for multiple stocks ──
+// ── Helper: real-time quote enrichment via EM ulist (raw client) ──
 async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string, { price: number; changePct: number; turnover: number; marketCap: number; volumeRatio: number }>> {
   const result = new Map<string, { price: number; changePct: number; turnover: number; marketCap: number; volumeRatio: number }>();
   if (symbols.length === 0) return result;
 
-  try {
-    const secIds = symbols.map(s => {
-      const code = s.replace(/\.(SS|SZ)$/i, "");
-      const prefix = code.startsWith("6") ? "1" : "0";
-      return `${prefix}.${code}`;
-    });
+  for (let i = 0; i < symbols.length; i += 50) {
+    const batch = symbols.slice(i, i + 50);
+    const secIds = batch.map(code => `${code.startsWith("6") ? "1" : "0"}.${code}`);
+    const url = `http://push2delay.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f9,f10,f12,f14&secids=${secIds.join(",")}`;
+    const json = await emRawJson(url, 3, 8000);
+    const diff = json?.data?.diff;
+    if (!Array.isArray(diff)) continue;
 
-    for (let i = 0; i < secIds.length; i += 50) {
-      const batch = secIds.slice(i, i + 50);
-      const url = `https://push2delay.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f9,f10,f12,f14&secids=${batch.join(",")}`;
-      const res = await fetch(url, {
-        next: { revalidate: 0 },
-        signal: AbortSignal.timeout(8000),
-        headers: { "Referer": "https://quote.eastmoney.com/" },
+    for (const item of diff) {
+      const code = String(item.f12 || "");
+      if (!code) continue;
+      result.set(code, {
+        price: parseFloat(item.f2) || 0,
+        changePct: parseFloat(item.f3) || 0,
+        turnover: parseFloat(item.f8) || 0,
+        marketCap: parseFloat(item.f10) || 0,
+        volumeRatio: parseFloat(item.f9) || 0,
       });
-      if (!res.ok) continue;
-      const json = await res.json();
-      const diff = json?.data?.diff;
-      if (!Array.isArray(diff)) continue;
-
-      for (const item of diff) {
-        const code = String(item.f12 || "");
-        if (!code) continue;
-        result.set(code, {
-          price: parseFloat(item.f2) || 0,
-          changePct: parseFloat(item.f3) || 0,
-          turnover: parseFloat(item.f8) || 0,
-          marketCap: parseFloat(item.f10) || 0,
-          volumeRatio: parseFloat(item.f9) || 0,
-        });
-      }
     }
-  } catch {
-    // ignore
   }
   return result;
 }
@@ -263,7 +211,7 @@ export async function GET(request: NextRequest) {
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
   const cacheKey = `pullback-${getTodayKey()}`;
   const cached = cache.get(cacheKey);
-  if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  if (!forceRefresh && cached && Date.now() - cached.timestamp < cached.ttl) {
     return NextResponse.json({ ...cached.data, cached: true });
   }
   // If forceRefresh, invalidate the stale cache entry so a fresh result gets stored
@@ -271,47 +219,70 @@ export async function GET(request: NextRequest) {
     cache.delete(cacheKey);
   }
 
+  const storeAndReturn = (data: PullbackResult) => {
+    cache.set(cacheKey, {
+      data,
+      timestamp: Date.now(),
+      ttl: data.success && data.stocks.length > 0 ? CACHE_TTL_FULL : CACHE_TTL_EMPTY,
+    });
+    return NextResponse.json(data);
+  };
+
+  const failResult = (error: string): PullbackResult => ({
+    success: false,
+    date: getTodayKey(),
+    stocks: [],
+    summary: { totalScanned: 0, totalPullback: 0 },
+    timestamp: new Date().toISOString(),
+    error,
+  });
+
   try {
-    // Step 1: Fetch all A-share stocks
-    const allStocks = await fetchAllStocks();
-    if (allStocks.length === 0) {
-      const emptyResult: PullbackResult = {
-        success: true,
-        date: getTodayKey(),
-        stocks: [],
-        summary: { totalScanned: 0, totalPullback: 0 },
-        timestamp: new Date().toISOString(),
-      };
-      cache.set(cacheKey, { data: emptyResult, timestamp: Date.now() });
-      return NextResponse.json(emptyResult);
+    // Step 1: trading calendar (last 11 trading days from Sina index kline)
+    const tradeDates = await fetchTradeDates();
+    if (tradeDates.length < 2) {
+      return storeAndReturn(failResult("交易日历获取失败（新浪接口不可用），请稍后刷新重试"));
     }
 
-    // Step 2: Filter candidates.
-    // Only filter by name (ST) here. Price/changePct filtering is skipped because real-time
-    // quote fields are "-" outside trading hours (parsed as 0). The K-line analysis below
-    // independently determines whether a stock had a limit-up + pullback, so we don't need
-    // real-time quotes at this stage. Real-time enrichment happens in Step 4.
-    const candidates = allStocks.filter(s => {
-      // Exclude ST stocks (names containing ST)
-      if (s.name.includes("ST") || s.name.includes("*ST")) return false;
-      // Must be a proper stock code (6 digits) - already enforced in fetchAllStocks but keep as safety
-      if (!/^\d{6}$/.test(s.code)) return false;
-      return true;
-    });
+    // Step 2: 涨停股池 per day, most recent first, excluding today.
+    // A stock whose most-recent seal was TODAY can never satisfy
+    // daysSinceLimitUp >= 1, so its pool is not queried.
+    const poolDates = tradeDates.slice(0, -1).slice(-10);
+    const candidates = new Map<string, PoolCandidate>(); // insertion order: most recent seal first
+    const POOL_CONCURRENCY = 3;
+    let poolDaysOk = 0;
 
-    // Step 3: For candidates, fetch K-line data to find limit-up days in past 2 weeks
-    // Process in batches to avoid overwhelming the API.
-    // NOTE: Outside trading hours changePct is 0 for all stocks, so the candidate list
-    // is much larger (~5000 vs a few hundred during trading hours). We use a higher
-    // batch size and a total time budget to keep response time reasonable.
+    for (let i = 0; i < poolDates.length; i += POOL_CONCURRENCY) {
+      const batch = poolDates.slice(i, i + POOL_CONCURRENCY).reverse();
+      const results = await Promise.allSettled(batch.map(d => fetchZTPool(d.replaceAll("-", ""))));
+      for (let j = 0; j < batch.length; j++) {
+        const r = results[j];
+        if (r.status !== "fulfilled") continue;
+        poolDaysOk++;
+        for (const c of r.value) {
+          if (!candidates.has(c.code)) candidates.set(c.code, { ...c, poolDate: batch[j] });
+        }
+      }
+    }
+
+    if (poolDaysOk === 0) {
+      return storeAndReturn(failResult("涨停股池数据源暂时不可用（东财接口拦截），请稍后刷新重试"));
+    }
+
+    // Step 3: per-candidate K-line analysis (Sina primary, EM fallback).
+    // K-line fetch failures are tracked so a total outage is reported as an
+    // error instead of silently returning "0 results".
+    const candList = Array.from(candidates.values());
     const pullbackStocks: PullbackStock[] = [];
-    const BATCH_SIZE = 25; // higher concurrency to speed up off-hours scanning
-    const TOTAL_BUDGET_MS = 55_000; // ~55s budget; return what we have if exceeded
+    let klineOk = 0;
+    let klineFailed = 0;
+    const BATCH_SIZE = 30;
+    const TOTAL_BUDGET_MS = 45_000;
     const startTime = Date.now();
 
-    for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+    for (let i = 0; i < candList.length; i += BATCH_SIZE) {
       if (Date.now() - startTime > TOTAL_BUDGET_MS) break;
-      const batch = candidates.slice(i, i + BATCH_SIZE);
+      const batch = candList.slice(i, i + BATCH_SIZE);
       const klineResults = await Promise.allSettled(
         batch.map(s => fetchDailyKline(s.code, 15))
       );
@@ -320,48 +291,31 @@ export async function GET(request: NextRequest) {
         const stock = batch[j];
         const klineResult = klineResults[j];
 
-        if (klineResult.status !== "fulfilled") continue;
-        const kline = klineResult.value;
-        if (kline.length < 5) continue;
-
-        // Already sorted by date ascending from Sina API
-
-        // Find limit-up days in the past 2 weeks (last 10 K-line days)
-        // Limit-up criteria: close >= prevClose * (1 + threshold)
-        const recentKline = kline.slice(-10);
-        let bestLimitUpIdx = -1;
-        let bestLimitUpPct = 0;
-
-        for (let k = 1; k < recentKline.length; k++) {
-          const prevClose = recentKline[k - 1].close;
-          const curClose = recentKline[k].close;
-          const pct = ((curClose - prevClose) / prevClose) * 100;
-
-          // Determine limit-up threshold based on board type
-          const code = stock.code;
-          let threshold = 9.5; // main board: 10%, with tolerance
-          if (code.startsWith("688") || code.startsWith("30")) threshold = 19.5; // STAR/ChiNext: 20%
-          if (code.startsWith("8")) threshold = 29.5; // BSE: 30%
-
-          if (pct >= threshold) {
-            // Found a limit-up day — pick the most recent one
-            if (k > bestLimitUpIdx) {
-              bestLimitUpIdx = k;
-              bestLimitUpPct = pct;
-            }
-          }
+        if (klineResult.status !== "fulfilled" || klineResult.value.length < 5) {
+          klineFailed++;
+          continue;
         }
+        const kline = klineResult.value;
+        klineOk++;
 
-        if (bestLimitUpIdx < 1) continue; // No limit-up found
-
-        // Calculate the absolute index in full kline
-        const targetIdx = kline.length - recentKline.length + bestLimitUpIdx;
+        // Locate the sealed limit-up day (by date) in the kline
+        const targetIdx = kline.findIndex(d => d.date === stock.poolDate);
         if (targetIdx < 1) continue;
 
+        // Sanity-check the limit-up itself from closes (board-aware threshold)
+        const prevClose = kline[targetIdx - 1].close;
         const limitUpDay = kline[targetIdx];
-        const preLimitUpDay = kline[targetIdx - 1];
+        const pct = prevClose > 0 ? ((limitUpDay.close - prevClose) / prevClose) * 100 : 0;
+        const code = stock.code;
+        let threshold = 9.5; // main board: 10%, with tolerance
+        if (code.startsWith("688") || code.startsWith("30")) threshold = 19.5; // STAR/ChiNext: 20%
+        if (pct < threshold) continue;
+
         const limitUpClose = limitUpDay.close;
-        const preLimitUpClose = preLimitUpDay.close;
+        const preLimitUpClose = prevClose;
+
+        // Penny-stock exclusion (same spirit as the old f18 pre-filter)
+        if (preLimitUpClose < 2) continue;
 
         // Current price (latest K-line day)
         const latestDay = kline[kline.length - 1];
@@ -411,7 +365,7 @@ export async function GET(request: NextRequest) {
           limitUpDate: limitUpDay.date,
           limitUpClose,
           preLimitUpClose,
-          limitUpPct: bestLimitUpPct,
+          limitUpPct: pct,
           currentPrice,
           currentChangePct: latestDay.changePct,
           pullbackPct,
@@ -425,6 +379,11 @@ export async function GET(request: NextRequest) {
           volumeRatio: 0,
         });
       }
+    }
+
+    // All K-lines failed while candidates existed → data-source outage, not "no results"
+    if (klineOk === 0 && klineFailed > 0) {
+      return storeAndReturn(failResult("K线数据源暂时不可用（新浪+东财均失败），请稍后刷新重试"));
     }
 
     // Step 4: Fetch real-time quotes for enriched data
@@ -455,23 +414,15 @@ export async function GET(request: NextRequest) {
       date: getTodayKey(),
       stocks: pullbackStocks,
       summary: {
-        totalScanned: candidates.length,
+        totalScanned: candList.length,
         totalPullback: pullbackStocks.length,
       },
       timestamp: new Date().toISOString(),
     };
 
-    cache.set(cacheKey, { data: result, timestamp: Date.now() });
-    return NextResponse.json(result);
+    return storeAndReturn(result);
   } catch (error: any) {
     console.error("Limit-up pullback analysis error:", error);
-    return NextResponse.json({
-      success: false,
-      date: getTodayKey(),
-      stocks: [],
-      summary: { totalScanned: 0, totalPullback: 0 },
-      timestamp: new Date().toISOString(),
-      error: error.message || "涨停回踩分析失败",
-    } as PullbackResult);
+    return storeAndReturn(failResult(error?.message || "涨停回踩分析失败"));
   }
 }

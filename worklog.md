@@ -1464,3 +1464,58 @@ Stage Summary:
 - 涉及文件：src/lib/em-timeline-server.ts（新）、src/lib/ashare-api.ts、
   src/app/api/stock/ashare-timeline/route.ts、src/app/api/stock/ashare-sector/route.ts、
   src/components/time-sharing-panel.tsx、src/app/page.tsx
+
+---
+
+Task ID: 27
+Agent: Main Claude (Z.ai Code)
+Task: 回踩选股无数据修复 — 涨停股池精准候选 + 新浪K线主源 + 空结果短缓存
+
+Work Log:
+- 用户反馈：回踩选股 tab 没有数据（扫描总数 0、符合筛选 0、日期显示 2026-11-24）
+- 排查过程（浏览器截图 + API 直调 + 数据源逐层探测）：
+  1. /api/stock/limit-up-pullback 返回 cached:true、totalScanned:0 —— 空结果被
+     无差别缓存 10 分钟（旧逻辑 emptyResult 也 set 到 10min TTL）
+  2. curl 直连探测 EM 三端点：https://push2delay 全灭（TLS 层 unexpected eof，
+     服务器收完请求即 RST，与 Task 26 push2 同源）；push2his（K线）http/https
+     全灭且单 IP（101.42.128.173）坏死；腾讯 fqkline WAF 501
+  3. 幸存通道：http://push2delay clist（列表）、http://push2ex（涨停股池）、
+     新浪 CN_MarketData 日K（money.finance.sina.com.cn，dev server 内全局 fetch 可用）
+- 修复 1（共享原生客户端 src/lib/em-raw-client.ts）：
+  从 em-timeline-server.ts 抽出 raw node:http(s) 客户端（多 IP 重试 + 容忍
+  "响应后 RST" 的 body 累积校验），新增 emRawJson(urls[], attempts) 便捷封装；
+  em-timeline-server.ts 改为 import 复用（删除本地副本）
+- 修复 2（路由重写 limit-up-pullback/route.ts）——扫描模型从「盲扫 5000 只」
+  改为「涨停股池精准候选」：
+  1. 交易日历：新浪上证指数日K（sh000001 直接 URL，注意 toSinaSymbol 会把
+     sh000001 错映射成 sz000001 平安银行，故不走 getAShareKLine）取最近 11 个交易日
+  2. 候选：push2ex getTopicZTPool 按日查询最近 10 个交易日（不含今日——
+     今日封板股必然 daysSinceLimitUp=0 被过滤），most-recent-first 去重，
+     候选从 ~5000 降到 ~330（过滤北交所/ST）
+  3. K线：新浪 getAShareKLine(scale=240) 主源 + EM push2his raw 客户端兜底；
+     changePct 由相邻 close 重算（新浪日K无该字段）
+  4. 涨停日定位由「10日窗口扫描」改为「股池日期精确匹配」（kline.findIndex
+     date===poolDate），阈值校验保留（主板9.5/创业科创19.5）
+  5. 实时行情 ulist 走 emRawJson（3 次重试，接口间歇性丢包）
+  6. 缓存分级：有结果 10min / 空&失败 60s；数据源全灭时返回
+     success:false + error 文案（不再静默返回空成功）
+  7. 失败可观测：klineOk===0 && klineFailed>0 判定为数据源故障
+- 验证（2026-11-24 盘中）：
+  * API 首扫 3.8s（旧设计预算 55s）：331 候选 → 250 只回踩达标，
+    首条亚玛顿 002623（11-11 涨停 23.33 → 18.94，approachPct 100%，8 天）
+  * 二次调用 20ms 命中缓存（cached:true）
+  * 浏览器：回踩选股 tab 刷新后 扫描 331 / 符合 153 / 深度回踩 143 /
+    平均回踩 96%，回踩深度分布直方图正常，表格 153 只 4 页分页、
+    连板数/风险评分/迷你K线/快捷标签完整
+  * 控制台无错误；bun run lint 通过
+- 已知残留：screener/market-breadth-distribution/sector-top-bottom 路由仍在用
+  https://push2delay|push2his（EM 坏窗口期会退化），如出问题可复用
+  em-raw-client.ts + http:// 方案治理
+
+Stage Summary:
+- 回踩选股"没有数据"的根因是数据源层：EM push2delay/push2his HTTPS 全被 RST，
+  旧路由又把空结果缓存 10 分钟，双重叠加成"永久空"
+- 扫描模型升级：5000 只盲扫 → 涨停股池按日精准候选，单次扫描 55s 预算 →
+  3.8s 实测，上游请求量降 ~20 倍，K线依赖从单一 EM 变为 新浪主+EM兜底
+- 涉及文件：src/lib/em-raw-client.ts（新）、src/lib/em-timeline-server.ts（复用重构）、
+  src/app/api/stock/limit-up-pullback/route.ts（重写）
