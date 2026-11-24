@@ -3043,7 +3043,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   const handleExportCSV = useCallback(() => {
     if (displayedStocks.length === 0) return;
     const headers = [
-      "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "涨停价", "起涨点",
+      "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "板块", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
       "最大回撤%", "风险评分", "质量评分", "盘前信号", "盘前评分", "换手率%", "市值(亿)", "量比",
     ];
@@ -3053,6 +3053,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       s.limitUpDate,
       s.limitUpPct.toFixed(2),
       calcLimitUpStreak(s.klineSummary, s.limitUpDate),
+      s.sector || "",
       s.limitUpClose.toFixed(2),
       s.preLimitUpClose.toFixed(2),
       s.currentPrice.toFixed(2),
@@ -3483,6 +3484,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                       <TableHead className="text-[11px] font-medium w-[80px]">涨停日</TableHead>
                       <SortableHead label="连板" field="limitUpStreak" current={sortField} order={sortOrder} onSort={handleSort} className="w-[52px]" align="right" />
                       <SortableHead label="今日涨跌" field="currentChangePct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
+                      <TableHead className="text-[11px] font-medium w-[90px]">板块</TableHead>
                       <SortableHead label="涨停价" field="limitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="起涨点" field="preLimitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="当前价" field="currentPrice" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
@@ -3589,6 +3591,24 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                             {/* 今日涨跌 - text-right (with explicit + / - prefix) */}
                             <TableCell className={`text-[11px] font-mono py-2 font-medium text-right ${stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500"}`}>
                               {stock.currentChangePct >= 0 ? "+" : ""}{stock.currentChangePct.toFixed(2)}%
+                            </TableCell>
+
+                            {/* 板块 - 所属行业（东财 f100，行情富化时填充） */}
+                            <TableCell className="py-2 text-[11px] text-muted-foreground">
+                              {stock.sector ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="max-w-[86px] truncate block cursor-default">{stock.sector}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="text-xs">
+                                      {stock.sector}（东财行业板块）
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : (
+                                <span className="text-muted-foreground/60">--</span>
+                              )}
                             </TableCell>
 
                             {/* 涨停价 - text-right */}

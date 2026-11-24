@@ -254,6 +254,7 @@ export async function GET(request: NextRequest) {
           stock.turnover = q.turnover;
           stock.marketCap = q.marketCap;
           stock.volumeRatio = q.volumeRatio;
+          stock.sector = q.sector || stock.sector || "";
           // Recalculate with real-time price
           const totalRise = stock.limitUpClose - stock.preLimitUpClose;
           const currentDrop = stock.limitUpClose - stock.currentPrice;

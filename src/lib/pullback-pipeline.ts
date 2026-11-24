@@ -189,15 +189,15 @@ export async function fetchDailyKline(symbol: string, datalen: number = 15): Pro
 
 // ── Helper: real-time quote enrichment via EM ulist (raw client) ──
 // Field map (EM standard): f2=最新价 f3=涨跌幅 f8=换手率 f10=量比 f12=代码
-// f14=名称 f20=总市值(元). f9 is PE(动态), NOT 量比 — do not use it here.
-export async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string, { price: number; changePct: number; turnover: number; marketCap: number; volumeRatio: number }>> {
-  const result = new Map<string, { price: number; changePct: number; turnover: number; marketCap: number; volumeRatio: number }>();
+// f14=名称 f20=总市值(元) f100=所属行业板块. f9 is PE(动态), NOT 量比 — do not use it here.
+export async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string, { price: number; changePct: number; turnover: number; marketCap: number; volumeRatio: number; sector: string }>> {
+  const result = new Map<string, { price: number; changePct: number; turnover: number; marketCap: number; volumeRatio: number; sector: string }>();
   if (symbols.length === 0) return result;
 
   for (let i = 0; i < symbols.length; i += 50) {
     const batch = symbols.slice(i, i + 50);
     const secIds = batch.map(code => `${code.startsWith("6") ? "1" : "0"}.${code}`);
-    const url = `http://push2delay.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f10,f12,f14,f20&secids=${secIds.join(",")}`;
+    const url = `http://push2delay.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f10,f12,f14,f20,f100&secids=${secIds.join(",")}`;
     const json = await emRawJson(url, 3, 8000);
     const diff = json?.data?.diff;
     if (!Array.isArray(diff)) continue;
@@ -209,9 +209,10 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string
         price: parseFloat(item.f2) || 0,
         changePct: parseFloat(item.f3) || 0,
         turnover: parseFloat(item.f8) || 0,
-        // f10 = 量比; f20 = 总市值(元) → 亿
+        // f10 = 量比; f20 = 总市值(元) → 亿; f100 = 所属行业板块
         volumeRatio: parseFloat(item.f10) || 0,
         marketCap: (parseFloat(item.f20) || 0) / 1e8,
+        sector: String(item.f100 || ""),
       });
     }
   }

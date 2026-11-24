@@ -1770,3 +1770,28 @@ Work Log:
 - 验证（agent-browser，重新登录 888888）：表头顺序（信号→距涨停→涨停日）✓；
   首行单元格对齐（83机会 → 8天 → 11-11 → 2B → +1.45% …）✓；视觉截图核对 ✓；lint 通过
 - 涉及文件：src/components/limit-up-pullback-screener.tsx
+
+---
+
+Task ID: 38
+Agent: Main Claude (Z.ai Code)
+Task: 表格新增「板块」列（涨停价前面，东财 f100 行业板块）
+
+Work Log:
+- 用户需求：在涨停价这一列前面新增股票所属板块
+- 数据管道（src/lib/pullback-pipeline.ts）：fetchRealtimeQuotes 字段加 f100（东财所属行业，
+  ulist.np 原接口实测可用：白酒Ⅱ/专用设备/光伏设备/乘用车），返回 Map 增加 sector
+- 类型（src/lib/pullback-metrics.ts）：PullbackStock 增加 sector?: string（可选，
+  盘前快照路由的对象字面量无需改动，行情富化失败时列显示 --）
+- API（limit-up-pullback/route.ts）：Step 4 行情富化时 stock.sector = q.sector
+- 前端（limit-up-pullback-screener.tsx）：
+  - 表头/表体新增「板块」列（今日涨跌与涨停价之间，w-90，超长截断+悬浮完整名，
+    注明"东财行业板块"；未富化时显示 --）
+  - CSV 导出同步新增「板块」列（涨停连板之后、涨停价之前，与表格位置一致）
+  - 新列序：展开 | 代码/名称 | 信号 | 距涨停 | 涨停日 | 连板 | 今日涨跌 | 板块 | 涨停价 |
+    起涨点 | 当前价 | 回踩深度 | 最大回撤 | 风险 | 质量 | 换手率 | 市值 | 量比 | 涨停涨幅 | 走势 | 收藏
+- 验证：API 实测 254 只全部带 sector（专用设备/光伏设备/消费电子/照明设备Ⅱ/工业金属…）✓；
+  agent-browser 表头顺序+首行对齐（+2.09% → 专用设备 → 13.96）✓；视觉截图 ✓；
+  控制台无错误 ✓；lint 通过
+- 涉及文件：src/lib/pullback-pipeline.ts、src/lib/pullback-metrics.ts、
+  src/app/api/stock/limit-up-pullback/route.ts、src/components/limit-up-pullback-screener.tsx
