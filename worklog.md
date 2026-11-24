@@ -1594,3 +1594,37 @@ Work Log:
 - 涉及文件：src/components/pullback-commonality.tsx（新建）、
   src/components/limit-up-pullback-screener.tsx（导入 + 页尾挂载）、
   src/app/api/stock/limit-up-pullback/route.ts（字段映射修复）
+
+---
+
+Task ID: 31
+Agent: Main Claude (Z.ai Code)
+Task: 表格智能信号标注 — 机会/观察/风险（依据共性归纳结论）
+
+Work Log:
+- 用户需求：根据共性归纳的结论，在选出股票表格中标明哪些是机会、哪些是风险
+- 新建 src/lib/pullback-metrics.ts（共享计算库）：buildExt（自低点反弹/低点窗口/
+  反弹启动耗时/连板数）+ calcStockSignal（机会/风险信号评分）+ SIGNAL_META
+- 信号评分构成（0-100，规则逐条对应 Task 30 共性结论）：
+  反弹确认 40（≥3% 为确认线）+ 今日动向 20 + 回踩位置 20（深回踩守起涨点最佳）
+  + 时间窗口 10（3-8 天高发期）+ 板型弹性 10（首板为主力）+ 量能确认 10
+- 判定门槛：score≥65 且反弹已确认 → 机会；score≤38 → 风险；其余 → 观察；
+  硬性否决：未脱离低点区域 + 今日续跌 → 封顶 30 分（风险）；
+  龙回头形态（深回踩+低点反弹+今日企稳+守住起涨点）在依据中置顶标注
+- 展示位：表格新增可排序「信号」列（代码/名称后第一数据列，徽章悬浮显示
+  全部判定依据）；卡片视图头部徽章；展开详情新增信号卡（含 6 项依据）；
+  统计卡新增「机会股 N / 风险股 N」；CSV 导出新增信号/信号评分两列
+- 筛选：快捷标签新增「机会股」「风险股」（置前，选择状态持久化沿用原机制）；
+  页尾共性归纳新增信号分布行（口径与表格一致，同源 pullback-metrics）
+- 校准（255 只真实样本）：机会 191（75%）/ 观察 47（18%）/ 风险 17（7%），
+  与共性归纳"69% 反弹≥3%"吻合；风险组全部命中否决规则（未脱离低点+续跌）
+- 重构：pullback-commonality.tsx 去重，改用共享库（消除 buildExt/median/share
+  重复定义）
+- 验证（agent-browser）：信号列渲染+悬浮依据 ✓；点击列头降序（前 4 行全 100 分）
+  ✓；机会股标签筛选后 50 行全为机会 ✓；统计卡 169/17 ✓；页尾分布
+  191/47/17（全样本）✓；展开详情信号卡 ✓；卡片视图徽章 ✓；移动端 390px 正常 ✓；
+  控制台无错误 ✓
+- bun run lint 通过
+- 涉及文件：src/lib/pullback-metrics.ts（新建）、
+  src/components/pullback-commonality.tsx（重构+信号分布行）、
+  src/components/limit-up-pullback-screener.tsx（信号列/徽章/筛选/导出/统计卡/图例）

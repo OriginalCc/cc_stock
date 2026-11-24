@@ -64,10 +64,12 @@ import {
   Lightbulb,
   Award,
   Flame,
+  Eye,
   type LucideIcon,
 } from "lucide-react";
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { PullbackCommonality } from "@/components/pullback-commonality";
+import { calcStockSignal, SIGNAL_META, type StockSignal } from "@/lib/pullback-metrics";
 
 // ── Types (matching API response) ─────────────────────
 
@@ -159,6 +161,7 @@ type SortField =
   | "preLimitUpClose"
   | "riskScore"
   | "qualityScore"
+  | "signalScore"
   | "limitUpStreak";
 
 type SortOrder = "asc" | "desc";
@@ -186,7 +189,7 @@ const UI_STATE_KEY = "limit-up-pullback-screener-ui-state";
 const SORT_FIELDS: readonly string[] = [
   "approachPct", "daysSinceLimitUp", "marketCap", "turnover", "volumeRatio",
   "pullbackPct", "maxPullbackPct", "currentChangePct", "limitUpPct",
-  "currentPrice", "limitUpClose", "preLimitUpClose", "riskScore", "qualityScore", "limitUpStreak",
+  "currentPrice", "limitUpClose", "preLimitUpClose", "riskScore", "qualityScore", "signalScore", "limitUpStreak",
 ];
 
 /** Read the persisted UI-state JSON blob (accordion opens, sort, toggles). */
@@ -360,6 +363,8 @@ interface QuickTag {
 }
 
 const QUICK_TAGS: QuickTag[] = [
+  { id: "signal-opp", label: "机会股", filter: (s) => calcStockSignal(s).type === "opportunity" },
+  { id: "signal-risk", label: "风险股", filter: (s) => calcStockSignal(s).type === "risk" },
   { id: "today-up", label: "今日反弹", filter: (s) => s.currentChangePct > 0 },
   { id: "today-down", label: "今日下跌", filter: (s) => s.currentChangePct < -2 },
   { id: "vol-expand", label: "今日放量", filter: (s) => s.volumeRatio >= 1.5 },
@@ -814,6 +819,8 @@ function SummaryCard({
   const avgMaxPullback = total > 0
     ? stocks.reduce((s, st) => s + st.maxPullbackPct, 0) / total
     : 0;
+  const oppCount = stocks.filter(s => calcStockSignal(s).type === "opportunity").length;
+  const riskCount = stocks.filter(s => calcStockSignal(s).type === "risk").length;
 
   const cards: {
     icon: LucideIcon;
@@ -864,6 +871,14 @@ function SummaryCard({
       fg: "text-emerald-600 dark:text-emerald-400",
     },
     {
+      icon: TrendingUp,
+      title: "机会股",
+      value: String(oppCount),
+      subtitle: `风险股 ${riskCount} 只`,
+      bg: "bg-emerald-500/[0.04] border-emerald-500/15",
+      fg: "text-emerald-600 dark:text-emerald-400",
+    },
+    {
       icon: ArrowDownRight,
       title: "平均最大回撤",
       value: `-${avgMaxPullback.toFixed(1)}%`,
@@ -874,7 +889,7 @@ function SummaryCard({
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
       {cards.map((c, i) => {
         const Icon = c.icon;
         return (
@@ -1601,6 +1616,38 @@ function QualityBadge({ score }: { score: number }) {
   );
 }
 
+// ── Opportunity/Risk signal cell (rules from 共性归纳) ────
+
+function SignalBadge({ signal }: { signal: StockSignal }) {
+  const meta = SIGNAL_META[signal.type];
+  const Icon = signal.type === "opportunity" ? TrendingUp : signal.type === "risk" ? AlertTriangle : Eye;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-default ${meta.badge}`}>
+            <Icon className="w-2.5 h-2.5" />
+            <span className="text-[11px] font-mono font-medium">{signal.score}</span>
+            <span className="text-[10px] opacity-90">{meta.label}</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[280px]">
+          <div className="text-xs font-medium">信号评分 {signal.score}/100 — {meta.label}（{meta.desc}）</div>
+          <ul className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+            {signal.reasons.map((r, i) => (
+              <li key={i} className="flex items-start gap-1.5">
+                <span className="mt-1.5 w-1 h-1 rounded-full bg-current opacity-50 shrink-0" />
+                <span>{r}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1.5 text-[10px] text-muted-foreground/70">判定规则源自页尾「共性归纳」板块 · 机会门槛 = 评分≥65 且自低点反弹已确认</div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // ── Limit-up Streak cell ──────────────────────────────────
 
 function LimitUpStreakBadge({ kline, limitUpDate }: { kline: KLineDay[]; limitUpDate: string }) {
@@ -1633,6 +1680,8 @@ function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
   const riskScore = calcRiskScore(stock);
   const riskStyle = getRiskStyle(riskScore);
   const approachStyle = getApproachStyle(stock.approachPct);
+  const signal = calcStockSignal(stock);
+  const signalMeta = SIGNAL_META[signal.type];
 
   const qualityScore = calcQualityScore(stock);
   const qualityStyle = getQualityStyle(qualityScore);
@@ -1721,8 +1770,37 @@ function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
         </div>
       </div>
 
-      {/* Right: Risk + Quality score cards (stacked) */}
+      {/* Right: Signal + Risk + Quality score cards (stacked) */}
       <div className="flex flex-col gap-3">
+        {/* Signal card (机会/观察/风险, rules from 共性归纳) */}
+        <div className={`flex flex-col gap-2 p-3 rounded-lg border ${signalMeta.badge}`}>
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            {signal.type === "opportunity"
+              ? <TrendingUp className="w-3 h-3" />
+              : signal.type === "risk"
+              ? <AlertTriangle className="w-3 h-3" />
+              : <Eye className="w-3 h-3" />}
+            <span>机会 / 风险信号</span>
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-3xl font-bold font-mono">{signal.score}</span>
+            <span className="text-xs text-muted-foreground">/100</span>
+            <Badge variant="outline" className="ml-auto text-[10px] bg-background/60">
+              {signalMeta.label}（{signalMeta.desc}）
+            </Badge>
+          </div>
+          <Separator className="my-1" />
+          <div className="space-y-1">
+            <div className="text-[10px] text-muted-foreground font-medium">判定依据（源自共性归纳）:</div>
+            {signal.reasons.map((r, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-[10px]">
+                <span className="mt-1.5 w-1 h-1 rounded-full bg-current opacity-50 shrink-0" />
+                <span>{r}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Risk score card */}
         <div className={`flex flex-col gap-2 p-3 rounded-lg border ${riskStyle.bg}`}>
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -1894,6 +1972,7 @@ function StockCardViewItem({
   const riskScore = calcRiskScore(stock);
   const qualityScore = calcQualityScore(stock);
   const boardType = getBoardType(stock.symbol);
+  const signal = calcStockSignal(stock);
 
   return (
     <Card
@@ -1909,6 +1988,7 @@ function StockCardViewItem({
               <Badge variant="outline" className="text-[9px] py-0 px-1 font-mono">
                 {boardType}
               </Badge>
+              <SignalBadge signal={signal} />
             </div>
             <TooltipProvider>
               <Tooltip>
@@ -2532,6 +2612,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         ? calcRiskScore(a)
         : sortField === "qualityScore"
         ? calcQualityScore(a)
+        : sortField === "signalScore"
+        ? calcStockSignal(a).score
         : sortField === "limitUpStreak"
         ? calcLimitUpStreak(a.klineSummary, a.limitUpDate)
         : a[sortField];
@@ -2539,6 +2621,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         ? calcRiskScore(b)
         : sortField === "qualityScore"
         ? calcQualityScore(b)
+        : sortField === "signalScore"
+        ? calcStockSignal(b).score
         : sortField === "limitUpStreak"
         ? calcLimitUpStreak(b.klineSummary, b.limitUpDate)
         : b[sortField];
@@ -2649,7 +2733,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     const headers = [
       "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
-      "最大回撤%", "风险评分", "质量评分", "换手率%", "市值(亿)", "量比",
+      "最大回撤%", "风险评分", "质量评分", "信号", "信号评分", "换手率%", "市值(亿)", "量比",
     ];
     const rows = displayedStocks.map(s => [
       s.symbol,
@@ -2666,6 +2750,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       s.maxPullbackPct.toFixed(2),
       calcRiskScore(s),
       calcQualityScore(s),
+      SIGNAL_META[calcStockSignal(s).type].label,
+      calcStockSignal(s).score,
       s.turnover.toFixed(2),
       s.marketCap.toFixed(2),
       s.volumeRatio.toFixed(2),
@@ -3066,6 +3152,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                       >
                         代码 / 名称
                       </TableHead>
+                      <SortableHead label="信号" field="signalScore" current={sortField} order={sortOrder} onSort={handleSort} className="w-[70px]" align="right" />
                       <TableHead className="text-[11px] font-medium w-[80px]">涨停日</TableHead>
                       <SortableHead label="连板" field="limitUpStreak" current={sortField} order={sortOrder} onSort={handleSort} className="w-[52px]" align="right" />
                       <SortableHead label="涨停涨幅" field="limitUpPct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[68px]" align="right" />
@@ -3089,6 +3176,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                     {pagedStocks.map((stock) => {
                       const riskScore = calcRiskScore(stock);
                       const qualityScore = calcQualityScore(stock);
+                      const signal = calcStockSignal(stock);
                       const isFav = favorites.includes(stock.symbol);
                       const isExpanded = expandedRows.has(stock.symbol);
                       const isSelected = selectedRowSymbol === stock.symbol;
@@ -3139,6 +3227,13 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                                     </TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
+                              </div>
+                            </TableCell>
+
+                            {/* 信号 - text-right */}
+                            <TableCell className="py-2 text-right">
+                              <div className="flex justify-end">
+                                <SignalBadge signal={signal} />
                               </div>
                             </TableCell>
 
@@ -3451,6 +3546,10 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 <span className="text-[11px] flex items-center gap-1">
                   <Flame className="w-3 h-3 text-orange-500" />
                   连板标签 (1B/2B/3B/4B+)
+                </span>
+                <span className="text-[11px] flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3 text-emerald-500" />
+                  信号: 机会 / 观察 / 风险 (评分≥65 且反弹确认 → 机会；≤38 → 风险)
                 </span>
               </div>
             </div>

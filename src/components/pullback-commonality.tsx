@@ -16,91 +16,17 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-
-// ── Types (mirror of the pullback API response shape) ──
-
-interface KLineDay {
-  date: string;
-  open: number;
-  close: number;
-  high: number;
-  low: number;
-  changePct: number;
-}
-
-interface PullbackStock {
-  symbol: string;
-  name: string;
-  limitUpDate: string;
-  limitUpClose: number;
-  preLimitUpClose: number;
-  limitUpPct: number;
-  currentPrice: number;
-  currentChangePct: number;
-  pullbackPct: number;
-  approachPct: number;
-  daysSinceLimitUp: number;
-  maxPullbackPct: number;
-  maxPullbackDate: string;
-  klineSummary: KLineDay[];
-  turnover: number;
-  marketCap: number;
-  volumeRatio: number;
-}
+import {
+  buildExt,
+  calcStockSignal,
+  median,
+  share,
+  SIGNAL_META,
+  type PullbackStock,
+  type SignalType,
+} from "@/lib/pullback-metrics";
 
 // ── Stat helpers ───────────────────────────────────────
-
-function median(nums: number[]): number {
-  const valid = nums.filter(n => Number.isFinite(n));
-  if (valid.length === 0) return 0;
-  const sorted = [...valid].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-function share(part: number, total: number): number {
-  return total > 0 ? Math.round((part / total) * 100) : 0;
-}
-
-/** Per-stock derived metrics used by the commonality analysis */
-interface StockExt {
-  reboundFromLow: number; // 现价相对涨停后最低收盘价的涨幅(%)
-  lowWindow: number;      // 回踩低点距涨停日的交易日数
-  daysSinceLow: number;   // 低点距最新的交易日数(反弹启动耗时)
-  streak: number;         // 连板数(涨停日向前连续涨停天数)
-}
-
-function buildExt(s: PullbackStock): StockExt {
-  const kline = s.klineSummary || [];
-  const luIdx = kline.findIndex(k => k.date === s.limitUpDate);
-  const after = luIdx >= 0 ? kline.slice(luIdx + 1) : [];
-
-  // 回踩低点 = 涨停日之后的最低收盘价
-  let lowClose = Number.POSITIVE_INFINITY;
-  let lowIdx = -1;
-  after.forEach((k, i) => {
-    if (k.close < lowClose) {
-      lowClose = k.close;
-      lowIdx = i;
-    }
-  });
-  if (lowIdx < 0) lowClose = s.currentPrice;
-
-  const reboundFromLow = lowClose > 0 ? ((s.currentPrice - lowClose) / lowClose) * 100 : 0;
-  const lowWindow = lowIdx >= 0 ? lowIdx : 0;
-  const daysSinceLow = lowIdx >= 0 ? after.length - 1 - lowIdx : 0;
-
-  // 连板数: 涨停日向前连续涨停(含当日), 板块阈值由涨停日涨幅推断
-  const threshold = s.limitUpPct >= 19.5 ? 19.5 : 9.5;
-  let streak = 0;
-  if (luIdx >= 0) {
-    for (let i = luIdx; i >= 0; i--) {
-      if (kline[i].changePct >= threshold) streak++;
-      else break;
-    }
-  }
-  return { reboundFromLow, lowWindow, daysSinceLow, streak };
-}
 
 interface CommonalityStats {
   n: number;
@@ -130,6 +56,8 @@ interface CommonalityStats {
   smallCapShare: number;     // 市值 < 100 亿占比(有效样本内)
   // 风险
   weakShare: number;         // 尚未脱离低点区域(反弹 < 3%)占比
+  // 机会/风险信号分布
+  signalN: Record<SignalType, number>;
 }
 
 const REBOUND_TH = 3; // 反弹确认线(%)
@@ -154,6 +82,10 @@ function computeStats(stocks: PullbackStock[]): CommonalityStats {
   const enrichmentOk = capValid.length >= Math.max(5, n * 0.3);
   const smallCap = capValid.filter(s => s.marketCap < 100).length;
 
+  // 机会/风险信号分布 (与表格内信号徽章同一套规则)
+  const signalN: Record<SignalType, number> = { opportunity: 0, watch: 0, risk: 0 };
+  for (const s of stocks) signalN[calcStockSignal(s).type]++;
+
   return {
     n,
     reboundShare: share(rebounded, n),
@@ -176,6 +108,7 @@ function computeStats(stocks: PullbackStock[]): CommonalityStats {
     medianMarketCap: median(capValid.map(s => s.marketCap)),
     smallCapShare: share(smallCap, capValid.length),
     weakShare: share(n - rebounded, n),
+    signalN,
   };
 }
 
@@ -253,6 +186,8 @@ export function PullbackCommonality({ stocks, timestamp }: {
     { icon: Clock, label: "低点窗口", value: `${s.medianLowWindow.toFixed(0)}天`, sub: "距涨停交易日中位", fg: "text-violet-600 dark:text-violet-400" },
   ];
 
+  const signalTypes: SignalType[] = ["opportunity", "watch", "risk"];
+
   return (
     <Card className="border-border/50 shadow-sm" aria-label="涨停回踩再上涨共性归纳">
       <CardContent className="py-4 px-4 md:px-5 space-y-4">
@@ -273,6 +208,20 @@ export function PullbackCommonality({ stocks, timestamp }: {
             <Info className="w-2.5 h-2.5" />
             随扫描数据自动更新
           </Badge>
+        </div>
+
+        {/* Signal distribution (same rules as the in-table signal badges) */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <Layers className="w-3 h-3" />
+            机会/风险信号分布:
+          </span>
+          {signalTypes.map(t => (
+            <Badge key={t} variant="outline" className={`text-[10px] py-0 px-1.5 gap-1 font-mono ${SIGNAL_META[t].badge}`}>
+              {SIGNAL_META[t].label} {s.signalN[t]} 只（{share(s.signalN[t], s.n)}%）
+            </Badge>
+          ))}
+          <span className="text-[10px] text-muted-foreground">口径与表格内「信号」列一致</span>
         </div>
 
         {/* Stat chips */}
@@ -336,7 +285,8 @@ export function PullbackCommonality({ stocks, timestamp }: {
         {/* Methodology footnote */}
         <p className="text-[10px] text-muted-foreground leading-relaxed">
           口径说明：反弹幅度 = 现价相对涨停后最低收盘价的涨幅；低点窗口 = 回踩低点距涨停日的交易日数；连板数 = 涨停日向前连续涨停天数；
-          样本 = 本次扫描全部符合条件的回踩股（非筛选子集）。结论随每轮扫描数据动态更新，仅供研究参考，不构成投资建议。
+          样本 = 本次扫描全部符合条件的回踩股（非筛选子集）。机会/风险信号与表格内「信号」列同一规则（机会 = 评分 ≥65 且反弹已确认）。
+          结论随每轮扫描数据动态更新，仅供研究参考，不构成投资建议。
         </p>
       </CardContent>
     </Card>
