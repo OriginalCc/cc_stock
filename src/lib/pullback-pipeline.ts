@@ -194,13 +194,30 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string
   const result = new Map<string, { price: number; changePct: number; turnover: number; marketCap: number; volumeRatio: number; sector: string }>();
   if (symbols.length === 0) return result;
 
+  // 多域名变体：push2delay（延时行情、限流宽松）优先，push2 兜底；http/https 各一份。
+  // DNS 轮询的后端有的会直接断连，emRawJson 会对每个变体各试 attemptsPerUrl 次。
+  const QUOTE_URL_VARIANTS = (secIds: string) => [
+    `http://push2delay.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f10,f12,f14,f20,f100&secids=${secIds}`,
+    `https://push2delay.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f10,f12,f14,f20,f100&secids=${secIds}`,
+    `http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f10,f12,f14,f20,f100&secids=${secIds}`,
+    `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f10,f12,f14,f20,f100&secids=${secIds}`,
+  ];
+
   for (let i = 0; i < symbols.length; i += 50) {
     const batch = symbols.slice(i, i + 50);
-    const secIds = batch.map(code => `${code.startsWith("6") ? "1" : "0"}.${code}`);
-    const url = `http://push2delay.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3,f8,f10,f12,f14,f20,f100&secids=${secIds.join(",")}`;
-    const json = await emRawJson(url, 3, 8000);
-    const diff = json?.data?.diff;
-    if (!Array.isArray(diff)) continue;
+    const secIds = batch.map(code => `${code.startsWith("6") ? "1" : "0"}.${code}`).join(",");
+    // 批间退避 250ms：本调用紧跟在 K 线批量抓取之后，EM push2 族按突发限流，
+    // 无间隔连续请求会被 RST 导致整批失败（板块/换手/市值/量比全空）。
+    if (i > 0) await new Promise(r => setTimeout(r, 250));
+    const json = await emRawJson(QUOTE_URL_VARIANTS(secIds), 2, 8000);
+    let diff = json?.data?.diff;
+    // 整批失败（限流/断连）→ 退避 600ms 后对同批做一次重试
+    if (!Array.isArray(diff)) {
+      await new Promise(r => setTimeout(r, 600));
+      const retry = await emRawJson(QUOTE_URL_VARIANTS(secIds), 1, 8000);
+      diff = retry?.data?.diff;
+      if (!Array.isArray(diff)) continue;
+    }
 
     for (const item of diff) {
       const code = String(item.f12 || "");
@@ -212,7 +229,8 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Map<string
         // f10 = 量比; f20 = 总市值(元) → 亿; f100 = 所属行业板块
         volumeRatio: parseFloat(item.f10) || 0,
         marketCap: (parseFloat(item.f20) || 0) / 1e8,
-        sector: String(item.f100 || ""),
+        // fltt=2 下缺失字段返回字符串 "-"，需归一化为空串避免前端显示脏值
+        sector: item.f100 && item.f100 !== "-" ? String(item.f100) : "",
       });
     }
   }

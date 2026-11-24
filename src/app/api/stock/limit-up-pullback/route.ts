@@ -64,6 +64,9 @@ interface PullbackStock {
   turnover: number;         // 换手率
   marketCap: number;        // 总市值(亿)
   volumeRatio: number;      // 量比
+  // 板块（行情富化阶段填充，数据源不可用时缺省 → 前端显示 --）
+  sector?: string;          // 所属行业板块（东财 f100）
+  concept?: string;         // 最贴切概念（slist 概念族，动量最强）
 }
 
 // ── Main handler ──────────────────────────────────────
@@ -79,11 +82,11 @@ export async function GET(request: NextRequest) {
     cache.delete(cacheKey);
   }
 
-  const storeAndReturn = (data: PullbackResult) => {
+  const storeAndReturn = (data: PullbackResult, ttlOverride?: number) => {
     cache.set(cacheKey, {
       data,
       timestamp: Date.now(),
-      ttl: data.success && data.stocks.length > 0 ? CACHE_TTL_FULL : CACHE_TTL_EMPTY,
+      ttl: ttlOverride ?? (data.success && data.stocks.length > 0 ? CACHE_TTL_FULL : CACHE_TTL_EMPTY),
     });
     return NextResponse.json(data);
   };
@@ -247,11 +250,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 4: Fetch real-time quotes for enriched data
+    // 行情富化失败会导致 板块/换手率/市值/量比 全空，因此：
+    // 1) 整体失败时退避重试一次；2) 降级结果只短缓存（60s），下次请求自动重算。
+    let quotesEnriched = 0;
     if (pullbackStocks.length > 0) {
-      const quotes = await fetchRealtimeQuotes(pullbackStocks.map(s => s.symbol));
+      let quotes = await fetchRealtimeQuotes(pullbackStocks.map(s => s.symbol));
+      if (quotes.size === 0) {
+        // 行情接口整体不可用（限流/断连）→ 退避 1.2s 后重试一次
+        await new Promise(r => setTimeout(r, 1200));
+        quotes = await fetchRealtimeQuotes(pullbackStocks.map(s => s.symbol));
+      }
       for (const stock of pullbackStocks) {
         const q = quotes.get(stock.symbol);
         if (q) {
+          quotesEnriched++;
           stock.currentPrice = q.price || stock.currentPrice;
           stock.currentChangePct = q.changePct || stock.currentChangePct;
           stock.turnover = q.turnover;
@@ -316,7 +328,10 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
 
-    return storeAndReturn(result);
+    // 行情富化完全失败（板块/换手/市值/量比全空）→ 只短缓存 60s，
+    // 避免降级数据在完整 TTL（10 分钟）内持续占据“最新结果”。
+    const degraded = quotesEnriched === 0;
+    return storeAndReturn(result, degraded ? CACHE_TTL_EMPTY : undefined);
   } catch (error: any) {
     console.error("Limit-up pullback analysis error:", error);
     return storeAndReturn(failResult(error?.message || "涨停回踩分析失败"));

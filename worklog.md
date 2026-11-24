@@ -1832,3 +1832,11 @@ Work Log:
   视觉截图 ✓；控制台无错误 ✓；lint 通过
 - 涉及文件：src/lib/pullback-pipeline.ts、src/lib/pullback-metrics.ts、
   src/app/api/stock/limit-up-pullback/route.ts、src/components/limit-up-pullback-screener.tsx
+
+## Task 39: 修复板块列不显示（行情富化降级被长缓存）
+- 现象：板块列全部显示 --；接口实测 sector=None 且换手率/市值/量比全 0（行情 ulist 整体失败），概念列正常。
+- 根因：fetchRealtimeQuotes 仅单 URL 变体、紧跟 K 线批量抓取后易被 EM 限流 RST；失败结果按完整 TTL 缓存 10 分钟，降级数据持续占据。
+- 修复：
+  1. pullback-pipeline.ts fetchRealtimeQuotes：push2delay/push2 × http/https 四变体；批间 250ms 退避；整批失败 600ms 后重试一次；f100="-" 归一化为空串。
+  2. limit-up-pullback/route.ts：PullbackStock 补 sector?/concept? 类型；行情整体失败退避 1.2s 重试一次；quotesEnriched=0 时结果只短缓存 60s（storeAndReturn 支持 ttlOverride）。
+- 验证：refresh=1 重算后 255/255 全部有板块（工业金属/光伏设备/消费电子等），换手/量比/市值同步恢复；浏览器登录 888888 后表格板块列渲染正常；lint 通过。
