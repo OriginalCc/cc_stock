@@ -65,11 +65,18 @@ import {
   Award,
   Flame,
   Eye,
+  Sunrise,
   type LucideIcon,
 } from "lucide-react";
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { PullbackCommonality } from "@/components/pullback-commonality";
-import { calcStockSignal, SIGNAL_META, type StockSignal } from "@/lib/pullback-metrics";
+import {
+  calcPremarketSignal,
+  SIGNAL_META,
+  type SignalResolver,
+  type SignalType,
+  type StockSignal,
+} from "@/lib/pullback-metrics";
 
 // ── Types (matching API response) ─────────────────────
 
@@ -113,6 +120,23 @@ interface PullbackResult {
   timestamp: string;
   cached?: boolean;
   error?: string;
+}
+
+// ── 盘前研判快照（服务端预计算，T-1 收盘口径） ──────────
+
+interface PremarketEntry {
+  type: SignalType;
+  score: number;
+  reasons: string[];
+}
+
+interface PremarketSnapshot {
+  basisDate: string;  // 研判基准交易日（T-1 收盘日）
+  computedAt: string;
+  stockCount: number;
+  signals: Record<string, PremarketEntry>;
+  stats: Record<SignalType, number>;
+  stale?: boolean;   // 计算失败时返回的旧快照
 }
 
 // ── Filters ────────────────────────────────────────────
@@ -359,12 +383,13 @@ const PRESET_COLOR_CLASSES: Record<
 interface QuickTag {
   id: string;
   label: string;
-  filter: (s: PullbackStock) => boolean;
+  filter: (s: PullbackStock, resolveSignal: SignalResolver) => boolean;
 }
 
+// 机会/风险标签走盘前口径（resolveSignal 优先用服务端快照，缺省时本地 T-1 计算）
 const QUICK_TAGS: QuickTag[] = [
-  { id: "signal-opp", label: "机会股", filter: (s) => calcStockSignal(s).type === "opportunity" },
-  { id: "signal-risk", label: "风险股", filter: (s) => calcStockSignal(s).type === "risk" },
+  { id: "signal-opp", label: "盘前机会", filter: (s, sig) => sig(s).type === "opportunity" },
+  { id: "signal-risk", label: "盘前风险", filter: (s, sig) => sig(s).type === "risk" },
   { id: "today-up", label: "今日反弹", filter: (s) => s.currentChangePct > 0 },
   { id: "today-down", label: "今日下跌", filter: (s) => s.currentChangePct < -2 },
   { id: "vol-expand", label: "今日放量", filter: (s) => s.volumeRatio >= 1.5 },
@@ -806,9 +831,11 @@ function ApproachBar({ pct }: { pct: number }) {
 function SummaryCard({
   stocks,
   totalScanned,
+  resolveSignal,
 }: {
   stocks: PullbackStock[];
   totalScanned: number;
+  resolveSignal: SignalResolver;
 }) {
   const total = stocks.length;
   const deepPullback = stocks.filter(s => s.approachPct >= 70).length;
@@ -819,8 +846,10 @@ function SummaryCard({
   const avgMaxPullback = total > 0
     ? stocks.reduce((s, st) => s + st.maxPullbackPct, 0) / total
     : 0;
-  const oppCount = stocks.filter(s => calcStockSignal(s).type === "opportunity").length;
-  const riskCount = stocks.filter(s => calcStockSignal(s).type === "risk").length;
+  // 盘前口径信号分布（与服务端快照同一判定，不含今日盘中涨跌）
+  const oppCount = stocks.filter(s => resolveSignal(s).type === "opportunity").length;
+  const riskCount = stocks.filter(s => resolveSignal(s).type === "risk").length;
+  const watchCount = stocks.filter(s => resolveSignal(s).type === "watch").length;
 
   const cards: {
     icon: LucideIcon;
@@ -872,9 +901,9 @@ function SummaryCard({
     },
     {
       icon: TrendingUp,
-      title: "机会股",
+      title: "盘前机会",
       value: String(oppCount),
-      subtitle: `风险股 ${riskCount} 只`,
+      subtitle: `风险 ${riskCount} · 观察 ${watchCount}`,
       bg: "bg-red-500/[0.04] border-red-500/15",
       fg: "text-red-600 dark:text-red-400",
     },
@@ -1616,9 +1645,9 @@ function QualityBadge({ score }: { score: number }) {
   );
 }
 
-// ── Opportunity/Risk signal cell (rules from 共性归纳) ────
+// ── Opportunity/Risk signal cell（盘前口径） ────
 
-function SignalBadge({ signal }: { signal: StockSignal }) {
+function SignalBadge({ signal, basisDate }: { signal: StockSignal; basisDate?: string }) {
   const meta = SIGNAL_META[signal.type];
   const Icon = signal.type === "opportunity" ? TrendingUp : signal.type === "risk" ? AlertTriangle : Eye;
   return (
@@ -1632,7 +1661,7 @@ function SignalBadge({ signal }: { signal: StockSignal }) {
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-[280px]">
-          <div className="text-xs font-medium">信号评分 {signal.score}/100 — {meta.label}（{meta.desc}）</div>
+          <div className="text-xs font-medium">盘前研判 {signal.score}/100 — {meta.label}（{meta.desc}）</div>
           <ul className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
             {signal.reasons.map((r, i) => (
               <li key={i} className="flex items-start gap-1.5">
@@ -1641,10 +1670,78 @@ function SignalBadge({ signal }: { signal: StockSignal }) {
               </li>
             ))}
           </ul>
-          <div className="mt-1.5 text-[10px] text-muted-foreground/70">判定规则源自页尾「共性归纳」板块 · 机会门槛 = 评分≥65 且自低点反弹已确认</div>
+          <div className="mt-1.5 text-[10px] text-muted-foreground/70">
+            盘前口径：仅用 {basisDate ? `${basisDate} ` : "T-1 "}收盘前数据判定，与今日盘中涨跌无关 · 机会门槛 = 评分≥65 且自低点反弹已确认（依据页尾共性归纳）
+          </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  );
+}
+
+// ── 盘前研判快照横幅 ─────────────────────────────────────
+
+function PremarketBanner({
+  snapshot,
+  loading,
+  onRecompute,
+}: {
+  snapshot: PremarketSnapshot;
+  loading: boolean;
+  onRecompute: () => void;
+}) {
+  const signalTypes: SignalType[] = ["opportunity", "watch", "risk"];
+  return (
+    <Card className="border-red-500/20 bg-red-500/[0.03] shadow-sm" aria-label="盘前研判快照">
+      <CardContent className="py-3 px-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-red-500/10 border border-red-500/25 flex items-center justify-center shrink-0">
+            <Sunrise className="w-4 h-4 text-red-500" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              盘前研判快照
+              <Badge variant="outline" className="text-[9px] py-0 px-1 gap-0.5 bg-red-500/10 border-red-500/25 text-red-600 dark:text-red-400">
+                T-1 收盘口径
+              </Badge>
+              {snapshot.stale && (
+                <Badge variant="outline" className="text-[9px] py-0 px-1 bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400">
+                  旧快照
+                </Badge>
+              )}
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-0.5">
+              基于 {snapshot.basisDate} 收盘数据 · 计算于 {formatTimestamp(snapshot.computedAt)} · 覆盖 {snapshot.stockCount} 只 ·
+              仅用涨停池+K线判定，不含今日盘中涨跌，盘中结果不漂移
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap ml-auto">
+          {signalTypes.map(t => (
+            <Badge
+              key={t}
+              variant="outline"
+              className={`text-[10px] py-0 px-1.5 gap-1 font-mono ${SIGNAL_META[t].badge}`}
+            >
+              {SIGNAL_META[t].label} {snapshot.stats?.[t] ?? 0}
+            </Badge>
+          ))}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={onRecompute}
+            disabled={loading}
+            aria-label="重新计算盘前研判"
+          >
+            {loading
+              ? <Loader2 className="w-3 h-3 animate-spin" />
+              : <RefreshCw className="w-3 h-3" />}
+            重算
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1676,11 +1773,10 @@ function LimitUpStreakBadge({ kline, limitUpDate }: { kline: KLineDay[]; limitUp
 
 // ── Expanded Row Detail ────────────────────────────────
 
-function ExpandedRowDetail({ stock }: { stock: PullbackStock }) {
+function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock; signal: StockSignal; basisDate?: string }) {
   const riskScore = calcRiskScore(stock);
   const riskStyle = getRiskStyle(riskScore);
   const approachStyle = getApproachStyle(stock.approachPct);
-  const signal = calcStockSignal(stock);
   const signalMeta = SIGNAL_META[signal.type];
 
   const qualityScore = calcQualityScore(stock);
@@ -1962,17 +2058,18 @@ function StockCardViewItem({
   isFavorite,
   onToggleFavorite,
   onSelectStock,
+  signal,
 }: {
   stock: PullbackStock;
   isFavorite: boolean;
   onToggleFavorite: (symbol: string) => void;
   onSelectStock?: (symbol: string) => void;
+  signal: StockSignal;
 }) {
   const approachStyle = getApproachStyle(stock.approachPct);
   const riskScore = calcRiskScore(stock);
   const qualityScore = calcQualityScore(stock);
   const boardType = getBoardType(stock.symbol);
-  const signal = calcStockSignal(stock);
 
   return (
     <Card
@@ -2231,6 +2328,53 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   const [error, setError] = useState<string | null>(null);
   const [isFromCache, setIsFromCache] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState<string>("");
+
+  // ── 盘前研判快照（服务端预计算，T-1 收盘口径） ──────────
+  const [premarket, setPremarket] = useState<PremarketSnapshot | null>(null);
+  const [premarketLoading, setPremarketLoading] = useState(true);
+
+  const fetchPremarket = useCallback(async (force = false) => {
+    setPremarketLoading(true);
+    try {
+      const res = await fetch(
+        "/api/stock/premarket-signals",
+        force ? { method: "POST" } : undefined
+      );
+      if (!res.ok) throw new Error("盘前研判快照获取失败");
+      const data = await res.json();
+      if (data?.success && data?.signals && typeof data.signals === "object") {
+        setPremarket({
+          basisDate: data.basisDate,
+          computedAt: data.computedAt,
+          stockCount: data.stockCount ?? 0,
+          signals: data.signals,
+          stats: data.stats ?? { opportunity: 0, watch: 0, risk: 0 },
+          stale: Boolean(data.stale),
+        });
+      }
+    } catch {
+      // 快照获取失败时静默降级：resolveSignal 会用本地 T-1 口径计算
+    } finally {
+      setPremarketLoading(false);
+    }
+  }, []);
+
+  // Auto-fetch pre-market snapshot on mount
+  useEffect(() => {
+    fetchPremarket();
+  }, [fetchPremarket]);
+
+  /**
+   * 信号解析器：优先命中服务端盘前快照（全天稳定不漂移），
+   * 未入快照的股票本地按同一 T-1 口径计算（剔除今日形成中K线）。
+   */
+  const resolveSignal = useCallback<SignalResolver>((s) => {
+    const hit = premarket?.signals?.[s.symbol];
+    if (hit) {
+      return { type: hit.type, label: SIGNAL_META[hit.type].label, score: hit.score, reasons: hit.reasons };
+    }
+    return calcPremarketSignal(s, premarket?.basisDate);
+  }, [premarket]);
 
   // Filters (live "draft" state - what sliders/Badges display, updated immediately on slider drag)
   const [filters, setFilters] = useState<PullbackFilters>(() => {
@@ -2588,8 +2732,9 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       if (!debouncedFilters.limitUpBoardTypes.includes(getBoardType(s.symbol))) return false;
 
       // Quick tags (AND logic - all selected tags must match)
+      // 信号类标签用盘前口径解析器（优先服务端快照）
       if (tagsToApply.length > 0) {
-        if (!tagsToApply.every(t => t.filter(s))) return false;
+        if (!tagsToApply.every(t => t.filter(s, resolveSignal))) return false;
       }
 
       // Search (二级过滤)
@@ -2613,7 +2758,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         : sortField === "qualityScore"
         ? calcQualityScore(a)
         : sortField === "signalScore"
-        ? calcStockSignal(a).score
+        ? resolveSignal(a).score
         : sortField === "limitUpStreak"
         ? calcLimitUpStreak(a.klineSummary, a.limitUpDate)
         : a[sortField];
@@ -2622,7 +2767,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         : sortField === "qualityScore"
         ? calcQualityScore(b)
         : sortField === "signalScore"
-        ? calcStockSignal(b).score
+        ? resolveSignal(b).score
         : sortField === "limitUpStreak"
         ? calcLimitUpStreak(b.klineSummary, b.limitUpDate)
         : b[sortField];
@@ -2630,7 +2775,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       return (aVal as number) - (bVal as number);
     });
     return sorted;
-  }, [result, debouncedFilters, sortField, sortOrder, searchTerm, quickTags, showFavoritesOnly, favorites]);
+  }, [result, debouncedFilters, sortField, sortOrder, searchTerm, quickTags, showFavoritesOnly, favorites, resolveSignal]);
 
   // ── Apply histogram bin filter on top of filteredStocks ──
   // Histogram receives `filteredStocks` (stable counts), table/cards/pagination use `displayedStocks`
@@ -2733,7 +2878,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     const headers = [
       "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
-      "最大回撤%", "风险评分", "质量评分", "信号", "信号评分", "换手率%", "市值(亿)", "量比",
+      "最大回撤%", "风险评分", "质量评分", "盘前信号", "盘前评分", "换手率%", "市值(亿)", "量比",
     ];
     const rows = displayedStocks.map(s => [
       s.symbol,
@@ -2750,8 +2895,8 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       s.maxPullbackPct.toFixed(2),
       calcRiskScore(s),
       calcQualityScore(s),
-      SIGNAL_META[calcStockSignal(s).type].label,
-      calcStockSignal(s).score,
+      SIGNAL_META[resolveSignal(s).type].label,
+      resolveSignal(s).score,
       s.turnover.toFixed(2),
       s.marketCap.toFixed(2),
       s.volumeRatio.toFixed(2),
@@ -2774,7 +2919,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [displayedStocks]);
+  }, [displayedStocks, resolveSignal]);
 
   // ── Render ────────────────────────────────────────────
 
@@ -2876,11 +3021,21 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         </CardHeader>
       </Card>
 
+      {/* ── 盘前研判快照（T-1 收盘口径，服务端预计算） ────── */}
+      {premarket && (
+        <PremarketBanner
+          snapshot={premarket}
+          loading={premarketLoading}
+          onRecompute={() => fetchPremarket(true)}
+        />
+      )}
+
       {/* ── Summary ──────────────────────────────────── */}
       {result && (
         <SummaryCard
           stocks={displayedStocks}
           totalScanned={result.summary.totalScanned}
+          resolveSignal={resolveSignal}
         />
       )}
 
@@ -3176,7 +3331,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                     {pagedStocks.map((stock) => {
                       const riskScore = calcRiskScore(stock);
                       const qualityScore = calcQualityScore(stock);
-                      const signal = calcStockSignal(stock);
+                      const signal = resolveSignal(stock);
                       const isFav = favorites.includes(stock.symbol);
                       const isExpanded = expandedRows.has(stock.symbol);
                       const isSelected = selectedRowSymbol === stock.symbol;
@@ -3230,10 +3385,10 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               </div>
                             </TableCell>
 
-                            {/* 信号 - text-right */}
+                            {/* 信号 - text-right（盘前口径） */}
                             <TableCell className="py-2 text-right">
                               <div className="flex justify-end">
-                                <SignalBadge signal={signal} />
+                                <SignalBadge signal={signal} basisDate={premarket?.basisDate} />
                               </div>
                             </TableCell>
 
@@ -3359,7 +3514,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                           {isExpanded && (
                             <TableRow className="hover:bg-transparent">
                               <TableCell colSpan={19} className="p-0">
-                                <ExpandedRowDetail stock={stock} />
+                                <ExpandedRowDetail stock={stock} signal={signal} basisDate={premarket?.basisDate} />
                               </TableCell>
                             </TableRow>
                           )}
@@ -3381,6 +3536,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                 isFavorite={favorites.includes(stock.symbol)}
                 onToggleFavorite={handleToggleFavorite}
                 onSelectStock={onSelectStock}
+                signal={resolveSignal(stock)}
               />
             ))}
           </div>
@@ -3559,7 +3715,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
 
       {/* ── 共性归纳 (page footer) ───────────────────── */}
       {result && result.success && (result.stocks?.length ?? 0) >= 5 && (
-        <PullbackCommonality stocks={result.stocks} timestamp={result.timestamp} />
+        <PullbackCommonality stocks={result.stocks} timestamp={result.timestamp} resolveSignal={resolveSignal} basisDate={premarket?.basisDate} />
       )}
 
       {/* Custom scrollbar styles */}

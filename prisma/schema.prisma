@@ -170,3 +170,15 @@ model MarketBreadthSnapshot {
 
   @@unique([date, time]) // 同一天同一时间点只记录一次
 }
+
+// ── 盘前研判快照（涨停回踩 机会/风险，T-1 收盘口径） ──────────
+
+model PremarketSignalSnapshot {
+  id         String   @id @default(cuid())
+  basisDate  String   @unique            // 研判基准日（T-1 收盘日）YYYY-MM-DD
+  computedAt DateTime @default(now())    // 计算时间
+  stockCount Int      @default(0)        // 快照覆盖股票数
+  payload    String                      // JSON: { signals: Record<symbol, {type,score,reasons}>, stats: {opportunity,watch,risk} }
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

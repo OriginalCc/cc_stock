@@ -1648,3 +1648,45 @@ Work Log:
   与琥珀色"观察"对比鲜明 ✓；展开详情卡为浅红底非实底 ✓；
   页尾"机会 191 只（75%）"实底红 ✓；lint 通过
 - 涉及文件：src/lib/pullback-metrics.ts、src/components/limit-up-pullback-screener.tsx
+
+---
+
+Task ID: 33
+Agent: Main Claude (Z.ai Code)
+Task: 机会/风险改为「盘前研判」— 每天盘前预计算，剔除当日盘中数据（不盘中看谁涨就标机会）
+
+Work Log:
+- 用户需求：机会和风险要每天盘前就算出来，而不是盘中看谁涨了就是机会（消除事后诸葛口径）
+- 口径重构（src/lib/pullback-metrics.ts）：新增 calcPremarketSignal（T-1 收盘口径评分）
+  + deriveT1Stock（把 klineSummary 截断到基准日、现价/涨跌幅/回踩深度全部改按 T-1 收盘价重算，
+  换手/量比清零防盘中数据泄漏）+ chinaDateStr（中国时区日期）
+  - "今日动向 20 分"→"昨日动向 20 分"（T-1 涨跌幅），"量能确认 10 分"→"昨日K线形态 10 分"
+    （阳线加分），其余因子（反弹确认/回踩位置/时间窗口/板型弹性）同分值；机会/风险门槛不变（≥65/≤38）
+- 共享管道抽取（src/lib/pullback-pipeline.ts 新建）：fetchTradeDates/fetchZTPool/fetchDailyKline/
+  fetchRealtimeQuotes + getChinaNow/computeBasisDate/stripFormingBar/getTradeDatesCached（日历缓存 10 分钟）；
+  原 limit-up-pullback/route.ts 改为从共享库导入（删本地重复定义，行为不变）
+- 服务端快照（src/app/api/stock/premarket-signals/route.ts 新建）：
+  - 基准日规则：盘中/盘前 = 上一交易日（剔除当日形成中K线）；收盘后（>=15:05）= 当日（为次日盘前备好）
+  - GET 智能读取：basisDate === 当前 T-1 基准日即新鲜（全天只算一次、盘中不漂移）；过期自动重算，
+    重算失败降级返回旧快照（stale 标记）；POST 强制重算（inflight 防并发重复计算）
+  - Prisma 新模型 PremarketSignalSnapshot（basisDate 唯一键，payload JSON，保留历史快照）
+  - 实测：POST 全量计算 255 只（~40s），GET 命中缓存 21ms；stats 机会 175/观察 63/风险 17
+- 前端（limit-up-pullback-screener.tsx）：
+  - 新增 PremarketBanner：盘前研判快照横幅（基准日/计算时间/覆盖数 + 机会/观察/风险徽章 + 重算按钮）
+  - resolveSignal 解析器：优先命中服务端快照，未入快照的股票本地 calcPremarketSignal 同口径兜底；
+    信号列/排序/CSV（表头改"盘前信号/盘前评分"）/快捷标签/统计卡/展开详情/卡片视图全部切换
+  - 快捷标签改名"盘前机会/盘前风险"（id 不变，localStorage 已存策略兼容）；SignalBadge 悬浮注明
+    "盘前口径：仅用 {basisDate} 收盘前数据判定，与今日盘中涨跌无关"；SummaryCard"机会股"→"盘前机会"（含观察数）
+- 页尾共性归纳（pullback-commonality.tsx）：接收 resolveSignal/basisDate，信号分布行标注
+  "盘前口径（基于 T-1 收盘数据）"，与表格口径保持一致
+- 定时任务：cron 工具新建"盘前研判自动计算（每日 08:35 Asia/Shanghai，周末跳过）"，
+  触发 POST /api/stock/premarket-signals，失败自动查 dev.log 重试
+- 验证（agent-browser）：横幅渲染（T-1 收盘口径徽章 + 175/63/17）✓；表格信号列 100 机会置顶（排序持久化）✓；
+  悬浮 tooltip 完整 T-1 依据 ✓；展开详情信号卡（截至昨收/昨日大涨/昨日收阳）✓；
+  "盘前机会"标签筛选 50 行全机会 ✓；统计卡"盘前机会 157/风险 17/观察 59" ✓；
+  页尾分布标注盘前口径 ✓；移动端 390px 横幅 358px 无溢出 ✓；控制台无错误 ✓
+- bun run lint 通过
+- 涉及文件：src/lib/pullback-metrics.ts（盘前引擎）、src/lib/pullback-pipeline.ts（新建共享管道）、
+  src/app/api/stock/premarket-signals/route.ts（新建）、prisma/schema.prisma（PremarketSignalSnapshot）、
+  src/components/limit-up-pullback-screener.tsx、src/components/pullback-commonality.tsx、
+  src/app/api/stock/limit-up-pullback/route.ts（改用共享管道）

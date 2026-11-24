@@ -23,6 +23,7 @@ import {
   share,
   SIGNAL_META,
   type PullbackStock,
+  type SignalResolver,
   type SignalType,
 } from "@/lib/pullback-metrics";
 
@@ -62,7 +63,7 @@ interface CommonalityStats {
 
 const REBOUND_TH = 3; // 反弹确认线(%)
 
-function computeStats(stocks: PullbackStock[]): CommonalityStats {
+function computeStats(stocks: PullbackStock[], resolveSignal?: SignalResolver): CommonalityStats {
   const n = stocks.length;
   const ext = stocks.map(buildExt);
 
@@ -82,9 +83,9 @@ function computeStats(stocks: PullbackStock[]): CommonalityStats {
   const enrichmentOk = capValid.length >= Math.max(5, n * 0.3);
   const smallCap = capValid.filter(s => s.marketCap < 100).length;
 
-  // 机会/风险信号分布 (与表格内信号徽章同一套规则)
+  // 机会/风险信号分布 (与表格内信号徽章同一套规则，优先盘前快照口径)
   const signalN: Record<SignalType, number> = { opportunity: 0, watch: 0, risk: 0 };
-  for (const s of stocks) signalN[calcStockSignal(s).type]++;
+  for (const s of stocks) signalN[(resolveSignal ? resolveSignal(s) : calcStockSignal(s)).type]++;
 
   return {
     n,
@@ -154,11 +155,15 @@ function InsightRow({ icon: Icon, iconColor, title, children }: {
 
 // ── Main component ─────────────────────────────────────
 
-export function PullbackCommonality({ stocks, timestamp }: {
+export function PullbackCommonality({ stocks, timestamp, resolveSignal, basisDate }: {
   stocks: PullbackStock[];
   timestamp: string;
+  /** 盘前口径信号解析器（优先服务端快照）；缺省时本地按盘中口径计算 */
+  resolveSignal?: SignalResolver;
+  /** 盘前研判基准日（T-1 收盘日） */
+  basisDate?: string;
 }) {
-  const stats = useMemo(() => computeStats(stocks), [stocks]);
+  const stats = useMemo(() => computeStats(stocks, resolveSignal), [stocks, resolveSignal]);
   const s = stats;
 
   const timeLabel = useMemo(() => {
@@ -221,7 +226,11 @@ export function PullbackCommonality({ stocks, timestamp }: {
               {SIGNAL_META[t].label} {s.signalN[t]} 只（{share(s.signalN[t], s.n)}%）
             </Badge>
           ))}
-          <span className="text-[10px] text-muted-foreground">口径与表格内「信号」列一致</span>
+          <span className="text-[10px] text-muted-foreground">
+            {resolveSignal
+              ? `盘前口径（基于 ${basisDate || "T-1"} 收盘数据，不含今日盘中涨跌）· 与表格「信号」列一致`
+              : "盘中复盘口径 · 与表格内「信号」列一致"}
+          </span>
         </div>
 
         {/* Stat chips */}
@@ -285,7 +294,8 @@ export function PullbackCommonality({ stocks, timestamp }: {
         {/* Methodology footnote */}
         <p className="text-[10px] text-muted-foreground leading-relaxed">
           口径说明：反弹幅度 = 现价相对涨停后最低收盘价的涨幅；低点窗口 = 回踩低点距涨停日的交易日数；连板数 = 涨停日向前连续涨停天数；
-          样本 = 本次扫描全部符合条件的回踩股（非筛选子集）。机会/风险信号与表格内「信号」列同一规则（机会 = 评分 ≥65 且反弹已确认）。
+          样本 = 本次扫描全部符合条件的回踩股（非筛选子集）。机会/风险信号与表格内「信号」列同一规则（机会 = 评分 ≥65 且反弹已确认）
+          {resolveSignal ? "，为盘前口径：仅用 T-1 收盘前数据判定，与今日盘中涨跌无关" : "，为盘中复盘口径"}。
           结论随每轮扫描数据动态更新，仅供研究参考，不构成投资建议。
         </p>
       </CardContent>
