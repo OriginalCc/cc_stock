@@ -79,6 +79,7 @@ import { PullbackCommonality } from "@/components/pullback-commonality";
 import {
   buildExt,
   calcPremarketSignal,
+  GRADE_META,
   SIGNAL_META,
   type SignalResolver,
   type SignalType,
@@ -139,6 +140,7 @@ interface PremarketEntry {
   type: SignalType;
   score: number;
   reasons: string[];
+  grade?: "A" | "B" | "C"; // Task 42 机会分级（旧快照缺省，resolveSignal 降级本地重算）
 }
 
 interface PremarketSnapshot {
@@ -407,6 +409,7 @@ interface QuickTag {
 
 // 机会/风险标签走盘前口径（resolveSignal 优先用服务端快照，缺省时本地 T-1 计算）
 const QUICK_TAGS: QuickTag[] = [
+  { id: "signal-opp-a", label: "A 级机会", filter: (s, sig) => sig(s).grade === "A" },
   { id: "signal-opp", label: "盘前机会", filter: (s, sig) => sig(s).type === "opportunity" },
   { id: "signal-risk", label: "盘前风险", filter: (s, sig) => sig(s).type === "risk" },
   { id: "today-up", label: "今日反弹", filter: (s) => s.currentChangePct > 0 },
@@ -930,9 +933,11 @@ function SummaryCard({
     ? stocks.reduce((s, st) => s + st.maxPullbackPct, 0) / total
     : 0;
   // 盘前口径信号分布（与服务端快照同一判定，不含今日盘中涨跌）
-  const oppCount = stocks.filter(s => resolveSignal(s).type === "opportunity").length;
-  const riskCount = stocks.filter(s => resolveSignal(s).type === "risk").length;
-  const watchCount = stocks.filter(s => resolveSignal(s).type === "watch").length;
+  const signals = stocks.map(s => resolveSignal(s));
+  const oppCount = signals.filter(x => x.type === "opportunity").length;
+  const riskCount = signals.filter(x => x.type === "risk").length;
+  const watchCount = signals.filter(x => x.type === "watch").length;
+  const gradeACount = signals.filter(x => x.grade === "A").length;
 
   const cards: {
     icon: LucideIcon;
@@ -986,7 +991,7 @@ function SummaryCard({
       icon: TrendingUp,
       title: "盘前机会",
       value: String(oppCount),
-      subtitle: `风险 ${riskCount} · 观察 ${watchCount}`,
+      subtitle: `A 级 ${gradeACount} · 风险 ${riskCount} · 观察 ${watchCount}`,
       bg: "bg-red-500/[0.04] border-red-500/15",
       fg: "text-red-600 dark:text-red-400",
     },
@@ -1740,11 +1745,20 @@ function SignalBadge({ signal, basisDate }: { signal: StockSignal; basisDate?: s
           <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-default ${meta.badge}`}>
             <Icon className="w-2.5 h-2.5" />
             <span className="text-[11px] font-mono font-medium">{signal.score}</span>
-            <span className="text-[10px] opacity-90">{meta.label}</span>
+            <span className="text-[10px] opacity-90">
+              {meta.label}{signal.grade ? `·${signal.grade}` : ""}
+            </span>
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-[280px]">
-          <div className="text-xs font-medium">盘前研判 {signal.score}/100 — {meta.label}（{meta.desc}）</div>
+          <div className="text-xs font-medium">
+            盘前研判 {signal.score}/100 — {meta.label}
+            {signal.grade ? ` · ${signal.grade} 级（${GRADE_META[signal.grade].label}）` : ""}
+            （{meta.desc}）
+          </div>
+          {signal.grade ? (
+            <div className="mt-1 text-[11px] text-muted-foreground">{signal.grade} 级标准：{GRADE_META[signal.grade].desc}</div>
+          ) : null}
           <ul className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
             {signal.reasons.map((r, i) => (
               <li key={i} className="flex items-start gap-1.5">
@@ -1754,7 +1768,7 @@ function SignalBadge({ signal, basisDate }: { signal: StockSignal; basisDate?: s
             ))}
           </ul>
           <div className="mt-1.5 text-[10px] text-muted-foreground/70">
-            盘前口径：仅用 {basisDate ? `${basisDate} ` : "T-1 "}收盘前数据判定，与今日盘中涨跌无关 · 机会门槛 = 评分≥65 且自低点反弹已确认（依据页尾共性归纳）
+            盘前口径：仅用 {basisDate ? `${basisDate} ` : "T-1 "}收盘前数据判定，与今日盘中涨跌无关 · 机会门槛 = 评分≥65 且（反弹确认 或 底部潜伏形态），机会按胜率分级 A/B/C
           </div>
         </TooltipContent>
       </Tooltip>
@@ -2094,7 +2108,7 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
             <span className="text-3xl font-bold font-mono">{signal.score}</span>
             <span className="text-xs text-muted-foreground">/100</span>
             <Badge variant="outline" className="ml-auto text-[10px] bg-background/60">
-              {signalMeta.label}（{signalMeta.desc}）
+              {signalMeta.label}{signal.grade ? ` · ${signal.grade} 级` : ""}（{signalMeta.desc}）
             </Badge>
           </div>
           <Separator className="my-1" />
@@ -2607,7 +2621,12 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   const resolveSignal = useCallback<SignalResolver>((s) => {
     const hit = premarket?.signals?.[s.symbol];
     if (hit) {
-      return { type: hit.type, label: SIGNAL_META[hit.type].label, score: hit.score, reasons: hit.reasons };
+      // 旧快照的机会项缺分级（Task 42 之前落盘）→ 本地按同一 T-1 口径补算分级
+      if (hit.type === "opportunity" && hit.grade === undefined) {
+        const local = calcPremarketSignal(s, premarket?.basisDate);
+        return { type: hit.type, label: SIGNAL_META[hit.type].label, score: hit.score, grade: local.grade, reasons: hit.reasons };
+      }
+      return { type: hit.type, label: SIGNAL_META[hit.type].label, score: hit.score, grade: hit.grade, reasons: hit.reasons };
     }
     return calcPremarketSignal(s, premarket?.basisDate);
   }, [premarket]);
@@ -3115,7 +3134,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     const headers = [
       "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "板块", "概念", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停空间%", "距涨停天数",
-      "最大回撤%", "风险评分", "质量评分", "盘前信号", "盘前评分", "换手率%", "市值(亿)", "量比",
+      "最大回撤%", "风险评分", "质量评分", "盘前信号", "盘前评分", "机会分级", "换手率%", "市值(亿)", "量比",
       "量能萎缩%", "起涨点失守%", "涨停前趋势", "回踩ATR", "低点量能%",
     ];
     const rows = displayedStocks.map(s => {
@@ -3140,6 +3159,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         calcQualityScore(s),
         SIGNAL_META[resolveSignal(s).type].label,
         resolveSignal(s).score,
+        resolveSignal(s).grade || "",
         s.turnover.toFixed(2),
         s.marketCap.toFixed(2),
         s.volumeRatio.toFixed(2),

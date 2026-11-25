@@ -22,6 +22,7 @@ interface SignalEntry {
   type: SignalType;
   score: number;
   reasons: string[];
+  grade?: "A" | "B" | "C"; // Task 42 机会分级（胜率优先）
 }
 
 interface PremarketPayload {
@@ -203,7 +204,7 @@ async function computeSnapshot() {
       };
 
       const sig = calcPremarketSignal(ps, basisDate);
-      signals[code] = { type: sig.type, score: sig.score, reasons: sig.reasons };
+      signals[code] = { type: sig.type, score: sig.score, reasons: sig.reasons, grade: sig.grade };
       stats[sig.type]++;
     }
   }

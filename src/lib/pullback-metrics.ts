@@ -225,7 +225,15 @@ export interface StockSignal {
   label: string;
   score: number;     // 0-100, 越高机会越大 (可排序)
   reasons: string[]; // 判定依据 (用于悬浮提示/展开详情)
+  grade?: "A" | "B" | "C"; // Task 42 机会分级（胜率优先，仅 opportunity 有值）
 }
+
+/** 机会分级说明（胜率优先：同为机会，置信度分三档） */
+export const GRADE_META: Record<"A" | "B" | "C", { label: string; desc: string }> = {
+  A: { label: "核心机会", desc: "评分≥75 + 抛压枯竭/双底承接 + 未失守MA5" },
+  B: { label: "标准机会", desc: "评分≥70，条件齐全" },
+  C: { label: "观察机会", desc: "评分65-69，条件有瑕疵，轻仓试探" },
+};
 
 /** 统一的信号解析器签名：优先快照，缺省时本地按 T-1 口径计算 */
 export type SignalResolver = (s: PullbackStock) => StockSignal;
@@ -484,6 +492,31 @@ function positionQualityScore(
   return base;
 }
 
+/**
+ * 机会分级 (Task 42, 胜率优先): 同为「机会」，按证据强度分三档，
+ * 引导用户优先关注胜率最高的 A 级组合，避免在 C 级票上下重仓。
+ *   A 级核心: score>=75 且 抛压枯竭证据(回踩段极度缩量≥50% / 低点当日极缩量≥50% / 双底承接)
+ *             且 MA5 未失守(ma5Reclaimed !== false，左侧潜伏票允许未收复但不能破位)
+ *   B 级标准: score>=70
+ *   C 级观察: 其余(65-69，条件有瑕疵)
+ */
+function gradeOf(
+  type: SignalType,
+  score: number,
+  ext: StockExt,
+  reasons: string[]
+): "A" | "B" | "C" | undefined {
+  if (type !== "opportunity") return undefined;
+  const volExhausted = (ext.volShrinkPct !== undefined && ext.volShrinkPct >= 50)
+    || (ext.lowDayVolShrinkPct !== undefined && ext.lowDayVolShrinkPct >= 50)
+    || Boolean(ext.retestHeld);
+  if (score >= 75 && volExhausted && ext.ma5Reclaimed !== false) {
+    reasons.unshift(`机会分级 A 级（核心）：${GRADE_META.A.desc}，胜率优先组合`);
+    return "A";
+  }
+  return score >= 70 ? "B" : "C";
+}
+
 // ── Pre-market (T-1 close) signal ──────────────────────
 // 用户要求：机会/风险必须盘前就算出来，而不是盘中看谁涨了就是机会。
 // 因此本组函数只使用 T-1 收盘前的数据（涨停池 + 日K），当日盘中行情
@@ -668,7 +701,12 @@ export function calcPremarketSignal(s: PullbackStock, basisDate?: string): Stock
     reasons.unshift("深回踩 + 缩量 + 企稳/双底，底部潜伏形态（左侧低吸，赔率优先）");
   }
 
-  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 12) };
+  // ── Task 42: 机会分级（胜率优先）──
+  //   A 级核心: score>=75 且 抛压枯竭证据(极度缩量/双底承接) 且 MA5 未失守——历史共性中最可靠组合
+  //   B 级标准: score>=70；C 级观察: 其余(65-69，条件有瑕疵，轻仓试探)
+  const grade = gradeOf(type, score, ext, reasons);
+
+  return { type, label: SIGNAL_META[type].label, score, grade, reasons: reasons.slice(0, 12) };
 }
 
 /**
@@ -789,5 +827,8 @@ export function calcStockSignal(s: PullbackStock): StockSignal {
     reasons.unshift("深回踩 + 缩量 + 企稳/双底，底部潜伏形态（左侧低吸，赔率优先）");
   }
 
-  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 12) };
+  // ── Task 42: 机会分级（胜率优先，与盘前口径同一规则）──
+  const grade = gradeOf(type, score, ext, reasons);
+
+  return { type, label: SIGNAL_META[type].label, score, grade, reasons: reasons.slice(0, 12) };
 }
