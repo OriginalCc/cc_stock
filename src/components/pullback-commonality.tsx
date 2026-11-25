@@ -7,8 +7,10 @@ import {
   Activity,
   AlertTriangle,
   ArrowDownRight,
+  Award,
   Clock,
   Flame,
+  Gauge,
   Info,
   Layers,
   Lightbulb,
@@ -59,6 +61,9 @@ interface CommonalityStats {
   weakShare: number;         // 尚未脱离低点区域(反弹 < 3%)占比
   // 机会/风险信号分布
   signalN: Record<SignalType, number>;
+  // Task 42/43: 位置视角 + 机会分级
+  chasedShare: number;       // 追高/收复过半(距涨停价<5% 或 修复≥75%)占比
+  gradeN: { A: number; B: number; C: number }; // 机会分级分布
 }
 
 const REBOUND_TH = 3; // 反弹确认线(%)
@@ -85,7 +90,20 @@ function computeStats(stocks: PullbackStock[], resolveSignal?: SignalResolver): 
 
   // 机会/风险信号分布 (与表格内信号徽章同一套规则，优先盘前快照口径)
   const signalN: Record<SignalType, number> = { opportunity: 0, watch: 0, risk: 0 };
-  for (const s of stocks) signalN[(resolveSignal ? resolveSignal(s) : calcStockSignal(s)).type]++;
+  const gradeN = { A: 0, B: 0, C: 0 };
+  for (const s of stocks) {
+    const sig = resolveSignal ? resolveSignal(s) : calcStockSignal(s);
+    signalN[sig.type]++;
+    if (sig.grade) gradeN[sig.grade]++;
+  }
+
+  // Task 42: 追高/收复过半占比（位置赔率视角的数据支撑）
+  const chased = ext.filter(e => {
+    const recover = (e.reboundFromLow + e.roomToHigh) > 0
+      ? e.reboundFromLow / (e.reboundFromLow + e.roomToHigh)
+      : 1;
+    return e.roomToHigh < 5 || recover >= 0.75;
+  }).length;
 
   return {
     n,
@@ -110,6 +128,8 @@ function computeStats(stocks: PullbackStock[], resolveSignal?: SignalResolver): 
     smallCapShare: share(smallCap, capValid.length),
     weakShare: share(n - rebounded, n),
     signalN,
+    chasedShare: share(chased, n),
+    gradeN,
   };
 }
 
@@ -226,6 +246,22 @@ export function PullbackCommonality({ stocks, timestamp, resolveSignal, basisDat
               {SIGNAL_META[t].label} {s.signalN[t]} 只（{share(s.signalN[t], s.n)}%）
             </Badge>
           ))}
+          {/* Task 43: 机会分级分布（胜率优先） */}
+          {s.gradeN.A > 0 && (
+            <Badge variant="outline" className="text-[10px] py-0 px-1.5 gap-1 font-mono bg-red-500 text-white border-red-500 shadow-sm shadow-red-500/40">
+              <Award className="w-2.5 h-2.5" />A 级核心 {s.gradeN.A}
+            </Badge>
+          )}
+          {s.gradeN.B > 0 && (
+            <Badge variant="outline" className="text-[10px] py-0 px-1.5 gap-1 font-mono bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400">
+              B 级 {s.gradeN.B}
+            </Badge>
+          )}
+          {s.gradeN.C > 0 && (
+            <Badge variant="outline" className="text-[10px] py-0 px-1.5 gap-1 font-mono bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400">
+              C 级 {s.gradeN.C}
+            </Badge>
+          )}
           <span className="text-[10px] text-muted-foreground">
             {resolveSignal
               ? `盘前口径（基于 ${basisDate || "T-1"} 收盘数据，不含今日盘中涨跌）· 与表格「信号」列一致`
@@ -242,16 +278,29 @@ export function PullbackCommonality({ stocks, timestamp, resolveSignal, basisDat
 
         {/* Insight bullets */}
         <div className="space-y-3">
-          <InsightRow icon={TrendingUp} iconColor="bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400" title="反弹动能普遍且启动快">
+          <InsightRow icon={TrendingUp} iconColor="bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400" title="反弹是「确认」而非「加分项」">
             {s.reboundShare}% 的个股已自回踩低点反弹 ≥3%（中位 +{s.medianRebound.toFixed(1)}%），今日 {s.todayUpShare}% 收涨、
-            <b className="text-foreground">{s.todayBigUpN} 只</b>今日涨幅 ≥9.5%（再度封板或接近）——
+            <b className="text-foreground">{s.todayBigUpN} 只</b>今日涨幅 ≥9.5%——
             回踩并非趋势终结，低点出现后中位仅 {s.medianDaysSinceLow.toFixed(0)} 个交易日即展开二次上攻。
-            但自低点反弹超 10% 的仅 {s.rebound10Share}%，多数反弹仍处于温和修复阶段。
+            但反弹只承担「启动确认」角色：反弹越高，持仓成本越高、剩余赔率越差，位置分随反弹高度递减。
           </InsightRow>
 
-          <InsightRow icon={ArrowDownRight} iconColor="bg-orange-500/10 border-orange-500/30 text-orange-600 dark:text-orange-400" title="深回踩是主流形态">
+          <InsightRow icon={ArrowDownRight} iconColor="bg-orange-500/10 border-orange-500/30 text-orange-600 dark:text-orange-400" title="深回踩是主流形态，也是低吸的入场区">
             {s.fullGivebackShare}% 的个股已完全回吐涨停涨幅、回到起涨点附近甚至跌破，涨停后最大回撤中位 {s.medianMaxPullback.toFixed(1)}%。
-            能在浅回踩（保留大部分涨幅）后直接续涨的是少数——多数个股需要经历「涨全部跌回去」的充分换手，才迎来二次上涨。
+            能在浅回踩（保留大部分涨幅）后直接续涨的是少数——多数个股需要经历「涨全部跌回去」的充分换手。
+            深回踩 + 缩量抛压枯竭 + 企稳/双底承接，就是低吸资金的入场区，而不是等待反弹确认的旁观区。
+          </InsightRow>
+
+          <InsightRow icon={Gauge} iconColor="bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400" title="底部是机会，反弹过高反而是风险">
+            涨停回踩的赢利本质是低吸等二次启动：距涨停价的剩余空间是「再涨停」赔率的直接度量，反弹高度=持仓成本上升=赔率下降。
+            本期 <b className="text-foreground">{s.chasedShare}%</b> 的样本已把低点→涨停价的修复走完大半（距涨停价 &lt;5% 或收复 ≥75%），
+            这类「看起来在涨」的票追进去赔率极差，算法会将其总分压制到机会线以下；创新低（较前期低点再跌）的个股则被封顶——既要防追高，也要防接飞刀。
+          </InsightRow>
+
+          <InsightRow icon={Award} iconColor="bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400" title="机会分级 A/B/C——胜率优先">
+            同为「机会」，按证据强度分三档：<b className="text-foreground">A 级核心（{s.gradeN.A} 只）</b>= 评分≥75 + 抛压枯竭证据（极度缩量/低点极缩量/双底承接）+ 未失守 MA5，
+            胜率最优组合优先关注；B 级（{s.gradeN.B} 只）条件齐全，正常仓位；C 级（{s.gradeN.C} 只）条件有瑕疵，轻仓试探。
+            底部潜伏形态（深回踩≥70% + 缩量 + 企稳/双底 + 未创新低）不再被反弹硬门槛挡住——左侧低吸与右侧确认两条路都通向「机会」，优先 A 级。
           </InsightRow>
 
           <InsightRow icon={Clock} iconColor="bg-violet-500/10 border-violet-500/30 text-violet-600 dark:text-violet-400" title="时间窗口集中在一周左右">
@@ -271,9 +320,9 @@ export function PullbackCommonality({ stocks, timestamp, resolveSignal, basisDat
             </InsightRow>
           )}
 
-          <InsightRow icon={AlertTriangle} iconColor="bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400" title="反弹并非全部兑现，弱势股需甄别">
-            仍有 {s.weakShare}% 的个股尚未脱离低点区域（自低点反弹 &lt;3%）——深回踩 + 跌破起涨点的组合里，
-            只有企稳放量者才能进入「再上涨」阶段；对反弹乏力、阴跌不止的样本宜回避或等待右侧信号。
+          <InsightRow icon={AlertTriangle} iconColor="bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400" title="弱势股是陷阱不是便宜货">
+            仍有 {s.weakShare}% 的个股尚未脱离低点区域（自低点反弹 &lt;3%）——其中阴跌不止、量能不放的样本并非「低位便宜」，
+            而是下跌未止：未脱离低点 + 续跌的组合会被硬性否决，创新低者永不进入机会名单。低位 + 企稳 + 抛压枯竭才是左侧低吸的入场条件，缺一不可。
           </InsightRow>
         </div>
 
@@ -284,18 +333,21 @@ export function PullbackCommonality({ stocks, timestamp, resolveSignal, basisDat
             <p className="text-xs leading-relaxed text-foreground">
               <b>一句话共性：</b>
               本期「涨停 → 回踩 → 再上涨」样本以首板股（{s.firstBoardShare}%）为主，涨停后约 {s.medianLowWindow.toFixed(0)} 个交易日完成深度回踩
-              （最大回撤中位 {s.medianMaxPullback.toFixed(1)}%，{s.fullGivebackShare}% 跌回起涨点），
-              低点出现后中位 {s.medianDaysSinceLow.toFixed(0)} 天即快速反抽——{s.reboundShare}% 自低点反弹 ≥3%、今日 {s.todayUpShare}% 收涨、{s.todayBigUpN} 只再度大涨。
-              「深回踩换手 → 低位快速企稳 → 首板弹性修复」是本组再上涨股的共同路径。
+              （最大回撤中位 {s.medianMaxPullback.toFixed(1)}%，{s.fullGivebackShare}% 跌回起涨点）。
+              操作哲学：<b>底部才是机会，反弹涨起来了反而是风险</b>——在「深回踩 + 缩量枯竭 + 企稳/双底」的底部区域低吸（左侧，赔率优先），
+              反弹只作确认不追高（距涨停价剩余空间越小赔率越差）；机会按胜率分级，优先 A 级核心组合。
             </p>
           </div>
         </div>
 
         {/* Methodology footnote */}
         <p className="text-[10px] text-muted-foreground leading-relaxed">
-          口径说明：反弹幅度 = 现价相对涨停后最低收盘价的涨幅；低点窗口 = 回踩低点距涨停日的交易日数；连板数 = 涨停日向前连续涨停天数；
-          样本 = 本次扫描全部符合条件的回踩股（非筛选子集）。机会/风险信号与表格内「信号」列同一规则（机会 = 评分 ≥65 且反弹已确认）
-          {resolveSignal ? "，为盘前口径：仅用 T-1 收盘前数据判定，与今日盘中涨跌无关" : "，为盘中复盘口径"}。
+          口径说明：反弹幅度 = 现价相对涨停后最低收盘价的涨幅；距涨停空间 = 涨停收盘价较现价的剩余涨幅（「再涨停」赔率）；低点窗口 = 回踩低点距涨停日的交易日数；
+          连板数 = 涨停日向前连续涨停天数；样本 = 本次扫描全部符合条件的回踩股（非筛选子集）。
+          机会 = 评分 ≥65 且（自低点反弹 ≥3% 已确认，或「底部潜伏形态」：深回踩≥70% + 缩量≥30% / 低点极缩量≥50% + 企稳/双底 + 未创新低）；
+          机会按胜率分级 A/B/C（A 级 = 评分≥75 + 抛压枯竭证据 + 未失守 MA5）；距涨停价 &lt;5% 或修复比例 ≥75% 一律压制至机会线以下。
+          风险评分含「追高空间压缩」因子（距涨停价越近风险越高）。
+          {resolveSignal ? "信号为盘前口径：仅用 T-1 收盘前数据判定，与今日盘中涨跌无关" : "信号为盘中复盘口径"}。
           结论随每轮扫描数据动态更新，仅供研究参考，不构成投资建议。
         </p>
       </CardContent>
