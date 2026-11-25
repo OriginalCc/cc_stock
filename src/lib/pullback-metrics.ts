@@ -65,6 +65,8 @@ export interface StockExt {
   recentVolShrinkSeq?: boolean; // 回踩近3日量能逐日萎缩（单调递减，抛压逐级衰减）
   ma5Reclaimed?: boolean;       // 最新收盘是否站上近5日均价（反弹结构确认）
   retestHeld?: boolean;         // 双底承接：低点后曾反弹≥2%再回落至低点区但收盘未破前低，且仍在低点区
+  // ── Task 42: 底部是机会，反弹过高是风险 ──
+  roomToHigh: number;           // 距涨停价剩余空间(%，负=已越过涨停价)——「再涨停」赔率的直接度量
 }
 
 export function buildExt(s: PullbackStock): StockExt {
@@ -189,10 +191,16 @@ export function buildExt(s: PullbackStock): StockExt {
     return retested && reboundFromLow < 5;
   })();
 
+  // 距涨停价剩余空间(%, 负=已越过涨停价): 「再涨停」赔率的直接度量（Task 42 追高保护/风险因子）
+  const roomToHigh = s.currentPrice > 0
+    ? ((s.limitUpClose - s.currentPrice) / s.currentPrice) * 100
+    : 0;
+
   return {
     reboundFromLow, lowWindow, daysSinceLow, streak,
     volShrinkPct, recentVolRatio, stabilized, brokenPct, recent3DayDrop,
     atrPct, pullbackAtr, lowDayVolShrinkPct, recentVolShrinkSeq, ma5Reclaimed, retestHeld,
+    roomToHigh,
   };
 }
 
@@ -233,7 +241,7 @@ export const SIGNAL_META: Record<SignalType, {
     // 鲜艳实底红（A股语义：红=涨/机会），白字 + 微光晕，表格中最醒目
     badge: "bg-red-500 border-red-500 text-white shadow-sm shadow-red-500/40",
     card: "bg-red-500/[0.07] border-red-500/40",
-    desc: "反弹确认 + 企稳信号共振",
+    desc: "底部潜伏 / 反弹确认 + 企稳共振",
   },
   watch: {
     label: "观察",
@@ -390,6 +398,92 @@ function reboundStructureAdjust(ext: StockExt, reboundFromLow: number, reasons: 
   return adj;
 }
 
+/**
+ * 位置评估 (0-35, Task 42 重构): 「底部是机会，反弹过高是风险」
+ * 涨停回踩的赢利本质是低吸——反弹高度=持仓成本上升=赔率下降。两段式:
+ *   A. 未反弹确认 (r < 3%): 按「底部质量」评分(0-35)——左侧低吸视角，反弹不是机会的必要条件
+ *      深回踩12 + 缩量8 + 双底8 + 企稳4 + 守住起涨点3；创新低(r<0)封顶 12（防接飞刀）
+ *   B. 已反弹 (r >= 3%): 确认曲线但随高度衰减——右侧视角
+ *      [3,5):28 赔率较优 / [5,10):30 空间尚存 / [10,15):24 空间压缩 / >=15:15 位置偏高
+ *      追高保护: 距涨停价不足 5%（「再涨停」赔率极差 + 前高解套盘压力）→ 封顶 15
+ */
+function positionQualityScore(
+  s: Pick<PullbackStock, "approachPct" | "preLimitUpClose" | "currentPrice" | "limitUpClose">,
+  ext: StockExt,
+  reasons: string[]
+): number {
+  const r = ext.reboundFromLow;
+
+  if (r < REBOUND_CONFIRM) {
+    // ── A. 底部质量 (左侧低吸): 还在低位, 用「回踩到位+抛压枯竭+有承接」评估 ──
+    let q = 0;
+    if (s.approachPct >= 70) {
+      q += 12;
+      reasons.push(`深回踩 ${s.approachPct.toFixed(0)}%（回踩到位，低位区）`);
+    } else {
+      q += 8;
+      reasons.push(`浅回踩 ${s.approachPct.toFixed(0)}%`);
+    }
+    const v = ext.volShrinkPct;
+    if (v !== undefined) {
+      if (v >= 50) {
+        q += 8;
+        reasons.push("回踩极度缩量（底部抛压枯竭）");
+      } else if (v >= 30) {
+        q += 6;
+        reasons.push("缩量回踩（抛压有限）");
+      } else if (v >= 10) {
+        q += 3;
+        reasons.push("量能温和萎缩");
+      } else if (v < 0) {
+        reasons.push("回踩段放量（低位仍有出逃）");
+      }
+    }
+    if (ext.retestHeld) {
+      q += 8;
+      reasons.push("双底承接（二次探底未破前低）");
+    }
+    if (ext.stabilized) {
+      q += 4;
+      reasons.push("低点后企稳（未创新低且无大阴线）");
+    }
+    const broken = s.preLimitUpClose > 0
+      ? Math.max(0, ((s.preLimitUpClose - s.currentPrice) / s.preLimitUpClose) * 100)
+      : 0;
+    const atrTol = ext.atrPct !== undefined ? Math.max(0.5, ext.atrPct * 0.5) : 0.5;
+    if (broken <= atrTol) {
+      q += 3;
+      reasons.push("守住起涨点");
+    }
+    if (r < 0) {
+      q = Math.min(q, 12);
+      reasons.push(`较前期低点再跌 ${Math.abs(r).toFixed(1)}%（创新低，下跌未止）`);
+    }
+    return q;
+  }
+
+  // ── B. 反弹确认 (右侧): 随反弹高度衰减, 距涨停价太近触发追高保护 ──
+  let base: number;
+  if (r >= 15) {
+    base = 15;
+    reasons.push(`自低点已反弹 +${r.toFixed(1)}%（位置偏高，赔率下降）`);
+  } else if (r >= 10) {
+    base = 24;
+    reasons.push(`自低点反弹 +${r.toFixed(1)}%（空间开始压缩）`);
+  } else if (r >= 5) {
+    base = 30;
+    reasons.push(`自低点反弹 +${r.toFixed(1)}%（反弹确认，空间尚存）`);
+  } else {
+    base = 28;
+    reasons.push(`自低点反弹 +${r.toFixed(1)}%（反弹确认初期，赔率较优）`);
+  }
+  if (ext.roomToHigh < 5) {
+    base = Math.min(base, 15);
+    reasons.push(`距涨停价仅剩 ${ext.roomToHigh.toFixed(1)}%（追高赔率差）`);
+  }
+  return base;
+}
+
 // ── Pre-market (T-1 close) signal ──────────────────────
 // 用户要求：机会/风险必须盘前就算出来，而不是盘中看谁涨了就是机会。
 // 因此本组函数只使用 T-1 收盘前的数据（涨停池 + 日K），当日盘中行情
@@ -451,14 +545,16 @@ export function deriveT1Stock(s: PullbackStock, basisDate?: string): PullbackSto
 }
 
 /**
- * 盘前研判信号（T-1 收盘口径，0-100，Task 41 升级）。
- * 构成: 反弹确认 35 + 昨日动向 15 + 回踩位置 20* + 时间窗口 8 + 板型弹性 7 + 量能结构 10* + 涨停前趋势 5
+ * 盘前研判信号（T-1 收盘口径，0-100，Task 42 升级：底部是机会，反弹过高是风险）。
+ * 构成: 位置评估 35* + 昨日动向 15 + 回踩位置 20* + 时间窗口 8 + 板型弹性 7 + 量能结构 10* + 涨停前趋势 5
  *      + 结构调整 -2~+6（MA5 收复 / 双底承接, Task 41）
+ *   - 位置评估*(Task 42): 未反弹确认(r<3%)按「底部质量」评分(深回踩12+缩量8+双底8+企稳4+守起涨点3,
+ *     创新低封顶12)；已反弹按确认曲线但随高度衰减(≥15%降至15)，距涨停价<5%追高保护封顶15
  *   - 量能结构用 T-1 截断后 K 线的回踩段萎缩度（替代原"昨日K线形态"），盘前可得且盘中不漂移
  *   - 涨停前趋势为静态事实，盘前同样可得
  *   - 回踩位置*: 破位容忍/深度按 ATR 归一化（Task 41）
- * 判定: score >= 65 且反弹已确认(≥3%) → 机会; score <= 38 → 风险; 其余 → 观察。
- * 门槛与 calcStockSignal 完全一致，便于两种口径对照。
+ * 判定: score >= 65 且（反弹确认 ≥3% 或 底部潜伏：深回踩+缩量+企稳/双底+未创新低）→ 机会;
+ *      score <= 38 → 风险; 其余 → 观察。门槛与 calcStockSignal 完全一致，便于两种口径对照。
  */
 export function calcPremarketSignal(s: PullbackStock, basisDate?: string): StockSignal {
   const t1 = deriveT1Stock(s, basisDate);
@@ -475,27 +571,9 @@ export function calcPremarketSignal(s: PullbackStock, basisDate?: string): Stock
   const reasons: string[] = [];
   let score = 0;
 
-  // ── 1. 反弹确认 (35): 截至昨收自回踩低点的反弹幅度, 核心因子 ──
+  // ── 1. 位置评估 (35, Task 42): 底部质量优先(左侧低吸), 反弹过高降权(追高保护) ──
   const r = ext.reboundFromLow;
-  if (r >= 10) {
-    score += 35;
-    reasons.push(`截至昨收自低点反弹 +${r.toFixed(1)}%（强势修复）`);
-  } else if (r >= 5) {
-    score += 28;
-    reasons.push(`截至昨收自低点反弹 +${r.toFixed(1)}%`);
-  } else if (r >= REBOUND_CONFIRM) {
-    score += 23;
-    reasons.push(`截至昨收自低点反弹 +${r.toFixed(1)}%（反弹确认）`);
-  } else if (r >= 1) {
-    score += 10;
-    reasons.push(`截至昨收自低点仅反弹 +${r.toFixed(1)}%，反弹未确认`);
-  } else if (r >= 0) {
-    score += 4;
-    reasons.push("截至昨收仍在低点区域横盘");
-  } else {
-    score += 0;
-    reasons.push(`截至昨收较前期低点再跌 ${Math.abs(r).toFixed(1)}%，阴跌未止`);
-  }
+  score += positionQualityScore(t1, ext, reasons);
 
   // ── 2. 昨日动向 (15): T-1 涨跌幅（替代盘中"今日动向"） ──
   const c = t1.currentChangePct;
@@ -558,23 +636,52 @@ export function calcPremarketSignal(s: PullbackStock, basisDate?: string): Stock
     reasons.unshift("深回踩 + 低点反弹 + 昨日企稳，典型「龙回头」形态（盘前口径）");
   }
 
+  // ── Task 42: 追高/收复压制——「反弹涨起来了反而是风险」 ──
+  // roomToHigh < 5%: 距涨停价太近, 「再涨停」赔率极差;
+  // 收复比例 >= 75%: 低点→涨停价的修复已走完大半, 剩余空间有限。
+  // 任一命中, 总分压制到 60（机会线以下）。
+  const recoverRatio = (ext.reboundFromLow + ext.roomToHigh) > 0
+    ? ext.reboundFromLow / (ext.reboundFromLow + ext.roomToHigh)
+    : 1;
+  if (ext.roomToHigh < 5 || recoverRatio >= 0.75) {
+    score = Math.min(score, 60);
+    reasons.unshift(
+      ext.roomToHigh < 5
+        ? `距涨停价仅剩 ${ext.roomToHigh.toFixed(1)}%，追高赔率差（总分压制至机会线下）`
+        : `低点→涨停价已收复 ${(recoverRatio * 100).toFixed(0)}%（反弹过半，剩余空间有限）`
+    );
+  }
+
   score = Math.min(100, Math.max(0, Math.round(score)));
+  // Task 42: 底部潜伏型机会——未反弹确认但「回踩到位+缩量+企稳/双底+未创新低」(左侧低吸)
+  const bottomEntry = r < REBOUND_CONFIRM
+    && r >= 0
+    && t1.approachPct >= 70
+    && ((ext.volShrinkPct !== undefined && ext.volShrinkPct >= 30)
+      || (ext.lowDayVolShrinkPct !== undefined && ext.lowDayVolShrinkPct >= 50))
+    && (Boolean(ext.stabilized) || Boolean(ext.retestHeld));
   const type: SignalType =
-    score >= 65 && r >= REBOUND_CONFIRM ? "opportunity"
+    score >= 65 && (r >= REBOUND_CONFIRM || bottomEntry) ? "opportunity"
       : score <= 38 ? "risk"
       : "watch";
+  if (bottomEntry && type === "opportunity") {
+    reasons.unshift("深回踩 + 缩量 + 企稳/双底，底部潜伏形态（左侧低吸，赔率优先）");
+  }
 
-  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 10) };
+  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 12) };
 }
 
 /**
- * 机会/风险信号评分 (0-100, Task 41 升级)。
- * 构成: 反弹确认 35 + 今日动向 15 + 回踩位置 20* + 时间窗口 8 + 板型弹性 7 + 量能结构 10* + 涨停前趋势 5
+ * 机会/风险信号评分 (0-100, Task 42 升级：底部是机会，反弹过高是风险)。
+ * 构成: 位置评估 35* + 今日动向 15 + 回踩位置 20* + 时间窗口 8 + 板型弹性 7 + 量能结构 10* + 涨停前趋势 5
  *      + 结构调整 -2~+6（MA5 收复 / 双底承接, Task 41）
+ *   - 位置评估*(Task 42): 未反弹确认(r<3%)按「底部质量」评分(深回踩12+缩量8+双底8+企稳4+守起涨点3,
+ *     创新低封顶12)；已反弹按确认曲线但随高度衰减(≥15%降至15)，距涨停价<5%追高保护封顶15
  *   - 量能结构: 回踩段均量档位 + 低点当日分歧 + 近端逐日萎缩（缩量回踩=抛压枯竭；放量回踩=出逃迹象）
  *   - 涨停前趋势: 涨停前均线多头排列（趋势首板）优于超跌反抽
  *   - 回踩位置*: 破位容忍/深度按 ATR 归一化（Task 41）
- * 判定: score >= 65 且反弹已确认(≥3%) → 机会; score <= 38 → 风险; 其余 → 观察。
+ * 判定: score >= 65 且（反弹确认 ≥3% 或 底部潜伏：深回踩+缩量+企稳/双底+未创新低）→ 机会;
+ *      score <= 38 → 风险; 其余 → 观察。
  * 旧数据（K线无量/preTrend 缺失）对应项取中性分，与历史口径平滑兼容。
  */
 export function calcStockSignal(s: PullbackStock): StockSignal {
@@ -582,27 +689,9 @@ export function calcStockSignal(s: PullbackStock): StockSignal {
   const reasons: string[] = [];
   let score = 0;
 
-  // ── 1. 反弹确认 (35): 自回踩低点的反弹幅度, 核心因子 ──
+  // ── 1. 位置评估 (35, Task 42): 底部质量优先(左侧低吸), 反弹过高降权(追高保护) ──
   const r = ext.reboundFromLow;
-  if (r >= 10) {
-    score += 35;
-    reasons.push(`自低点反弹 +${r.toFixed(1)}%（强势修复）`);
-  } else if (r >= 5) {
-    score += 28;
-    reasons.push(`自低点反弹 +${r.toFixed(1)}%`);
-  } else if (r >= REBOUND_CONFIRM) {
-    score += 23;
-    reasons.push(`自低点反弹 +${r.toFixed(1)}%（反弹确认）`);
-  } else if (r >= 1) {
-    score += 10;
-    reasons.push(`自低点仅反弹 +${r.toFixed(1)}%，反弹未确认`);
-  } else if (r >= 0) {
-    score += 4;
-    reasons.push("仍在低点区域横盘");
-  } else {
-    score += 0;
-    reasons.push(`较前期低点再跌 ${Math.abs(r).toFixed(1)}%，阴跌未止`);
-  }
+  score += positionQualityScore(s, ext, reasons);
 
   // ── 2. 今日动向 (15) ──
   const c = s.currentChangePct;
@@ -668,11 +757,37 @@ export function calcStockSignal(s: PullbackStock): StockSignal {
     reasons.unshift("深回踩 + 低点反弹 + 今日企稳，典型「龙回头」形态");
   }
 
+  // ── Task 42: 追高/收复压制——「反弹涨起来了反而是风险」 ──
+  // roomToHigh < 5%: 距涨停价太近, 「再涨停」赔率极差;
+  // 收复比例 >= 75%: 低点→涨停价的修复已走完大半, 剩余空间有限。
+  // 任一命中, 总分压制到 60（机会线以下）。
+  const recoverRatio = (ext.reboundFromLow + ext.roomToHigh) > 0
+    ? ext.reboundFromLow / (ext.reboundFromLow + ext.roomToHigh)
+    : 1;
+  if (ext.roomToHigh < 5 || recoverRatio >= 0.75) {
+    score = Math.min(score, 60);
+    reasons.unshift(
+      ext.roomToHigh < 5
+        ? `距涨停价仅剩 ${ext.roomToHigh.toFixed(1)}%，追高赔率差（总分压制至机会线下）`
+        : `低点→涨停价已收复 ${(recoverRatio * 100).toFixed(0)}%（反弹过半，剩余空间有限）`
+    );
+  }
+
   score = Math.min(100, Math.max(0, Math.round(score)));
+  // Task 42: 底部潜伏型机会——未反弹确认但「回踩到位+缩量+企稳/双底+未创新低」(左侧低吸)
+  const bottomEntry = r < REBOUND_CONFIRM
+    && r >= 0
+    && s.approachPct >= 70
+    && ((ext.volShrinkPct !== undefined && ext.volShrinkPct >= 30)
+      || (ext.lowDayVolShrinkPct !== undefined && ext.lowDayVolShrinkPct >= 50))
+    && (Boolean(ext.stabilized) || Boolean(ext.retestHeld));
   const type: SignalType =
-    score >= 65 && r >= REBOUND_CONFIRM ? "opportunity"
+    score >= 65 && (r >= REBOUND_CONFIRM || bottomEntry) ? "opportunity"
       : score <= 38 ? "risk"
       : "watch";
+  if (bottomEntry && type === "opportunity") {
+    reasons.unshift("深回踩 + 缩量 + 企稳/双底，底部潜伏形态（左侧低吸，赔率优先）");
+  }
 
-  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 10) };
+  return { type, label: SIGNAL_META[type].label, score, reasons: reasons.slice(0, 12) };
 }

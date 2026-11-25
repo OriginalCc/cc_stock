@@ -490,19 +490,24 @@ function getBoardType(symbol: string): string {
   return "10%";
 }
 
-/** Risk score 0-100 (higher = more risky). Task 40 重构:
- *  主因子从「回踩深度」改为「起涨点失守度」——深回踩但守住起涨点是机会主流形态
- *  （共性归纳 Task 30），真正的结构风险是破位 + 阴跌不止。
- *  构成: 破位深度 40 + 近3日阴跌动能 20 + 历史最大回撤 15 + 今日续跌 15 + 时间损耗 10
+/** Risk score 0-100 (higher = more risky). Task 42 重构:
+ *  用户洞察「反弹涨起来了反而是风险」——新增「追高/空间压缩」主因子，
+ *  与破位、阴跌并列为三大结构风险；深回踩但守住起涨点的风险被进一步下调。
+ *  构成: 破位深度 35 + 近3日阴跌动能 15 + 追高空间压缩 15 + 今日续跌 15 + 历史最大回撤 10 + 时间损耗 10
  */
 function calcRiskScore(s: PullbackStock): number {
   const ext = buildExt(s);
   const broken = Math.min(ext.brokenPct, 25) / 25;                      // 起涨点失守（封顶 25%）
   const drop3 = Math.min(ext.recent3DayDrop, 15) / 15;                  // 近3日累计跌幅（封顶 15%）
+  // 追高/空间压缩：距涨停价越近，「再涨停」赔率越差（<3% 满格）
+  const chase = ext.roomToHigh < 3 ? 1
+    : ext.roomToHigh < 5 ? 10 / 15
+    : ext.roomToHigh < 8 ? 4 / 15
+    : 0;
   const mpb = Math.min(s.maxPullbackPct, 40) / 40;                      // 历史最大回撤（封顶 40%）
   const today = Math.min(Math.max(0, -s.currentChangePct), 8) / 8;      // 今日续跌（封顶 -8%）
   const days = Math.min(s.daysSinceLimitUp * 3, 30) / 30;               // 时间损耗
-  const score = broken * 40 + drop3 * 20 + mpb * 15 + today * 15 + days * 10;
+  const score = broken * 35 + drop3 * 15 + chase * 15 + today * 15 + mpb * 10 + days * 10;
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
@@ -1964,12 +1969,16 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
 
   const streak = calcLimitUpStreak(stock.klineSummary, stock.limitUpDate);
 
-  // Task 40/41: 与 calcRiskScore 新公式同口径（破位深度主因子）+ 结构精细刻画
+  // Task 40/42: 与 calcRiskScore 同口径（破位主因子 + 追高空间压缩）+ 结构精细刻画
   const extRisk = buildExt(stock);
   const contrib = {
-    broken: Math.min(extRisk.brokenPct, 25) / 25 * 40,             // 起涨点失守（封顶 25%）
-    drop3: Math.min(extRisk.recent3DayDrop, 15) / 15 * 20,         // 近3日阴跌动能
-    maxPullback: Math.min(stock.maxPullbackPct, 40) / 40 * 15,     // 历史最大回撤
+    broken: Math.min(extRisk.brokenPct, 25) / 25 * 35,             // 起涨点失守（封顶 25%）
+    drop3: Math.min(extRisk.recent3DayDrop, 15) / 15 * 15,         // 近3日阴跌动能
+    chase: extRisk.roomToHigh < 3 ? 15
+      : extRisk.roomToHigh < 5 ? 10
+      : extRisk.roomToHigh < 8 ? 4
+      : 0,                                                          // 追高/空间压缩
+    maxPullback: Math.min(stock.maxPullbackPct, 40) / 40 * 10,     // 历史最大回撤
     todayDrop: Math.min(Math.max(0, -stock.currentChangePct), 8) / 8 * 15, // 今日续跌
     days: Math.min(stock.daysSinceLimitUp * 3, 30) / 30 * 10,      // 时间损耗
   };
@@ -1995,6 +2004,7 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
     { label: "当前价", value: stock.currentPrice.toFixed(2), cls: stock.currentChangePct >= 0 ? "text-red-500" : "text-green-500" },
     { label: "距涨停", value: `${stock.daysSinceLimitUp} 天` },
     { label: "回撤幅度", value: `-${stock.pullbackPct.toFixed(1)}%`, cls: "text-red-500/80" },
+    { label: "距涨停空间", value: `${extRisk.roomToHigh.toFixed(1)}%`, cls: extRisk.roomToHigh < 5 ? "text-orange-500" : extRisk.roomToHigh >= 15 ? "text-emerald-600 dark:text-emerald-400" : "text-foreground" },
     { label: "最大回撤日期", value: stock.maxPullbackDate || "--" },
     { label: "换手率", value: stock.turnover > 0 ? `${stock.turnover.toFixed(2)}%` : "--" },
     { label: "市值", value: stock.marketCap > 0 ? formatMarketCap(stock.marketCap) : "--" },
@@ -2116,20 +2126,24 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
           <div className="space-y-1 text-[10px]">
             <div className="text-muted-foreground font-medium mb-1">评分构成:</div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">起涨点失守 × 0.40</span>
+              <span className="text-muted-foreground">起涨点失守 × 0.35</span>
               <span className="font-mono text-foreground">+{contrib.broken.toFixed(1)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">近3日阴跌 × 0.20</span>
-              <span className="font-mono text-foreground">+{contrib.drop3.toFixed(1)}</span>
+              <span className="text-muted-foreground">追高空间压缩 × 0.15</span>
+              <span className="font-mono text-foreground">+{contrib.chase.toFixed(1)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">最大回撤 × 0.15</span>
-              <span className="font-mono text-foreground">+{contrib.maxPullback.toFixed(1)}</span>
+              <span className="text-muted-foreground">近3日阴跌 × 0.15</span>
+              <span className="font-mono text-foreground">+{contrib.drop3.toFixed(1)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">今日续跌 × 0.15</span>
               <span className="font-mono text-foreground">+{contrib.todayDrop.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">最大回撤 × 0.10</span>
+              <span className="font-mono text-foreground">+{contrib.maxPullback.toFixed(1)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">时间损耗 × 0.10</span>
@@ -3100,7 +3114,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     if (displayedStocks.length === 0) return;
     const headers = [
       "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "板块", "概念", "涨停价", "起涨点",
-      "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
+      "当前价", "今日涨跌%", "回踩深度%", "距涨停空间%", "距涨停天数",
       "最大回撤%", "风险评分", "质量评分", "盘前信号", "盘前评分", "换手率%", "市值(亿)", "量比",
       "量能萎缩%", "起涨点失守%", "涨停前趋势", "回踩ATR", "低点量能%",
     ];
@@ -3119,6 +3133,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         s.currentPrice.toFixed(2),
         s.currentChangePct.toFixed(2),
         s.approachPct.toFixed(1),
+        e.roomToHigh.toFixed(1),
         s.daysSinceLimitUp,
         s.maxPullbackPct.toFixed(2),
         calcRiskScore(s),
