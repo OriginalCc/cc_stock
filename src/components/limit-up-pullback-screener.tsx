@@ -506,6 +506,17 @@ function calcRiskScore(s: PullbackStock): number {
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
+/** Task 41: 量能配合分解（回踩段均量萎缩 12 + 低点量能枯竭 3 → 折算成 15 分缩量结构） */
+function calcShrinkPart(ext: ReturnType<typeof buildExt>): number {
+  const avgNorm = ext.volShrinkPct !== undefined
+    ? Math.max(0, Math.min(1, ext.volShrinkPct / 50))
+    : 0.5;
+  const lowNorm = ext.lowDayVolShrinkPct !== undefined
+    ? Math.max(0, Math.min(1, ext.lowDayVolShrinkPct / 40))
+    : 0.5;
+  return (avgNorm * 0.8 + lowNorm * 0.2) * 15;
+}
+
 function getRiskStyle(score: number): { bg: string; text: string; label: string } {
   if (score >= 70) return { bg: "bg-red-500/10 border-red-500/40", text: "text-red-600 dark:text-red-400", label: "极高" };
   if (score >= 50) return { bg: "bg-orange-500/10 border-orange-500/40", text: "text-orange-600 dark:text-orange-400", label: "高" };
@@ -513,8 +524,8 @@ function getRiskStyle(score: number): { bg: string; text: string; label: string 
   return { bg: "bg-emerald-500/10 border-emerald-500/40", text: "text-emerald-600 dark:text-emerald-400", label: "低" };
 }
 
-/** Quality score 0-100 (higher = better buy value). Task 40: 量能项改为
- *  「回踩段缩量结构 60% + 当前量比适中 40%」混合，缩量回踩（拋压枯竭）优先。 */
+/** Quality score 0-100 (higher = better buy value). Task 40/41: 量能项为
+ *  「回踩段缩量结构 + 低点量能枯竭（归一化为 15 分） + 当前量比适中 10」混合。 */
 function calcQualityScore(s: PullbackStock): number {
   const ext = buildExt(s);
   // 位置优势 (35分满分): approachPct <= 100 时直接用，> 100 (破位) 时扣分
@@ -523,10 +534,8 @@ function calcQualityScore(s: PullbackStock): number {
     : Math.max(0, 100 - (s.approachPct - 100) * 2);
   const position = positionRaw * 0.35;
 
-  // 量能配合 (25分满分): 缩量结构 15 + 量比适中 10；无量数据取中性
-  const shrinkPart = ext.volShrinkPct !== undefined
-    ? Math.max(0, Math.min(1, ext.volShrinkPct / 50)) * 15
-    : 7.5;
+  // 量能配合 (25分满分): 缩量结构 15（均量 80% + 低点 20%） + 量比适中 10
+  const shrinkPart = calcShrinkPart(ext);
   const ratioPart = s.volumeRatio > 0
     ? Math.max(0, Math.min(1, (2 - Math.min(s.volumeRatio, 2)) / 2)) * 10
     : 5;
@@ -560,10 +569,8 @@ function getQualityScoreBreakdown(s: PullbackStock): {
   const ext = buildExt(s);
   return {
     position: positionRaw * 0.35,
-    // Task 40: 与 calcQualityScore 同口径（缩量结构 15 + 量比适中 10）
-    volume: (ext.volShrinkPct !== undefined
-      ? Math.max(0, Math.min(1, ext.volShrinkPct / 50)) * 15
-      : 7.5)
+    // Task 41: 与 calcQualityScore 同口径（缩量结构 15 = 均量 80% + 低点 20%，加量比适中 10）
+    volume: calcShrinkPart(ext)
       + (s.volumeRatio > 0
         ? Math.max(0, Math.min(1, (2 - Math.min(s.volumeRatio, 2)) / 2)) * 10
         : 5),
@@ -1957,7 +1964,7 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
 
   const streak = calcLimitUpStreak(stock.klineSummary, stock.limitUpDate);
 
-  // Task 40: 与 calcRiskScore 新公式同口径（破位深度主因子，而非回踩深度）
+  // Task 40/41: 与 calcRiskScore 新公式同口径（破位深度主因子）+ 结构精细刻画
   const extRisk = buildExt(stock);
   const contrib = {
     broken: Math.min(extRisk.brokenPct, 25) / 25 * 40,             // 起涨点失守（封顶 25%）
@@ -1966,6 +1973,18 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
     todayDrop: Math.min(Math.max(0, -stock.currentChangePct), 8) / 8 * 15, // 今日续跌
     days: Math.min(stock.daysSinceLimitUp * 3, 30) / 30 * 10,      // 时间损耗
   };
+
+  // Task 41: 反弹结构标签（MA5 收复 / 双底承接）
+  const structureLabel = extRisk.retestHeld
+    ? "双底承接"
+    : extRisk.ma5Reclaimed === undefined
+    ? "--"
+    : extRisk.ma5Reclaimed ? "MA5 上方" : "MA5 下方";
+  const structureCls = extRisk.retestHeld || extRisk.ma5Reclaimed
+    ? "text-red-500"
+    : extRisk.ma5Reclaimed === undefined
+    ? "text-muted-foreground"
+    : "text-green-500";
 
   const dataRows: { label: string; value: string; cls?: string }[] = [
     { label: "涨停日", value: stock.limitUpDate },
@@ -1980,6 +1999,14 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
     { label: "换手率", value: stock.turnover > 0 ? `${stock.turnover.toFixed(2)}%` : "--" },
     { label: "市值", value: stock.marketCap > 0 ? formatMarketCap(stock.marketCap) : "--" },
     { label: "量比", value: stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(2) : "--" },
+    // Task 41: 结构精细刻画（ATR 归一化 / 低点量能 / 反弹结构）
+    { label: "回踩深度(ATR)", value: extRisk.pullbackAtr !== undefined ? `${extRisk.pullbackAtr.toFixed(1)} 个` : "--", cls: extRisk.pullbackAtr !== undefined && extRisk.pullbackAtr < 1.2 ? "text-orange-500" : "text-foreground" },
+    { label: "低点量能", value: extRisk.lowDayVolShrinkPct !== undefined
+      ? extRisk.lowDayVolShrinkPct >= 0
+        ? `缩量 ${extRisk.lowDayVolShrinkPct.toFixed(0)}%`
+        : `放量 ${Math.abs(extRisk.lowDayVolShrinkPct).toFixed(0)}%`
+      : "--", cls: extRisk.lowDayVolShrinkPct === undefined ? "text-muted-foreground" : extRisk.lowDayVolShrinkPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-orange-500" },
+    { label: "反弹结构", value: structureLabel, cls: structureCls },
   ];
 
   return (
@@ -3075,35 +3102,40 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
       "代码", "名称", "涨停日", "涨停涨幅%", "涨停连板", "板块", "概念", "涨停价", "起涨点",
       "当前价", "今日涨跌%", "回踩深度%", "距涨停天数",
       "最大回撤%", "风险评分", "质量评分", "盘前信号", "盘前评分", "换手率%", "市值(亿)", "量比",
-      "量能萎缩%", "起涨点失守%", "涨停前趋势",
+      "量能萎缩%", "起涨点失守%", "涨停前趋势", "回踩ATR", "低点量能%",
     ];
-    const rows = displayedStocks.map(s => [
-      s.symbol,
-      s.name,
-      s.limitUpDate,
-      s.limitUpPct.toFixed(2),
-      calcLimitUpStreak(s.klineSummary, s.limitUpDate),
-      s.sector || "",
-      s.concept || "",
-      s.limitUpClose.toFixed(2),
-      s.preLimitUpClose.toFixed(2),
-      s.currentPrice.toFixed(2),
-      s.currentChangePct.toFixed(2),
-      s.approachPct.toFixed(1),
-      s.daysSinceLimitUp,
-      s.maxPullbackPct.toFixed(2),
-      calcRiskScore(s),
-      calcQualityScore(s),
-      SIGNAL_META[resolveSignal(s).type].label,
-      resolveSignal(s).score,
-      s.turnover.toFixed(2),
-      s.marketCap.toFixed(2),
-      s.volumeRatio.toFixed(2),
-      // Task 40: 量能结构 / 破位度 / 涨停前趋势
-      buildExt(s).volShrinkPct !== undefined ? buildExt(s).volShrinkPct!.toFixed(1) : "",
-      buildExt(s).brokenPct.toFixed(2),
-      s.preTrend === undefined ? "" : s.preTrend === 2 ? "多头排列" : s.preTrend === 1 ? "中期向上" : "超跌反抽",
-    ]);
+    const rows = displayedStocks.map(s => {
+      const e = buildExt(s);
+      return [
+        s.symbol,
+        s.name,
+        s.limitUpDate,
+        s.limitUpPct.toFixed(2),
+        calcLimitUpStreak(s.klineSummary, s.limitUpDate),
+        s.sector || "",
+        s.concept || "",
+        s.limitUpClose.toFixed(2),
+        s.preLimitUpClose.toFixed(2),
+        s.currentPrice.toFixed(2),
+        s.currentChangePct.toFixed(2),
+        s.approachPct.toFixed(1),
+        s.daysSinceLimitUp,
+        s.maxPullbackPct.toFixed(2),
+        calcRiskScore(s),
+        calcQualityScore(s),
+        SIGNAL_META[resolveSignal(s).type].label,
+        resolveSignal(s).score,
+        s.turnover.toFixed(2),
+        s.marketCap.toFixed(2),
+        s.volumeRatio.toFixed(2),
+        // Task 40: 量能结构 / 破位度 / 涨停前趋势；Task 41: 回踩ATR / 低点量能
+        e.volShrinkPct !== undefined ? e.volShrinkPct.toFixed(1) : "",
+        e.brokenPct.toFixed(2),
+        s.preTrend === undefined ? "" : s.preTrend === 2 ? "多头排列" : s.preTrend === 1 ? "中期向上" : "超跌反抽",
+        e.pullbackAtr !== undefined ? e.pullbackAtr.toFixed(2) : "",
+        e.lowDayVolShrinkPct !== undefined ? e.lowDayVolShrinkPct.toFixed(1) : "",
+      ];
+    });
 
     const BOM = "\uFEFF";
     const csv =
