@@ -1059,7 +1059,7 @@ function Histogram({
             {hasSelection && (
               <button
                 onClick={onClear}
-                className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors px-1.5 py-0.5 rounded bg-primary/5 border border-primary/20"
+                className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30"
               >
                 <X className="w-2.5 h-2.5" />
                 清空 ({selectedBins.length})
@@ -1080,11 +1080,11 @@ function Histogram({
                 key={i}
                 onClick={() => onToggleBin(b.min)}
                 title={`${b.range} 区间：${counts[i]} 只（占 ${pct.toFixed(1)}%）${isActive ? " · 点击取消" : " · 点击筛选"}`}
-                className={`group relative flex flex-col items-center gap-1.5 rounded-lg p-1.5 transition-all cursor-pointer hover:bg-muted/40 ${isActive ? "ring-2 ring-primary/60 bg-primary/5" : ""} ${isDimmed ? "opacity-40" : ""}`}
+                className={`group relative flex flex-col items-center gap-1.5 rounded-lg p-1.5 transition-all cursor-pointer hover:bg-muted/40 ${isActive ? "ring-2 ring-amber-500/70 bg-amber-500/10" : ""} ${isDimmed ? "opacity-40" : ""}`}
               >
                 {/* Count + percentage */}
                 <div className="flex flex-col items-center leading-none">
-                  <span className={`text-base font-bold font-mono tabular-nums transition-colors ${isActive ? "text-primary" : "text-foreground"}`}>
+                  <span className={`text-base font-bold font-mono tabular-nums transition-colors ${isActive ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}>
                     {counts[i]}
                   </span>
                   <span className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">
@@ -1099,11 +1099,11 @@ function Histogram({
                   />
                   {/* Active indicator dot at top of bar */}
                   {isActive && counts[i] > 0 && (
-                    <span className="absolute top-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary shadow-sm" />
+                    <span className="absolute top-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-amber-500 shadow-sm" />
                   )}
                 </div>
                 {/* Range label */}
-                <span className={`text-[10px] text-center leading-tight transition-colors ${isActive ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                <span className={`text-[10px] text-center leading-tight transition-colors ${isActive ? "text-amber-600 dark:text-amber-400 font-semibold" : "text-muted-foreground"}`}>
                   {b.range}
                 </span>
               </button>

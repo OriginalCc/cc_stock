@@ -1961,3 +1961,16 @@ Work Log:
   8 个洞察行全部按新文案渲染（chasedShare=6%）；一句话共性与口径说明完整；
   sticky footer 正常（内容不足一屏贴底、长内容自然下推）；控制台无错误；lint 通过
 - 涉及文件：src/components/pullback-commonality.tsx
+
+## Task 45: 回踩深度分布选中态配色（黑色→琥珀色）
+- 用户反馈：直方图选中柱子的背景/边框是黑色，太丑。根源：shadcn New York 主题 --primary 为
+  oklch(0.205 0 0)（亮色模式≈纯黑），选中态 ring-primary/60 + bg-primary/5 + text-primary 全是黑色调。
+- 修复（最小侵入，仅 Histogram 组件，不动全局主题）：选中态统一换琥珀色（amber）——
+  与柱子本身 emerald/yellow/orange/red/rose 协调，语义上是「选中高亮」：
+  - 区间按钮选中态：ring-2 ring-amber-500/70 bg-amber-500/10（原 ring-primary/60 bg-primary/5）
+  - 计数文字与区间标签：text-amber-600 dark:text-amber-400（原 text-primary）
+  - 柱顶指示点：bg-amber-500（原 bg-primary）
+  - 「清空 (N)」按钮：琥珀色文字/浅琥珀背景/琥珀边框（原 primary 黑色调）
+- 验证（浏览器登录 888888）：点击「50-70%」与「回到起涨点」两个区间，选中柱子呈现琥珀 ring+浅琥珀底+
+  琥珀计数/标签/指示点，黑色消除；未选中柱子淡出正常；清空按钮琥珀色；控制台无错误；lint 通过
+- 涉及文件：src/components/limit-up-pullback-screener.tsx（Histogram 组件 5 处 class）
