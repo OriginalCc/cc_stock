@@ -3333,9 +3333,6 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         />
       )}
 
-      {/* ── 近 5 日热点概念（每日涨幅前三，板块共振的市况参照） ── */}
-      <HotConceptsPanel />
-
       {/* ── Histogram (clickable bars filter by approach range) ── */}
       {result && filteredStocks.length > 0 && (
         <Histogram
@@ -3585,6 +3582,9 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
           </CollapsibleContent>
         </Collapsible>
       </Card>
+
+      {/* ── 近 5 日热点概念（每日涨幅前三，板块共振的市况参照） ── */}
+      <HotConceptsPanel />
 
       {/* ── Stock Table / Card View ─────────────────── */}
       {result && displayedStocks.length > 0 ? (

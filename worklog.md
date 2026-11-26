@@ -2051,3 +2051,25 @@ Work Log:
   - 一次瞬时 500（东财限流）自愈复现：前端错误路径续期轮询恢复
 - 涉及文件：src/app/api/stock/hot-concepts/route.ts（新增）、src/components/hot-concepts-panel.tsx（新增）、
   src/components/limit-up-pullback-screener.tsx（插入面板 + import）、src/lib/pullback-pipeline.ts（导出 STYLE_TAG_RE）
+
+## Task 48: 热点概念面板 日期升序 + 移到筛选条件下方
+- 用户诉求：①近 5 日热点概念日期从小到大排列（原先面板做了 reverse，最新日在最前）；
+  ②把「近 5 日热点概念」面板从统计卡与直方图之间移动到筛选条件卡下方。
+- 改动（均为最小侵入）：
+  - hot-concepts-panel.tsx：dayColumns 去掉 .reverse()（API perDay 本身就是日期升序
+    ——route.ts 中 days=[...dateSet].sort().slice(-5) 后 days.map 生成），列序变为
+    最早日→今日（今日徽章在最右列）；同步更新注释「5 日榜单（日期从早到晚，今日在最右）」
+  - limit-up-pullback-screener.tsx：删除 SummaryCard 与 Histogram 之间的 <HotConceptsPanel/>，
+    改插到筛选条件 Card（Search+Presets+QuickTags+FilterPanel 折叠区）闭合之后、
+    Stock Table 之前——面板顶部紧邻「筛选条件」折叠条，下方直接是股票表格
+- 布局链路（验证后）：主卡 → 盘前研判 → 统计卡 → 直方图 → 筛选条件卡 → 热点概念面板 → 股票表格
+- 验证（浏览器登录 888888 + DOM 断言 + 截图）：
+  - 日期顺序 DOM 实测 "11/20 < 11/23 < 11/24 < 11/25 < 11/26"（升序，今日徽章在 11/26 列）
+  - 面板 previousElementSibling=筛选条件卡（表格卡片/收藏/快捷预设尾部）、
+    nextElementSibling=股票表格——位置正确
+  - 截图确认：筛选条件滑块区下方即面板，5 列 Top3 数据完整（11/23 机器人执行器 +7.88% 等）、
+    名次章/火焰/今日徽章/红涨绿跌均正常，下方表格渲染不受影响
+  - 控制台 0 错误、页面 0 错误；lint 通过
+  - 插曲：验证中一次复杂 eval 阻塞 agent-browser daemon（截图全白），重启会话后复验通过
+- 涉及文件：src/components/hot-concepts-panel.tsx（2 处）、
+  src/components/limit-up-pullback-screener.tsx（位置迁移）

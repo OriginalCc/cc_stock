@@ -143,7 +143,7 @@ export function HotConceptsPanel() {
     return m;
   }, [data]);
 
-  const dayColumns = useMemo(() => (data ? [...data.perDay].reverse() : []), [data]); // 最新在前
+  const dayColumns = useMemo(() => (data ? [...data.perDay] : []), [data]); // 日期从小到大（升序）
   const freqChips = useMemo(() => (data?.frequency || []).filter(f => f.count >= 2).slice(0, 5), [data]);
   const incomplete = !!data && !data.meta.complete;
   const knownRatio = data && data.meta.candidates > 0
@@ -218,7 +218,7 @@ export function HotConceptsPanel() {
           <div className="mt-3 text-xs text-muted-foreground">暂无数据，请稍后刷新重试</div>
         ) : data ? (
           <>
-            {/* 5 日榜单（最新在前） */}
+            {/* 5 日榜单（日期从早到晚，今日在最右） */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
               {dayColumns.map(d => (
                 <div key={d.date} className="rounded-lg border border-border/60 bg-muted/20 p-2.5 min-w-0">
