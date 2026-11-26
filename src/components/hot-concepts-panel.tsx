@@ -89,7 +89,14 @@ function fmtTime(iso: string): string {
   }
 }
 
-export function HotConceptsPanel() {
+interface HotConceptsPanelProps {
+  /** 当前选中的概念名（用于跨面板联动筛选，null/undefined = 未选） */
+  selectedConcept?: string | null;
+  /** 点击概念条目回调（传 null 表示取消选中） */
+  onSelectConcept?: (concept: string | null) => void;
+}
+
+export function HotConceptsPanel({ selectedConcept = null, onSelectConcept }: HotConceptsPanelProps) {
   const [data, setData] = useState<HotConceptsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -154,6 +161,13 @@ export function HotConceptsPanel() {
   const knownRatio = data && data.meta.candidates > 0
     ? Math.min(100, Math.round((data.meta.boardsKnown / data.meta.candidates) * 100))
     : 0;
+
+  // 点击概念 → 通知父组件筛选/取消（未接回调时条目仍可 hover 看详情，不响应点击）
+  const toggleConcept = (name: string) => {
+    if (!onSelectConcept) return;
+    onSelectConcept(selectedConcept === name ? null : name);
+  };
+  const clickable = typeof onSelectConcept === "function";
 
   return (
     <Card className="border-border/50 shadow-sm" data-testid="hot-concepts-panel">
@@ -244,11 +258,16 @@ export function HotConceptsPanel() {
                     )}
                     {d.items.map(it => {
                       const hot = appearCount.get(it.code) || 0;
+                      const isActive = it.name === selectedConcept;
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={it.code}
-                          className="flex items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-accent/60 transition-colors min-w-0"
-                          title={`${it.name}（${it.code}）\n当日 ${fmtPct(it.changePercent)} · 成交 ${it.amountYi} 亿${it.volRatio != null ? ` · 量能 ${it.volRatio}x` : ""}${hot >= 2 ? `\n近5日上榜 ${hot} 次` : ""}`}
+                          onClick={() => toggleConcept(it.name)}
+                          disabled={!clickable}
+                          aria-pressed={clickable ? isActive : undefined}
+                          className={`flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors min-w-0 ${clickable ? "cursor-pointer" : "cursor-default"} ${isActive ? "bg-amber-500/15 ring-1 ring-amber-500/50" : "hover:bg-accent/60"}`}
+                          title={`${it.name}（${it.code}）\n当日 ${fmtPct(it.changePercent)} · 成交 ${it.amountYi} 亿${it.volRatio != null ? ` · 量能 ${it.volRatio}x` : ""}${hot >= 2 ? `\n近5日上榜 ${hot} 次` : ""}${clickable ? `\n点击${isActive ? "取消" : ""}筛选该概念` : ""}`}
                         >
                           <span
                             className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] font-bold ${RANK_STYLES[it.rank - 1]}`}
@@ -256,7 +275,7 @@ export function HotConceptsPanel() {
                           >
                             {it.rank}
                           </span>
-                          <span className="flex-1 truncate text-xs font-medium">{it.name}</span>
+                          <span className={`flex-1 truncate text-xs font-medium ${isActive ? "text-amber-700 dark:text-amber-400" : ""}`}>{it.name}</span>
                           {hot >= 2 && (
                             <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-amber-600 dark:text-amber-400 shrink-0" title={`近5日上榜 ${hot} 次`}>
                               <Flame className="w-2.5 h-2.5" />
@@ -266,7 +285,7 @@ export function HotConceptsPanel() {
                           <span className={`shrink-0 text-xs font-semibold tabular-nums ${pctColor(it.changePercent)}`}>
                             {fmtPct(it.changePercent)}
                           </span>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -282,17 +301,23 @@ export function HotConceptsPanel() {
                     <Flame className="w-3 h-3 text-amber-500" />
                     5 日上榜最多：
                   </span>
-                  {freqChips.map(f => (
-                    <Badge
-                      key={f.code}
-                      variant="outline"
-                      className="h-5 px-1.5 py-0 text-[10px] gap-1 bg-amber-500/5 border-amber-500/25 text-amber-700 dark:text-amber-400"
-                      title={`${f.name} 期内上榜 ${f.count} 次 · 最好名次第 ${f.bestRank} 名${f.totalGain != null ? ` · 5日累计 ${fmtPct(f.totalGain)}` : ""}`}
-                    >
-                      {f.name}
-                      <span className="font-semibold">×{f.count}</span>
-                    </Badge>
-                  ))}
+                  {freqChips.map(f => {
+                    const chipsActive = f.name === selectedConcept;
+                    return (
+                      <Badge
+                        key={f.code}
+                        variant="outline"
+                        role={clickable ? "button" : undefined}
+                        aria-pressed={clickable ? chipsActive : undefined}
+                        onClick={clickable ? () => toggleConcept(f.name) : undefined}
+                        className={`h-5 px-1.5 py-0 text-[10px] gap-1 bg-amber-500/5 border-amber-500/25 text-amber-700 dark:text-amber-400 ${clickable ? "cursor-pointer" : ""} ${chipsActive ? "ring-1 ring-amber-500/60 bg-amber-500/15" : "hover:bg-amber-500/10"}`}
+                        title={`${f.name} 期内上榜 ${f.count} 次 · 最好名次第 ${f.bestRank} 名${f.totalGain != null ? ` · 5日累计 ${fmtPct(f.totalGain)}` : ""}${clickable ? `\n点击${chipsActive ? "取消" : ""}筛选该概念` : ""}`}
+                      >
+                        {f.name}
+                        <span className="font-semibold">×{f.count}</span>
+                      </Badge>
+                    );
+                  })}
                 </>
               )}
               <span className="text-[10px] text-muted-foreground ml-auto">

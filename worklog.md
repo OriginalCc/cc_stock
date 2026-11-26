@@ -2143,3 +2143,32 @@ Work Log:
 - 涉及文件：src/lib/pullback-pipeline.ts（pickTopConcepts/resolveStockConcepts）、
   src/app/api/stock/limit-up-pullback/route.ts（concepts 字段）、
   src/components/limit-up-pullback-screener.tsx（概念列 UI/CSV/容器高度）
+
+## Task 52: 热点概念点击联动筛选下方股票
+- 用户诉求：点击「近 5 日热点概念」中的具体概念，能对下面的股票筛选出对应概念的股票。
+- 联动架构（受控组件模式，面板保持独立自治的数据加载，父组件只管选中态）：
+  - hot-concepts-panel.tsx：新增可选 props selectedConcept/onSelectConcept；每日榜单条目
+    div→button（type=button、aria-pressed、w-full text-left，未接回调时 disabled 不响应）；
+    频次 chips 同样可点击（role=button/aria-pressed）；选中态琥珀 ring+文字变琥珀；
+    title 提示追加「点击筛选/取消该概念」——不接 props 时行为与旧版完全一致（兼容）
+  - limit-up-pullback-screener.tsx：
+    - 新增 hotConceptFilter 状态 + handleSelectHotConcept（toggle，同概念再点取消，
+      选中/取消均重置分页到第 1 页）
+    - displayedStocks useMemo 叠加概念过滤（与直方图 bin 过滤同层 AND 叠加）：
+      s.concepts?.includes(hotConceptFilter) || s.concept === hotConceptFilter——
+      直方图仍用 filteredStocks 计数不受影响（与 bin 过滤的分层一致）
+    - 面板下方新增筛选激活提示条：概念 Badge + 匹配数量 + 口径说明 + 清除按钮
+    - 空态分支补充概念筛选专用文案：「概念「X」下无符合当前条件的股票」+ 清除按钮
+- 匹配语义说明：个股概念来自 slist 解析的 top3（Task 51），热点概念名与东财概念板块名
+  同命名空间精确匹配。实测 36 个热点概念中 11 个能在当前回踩候选中命中（PCB 17 只、
+  6G 4 只等）；「机器人执行器」等未入选任何个股 top3 的概念匹配 0 只属真实数据，
+  空态文案明确引导清除
+- 验证（浏览器登录 888888，全链路交互）：
+  - 点「黄金概念」→ 面板条目高亮（aria-pressed=true）、提示条「匹配 3 只」、表格只剩
+    3 行且概念列首名均为黄金概念
+  - 再点同概念 → 取消恢复 20 条；选「金属铅」→ 点提示条清除按钮 → 恢复
+  - 频次 chips「水产概念×2」点击 → 匹配 2 只 + chip 高亮
+  - 匹配 0 只场景（机器人执行器）→ 空态卡文案 + 清除按钮正常
+  - 控制台 0 错误；lint 通过
+- 涉及文件：src/components/hot-concepts-panel.tsx（props + 条目/chips 可点击化）、
+  src/components/limit-up-pullback-screener.tsx（hotConceptFilter 状态/过滤/提示条/空态）
