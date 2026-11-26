@@ -4,7 +4,7 @@ import { emRawJson } from "@/lib/em-raw-client";
 import fs from "node:fs";
 import path from "node:path";
 
-// ── 近 N 个交易日热点概念（每日涨幅前三） ──────────────────────────
+// ── 近 N 个交易日热点概念（每日涨幅前八） ──────────────────────────
 // 数据源：东方财富概念板块（m:90+t:3）
 //   · 板块清单 + 当日快照：clist 分页（每页上限 100 行，共约 550 个）
 //   · 历史每日涨幅：板块日 K（secid=90.BKxxxx，klt=101，f59=当日涨跌幅）
@@ -23,7 +23,7 @@ interface HotConceptItem {
   changePercent: number;   // 当日涨跌幅 %
   amountYi: number;        // 当日成交额（亿元）
   volRatio: number | null; // 当日量 / 前一日量（null=缺前一日数据）
-  rank: number;            // 当日名次 1-3
+  rank: number;            // 当日名次 1-8
 }
 
 interface HotConceptDay {
@@ -51,7 +51,7 @@ interface HotConceptsResponse {
   meta: {
     todayBoards: number;    // 今日快照覆盖的板块数（clist 过滤风格后）
     boardsKnown: number;    // 已有历史日 K 的板块数
-    candidates: number;     // 候选板块数（今日涨幅/5日涨幅/主力净流入 各前 150 去重）
+    candidates: number;     // 候选板块数（今日涨幅/5日涨幅/主力净流入 各前 260 去重）
     complete: boolean;      // 候选与已收录板块是否全部就绪
     warmupRunning: boolean;
     daysBack: number;       // 实际覆盖交易日数
@@ -75,8 +75,8 @@ interface ListRow { code: string; name: string; pct: number | null; volume: numb
 const historyCache = new Map<string, BoardEntry>();
 let lastList: Map<string, ListRow> | null = null;
 // 候选集按交易日冻结：盘中 f3 持续变动会导致候选集微变，warmup 将永远追着移动目标跑。
-// 今日列排名由全量清单驱动不受候选集影响；历史日排名依赖 f109/f62 前 150（5 日累计强板块
-// 必然入选），冻结当天集合足以覆盖近 5 日的每日前三，次日自动重算
+// 今日列排名由全量清单驱动不受候选集影响；历史日排名依赖 f109/f62 前 260（每日前八的
+// 板块大概率 5 日累计/主力净流入仍靠前），冻结当天集合足以覆盖近 5 日的每日前八，次日自动重算
 let frozenCandidates: { date: string; codes: string[] } | null = null;
 let diskLoaded = false;
 let lastDiskSave = 0;
@@ -254,7 +254,7 @@ function getCandidates(list: Map<string, ListRow>): string[] {
       .map(r => ({ code: r.code, v: key(r) }))
       .filter(x => x.v != null)
       .sort((a, b) => (b.v as number) - (a.v as number))
-      .slice(0, 150)
+      .slice(0, 260)
       .map(x => x.code);
   const set = new Set<string>();
   for (const c of [...top(r => r.pct), ...top(r => r.gain5d), ...top(r => r.mainNet)]) set.add(c);
@@ -394,7 +394,7 @@ function buildResponse(list: Map<string, ListRow>, daysBackReq: number): HotConc
       date,
       weekday: weekdayOf(date),
       isToday,
-      items: rows.slice(0, 3).map((r, i) => ({ ...r, rank: i + 1 })),
+      items: rows.slice(0, 8).map((r, i) => ({ ...r, rank: i + 1 })),
     };
   });
 

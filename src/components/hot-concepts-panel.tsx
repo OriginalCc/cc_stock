@@ -14,7 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 
-// ── 近 5 日热点概念面板（每日概念板块涨幅前三） ─────────────────
+// ── 近 5 日热点概念面板（每日概念板块涨幅前八） ─────────────────
 // 数据：/api/stock/hot-concepts（东财概念板块，剔除风格类伪概念）
 // 服务端后台渐进补全历史日 K（meta.complete），前端自动轮询直至收敛
 
@@ -64,6 +64,11 @@ const RANK_STYLES = [
   "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40", // 1
   "bg-muted text-foreground/80 border-border",                               // 2
   "bg-muted/60 text-muted-foreground border-border/70",                      // 3
+  "bg-muted/40 text-muted-foreground/85 border-border/60",                   // 4
+  "bg-muted/30 text-muted-foreground/75 border-border/50",                   // 5
+  "bg-muted/30 text-muted-foreground/70 border-border/50",                   // 6
+  "bg-muted/20 text-muted-foreground/65 border-border/40",                   // 7
+  "bg-muted/20 text-muted-foreground/60 border-border/40",                   // 8
 ];
 
 function fmtPct(v: number): string {
@@ -159,7 +164,7 @@ export function HotConceptsPanel() {
             <Flame className="w-4 h-4 text-amber-500" />
             <h3 className="text-sm font-semibold">近 5 日热点概念</h3>
             <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-amber-500/5 border-amber-500/20 text-amber-600 dark:text-amber-400">
-              每日涨幅前三
+              每日涨幅前八
             </Badge>
             {incomplete && (
               <span className="flex items-center gap-1 text-[10px] text-muted-foreground">

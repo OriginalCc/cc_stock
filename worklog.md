@@ -2097,3 +2097,23 @@ Work Log:
   - lint 通过
 - 涉及文件：src/components/limit-up-pullback-screener.tsx（LAST_PAGE_SIZE_KEY v2、
   pageSize 默认值、表格容器 max-h）
+
+## Task 50: 热点概念每日 Top3 → Top8
+- 用户诉求：近 5 日热点概念每天展示前 8 名热点概念。
+- 后端 route.ts：
+  - 每日排名 slice(0,3)→slice(0,8)，rank 语义 1-3→1-8
+  - 候选集扩大 150→260（今日涨幅/5日涨幅/主力净流入三维度 top260 去重=306 板块）：
+    top8 后历史某日第 5-8 名可能落在原候选集之外（当日大涨但今日熄火的冷门板块），
+    三维度 top260 后「某日单日进前八」的板块几乎必然被 5 日累计或主力净流入覆盖
+  - 实测 complete=true 一次收敛：磁盘缓存已有 390+ 板块日 K，覆盖 306 候选无需补拉
+- 前端 hot-concepts-panel.tsx：Badge「每日涨幅前三」→「每日涨幅前八」；RANK_STYLES
+  扩展到 8 级灰阶（1 琥珀、2/3 原灰、4-8 透明度递减的浅灰），火焰徽章/频次 chips/
+  appearCount 逻辑不变（上榜=进当日 top8，自然扩大统计口径）
+- 验证（curl + 浏览器登录 888888）：
+  - API：5 天 × 每日 8 条齐全；排名合理——11-23 机器人链霸榜（执行器/物理AI/人形机器人/
+    减速器/AI语料）、11-20 大跌日防御类（中特估/猪肉/转基因）、11-25 医药消费、
+    今日盘中资源链（水产/金属铅镍锌/黄金/稀缺资源）；top3 与 Task 47 一致（算法未变）
+  - 频次：水产概念×2（大跌日抗跌+今日领涨，持续热点）、减速器×2 等
+  - UI：8 条/列名次章灰阶正常、4-8 名火焰徽章正常、面板高度合理、控制台 0 错误；lint 通过
+- 涉及文件：src/app/api/stock/hot-concepts/route.ts（候选集 260 + slice 8）、
+  src/components/hot-concepts-panel.tsx（Badge 文字 + RANK_STYLES 8 级）
