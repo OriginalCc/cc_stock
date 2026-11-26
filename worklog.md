@@ -2073,3 +2073,27 @@ Work Log:
   - 插曲：验证中一次复杂 eval 阻塞 agent-browser daemon（截图全白），重启会话后复验通过
 - 涉及文件：src/components/hot-concepts-panel.tsx（2 处）、
   src/components/limit-up-pullback-screener.tsx（位置迁移）
+
+## Task 49: 股票列表每页 20 条一次展示，消除表格内部滚动
+- 用户诉求：下面股票展示的列表能一次性展示 20 条数据不用滚动，每次翻页/滚动太麻烦。
+- 现状：分页本有每页条数切换（20/50/100）但默认 50，且表格容器 max-h-[600px]
+  内部纵向滚动——即使选了 20 条也要在小滚动条里搓 2 屏，双重滚动体验差。
+- 改动（limit-up-pullback-screener.tsx 3 处，最小侵入）：
+  1. 默认 pageSize 50→20（SSR 与本地回退两处）
+  2. LAST_PAGE_SIZE_KEY 升级为 -v2 新 key：因 useEffect[pageSize] 首渲染即会把旧默认
+     50 写入 localStorage，仅改默认值对老用户永远无效，换 key 一次性生效（旧 key 作废）
+  3. 表格容器 max-h-[600px]→max-h-[1160px]：实测行高 ~53px，20 行+表头 ≈1100px，
+     1160px 容器可完整放下 → scrollHeight=clientHeight=1100，内部滚动条消失；
+     选 50/100 条时内容超高自动恢复内部滚动 + sticky 表头兜底
+- 为什么保留 overflow-y-auto 容器而不去掉 max-h：容器 overflow-x-auto 使 overflow-y
+  计算为 auto（CSS 规范 visible→auto），容器成为滚动祖先——内容不溢出时 sticky 表头
+  失效随页面滚走；保留真实滚动容器才能在内容超高（50/100 条、展开行）时维持 sticky
+  表头/左列。20 条常规场景下两者视觉一致（无滚动条），后者多一层兜底。
+- 验证（浏览器登录 888888 + DOM 断言 + 截图）：
+  - 默认进入即「显示 1-20 / 共 218 只」，tbody 20 行，scrollHeight=clientHeight=1100、
+    内部无滚动；截图确认第 1-20 行随页面自然展开，第 11-20 行页面滚动可见
+  - 切 50：50 行渲染、scrollH 2690>clientH 1160 内部滚动兜底、headerSticky=sticky
+  - 切回 20：localStorage v2 key 持久化 "20"，恢复无内部滚动；控制台 0 错误
+  - lint 通过
+- 涉及文件：src/components/limit-up-pullback-screener.tsx（LAST_PAGE_SIZE_KEY v2、
+  pageSize 默认值、表格容器 max-h）

@@ -228,7 +228,7 @@ const LAST_SEARCH_KEY = "limit-up-pullback-screener-last-search";
 const LAST_TAGS_KEY = "limit-up-pullback-screener-last-tags";
 const FAVORITES_KEY = "limit-up-pullback-screener-favorites";
 const LAST_VIEW_KEY = "limit-up-pullback-screener-last-view";
-const LAST_PAGE_SIZE_KEY = "limit-up-pullback-screener-last-page-size";
+const LAST_PAGE_SIZE_KEY = "limit-up-pullback-screener-last-page-size-v2"; // v2: 默认每页 20 条，换 key 让老用户一次性生效
 const STRATEGIES_KEY = "limit-up-pullback-screener-saved-strategies";
 const LAST_HISTOGRAM_BINS_KEY = "limit-up-pullback-screener-last-histogram-bins";
 const UI_STATE_KEY = "limit-up-pullback-screener-ui-state";
@@ -2754,7 +2754,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
 
   // Pagination
   const [pageSize, setPageSize] = useState<number>(() => {
-    if (typeof window === "undefined") return 50;
+    if (typeof window === "undefined") return 20;
     try {
       const saved = localStorage.getItem(LAST_PAGE_SIZE_KEY);
       if (saved) {
@@ -2762,7 +2762,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         if (n === 20 || n === 50 || n === 100) return n;
       }
     } catch {}
-    return 50;
+    return 20;
   });
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -3591,7 +3591,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         view === "table" ? (
           <Card className="border-border/50 shadow-sm">
             <CardContent className="p-0">
-              <div className="overflow-x-auto max-h-[600px] overflow-y-auto pullback-screener-scroll">
+              <div className="overflow-x-auto max-h-[1160px] overflow-y-auto pullback-screener-scroll">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent sticky top-0 bg-background z-10">
