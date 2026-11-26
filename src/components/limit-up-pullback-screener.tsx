@@ -120,7 +120,8 @@ interface PullbackStock {
   marketCap: number;
   volumeRatio: number;
   sector?: string;   // 所属行业板块（东财 f100）
-  concept?: string;  // 最贴切概念
+  concept?: string;  // 最贴切概念（= concepts[0]）
+  concepts?: string[]; // 最贴切概念前 3（今日板块涨幅降序）
   preTrend?: number; // 涨停前均线结构：2=多头排列 1=中期向上 0=超跌反抽（Task 40）
 }
 
@@ -3166,7 +3167,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         s.limitUpPct.toFixed(2),
         calcLimitUpStreak(s.klineSummary, s.limitUpDate),
         s.sector || "",
-        s.concept || "",
+        s.concepts?.length ? s.concepts.slice(0, 3).join("/") : (s.concept || ""),
         s.limitUpClose.toFixed(2),
         s.preLimitUpClose.toFixed(2),
         s.currentPrice.toFixed(2),
@@ -3591,7 +3592,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         view === "table" ? (
           <Card className="border-border/50 shadow-sm">
             <CardContent className="p-0">
-              <div className="overflow-x-auto max-h-[1160px] overflow-y-auto pullback-screener-scroll">
+              <div className="overflow-x-auto max-h-[1300px] overflow-y-auto pullback-screener-scroll">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent sticky top-0 bg-background z-10">
@@ -3737,24 +3738,41 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               )}
                             </TableCell>
 
-                            {/* 概念 - 最贴切概念（slist 概念族剔除风格标签后取今日动量最强） */}
+                            {/* 概念 - 最贴切概念前三（slist 概念族剔除风格标签后按今日动量降序） */}
                             <TableCell className="py-2 text-[11px] text-muted-foreground">
-                              {stock.concept ? (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="max-w-[100px] truncate block cursor-default">{stock.concept}</span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top" className="max-w-[260px] text-xs">
-                                      <div className="font-medium">{stock.concept}</div>
-                                      <div className="mt-1 text-[10px] text-muted-foreground">
-                                        东财概念板块：取该股所属概念中今日涨幅最高者（题材动量最强）；
-                                        融资融券/指数成分等风格标签已剔除
-                                      </div>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : (
+                              {(stock.concepts?.length || stock.concept) ? (() => {
+                                const list = stock.concepts?.length ? stock.concepts.slice(0, 3) : [stock.concept!];
+                                const tone = [
+                                  "text-foreground/90 font-medium",
+                                  "text-muted-foreground",
+                                  "text-muted-foreground/70",
+                                ];
+                                return (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div className="space-y-0.5 min-w-0 cursor-default">
+                                          {list.map((c, i) => (
+                                            <span key={c} className={`block max-w-[110px] truncate leading-tight ${tone[i] ?? "text-muted-foreground/70"}`}>
+                                              {c}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-[280px] text-xs">
+                                        <div className="font-medium">{list[0]}</div>
+                                        {list.length > 1 && (
+                                          <div className="mt-0.5">相关概念：{list.slice(1).join(" · ")}</div>
+                                        )}
+                                        <div className="mt-1 text-[10px] text-muted-foreground">
+                                          东财概念板块：取该股所属概念中今日涨幅前三（题材动量最强）；
+                                          融资融券/指数成分等风格标签已剔除
+                                        </div>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                );
+                              })() : (
                                 <span className="text-muted-foreground/60">--</span>
                               )}
                             </TableCell>

@@ -337,39 +337,50 @@ export async function fetchStockBoards(symbol: string): Promise<StockBoard[]> {
 }
 
 // 模块级概念结果缓存：盘中板块归属不变，30 分钟内复用，避免每次选股重复发 255 个 slist 请求
-const conceptResultCache = new Map<string, { name: string; ts: number }>();
+const conceptResultCache = new Map<string, { names: string[]; ts: number }>();
 const CONCEPT_RESULT_TTL = 30 * 60 * 1000;
 
-/** 带缓存的概念解析（slist + pickBestConcept；空结果不缓存，下次重试） */
+/** 带缓存的概念解析（slist + pickTopConcepts；空结果不缓存，下次重试） */
+export async function resolveStockConcepts(
+  symbol: string,
+  conceptCodes: Set<string> | null,
+  sector: string | undefined,
+  industryCodes: Set<string> | null
+): Promise<string[]> {
+  const hit = conceptResultCache.get(symbol);
+  if (hit && Date.now() - hit.ts < CONCEPT_RESULT_TTL) return hit.names;
+  const boards = await fetchStockBoards(symbol);
+  if (boards.length === 0) return []; // 数据源不可用不缓存，下次请求重试
+  const names = pickTopConcepts(boards, conceptCodes, sector, industryCodes, 3);
+  if (names.length > 0) conceptResultCache.set(symbol, { names, ts: Date.now() });
+  return names;
+}
+
+/** 单值版概念解析（取最贴切概念第一名，兼容旧调用方） */
 export async function resolveStockConcept(
   symbol: string,
   conceptCodes: Set<string> | null,
   sector: string | undefined,
   industryCodes: Set<string> | null
 ): Promise<string> {
-  const hit = conceptResultCache.get(symbol);
-  if (hit && Date.now() - hit.ts < CONCEPT_RESULT_TTL) return hit.name;
-  const boards = await fetchStockBoards(symbol);
-  if (boards.length === 0) return ""; // 数据源不可用不缓存，下次请求重试
-  const name = pickBestConcept(boards, conceptCodes, sector, industryCodes);
-  if (name) conceptResultCache.set(symbol, { name, ts: Date.now() });
-  return name;
+  return (await resolveStockConcepts(symbol, conceptCodes, sector, industryCodes))[0] ?? "";
 }
 
 /**
- * 挑"最贴切概念"：剔除风格/资金标签后取今日板块涨幅最高者
- * （涨停回踩语境下，今日仍在涨的概念板块大概率就是该股的题材驱动）。
+ * 挑"最贴切概念"列表：剔除风格/资金标签后按今日板块涨幅降序取前 n 个（默认 3）
+ * （涨停回踩语境下，今日仍在涨的概念板块大概率就是该股的题材驱动；同名去重靠 slist 原序稳定排序）。
  * - 精确模式：conceptCodes（t:3 概念族全集）可用 → 只认集合内板块
  * - 降级模式：全集失败但 industryCodes（t:2 行业全集，体小抗限流）可用 → 排除行业+地区后取概念
- * - 兑底模式：两者都失败 → 名称启发式（行业链排在 slist 最前，跳过 sector 及之前；再剔地区/风格）
- * 无可用候选返回 ""。
+ * - 兜底模式：两者都失败 → 名称启发式（行业链排在 slist 最前，跳过 sector 及之前；再剔地区/风格）
+ * 无可用候选返回 []。
  */
-export function pickBestConcept(
+export function pickTopConcepts(
   boards: StockBoard[],
   conceptCodes: Set<string> | null,
   sector: string | undefined,
-  industryCodes?: Set<string> | null
-): string {
+  industryCodes?: Set<string> | null,
+  n = 3
+): string[] {
   let pool: StockBoard[];
   if (conceptCodes && conceptCodes.size > 0) {
     pool = boards.filter(b => conceptCodes.has(b.code));
@@ -391,10 +402,8 @@ export function pickBestConcept(
     );
   }
   pool = pool.filter(b => !STYLE_TAG_RE.test(b.name));
-  if (pool.length === 0) return "";
-  let best = pool[0];
-  for (const b of pool) {
-    if (b.changePct > best.changePct) best = b;
-  }
-  return best.name;
+  if (pool.length === 0) return [];
+  // 稳定排序（同分保持 slist 原序，与旧单值版「严格大于才替换」的语义一致）
+  const sorted = [...pool].sort((a, b) => b.changePct - a.changePct);
+  return sorted.slice(0, n).map(b => b.name);
 }

@@ -2117,3 +2117,29 @@ Work Log:
   - UI：8 条/列名次章灰阶正常、4-8 名火焰徽章正常、面板高度合理、控制台 0 错误；lint 通过
 - 涉及文件：src/app/api/stock/hot-concepts/route.ts（候选集 260 + slice 8）、
   src/components/hot-concepts-panel.tsx（Badge 文字 + RANK_STYLES 8 级）
+
+## Task 51: 个股概念展示 1 个 → 3 个最相关概念
+- 用户诉求：每个股票展示的概念从 1 个增加到 3 个，展示 3 个最相关的概念。
+- 算法层 pullback-pipeline.ts：
+  - 新增 pickTopConcepts(boards, conceptCodes, sector, industryCodes, n=3)：复用原三模式
+    筛选（精确概念集/降级行业排除/名称兜底）+ STYLE_TAG_RE，改为按今日板块涨幅降序
+    稳定排序取前 n（同分保 slist 原序，与旧单值版「严格大于才替换」语义一致）
+  - 新增 resolveStockConcepts：模块级缓存改存 string[]（30 分钟 TTL 不变）；
+    resolveStockConcept 保留为取 [0] 的兼容包装——slist 请求次数不变，仅解析层扩展
+- API limit-up-pullback/route.ts：类型加 concepts?: string[]（concept 保留=concepts[0]
+  向后兼容），赋值处 resolveStockConcepts
+- 前端 screener.tsx：
+  - 概念列竖排 3 个概念：主概念深色加粗、第 2/3 名灰度递减（视觉动量层次），
+    tooltip 展示主概念+相关概念+口径说明（今日涨幅前三/风格标签剔除）
+  - CSV 概念列输出 3 个概念以 / 分隔（concept 旧字段兜底）
+  - 表格容器 max-h-[1160px]→[1300px]：3 行概念使行高 ~53px→~64px，20 行 1285px，
+    1300px 容器恢复「20 条一次展示无内部滚动」（Task 49 效果保持）
+- 验证（curl + 浏览器登录 888888）：
+  - API：231 只全部有 concepts，225 只满 3 个（个别所属概念板块不足 3 只返回 1-2 个）；
+    排序合理——广百股份 黄金概念/粤港自贸/预制菜概念（今日黄金领涨居首）；
+    concept=concepts[0] 兼容旧数据
+  - UI：概念列 3 行竖排动量层次清晰；tooltip hover 显示完整；20 行 scrollHeight=
+    clientHeight=1285 无内部滚动；控制台 0 错误；lint 通过
+- 涉及文件：src/lib/pullback-pipeline.ts（pickTopConcepts/resolveStockConcepts）、
+  src/app/api/stock/limit-up-pullback/route.ts（concepts 字段）、
+  src/components/limit-up-pullback-screener.tsx（概念列 UI/CSV/容器高度）

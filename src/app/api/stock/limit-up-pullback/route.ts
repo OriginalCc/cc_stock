@@ -6,7 +6,7 @@ import {
   fetchRealtimeQuotes,
   getConceptBoardCodes,
   getIndustryBoardCodes,
-  resolveStockConcept,
+  resolveStockConcepts,
   type KLineDay,
   type PoolCandidate,
 } from "@/lib/pullback-pipeline";
@@ -66,7 +66,8 @@ interface PullbackStock {
   volumeRatio: number;      // 量比
   // 板块（行情富化阶段填充，数据源不可用时缺省 → 前端显示 --）
   sector?: string;          // 所属行业板块（东财 f100）
-  concept?: string;         // 最贴切概念（slist 概念族，动量最强）
+  concept?: string;         // 最贴切概念（slist 概念族，动量最强，= concepts[0]）
+  concepts?: string[];      // 最贴切概念前 3（按今日板块涨幅降序，风格标签已剔除）
   preTrend?: number;        // 涨停前均线结构：2=MA5>MA10>MA20 多头 1=MA10>MA20 0=其他（Task 40）
 }
 
@@ -320,12 +321,13 @@ export async function GET(request: NextRequest) {
         if (Date.now() - conceptT0 > CONCEPT_BUDGET_MS) break;
         const batch = pullbackStocks.slice(i, i + CONCEPT_CONCURRENCY);
         const results = await Promise.allSettled(
-          batch.map(s => resolveStockConcept(s.symbol, useConcepts, s.sector, useIndustries))
+          batch.map(s => resolveStockConcepts(s.symbol, useConcepts, s.sector, useIndustries))
         );
         for (let j = 0; j < batch.length; j++) {
           const r = results[j];
-          if (r.status === "fulfilled" && r.value) {
-            batch[j].concept = r.value;
+          if (r.status === "fulfilled" && r.value.length > 0) {
+            batch[j].concepts = r.value;
+            batch[j].concept = r.value[0];
           }
         }
         if (i + CONCEPT_CONCURRENCY < pullbackStocks.length) {
