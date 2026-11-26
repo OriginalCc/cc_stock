@@ -107,13 +107,13 @@ export async function getTradeDatesCached(ttlMs = 10 * 60 * 1000): Promise<strin
 // push2ex serves the pool of stocks that SEALED a limit-up on the given date.
 // This replaces the old blind 5000-stock scan: candidates drop from ~5000 to
 // a few hundred, cutting both scan time and upstream request volume ~20x.
-export async function fetchZTPool(dateCompact: string): Promise<{ code: string; name: string }[]> {
+export async function fetchZTPool(dateCompact: string): Promise<{ code: string; name: string; sector?: string }[]> {
   const url = `http://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1000&sort=fbt%3Aasc&date=${dateCompact}`;
   const json = await emRawJson(url, 2, 8000);
   const pool = json?.data?.pool;
   if (!Array.isArray(pool)) return [];
 
-  const out: { code: string; name: string }[] = [];
+  const out: { code: string; name: string; sector?: string }[] = [];
   for (const item of pool) {
     const code = String(item?.c || "");
     const name = String(item?.n || "");
@@ -121,7 +121,9 @@ export async function fetchZTPool(dateCompact: string): Promise<{ code: string; 
     // BSE (北交所 43/83/87/92) and B-shares were never in the old scan universe
     if (code.startsWith("8") || code.startsWith("4") || code.startsWith("9")) continue;
     if (name.includes("ST")) continue;
-    out.push({ code, name });
+    // Task 46: hybk = 行业板块（东财行业口径，与 f100 同族）——盘前研判的板块共振因子无需额外请求
+    const sector = String(item?.hybk || "").trim();
+    out.push({ code, name, sector: sector || undefined });
   }
   return out;
 }

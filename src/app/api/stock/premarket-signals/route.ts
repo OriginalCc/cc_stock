@@ -10,6 +10,7 @@ import {
 } from "@/lib/pullback-pipeline";
 import {
   calcPremarketSignal,
+  buildSectorStats,
   type PullbackStock,
   type SignalType,
 } from "@/lib/pullback-metrics";
@@ -90,10 +91,11 @@ async function computeSnapshot() {
     throw new Error("涨停股池数据源暂时不可用（东财接口拦截），无法生成盘前研判");
   }
 
-  // 逐股 K 线分析（T-1 口径）+ 盘前判定
+  // 逐股 K 线分析（T-1 口径）→ 先收集样本，再统一评分（Task 46: 板块共振需要全集统计）
   const candList = Array.from(candidates.values());
   const signals: Record<string, SignalEntry> = {};
   const stats: Record<SignalType, number> = { opportunity: 0, watch: 0, risk: 0 };
+  const psList: PullbackStock[] = [];
   let klineOk = 0;
   let klineFailed = 0;
   const BATCH_SIZE = 25;
@@ -198,15 +200,24 @@ async function computeSnapshot() {
         maxPullbackDate,
         klineSummary,
         preTrend,
+        // Task 46: 涨停池自带行业板块（hybk），供板块共振因子使用
+        sector: stock.sector,
         turnover: 0,
         marketCap: 0,
         volumeRatio: 0,
       };
 
-      const sig = calcPremarketSignal(ps, basisDate);
-      signals[code] = { type: sig.type, score: sig.score, reasons: sig.reasons, grade: sig.grade };
-      stats[sig.type]++;
+      psList.push(ps);
     }
+  }
+
+  // Task 46: 板块统计（两遍式）——psList 均为 T-1 视角（kline 已剔除当日形成中K线，
+  // currentChangePct 即 T-1 涨跌幅），直接用盘中模式构建即为盘前口径
+  const sectorStats = buildSectorStats(psList);
+  for (const ps of psList) {
+    const sig = calcPremarketSignal(ps, basisDate, sectorStats);
+    signals[ps.symbol] = { type: sig.type, score: sig.score, reasons: sig.reasons, grade: sig.grade };
+    stats[sig.type]++;
   }
 
   if (klineOk === 0 && klineFailed > 0) {

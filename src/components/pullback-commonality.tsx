@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ArrowDownRight,
   Award,
+  Brain,
   Clock,
   Flame,
   Gauge,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import {
   buildExt,
+  buildSectorStats,
   calcStockSignal,
   median,
   share,
@@ -91,8 +93,10 @@ function computeStats(stocks: PullbackStock[], resolveSignal?: SignalResolver): 
   // 机会/风险信号分布 (与表格内信号徽章同一套规则，优先盘前快照口径)
   const signalN: Record<SignalType, number> = { opportunity: 0, watch: 0, risk: 0 };
   const gradeN = { A: 0, B: 0, C: 0 };
+  // Task 46: 兜底口径（无 resolveSignal 时）也传板块统计，保证智能因子层口径一致
+  const sectorStats = resolveSignal ? undefined : buildSectorStats(stocks);
   for (const s of stocks) {
-    const sig = resolveSignal ? resolveSignal(s) : calcStockSignal(s);
+    const sig = resolveSignal ? resolveSignal(s) : calcStockSignal(s, sectorStats);
     signalN[sig.type]++;
     if (sig.grade) gradeN[sig.grade]++;
   }
@@ -298,9 +302,18 @@ export function PullbackCommonality({ stocks, timestamp, resolveSignal, basisDat
           </InsightRow>
 
           <InsightRow icon={Award} iconColor="bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400" title="机会分级 A/B/C——胜率优先">
-            同为「机会」，按证据强度分三档：<b className="text-foreground">A 级核心（{s.gradeN.A} 只）</b>= 评分≥75 + 抛压枯竭证据（极度缩量/低点极缩量/双底承接）+ 未失守 MA5，
+            同为「机会」，按证据强度分三档：<b className="text-foreground">A 级核心（{s.gradeN.A} 只）</b>= 评分≥75 + 抛压枯竭证据（极度缩量/低点极缩量/双底承接）+ 未失守 MA5 + 右侧确认票量能不缩，
             胜率最优组合优先关注；B 级（{s.gradeN.B} 只）条件齐全，正常仓位；C 级（{s.gradeN.C} 只）条件有瑕疵，轻仓试探。
             底部潜伏形态（深回踩≥70% + 缩量 + 企稳/双底 + 未创新低）不再被反弹硬门槛挡住——左侧低吸与右侧确认两条路都通向「机会」，优先 A 级。
+          </InsightRow>
+
+          <InsightRow icon={Brain} iconColor="bg-violet-500/10 border-violet-500/30 text-violet-600 dark:text-violet-400" title="智能因子层：四个被忽略的维度参与评分">
+            在主评分之外，四个「已有数据但从未参与评分」的维度以小幅调整项（合计 -10~+10）参与边际区分：
+            <b className="text-foreground">反弹量能</b>（放量反弹=资金确认 +3；缩量反弹=无量反抽防诱多 -3）、
+            <b className="text-foreground">板块共振</b>（同板块多只回踩股且同伴仍强=题材轮动中；同伴齐跌=板块退潮难独善其身，±3）、
+            <b className="text-foreground">尾盘承接</b>（报收日内高位=承接强；低位=隔日惯性低开风险，±2）、
+            <b className="text-foreground">低点新鲜度</b>（1-3 天新鲜底部 vs 8 天以上关注度衰减，±2）。
+            这些因子主要作用在 65-80 分边际带——让 B/C 级与门槛边缘的区分更细，A 级门槛同步加严。
           </InsightRow>
 
           <InsightRow icon={Clock} iconColor="bg-violet-500/10 border-violet-500/30 text-violet-600 dark:text-violet-400" title="时间窗口集中在一周左右">
@@ -345,7 +358,9 @@ export function PullbackCommonality({ stocks, timestamp, resolveSignal, basisDat
           口径说明：反弹幅度 = 现价相对涨停后最低收盘价的涨幅；距涨停空间 = 涨停收盘价较现价的剩余涨幅（「再涨停」赔率）；低点窗口 = 回踩低点距涨停日的交易日数；
           连板数 = 涨停日向前连续涨停天数；样本 = 本次扫描全部符合条件的回踩股（非筛选子集）。
           机会 = 评分 ≥65 且（自低点反弹 ≥3% 已确认，或「底部潜伏形态」：深回踩≥70% + 缩量≥30% / 低点极缩量≥50% + 企稳/双底 + 未创新低）；
-          机会按胜率分级 A/B/C（A 级 = 评分≥75 + 抛压枯竭证据 + 未失守 MA5）；距涨停价 &lt;5% 或修复比例 ≥75% 一律压制至机会线以下。
+          机会按胜率分级 A/B/C（A 级 = 评分≥75 + 抛压枯竭证据 + 未失守 MA5 + 右侧确认票量能不缩）；距涨停价 &lt;5% 或修复比例 ≥75% 一律压制至机会线以下。
+          智能因子层（Task 46）：反弹量能质量（低点后反弹段均量/回踩段均量）、板块共振（同板块回踩样本数与同伴平均涨跌）、尾盘承接（收盘在日内振幅中的位置）、
+          低点新鲜度（距低点天数），合计 -10~+10 微调边际评分。
           风险评分含「追高空间压缩」因子（距涨停价越近风险越高）。
           {resolveSignal ? "信号为盘前口径：仅用 T-1 收盘前数据判定，与今日盘中涨跌无关" : "信号为盘中复盘口径"}。
           结论随每轮扫描数据动态更新，仅供研究参考，不构成投资建议。

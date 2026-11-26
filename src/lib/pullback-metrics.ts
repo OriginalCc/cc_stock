@@ -12,6 +12,12 @@
 //   在低波动股已是深度修正，因此回踩深度/破位容忍度均按 ATR 折算；量能维度从
 //   「回踩段均量」细化到「低点当日量」（低位抛压是否真正枯竭的精确刻度）；新增
 //   反弹结构确认（MA5 收复 / 双底二次探底不破前低），捕捉 W 底右侧入场时机。
+// Task 46 (智能因子层): 把「已有数据但从未参与评分」的四个维度纳入边际区分——
+//   反弹量能质量（共性归纳早已记载「放量反抽确认动能；缩量反弹待量能验证」但未实现）、
+//   板块共振（同板块回踩样本数 + 同伴平均涨跌，题材轮动 vs 板块退潮）、
+//   尾盘承接（最新K线收盘在日内振幅中的位置）、低点新鲜度（daysSinceLow）。
+//   四因子均为小幅调整项（合计 -10~+10），主要作用在 65-80 分边际带，让 B/C 级与
+//   门槛边缘的区分更细；A 级门槛同步加严：右侧确认票必须量能不缩。
 
 export interface KLineDay {
   date: string;
@@ -67,6 +73,9 @@ export interface StockExt {
   retestHeld?: boolean;         // 双底承接：低点后曾反弹≥2%再回落至低点区但收盘未破前低，且仍在低点区
   // ── Task 42: 底部是机会，反弹过高是风险 ──
   roomToHigh: number;           // 距涨停价剩余空间(%，负=已越过涨停价)——「再涨停」赔率的直接度量
+  // ── Task 46: 智能因子层（旧缓存/快照缺数据 → 对应项 undefined，调整自动跳过） ──
+  reboundVolRatio?: number;     // 低点后反弹段均量 / 低点前回踩段均量（≥1.2=放量反弹，<0.7=缩量反弹防诱多）
+  closePos?: number;            // 最新K线收盘在日内振幅中的位置(0-1)：≥0.7 尾盘承接强，≤0.3 尾盘走弱
 }
 
 export function buildExt(s: PullbackStock): StockExt {
@@ -196,11 +205,31 @@ export function buildExt(s: PullbackStock): StockExt {
     ? ((s.limitUpClose - s.currentPrice) / s.currentPrice) * 100
     : 0;
 
+  // ── Task 46: 反弹段量能质量（低点后反弹段均量 / 低点前回踩段均量）──
+  // 放量反弹 = 二次启动有资金确认；缩量反弹 = 缺资金确认，防诱多。
+  // 仅低点已过去 ≥1 天（存在反弹段）且两段均有量数据时可得。
+  const reboundVolRatio = (() => {
+    if (lowIdx < 0 || after.length - 1 - lowIdx < 1) return undefined;
+    const pullbackSeg = after.slice(0, lowIdx + 1).map(k => k.volume || 0).filter(v => v > 0);
+    const reboundSeg = after.slice(lowIdx + 1).map(k => k.volume || 0).filter(v => v > 0);
+    if (pullbackSeg.length === 0 || reboundSeg.length === 0) return undefined;
+    const avgPull = pullbackSeg.reduce((a, b) => a + b, 0) / pullbackSeg.length;
+    const avgReb = reboundSeg.reduce((a, b) => a + b, 0) / reboundSeg.length;
+    return avgPull > 0 ? avgReb / avgPull : undefined;
+  })();
+
+  // ── Task 46: 尾盘承接（最新K线收盘在日内振幅中的位置）──
+  // 报收日内高位 = 承接强；报收日内低位 = 走弱，隔日惯性低开风险。high/low 缺失 → undefined。
+  const closePos = (() => {
+    if (!lastBar || !(lastBar.high > 0) || !(lastBar.low > 0) || lastBar.high <= lastBar.low) return undefined;
+    return (lastBar.close - lastBar.low) / (lastBar.high - lastBar.low);
+  })();
+
   return {
     reboundFromLow, lowWindow, daysSinceLow, streak,
     volShrinkPct, recentVolRatio, stabilized, brokenPct, recent3DayDrop,
     atrPct, pullbackAtr, lowDayVolShrinkPct, recentVolShrinkSeq, ma5Reclaimed, retestHeld,
-    roomToHigh,
+    roomToHigh, reboundVolRatio, closePos,
   };
 }
 
@@ -214,6 +243,49 @@ export function median(nums: number[]): number {
 
 export function share(part: number, total: number): number {
   return total > 0 ? Math.round((part / total) * 100) : 0;
+}
+
+// ── Task 46: 板块共振统计（从扫描全集提取，评分时按板块查表） ──
+
+/** 同板块回踩样本统计：count=样本数（含自身），momentum=口径内平均涨跌幅(%) */
+export interface SectorStat {
+  count: number;
+  momentum: number;
+  sum: number;
+}
+
+/**
+ * 从扫描全集构建板块统计表。板块取 s.sector（东财行业）。
+ * 口径：盘中模式直接用 currentChangePct（今日涨跌）；盘前模式（premarket: true）
+ * 先过 deriveT1Stock 截断（T-1 涨跌幅），保证与盘前评分口径一致、不泄漏盘中数据。
+ */
+export function buildSectorStats(
+  stocks: PullbackStock[],
+  opts?: { premarket?: boolean; basisDate?: string }
+): Map<string, SectorStat> {
+  const raw = new Map<string, { count: number; sum: number }>();
+  for (const s of stocks) {
+    const sector = (s.sector || "").trim();
+    if (!sector) continue;
+    let chg: number | undefined;
+    if (opts?.premarket) {
+      const t1 = deriveT1Stock(s, opts.basisDate);
+      if (!t1) continue;
+      chg = t1.currentChangePct;
+    } else {
+      chg = s.currentChangePct;
+    }
+    if (chg === undefined || !Number.isFinite(chg)) continue;
+    const cur = raw.get(sector) || { count: 0, sum: 0 };
+    cur.count++;
+    cur.sum += chg;
+    raw.set(sector, cur);
+  }
+  const out = new Map<string, SectorStat>();
+  for (const [k, v] of raw) {
+    out.set(k, { count: v.count, sum: v.sum, momentum: v.count > 0 ? v.sum / v.count : 0 });
+  }
+  return out;
 }
 
 // ── Opportunity/Risk signal ────────────────────────────
@@ -407,6 +479,102 @@ function reboundStructureAdjust(ext: StockExt, reboundFromLow: number, reasons: 
 }
 
 /**
+ * Task 46 智能因子层 (调整项合计 -10 ~ +10，作用在评分边际带):
+ * 数据全部来自已有 K 线/板块字段，旧行情数据缺对应维度时自动跳过（中性）。
+ */
+
+/** 反弹量能质量 (-3~+3): 低点后反弹段均量 vs 低点前回踩段均量——
+ *  放量反弹 = 二次启动获资金确认；缩量反弹 = 无量反抽，防诱多。
+ *  共性归纳「放量反抽确认动能；缩量反弹待量能验证」的算法落地。 */
+function reboundQualityAdjust(ext: StockExt, reboundFromLow: number, reasons: string[]): number {
+  if (reboundFromLow < 1 || ext.reboundVolRatio === undefined) return 0;
+  const q = ext.reboundVolRatio;
+  if (q >= 1.2) {
+    reasons.push(`放量反弹（低点后量能为回踩段 ${q.toFixed(1)} 倍，二次启动获资金确认）`);
+    return 3;
+  }
+  if (q < 0.7) {
+    reasons.push(`缩量反弹（低点后量能仅为回踩段 ${(q * 100).toFixed(0)}%，防诱多）`);
+    return -3;
+  }
+  return 0;
+}
+
+/** 尾盘承接 (-2~+2): 最新K线收盘在日内振幅中的位置——
+ *  报收日内高位 = 承接强；报收日内低位 = 走弱，隔日惯性低开风险。 */
+function closePositionAdjust(ext: StockExt, reasons: string[]): number {
+  if (ext.closePos === undefined) return 0;
+  if (ext.closePos >= 0.7) {
+    reasons.push("报收日内高位（尾盘承接强）");
+    return 2;
+  }
+  if (ext.closePos <= 0.3) {
+    reasons.push("报收日内低位（尾盘走弱，隔日惯性低开风险）");
+    return -2;
+  }
+  return 0;
+}
+
+/** 低点新鲜度 (-2~+2, 仅左侧区 r<3): 底部是否「新鲜」——
+ *  低点 1-3 天内且未破 = 新鲜底部（资金尚未撤离）；≥8 天仍未反弹 = 关注度衰减。 */
+function freshnessAdjust(ext: StockExt, reboundFromLow: number, reasons: string[]): number {
+  if (reboundFromLow >= REBOUND_CONFIRM) return 0;
+  if (reboundFromLow >= 0 && ext.daysSinceLow >= 1 && ext.daysSinceLow <= 3) {
+    reasons.push(`低点新鲜（${ext.daysSinceLow} 天前出现，资金尚未撤离）`);
+    return 2;
+  }
+  if (ext.daysSinceLow >= 8 && reboundFromLow < 1) {
+    reasons.push(`低点已过去 ${ext.daysSinceLow} 天仍未反弹（底部关注度衰减）`);
+    return -2;
+  }
+  return 0;
+}
+
+/** 板块共振 (-3~+3): 同板块回踩样本数 + 同伴（剔除自身）平均涨跌——
+ *  板块级题材 + 同伴仍强 = 题材轮动中，二次启动有板块助力；同伴齐跌 = 板块退潮，个股难独善其身。 */
+function sectorResonanceAdjust(
+  s: PullbackStock,
+  selfChg: number,
+  stats: Map<string, SectorStat> | undefined,
+  reasons: string[]
+): number {
+  const sector = (s.sector || "").trim();
+  if (!sector || !stats) return 0;
+  const st = stats.get(sector);
+  if (!st) return 0;
+  // 同伴口径 = 剔除自身后的板块均值（count>=2 才有意义）
+  const peers = st.count - 1;
+  const peerM = peers >= 1 ? (st.sum - selfChg) / peers : undefined;
+  if (st.count >= 3 && peerM !== undefined) {
+    if (peerM >= 2) {
+      reasons.push(`板块共振强（同板块 ${st.count} 只回踩股，同伴平均 +${peerM.toFixed(1)}%，题材仍在轮动）`);
+      return 3;
+    }
+    if (peerM >= 0) {
+      reasons.push(`板块共振（同板块 ${st.count} 只回踩股，同伴平均 +${peerM.toFixed(1)}%）`);
+      return 1;
+    }
+    if (peerM <= -2) {
+      reasons.push(`板块退潮（同板块 ${st.count} 只回踩股，同伴平均 ${peerM.toFixed(1)}%，整体走弱）`);
+      return -3;
+    }
+    reasons.push(`同板块 ${st.count} 只回踩股（板块级题材，同伴平均 ${peerM.toFixed(1)}%）`);
+    return 0;
+  }
+  if (st.count === 2 && peerM !== undefined) {
+    if (peerM >= 2) {
+      reasons.push("同板块 2 只回踩股且同伴走强");
+      return 1;
+    }
+    if (peerM <= -2) {
+      reasons.push("同板块 2 只回踩股且同伴走弱");
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
  * 位置评估 (0-35, Task 42 重构): 「底部是机会，反弹过高是风险」
  * 涨停回踩的赢利本质是低吸——反弹高度=持仓成本上升=赔率下降。两段式:
  *   A. 未反弹确认 (r < 3%): 按「底部质量」评分(0-35)——左侧低吸视角，反弹不是机会的必要条件
@@ -510,7 +678,11 @@ function gradeOf(
   const volExhausted = (ext.volShrinkPct !== undefined && ext.volShrinkPct >= 50)
     || (ext.lowDayVolShrinkPct !== undefined && ext.lowDayVolShrinkPct >= 50)
     || Boolean(ext.retestHeld);
-  if (score >= 75 && volExhausted && ext.ma5Reclaimed !== false) {
+  // Task 46: A 级加严——右侧确认票（反弹已过确认线）必须量能不缩（缩量反抽的「机会」恰是胜率杀手）
+  const reboundVolOk = ext.reboundFromLow < REBOUND_CONFIRM
+    || ext.reboundVolRatio === undefined
+    || ext.reboundVolRatio >= 0.8;
+  if (score >= 75 && volExhausted && ext.ma5Reclaimed !== false && reboundVolOk) {
     reasons.unshift(`机会分级 A 级（核心）：${GRADE_META.A.desc}，胜率优先组合`);
     return "A";
   }
@@ -581,15 +753,21 @@ export function deriveT1Stock(s: PullbackStock, basisDate?: string): PullbackSto
  * 盘前研判信号（T-1 收盘口径，0-100，Task 42 升级：底部是机会，反弹过高是风险）。
  * 构成: 位置评估 35* + 昨日动向 15 + 回踩位置 20* + 时间窗口 8 + 板型弹性 7 + 量能结构 10* + 涨停前趋势 5
  *      + 结构调整 -2~+6（MA5 收复 / 双底承接, Task 41）
+ *      + 智能因子层 -10~+10（反弹量能/尾盘承接/低点新鲜度/板块共振, Task 46）
  *   - 位置评估*(Task 42): 未反弹确认(r<3%)按「底部质量」评分(深回踩12+缩量8+双底8+企稳4+守起涨点3,
  *     创新低封顶12)；已反弹按确认曲线但随高度衰减(≥15%降至15)，距涨停价<5%追高保护封顶15
  *   - 量能结构用 T-1 截断后 K 线的回踩段萎缩度（替代原"昨日K线形态"），盘前可得且盘中不漂移
  *   - 涨停前趋势为静态事实，盘前同样可得
  *   - 回踩位置*: 破位容忍/深度按 ATR 归一化（Task 41）
+ *   - 智能因子层*(Task 46): sectorStats 缺省时板块共振自动跳过，其余因子仅依赖 T-1 前 K 线
  * 判定: score >= 65 且（反弹确认 ≥3% 或 底部潜伏：深回踩+缩量+企稳/双底+未创新低）→ 机会;
  *      score <= 38 → 风险; 其余 → 观察。门槛与 calcStockSignal 完全一致，便于两种口径对照。
  */
-export function calcPremarketSignal(s: PullbackStock, basisDate?: string): StockSignal {
+export function calcPremarketSignal(
+  s: PullbackStock,
+  basisDate?: string,
+  sectorStats?: Map<string, SectorStat>
+): StockSignal {
   const t1 = deriveT1Stock(s, basisDate);
   if (!t1) {
     return {
@@ -657,6 +835,13 @@ export function calcPremarketSignal(s: PullbackStock, basisDate?: string): Stock
   // ── 8. 结构调整 (-2~+6, Task 41): MA5 收复 / 双底承接 ──
   score += reboundStructureAdjust(ext, r, reasons);
 
+  // ── 9. 智能因子层 (-10~+10, Task 46): 反弹量能质量 + 尾盘承接 + 低点新鲜度 + 板块共振 ──
+  // 盘前口径：同伴动量用 T-1 涨跌幅（c 即 T-1 涨跌幅），不泄漏盘中数据
+  score += reboundQualityAdjust(ext, r, reasons);
+  score += closePositionAdjust(ext, reasons);
+  score += freshnessAdjust(ext, r, reasons);
+  score += sectorResonanceAdjust(s, c, sectorStats, reasons);
+
   // ── 硬性风险否决: 未脱离低点 + 昨日续跌 ──
   if (r < 1 && c < -1) {
     score = Math.min(score, 30);
@@ -706,23 +891,25 @@ export function calcPremarketSignal(s: PullbackStock, basisDate?: string): Stock
   //   B 级标准: score>=70；C 级观察: 其余(65-69，条件有瑕疵，轻仓试探)
   const grade = gradeOf(type, score, ext, reasons);
 
-  return { type, label: SIGNAL_META[type].label, score, grade, reasons: reasons.slice(0, 12) };
+  return { type, label: SIGNAL_META[type].label, score, grade, reasons: reasons.slice(0, 14) };
 }
 
 /**
  * 机会/风险信号评分 (0-100, Task 42 升级：底部是机会，反弹过高是风险)。
  * 构成: 位置评估 35* + 今日动向 15 + 回踩位置 20* + 时间窗口 8 + 板型弹性 7 + 量能结构 10* + 涨停前趋势 5
  *      + 结构调整 -2~+6（MA5 收复 / 双底承接, Task 41）
+ *      + 智能因子层 -10~+10（反弹量能/尾盘承接/低点新鲜度/板块共振, Task 46）
  *   - 位置评估*(Task 42): 未反弹确认(r<3%)按「底部质量」评分(深回踩12+缩量8+双底8+企稳4+守起涨点3,
  *     创新低封顶12)；已反弹按确认曲线但随高度衰减(≥15%降至15)，距涨停价<5%追高保护封顶15
  *   - 量能结构: 回踩段均量档位 + 低点当日分歧 + 近端逐日萎缩（缩量回踩=抛压枯竭；放量回踩=出逃迹象）
  *   - 涨停前趋势: 涨停前均线多头排列（趋势首板）优于超跌反抽
  *   - 回踩位置*: 破位容忍/深度按 ATR 归一化（Task 41）
+ *   - 智能因子层*(Task 46): sectorStats 缺省时板块共振自动跳过；其余因子仅依赖 K 线数据
  * 判定: score >= 65 且（反弹确认 ≥3% 或 底部潜伏：深回踩+缩量+企稳/双底+未创新低）→ 机会;
  *      score <= 38 → 风险; 其余 → 观察。
  * 旧数据（K线无量/preTrend 缺失）对应项取中性分，与历史口径平滑兼容。
  */
-export function calcStockSignal(s: PullbackStock): StockSignal {
+export function calcStockSignal(s: PullbackStock, sectorStats?: Map<string, SectorStat>): StockSignal {
   const ext = buildExt(s);
   const reasons: string[] = [];
   let score = 0;
@@ -783,6 +970,12 @@ export function calcStockSignal(s: PullbackStock): StockSignal {
   // ── 8. 结构调整 (-2~+6, Task 41): MA5 收复 / 双底承接 ──
   score += reboundStructureAdjust(ext, r, reasons);
 
+  // ── 9. 智能因子层 (-10~+10, Task 46): 反弹量能质量 + 尾盘承接 + 低点新鲜度 + 板块共振 ──
+  score += reboundQualityAdjust(ext, r, reasons);
+  score += closePositionAdjust(ext, reasons);
+  score += freshnessAdjust(ext, r, reasons);
+  score += sectorResonanceAdjust(s, s.currentChangePct, sectorStats, reasons);
+
   // ── 硬性风险否决: 未脱离低点 + 今日续跌 (共性归纳中的弱势特征) ──
   if (r < 1 && c < -1) {
     score = Math.min(score, 30);
@@ -830,5 +1023,5 @@ export function calcStockSignal(s: PullbackStock): StockSignal {
   // ── Task 42: 机会分级（胜率优先，与盘前口径同一规则）──
   const grade = gradeOf(type, score, ext, reasons);
 
-  return { type, label: SIGNAL_META[type].label, score, grade, reasons: reasons.slice(0, 12) };
+  return { type, label: SIGNAL_META[type].label, score, grade, reasons: reasons.slice(0, 14) };
 }

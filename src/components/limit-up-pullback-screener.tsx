@@ -78,9 +78,11 @@ import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { PullbackCommonality } from "@/components/pullback-commonality";
 import {
   buildExt,
+  buildSectorStats,
   calcPremarketSignal,
   GRADE_META,
   SIGNAL_META,
+  type SectorStat,
   type SignalResolver,
   type SignalType,
   type StockSignal,
@@ -1768,7 +1770,7 @@ function SignalBadge({ signal, basisDate }: { signal: StockSignal; basisDate?: s
             ))}
           </ul>
           <div className="mt-1.5 text-[10px] text-muted-foreground/70">
-            盘前口径：仅用 {basisDate ? `${basisDate} ` : "T-1 "}收盘前数据判定，与今日盘中涨跌无关 · 机会门槛 = 评分≥65 且（反弹确认 或 底部潜伏形态），机会按胜率分级 A/B/C
+            盘前口径：仅用 {basisDate ? `${basisDate} ` : "T-1 "}收盘前数据判定，与今日盘中涨跌无关 · 机会门槛 = 评分≥65 且（反弹确认 或 底部潜伏形态），机会按胜率分级 A/B/C · 智能因子层（反弹量能/尾盘承接/低点新鲜度/板块共振）微调边际评分
           </div>
         </TooltipContent>
       </Tooltip>
@@ -1971,7 +1973,7 @@ function LimitUpStreakBadge({ kline, limitUpDate }: { kline: KLineDay[]; limitUp
 
 // ── Expanded Row Detail ────────────────────────────────
 
-function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock; signal: StockSignal; basisDate?: string }) {
+function ExpandedRowDetail({ stock, signal, basisDate, sectorStat }: { stock: PullbackStock; signal: StockSignal; basisDate?: string; sectorStat?: SectorStat }) {
   const riskScore = calcRiskScore(stock);
   const riskStyle = getRiskStyle(riskScore);
   const approachStyle = getApproachStyle(stock.approachPct);
@@ -2031,6 +2033,16 @@ function ExpandedRowDetail({ stock, signal, basisDate }: { stock: PullbackStock;
         : `放量 ${Math.abs(extRisk.lowDayVolShrinkPct).toFixed(0)}%`
       : "--", cls: extRisk.lowDayVolShrinkPct === undefined ? "text-muted-foreground" : extRisk.lowDayVolShrinkPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-orange-500" },
     { label: "反弹结构", value: structureLabel, cls: structureCls },
+    // Task 46: 智能因子层（反弹量能质量 / 尾盘承接 / 板块共振）
+    { label: "反弹量能", value: extRisk.reboundVolRatio !== undefined
+      ? `${extRisk.reboundVolRatio >= 1.2 ? "放量 " : extRisk.reboundVolRatio < 0.7 ? "缩量 " : "温和 "}${extRisk.reboundVolRatio.toFixed(2)} 倍`
+      : "--", cls: extRisk.reboundVolRatio === undefined ? "text-muted-foreground" : extRisk.reboundVolRatio >= 1.2 ? "text-emerald-600 dark:text-emerald-400" : extRisk.reboundVolRatio < 0.7 ? "text-orange-500" : "text-foreground" },
+    { label: "报收位置", value: extRisk.closePos !== undefined
+      ? `日内 ${(extRisk.closePos * 100).toFixed(0)}%${extRisk.closePos >= 0.7 ? "（高位承接）" : extRisk.closePos <= 0.3 ? "（低位走弱）" : ""}`
+      : "--", cls: extRisk.closePos === undefined ? "text-muted-foreground" : extRisk.closePos >= 0.7 ? "text-emerald-600 dark:text-emerald-400" : extRisk.closePos <= 0.3 ? "text-orange-500" : "text-foreground" },
+    { label: "板块共振", value: stock.sector
+      ? `${stock.sector}${sectorStat ? ` · ${sectorStat.count} 只·均值 ${sectorStat.momentum >= 0 ? "+" : ""}${sectorStat.momentum.toFixed(1)}%` : ""}`
+      : "--", cls: !stock.sector ? "text-muted-foreground" : sectorStat && sectorStat.count >= 3 && sectorStat.momentum >= 2 ? "text-red-500" : sectorStat && sectorStat.count >= 3 && sectorStat.momentum <= -2 ? "text-green-500" : "text-foreground" },
   ];
 
   return (
@@ -2617,19 +2629,26 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   /**
    * 信号解析器：优先命中服务端盘前快照（全天稳定不漂移），
    * 未入快照的股票本地按同一 T-1 口径计算（剔除今日形成中K线）。
+   * Task 46: 本地补算时用扫描全集构建板块统计（盘前口径），与服务端板块共振因子对齐。
    */
+  const premarketSectorStats = useMemo<Map<string, SectorStat> | undefined>(() => {
+    const stocks = result?.stocks;
+    if (!stocks || stocks.length === 0) return undefined;
+    return buildSectorStats(stocks, { premarket: true, basisDate: premarket?.basisDate });
+  }, [result, premarket?.basisDate]);
+
   const resolveSignal = useCallback<SignalResolver>((s) => {
     const hit = premarket?.signals?.[s.symbol];
     if (hit) {
       // 旧快照的机会项缺分级（Task 42 之前落盘）→ 本地按同一 T-1 口径补算分级
       if (hit.type === "opportunity" && hit.grade === undefined) {
-        const local = calcPremarketSignal(s, premarket?.basisDate);
+        const local = calcPremarketSignal(s, premarket?.basisDate, premarketSectorStats);
         return { type: hit.type, label: SIGNAL_META[hit.type].label, score: hit.score, grade: local.grade, reasons: hit.reasons };
       }
       return { type: hit.type, label: SIGNAL_META[hit.type].label, score: hit.score, grade: hit.grade, reasons: hit.reasons };
     }
-    return calcPremarketSignal(s, premarket?.basisDate);
-  }, [premarket]);
+    return calcPremarketSignal(s, premarket?.basisDate, premarketSectorStats);
+  }, [premarket, premarketSectorStats]);
 
   // Filters (live "draft" state - what sliders/Badges display, updated immediately on slider drag)
   const [filters, setFilters] = useState<PullbackFilters>(() => {
@@ -3830,7 +3849,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                           {isExpanded && (
                             <TableRow className="hover:bg-transparent">
                               <TableCell colSpan={19} className="p-0">
-                                <ExpandedRowDetail stock={stock} signal={signal} basisDate={premarket?.basisDate} />
+                                <ExpandedRowDetail stock={stock} signal={signal} basisDate={premarket?.basisDate} sectorStat={premarketSectorStats?.get((stock.sector || "").trim())} />
                               </TableCell>
                             </TableRow>
                           )}
