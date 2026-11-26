@@ -2009,3 +2009,45 @@ Work Log:
     tooltip 判定依据完整；页尾智能因子层洞察行渲染；控制台 0 错误；lint 通过
 - 涉及文件：src/lib/pullback-metrics.ts、src/lib/pullback-pipeline.ts、src/app/api/stock/premarket-signals/route.ts、
   src/components/limit-up-pullback-screener.tsx、src/components/pullback-commonality.tsx
+
+## Task 47: 近 5 日热点概念榜（每日涨幅前三）页面展示
+- 用户诉求：把最近五天每天的涨幅前 3 名热点概念在页面中展示出来。落地为回踩选股页
+  SummaryCard 与直方图之间的「近 5 日热点概念」面板——为 Task 46 板块共振因子提供市况参照
+  （判断个股所属题材是持续热点还是一日游）。
+- 数据方案（新接口 /api/stock/hot-concepts）：东财概念板块（m:90+t:3，554 个，剔除风格/统计类
+  伪概念后约 440 个）。历史每日涨幅用板块日 K（secid=90.BKxxxx，klt=101，f59=当日涨跌幅，
+  lmt=8）回溯；当日值用 clist 快照（f3 涨幅/f5 量/f6 额）单请求覆盖全市场，今日列永远完整。
+- 限速攻坚（本轮主要工作量）：EM push2 系对突发连发按 IP 频控（rc:100 / 直接 RST 断连），
+  undici/bun fetch 还会把「已回完 body 立即 RST」的正常响应当致命错误丢弃（em-raw-client.ts
+  注释早已记录）。踩坑序列：全局 fetch 并发 12 → 84/94 失败；emRawFetch 并发 8 → 仍约半数
+  rc:100；间隔 250-400ms 也只有 ~40% 成功。最终架构：
+  - 所有 EM 请求走模块级限速队列（并发 3 + 最小间隔 200ms，em-raw-client 原生 http 容忍
+    premature close，多 IP 候选）
+  - 历史日 K 磁盘持久缓存（.cache/hot-concepts-history.json，原子写 tmp→rename）：历史条目
+    永不变化，每板块每天只刷一次；服务重启后从磁盘秒恢复，无需重拉
+  - 后台 warmup 渐进补全（候选集=今日涨幅/5日涨幅/主力净流入各前 150 去重，约 260-320 个），
+    接口先返回已收录部分（meta.complete=false），前端 3 秒轮询直至收敛（最多 15 次，错误路径
+    也续期）
+  - 候选集按交易日冻结（盘中 f3 变动会让 warmup 追移动目标永不完敛——实测发现后修复）；
+    今日列排名由全量清单驱动不受候选集影响；次日自动重算冻结集
+  - 冷启动首请求最多等待 9s 让 warmup 填充部分历史，随后立即返回部分结果
+- 过滤增强：管线 STYLE_TAG_RE（昨日涨停/连板/MSCI 等）之上，热点榜专用叠加
+  HOT_STYLE_EXTRA_RE（指数成分：上证50_/沪深300/中证500/创业板综/深成500/央视50…；
+  风格：大盘价值/价值股/周期股/权重股/行业龙头/科技风格等；财报统计：预增/预减/扭亏；
+  调研统计：密集调研/增持计划/私募新进；坏数据 BK0706 名称退化）——不动管线共享正则，
+  避免影响回踩选股 pickBestConcept 行为。过滤后今日板块 486→443。
+- 输出：days（近 5 交易日升序）/ perDay（每日 top3：名称/涨幅/成交额亿/量能比=当日量÷前日量）
+  / frequency（5 日上榜次数聚合，连续上榜=持续热点，count≥2 才展示火焰徽章）/ meta.complete
+  （前端据此轮询）。
+- 前端组件 hot-concepts-panel.tsx：最新日在前（今日+T-1 移动端首行），名次章（1 琥珀、2/3 灰）、
+  红涨绿跌、上榜≥2 次火焰标记、频次摘要 chips（×N 次 + 最好名次 + 5 日累计 tooltip）、
+  口径说明行、折叠/展开（aria-expanded）、刷新（refresh=1 绕过缓存）、骨架屏/错误重试态。
+- 验证（curl + 浏览器登录 888888）：
+  - API：complete=true（387 板块收录/263 候选），缓存命中 5ms；排名合理——11-23 机器人执行器
+    +7.88%/物理AI+7.83%/AI视频+6.83%（科技主线日）、11-20 中特估/鸡肉/猪肉（大跌日防御类）、
+    今日盘中 水产+3.4%/金属铅/黄金（实时）；过滤后无任何风格类漏网
+  - 浏览器：面板渲染于统计卡与直方图之间；桌面 5 列/移动 2 列布局正常、名称截断正常；
+    折叠/展开/刷新交互正常；页尾共性归纳区与 sticky footer 不受影响；控制台 0 错误；lint 通过
+  - 一次瞬时 500（东财限流）自愈复现：前端错误路径续期轮询恢复
+- 涉及文件：src/app/api/stock/hot-concepts/route.ts（新增）、src/components/hot-concepts-panel.tsx（新增）、
+  src/components/limit-up-pullback-screener.tsx（插入面板 + import）、src/lib/pullback-pipeline.ts（导出 STYLE_TAG_RE）

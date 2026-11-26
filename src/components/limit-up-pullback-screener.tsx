@@ -76,6 +76,7 @@ import {
 } from "lucide-react";
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { PullbackCommonality } from "@/components/pullback-commonality";
+import { HotConceptsPanel } from "@/components/hot-concepts-panel";
 import {
   buildExt,
   buildSectorStats,
@@ -3331,6 +3332,9 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
           resolveSignal={resolveSignal}
         />
       )}
+
+      {/* ── 近 5 日热点概念（每日涨幅前三，板块共振的市况参照） ── */}
+      <HotConceptsPanel />
 
       {/* ── Histogram (clickable bars filter by approach range) ── */}
       {result && filteredStocks.length > 0 && (
