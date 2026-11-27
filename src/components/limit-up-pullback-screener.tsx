@@ -2773,12 +2773,24 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   // Selected row symbol (keyboard navigation highlight)
   const [selectedRowSymbol, setSelectedRowSymbol] = useState<string | null>(null);
 
-  // 热点概念联动筛选：点击「近 5 日热点概念」面板中的概念 → 筛选个股 top6 概念含该概念者
-  const [hotConceptFilter, setHotConceptFilter] = useState<string | null>(null);
+  // 概念筛选（关键词模式）：两个入口 —— ①点击「近 5 日热点概念」面板概念（填入完整
+  // 概念名，包含匹配语义下等价旧精确匹配）②自由输入模糊关键词（如「医疗」命中概念名
+  // 含「医疗」的全部个股）；空格分隔多关键词，任一命中即入选
+  const [conceptKeyword, setConceptKeyword] = useState<string | null>(null);
   const handleSelectHotConcept = useCallback((c: string | null) => {
-    setHotConceptFilter(c);
+    setConceptKeyword(c);
     setCurrentPage(1);
   }, []);
+  const handleConceptKeywordChange = useCallback((v: string) => {
+    setConceptKeyword(v || null);
+    setCurrentPage(1);
+  }, []);
+
+  // 关键词分词（空格/竖线/逗号等分隔，任一命中 OR 语义）
+  const conceptKeywords = useMemo(
+    () => (conceptKeyword ?? "").trim().split(/[\s|/、,，]+/).filter(Boolean),
+    [conceptKeyword]
+  );
 
   // Saved strategies
   const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>(() => {
@@ -3071,11 +3083,15 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         selectedBinObjs.some(b => isApproachInBin(s.approachPct, b))
       );
     }
-    if (hotConceptFilter) {
-      base = base.filter(s => s.concepts?.includes(hotConceptFilter) || s.concept === hotConceptFilter);
+    if (conceptKeywords.length > 0) {
+      const kws = conceptKeywords.map(k => k.toLowerCase());
+      base = base.filter(s => {
+        const names = s.concepts?.length ? s.concepts : s.concept ? [s.concept] : [];
+        return kws.some(kw => names.some(c => c.toLowerCase().includes(kw)));
+      });
     }
     return base;
-  }, [filteredStocks, histogramBins, hotConceptFilter]);
+  }, [filteredStocks, histogramBins, conceptKeywords]);
 
   // isDefaultFilters / activePreset use the live `filters` (draft) for instant UI feedback
   const isDefaultFilters = useMemo(
@@ -3599,34 +3615,59 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
 
       {/* ── 近 5 日热点概念（每日涨幅前八，板块共振的市况参照；点击概念可筛选下方股票） ── */}
       <HotConceptsPanel
-        selectedConcept={hotConceptFilter}
+        selectedConcept={conceptKeyword}
         onSelectConcept={handleSelectHotConcept}
       />
 
-      {/* ── 热点概念筛选激活提示条 ── */}
-      {hotConceptFilter && (
-        <div className="flex items-center justify-between flex-wrap gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-          <div className="flex items-center gap-2 text-xs flex-wrap">
-            <Flame className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span className="text-muted-foreground">热点概念筛选：</span>
-            <Badge variant="outline" className="bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400">
-              {hotConceptFilter}
+      {/* ── 概念筛选行（常驻：面板点击填入完整概念名 / 关键词模糊匹配） ── */}
+      <div
+        className={`flex items-center justify-between flex-wrap gap-2 rounded-lg border px-3 py-2 ${
+          conceptKeywords.length > 0
+            ? "border-amber-500/30 bg-amber-500/5"
+            : "border-border/50 bg-background"
+        }`}
+      >
+        <div className="flex items-center gap-2 text-xs flex-wrap min-w-0">
+          <Flame
+            className={`w-3.5 h-3.5 shrink-0 ${
+              conceptKeywords.length > 0 ? "text-amber-500" : "text-muted-foreground/50"
+            }`}
+          />
+          <span className="text-muted-foreground shrink-0">概念筛选</span>
+          <Input
+            value={conceptKeyword ?? ""}
+            onChange={e => handleConceptKeywordChange(e.target.value)}
+            placeholder="关键词模糊匹配，如：医疗"
+            className="h-7 w-44 text-xs"
+            aria-label="概念关键词筛选"
+          />
+          <span className="text-[11px] text-muted-foreground">
+            概念名包含匹配，多词空格分隔任一命中；点击上方热点概念快速填入
+          </span>
+        </div>
+        {conceptKeywords.length > 0 && (
+          <div className="flex items-center gap-2 text-xs">
+            <Badge
+              variant="outline"
+              className="bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 max-w-[220px] truncate"
+            >
+              {conceptKeyword}
             </Badge>
             <span className="text-[11px] text-muted-foreground">
-              匹配 <span className="font-mono font-semibold text-foreground">{displayedStocks.length}</span> 只（按个股 top6 概念精确匹配，与其他筛选条件叠加）
+              匹配 <span className="font-mono font-semibold text-foreground">{displayedStocks.length}</span> 只（与其他筛选条件叠加）
             </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1 shrink-0"
+              onClick={() => handleConceptKeywordChange("")}
+            >
+              <X className="w-3 h-3" />
+              清除
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs gap-1 shrink-0"
-            onClick={() => handleSelectHotConcept(null)}
-          >
-            <X className="w-3 h-3" />
-            清除概念筛选
-          </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ── Stock Table / Card View ─────────────────── */}
       {result && displayedStocks.length > 0 ? (
@@ -3977,20 +4018,20 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
           <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <Filter className="w-8 h-8 mb-2" />
             <p className="text-sm font-medium text-foreground">
-              {hotConceptFilter
-                ? `概念「${hotConceptFilter}」下无符合当前条件的股票`
+              {conceptKeyword != null
+                ? `概念关键词「${conceptKeyword}」下无符合当前条件的股票`
                 : filteredStocks.length > 0 && histogramBins.length > 0
                 ? "当前直方图选中区间无股票"
                 : "当前筛选条件下无结果"}
             </p>
             <p className="text-xs mt-1">
-              {hotConceptFilter
-                ? `已按 ${filteredStocks.length} 只候选股票的 top6 概念精确匹配，可清除概念筛选或放宽其他条件`
+              {conceptKeyword != null
+                ? `已按 ${filteredStocks.length} 只候选股票的概念名包含匹配（多词任一命中），可清除概念筛选或放宽其他条件`
                 : filteredStocks.length > 0 && histogramBins.length > 0
                 ? `已筛选出 ${filteredStocks.length} 只，但未选中任何回踩深度区间`
                 : `原始数据 ${result.stocks.length} 只，可尝试降低回踩深度阈值或重置筛选`}
             </p>
-            {hotConceptFilter ? (
+            {conceptKeyword != null ? (
               <Button
                 variant="outline"
                 size="sm"
