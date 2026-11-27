@@ -77,6 +77,7 @@ import {
 import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { PullbackCommonality } from "@/components/pullback-commonality";
 import { HotConceptsPanel } from "@/components/hot-concepts-panel";
+import { extractConceptTokens } from "@/lib/concept-tokens";
 import {
   buildExt,
   buildSectorStats,
@@ -2792,6 +2793,36 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
     [conceptKeyword]
   );
 
+  // 概念词表（候选池全部个股的贴切概念名）：数据驱动分词的形态素来源
+  const conceptVocab = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of result?.stocks ?? []) {
+      (s.concepts ?? []).forEach(c => c && set.add(c));
+      if (s.concept) set.add(s.concept);
+    }
+    return [...set];
+  }, [result]);
+
+  // 每个关键词的自动分词扩展（如点击「机器人执行器」→ 词根「机器人」），
+  // 全名仍是第一优先 token；命中全名或任一词根即入选
+  const conceptKeywordTokens = useMemo(
+    () =>
+      conceptKeywords.map(kw => ({
+        kw,
+        tokens: extractConceptTokens(kw, conceptVocab),
+      })),
+    [conceptKeywords, conceptVocab]
+  );
+
+  // 展示用词根列表（去重、去掉与关键词本身相同的词根）
+  const conceptTokenDisplay = useMemo(
+    () =>
+      [...new Set(conceptKeywordTokens.flatMap(x => x.tokens))].filter(
+        t => !conceptKeywords.includes(t)
+      ),
+    [conceptKeywordTokens, conceptKeywords]
+  );
+
   // Saved strategies
   const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>(() => {
     if (typeof window === "undefined") return [];
@@ -3083,15 +3114,17 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         selectedBinObjs.some(b => isApproachInBin(s.approachPct, b))
       );
     }
-    if (conceptKeywords.length > 0) {
-      const kws = conceptKeywords.map(k => k.toLowerCase());
+    if (conceptKeywordTokens.length > 0) {
       base = base.filter(s => {
         const names = s.concepts?.length ? s.concepts : s.concept ? [s.concept] : [];
-        return kws.some(kw => names.some(c => c.toLowerCase().includes(kw)));
+        const lowerNames = names.map(c => c.toLowerCase());
+        return conceptKeywordTokens.some(({ kw, tokens }) =>
+          [kw, ...tokens].some(t => lowerNames.some(n => n.includes(t.toLowerCase())))
+        );
       });
     }
     return base;
-  }, [filteredStocks, histogramBins, conceptKeywords]);
+  }, [filteredStocks, histogramBins, conceptKeywordTokens]);
 
   // isDefaultFilters / activePreset use the live `filters` (draft) for instant UI feedback
   const isDefaultFilters = useMemo(
@@ -3642,17 +3675,31 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
             aria-label="概念关键词筛选"
           />
           <span className="text-[11px] text-muted-foreground">
-            概念名包含匹配，多词空格分隔任一命中；点击上方热点概念快速填入
+            概念名包含匹配 + 长词自动分词，多词空格分隔任一命中；点击上方热点概念快速填入
           </span>
         </div>
         {conceptKeywords.length > 0 && (
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2 text-xs flex-wrap">
             <Badge
               variant="outline"
               className="bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 max-w-[220px] truncate"
             >
               {conceptKeyword}
             </Badge>
+            {conceptTokenDisplay.length > 0 && (
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                自动分词
+                {conceptTokenDisplay.map(t => (
+                  <Badge
+                    key={t}
+                    variant="outline"
+                    className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground"
+                  >
+                    {t}
+                  </Badge>
+                ))}
+              </span>
+            )}
             <span className="text-[11px] text-muted-foreground">
               匹配 <span className="font-mono font-semibold text-foreground">{displayedStocks.length}</span> 只（与其他筛选条件叠加）
             </span>
@@ -4026,7 +4073,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
             </p>
             <p className="text-xs mt-1">
               {conceptKeyword != null
-                ? `已按 ${filteredStocks.length} 只候选股票的概念名包含匹配（多词任一命中），可清除概念筛选或放宽其他条件`
+                ? `已按 ${filteredStocks.length} 只候选股票的概念名包含匹配与自动分词扩展（多词任一命中），可清除概念筛选或放宽其他条件`
                 : filteredStocks.length > 0 && histogramBins.length > 0
                 ? `已筛选出 ${filteredStocks.length} 只，但未选中任何回踩深度区间`
                 : `原始数据 ${result.stocks.length} 只，可尝试降低回踩深度阈值或重置筛选`}
