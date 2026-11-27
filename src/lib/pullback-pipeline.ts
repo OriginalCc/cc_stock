@@ -351,7 +351,7 @@ export async function resolveStockConcepts(
   if (hit && Date.now() - hit.ts < CONCEPT_RESULT_TTL) return hit.names;
   const boards = await fetchStockBoards(symbol);
   if (boards.length === 0) return []; // 数据源不可用不缓存，下次请求重试
-  const names = pickTopConcepts(boards, conceptCodes, sector, industryCodes, 3);
+  const names = pickTopConcepts(boards, conceptCodes, sector, industryCodes, 6);
   if (names.length > 0) conceptResultCache.set(symbol, { names, ts: Date.now() });
   return names;
 }
@@ -367,7 +367,7 @@ export async function resolveStockConcept(
 }
 
 /**
- * 挑"最贴切概念"列表：剔除风格/资金标签后按今日板块涨幅降序取前 n 个（默认 3）
+ * 挑"最贴切概念"列表：剔除风格/资金标签后按今日板块涨幅降序取前 n 个（默认 6）
  * （涨停回踩语境下，今日仍在涨的概念板块大概率就是该股的题材驱动；同名去重靠 slist 原序稳定排序）。
  * - 精确模式：conceptCodes（t:3 概念族全集）可用 → 只认集合内板块
  * - 降级模式：全集失败但 industryCodes（t:2 行业全集，体小抗限流）可用 → 排除行业+地区后取概念
@@ -379,7 +379,7 @@ export function pickTopConcepts(
   conceptCodes: Set<string> | null,
   sector: string | undefined,
   industryCodes?: Set<string> | null,
-  n = 3
+  n = 6
 ): string[] {
   let pool: StockBoard[];
   if (conceptCodes && conceptCodes.size > 0) {

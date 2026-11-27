@@ -121,7 +121,7 @@ interface PullbackStock {
   volumeRatio: number;
   sector?: string;   // 所属行业板块（东财 f100）
   concept?: string;  // 最贴切概念（= concepts[0]）
-  concepts?: string[]; // 最贴切概念前 3（今日板块涨幅降序）
+  concepts?: string[]; // 最贴切概念前 6（今日板块涨幅降序）
   preTrend?: number; // 涨停前均线结构：2=多头排列 1=中期向上 0=超跌反抽（Task 40）
 }
 
@@ -2773,7 +2773,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   // Selected row symbol (keyboard navigation highlight)
   const [selectedRowSymbol, setSelectedRowSymbol] = useState<string | null>(null);
 
-  // 热点概念联动筛选：点击「近 5 日热点概念」面板中的概念 → 筛选个股 top3 概念含该概念者
+  // 热点概念联动筛选：点击「近 5 日热点概念」面板中的概念 → 筛选个股 top6 概念含该概念者
   const [hotConceptFilter, setHotConceptFilter] = useState<string | null>(null);
   const handleSelectHotConcept = useCallback((c: string | null) => {
     setHotConceptFilter(c);
@@ -3180,7 +3180,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         s.limitUpPct.toFixed(2),
         calcLimitUpStreak(s.klineSummary, s.limitUpDate),
         s.sector || "",
-        s.concepts?.length ? s.concepts.slice(0, 3).join("/") : (s.concept || ""),
+        s.concepts?.length ? s.concepts.slice(0, 6).join("/") : (s.concept || ""),
         s.limitUpClose.toFixed(2),
         s.preLimitUpClose.toFixed(2),
         s.currentPrice.toFixed(2),
@@ -3613,7 +3613,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
               {hotConceptFilter}
             </Badge>
             <span className="text-[11px] text-muted-foreground">
-              匹配 <span className="font-mono font-semibold text-foreground">{displayedStocks.length}</span> 只（按个股 top3 概念精确匹配，与其他筛选条件叠加）
+              匹配 <span className="font-mono font-semibold text-foreground">{displayedStocks.length}</span> 只（按个股 top6 概念精确匹配，与其他筛选条件叠加）
             </span>
           </div>
           <Button
@@ -3652,7 +3652,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                       <SortableHead label="连板" field="limitUpStreak" current={sortField} order={sortOrder} onSort={handleSort} className="w-[52px]" align="right" />
                       <SortableHead label="今日涨跌" field="currentChangePct" current={sortField} order={sortOrder} onSort={handleSort} className="w-[64px]" align="right" />
                       <TableHead className="text-[11px] font-medium w-[90px]">板块</TableHead>
-                      <TableHead className="text-[11px] font-medium w-[110px]">概念</TableHead>
+                      <TableHead className="text-[11px] font-medium w-[200px]">概念</TableHead>
                       <SortableHead label="涨停价" field="limitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="起涨点" field="preLimitUpClose" current={sortField} order={sortOrder} onSort={handleSort} className="w-[56px]" align="right" />
                       <SortableHead label="当前价" field="currentPrice" current={sortField} order={sortOrder} onSort={handleSort} className="w-[60px]" align="right" />
@@ -3779,34 +3779,40 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
                               )}
                             </TableCell>
 
-                            {/* 概念 - 最贴切概念前三（slist 概念族剔除风格标签后按今日动量降序） */}
+                            {/* 概念 - 最贴切概念前六（slist 概念族剔除风格标签后按今日动量降序，横向换行防行高失控） */}
                             <TableCell className="py-2 text-[11px] text-muted-foreground">
                               {(stock.concepts?.length || stock.concept) ? (() => {
-                                const list = stock.concepts?.length ? stock.concepts.slice(0, 3) : [stock.concept!];
+                                const list = stock.concepts?.length ? stock.concepts.slice(0, 6) : [stock.concept!];
                                 const tone = [
                                   "text-foreground/90 font-medium",
                                   "text-muted-foreground",
                                   "text-muted-foreground/70",
+                                  "text-muted-foreground/55",
+                                  "text-muted-foreground/45",
+                                  "text-muted-foreground/35",
                                 ];
                                 return (
                                   <TooltipProvider>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <div className="space-y-0.5 min-w-0 cursor-default">
+                                        <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 w-[184px] min-w-0 cursor-default leading-[1.4]">
                                           {list.map((c, i) => (
-                                            <span key={c} className={`block max-w-[110px] truncate leading-tight ${tone[i] ?? "text-muted-foreground/70"}`}>
+                                            <span
+                                              key={c}
+                                              className={`max-w-[80px] truncate text-[10px] ${tone[i] ?? "text-muted-foreground/35"}`}
+                                            >
                                               {c}
                                             </span>
                                           ))}
                                         </div>
                                       </TooltipTrigger>
-                                      <TooltipContent side="top" className="max-w-[280px] text-xs">
+                                      <TooltipContent side="top" className="max-w-[300px] text-xs">
                                         <div className="font-medium">{list[0]}</div>
                                         {list.length > 1 && (
                                           <div className="mt-0.5">相关概念：{list.slice(1).join(" · ")}</div>
                                         )}
                                         <div className="mt-1 text-[10px] text-muted-foreground">
-                                          东财概念板块：取该股所属概念中今日涨幅前三（题材动量最强）；
+                                          东财概念板块：取该股所属概念中今日涨幅前六（题材动量最强）；
                                           融资融券/指数成分等风格标签已剔除
                                         </div>
                                       </TooltipContent>
@@ -3979,7 +3985,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
             </p>
             <p className="text-xs mt-1">
               {hotConceptFilter
-                ? `已按 ${filteredStocks.length} 只候选股票的 top3 概念精确匹配，可清除概念筛选或放宽其他条件`
+                ? `已按 ${filteredStocks.length} 只候选股票的 top6 概念精确匹配，可清除概念筛选或放宽其他条件`
                 : filteredStocks.length > 0 && histogramBins.length > 0
                 ? `已筛选出 ${filteredStocks.length} 只，但未选中任何回踩深度区间`
                 : `原始数据 ${result.stocks.length} 只，可尝试降低回踩深度阈值或重置筛选`}

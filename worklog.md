@@ -2172,3 +2172,40 @@ Work Log:
   - 控制台 0 错误；lint 通过
 - 涉及文件：src/components/hot-concepts-panel.tsx（props + 条目/chips 可点击化）、
   src/components/limit-up-pullback-screener.tsx（hotConceptFilter 状态/过滤/提示条/空态）
+
+## Task 53: 个股相关概念从 3 个扩展到 6 个
+- 用户诉求：每个股票展示的概念从 3 个增加到 6 个（Task 51 的扩展）。
+- pipeline（src/lib/pullback-pipeline.ts）：
+  - resolveStockConcepts 调 pickTopConcepts 的 n 3→6；pickTopConcepts 默认 n=6
+  - 排序逻辑不变：slist 概念族剔除风格/资金标签后按今日板块涨幅降序取前 6，
+    概念不足 6 个的个股按真实数量返回（本次 199 只中 163 只满 6）
+- 表格 UI（limit-up-pullback-screener.tsx）：
+  - 概念列由竖排 3 行改为横向换行 chips（w-[184px] 容器、单 chip max-w-[80px]
+    truncate、text-[10px]），6 级灰度 tone（首概念 font-medium 最深，向右渐淡）
+  - 表头概念列宽 w-[110px]→w-[200px]：原 110px 列宽会把 wrap 容器挤压成单列
+    （min-content≈最宽 chip），导致每行只装 1 个概念、行高 111px——
+    放宽列宽后每行稳定 2 个概念，行高 53px（比竖排 3 概念时代 ~64px 还矮）
+  - Tooltip/CSV/类型注释/提示条文案同步 top3→top6
+  - 实测 20 行 + 表头高 1100px < 容器 max-h-[1300px]，保持免滚动（Task 49 约束）
+- 联动筛选受益：top6 后热点概念命中面显著扩大（如「人形机器人」命中 18 只，
+  top3 时代多数热点命中 0-3 只）；提示条/空态口径文案同步 top6
+- 验证：浏览器登录后确认 6 概念换行展示、20 行免滚动、点「人形机器人」→
+  提示条匹配 18 只且命中行概念列均含该概念、清除恢复 20 条；控制台 0 错误；lint 通过
+- 涉及文件：src/lib/pullback-pipeline.ts、src/components/limit-up-pullback-screener.tsx
+
+## 热点概念与个股涨跌关系分析（新增 scripts/concept-momentum-analysis.ts 可复跑）
+- 数据源：/api/stock/hot-concepts（5 日每日 Top8 概念板块）× /api/stock/limit-up-pullback
+  （199 只候选池个股 top6 概念，同一命名空间精确匹配）
+- 核心结论（2026-11-27 快照）：
+  1. 当日热点传导显著：命中今日热点的候选股均涨 +2.35%（n=14），仅往日热点 -0.17%
+     （n=39），未命中 -1.04%（n=146），分层清晰；热点成分股回踩更浅
+     （70.6% vs 84.2%）、最大回撤更小（13.2% vs 17.6%）——热点是回踩股弹性的风向标
+  2. 主概念领先效应：第 1 贴切概念即今日热点的 13 只均涨 +2.48%、中位 +2.73%、
+     最大回撤 12.5%，优于仅次概念命中——concepts[0] 排序确实抓住了题材驱动
+  3. 板块涨幅≠成分股涨幅：板块涨幅与候选池成分股均涨相关性弱（r=-0.33，仅 5 个
+     n≥2 概念，样本小；华为欧拉/财税数字化领涨但候选池无成分股）——选股看
+     「是否属于热点」比「板块涨多少」更有意义
+  4. 持续性热点（5 日≥2 次上榜）样本极小（本期仅 2 个且均已掉榜），掉榜后成分股
+     表现（+0.12%）仍好于未命中组，待样本积累后复跑验证
+- 脚本：bun run scripts/concept-momentum-analysis.ts（BASE_URL 可覆盖，随每日
+  缓存数据自动更新结论）
