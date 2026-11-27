@@ -2359,3 +2359,29 @@ Work Log:
 - 备注：验证时东财概念清单接口正处限流窗口（面板 error 态 + 重试按钮渲染正常），
   用 agent-browser network route 注入真实缓存响应完成 UI 验证后已 unroute 清理。
 - 涉及文件：src/components/hot-concepts-panel.tsx
+
+## Task 59: bug 检查与修复（热点 API 限流降级 + 缓存目录退出追踪）+ 推送
+- 用户诉求：检查有没有 bug，修复并推送到 GitHub。
+- 排查过程：lint 通过；dev.log 无运行时错误；Task 54-58 累计改动代码审查（面板每日主题
+  chips、screener 归类/关键词互斥接线、concept-tokens 词典匹配）均无逻辑问题；真实数据
+  浏览器回归时发现东财仍处限流窗口 → 暴露出真实健壮性 bug。
+- Bug 1（修复）：/api/stock/hot-concepts 在东财限流/网络故障时直接 500 整页报错，而磁盘
+  .cache/hot-concepts-history.json（479 板块日 K，历史条目永不变化）足以完整渲染近 5 日
+  每日 Top8。修复（route.ts）：
+  - buildResponse 增加 opts.todayFromSnapshot；新增 buildVirtualList（仅板块名映射，pct
+    全空 → 今日列自动回退到缓存今日 K）与 buildDegradedResponse（有 lastList → 今日列用
+    最近一次成功快照；冷启动即限流 → 虚拟清单 + 缓存今日 K；缓存渲染不出任何列才返回 null）
+  - GET 的「清单为空」与 catch 两条失败路径均先试降级（Cache-Control: no-store 防中间层
+    缓存降级快照），降级响应 success=true + meta.degraded=true + error 说明文案
+  - 前端面板：meta.degraded → 头部显示「缓存降级」徽章（amber 警示三角 + title 说明口径），
+    替代「后台补全中」；降级时轮询间隔 3s→8s（减少对受限上游击打），限流恢复后自动换回
+    实时数据；complete=false 语义保持，手动刷新仍可重试
+  - 真实场景验证：curl 降级响应 success=true、5 天 ×8 条（含今日列）、degraded=true；
+    浏览器面板完整渲染（每日主题 chips 5 行 + 顶部聚合行 + 主表格），点 11/25
+    「医药医疗×6」→ 整类匹配 11 只（与 Task 57 交叉一致）→ 取消恢复 20 条；控制台 0 错误
+- Bug 2（修复）：.cache/hot-concepts-history.json 为运行时数据快照却被 git 追踪，随 dev
+  server 持续变动污染提交历史（auto-commit 已多次带上它）。git rm --cached + .gitignore
+  增 /.cache/；服务器首次冷启动由 warmup 自行重建，无需入库。
+- worklog 记录后推送 main（含 Task 58 每日主题归类提交）。
+- 涉及文件：src/app/api/stock/hot-concepts/route.ts、src/components/hot-concepts-panel.tsx、
+  .gitignore、worklog.md

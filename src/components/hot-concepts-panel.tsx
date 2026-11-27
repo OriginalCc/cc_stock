@@ -58,6 +58,7 @@ interface HotConceptsData {
     complete: boolean;
     warmupRunning: boolean;
     daysBack: number;
+    degraded?: boolean; // true = 东财不可用，当前为本地缓存快照（历史列完整，实时列可能延迟）
   };
   error?: string;
 }
@@ -129,11 +130,11 @@ export function HotConceptsPanel({
       if (!mounted.current) return;
       if (!resp.ok || !json?.success) throw new Error(json?.error || `HTTP ${resp.status}`);
       setData(json);
-      // 服务端后台补全未完成 → 自动轮询直至收敛（最多 15 次）
+      // 服务端后台补全未完成 → 自动轮询直至收敛（最多 15 次；降级快照时拉长间隔减少对受限上游的击打）
       if (!json.meta?.complete && pollCount.current < 15) {
         pollCount.current += 1;
         if (pollTimer.current) clearTimeout(pollTimer.current);
-        pollTimer.current = setTimeout(() => { if (mounted.current) load(false); }, 3000);
+        pollTimer.current = setTimeout(() => { if (mounted.current) load(false); }, json.meta?.degraded ? 8000 : 3000);
       }
     } catch (e: any) {
       if (!mounted.current) return;
@@ -237,7 +238,15 @@ export function HotConceptsPanel({
             <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-amber-500/5 border-amber-500/20 text-amber-600 dark:text-amber-400">
               每日涨幅前八
             </Badge>
-            {incomplete && (
+            {data?.meta?.degraded ? (
+              <span
+                className="flex items-center gap-1 text-[10px] text-muted-foreground"
+                title="东财数据源暂时不可用（限流），当前为本地缓存快照：历史列完整，今日列口径为最近一次成功抓取；点击刷新可重试实时数据"
+              >
+                <AlertTriangle className="w-3 h-3 shrink-0 text-amber-500" />
+                缓存降级
+              </span>
+            ) : incomplete && (
               <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 后台补全中 {knownRatio}%

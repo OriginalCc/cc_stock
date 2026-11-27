@@ -55,6 +55,7 @@ interface HotConceptsResponse {
     complete: boolean;      // 候选与已收录板块是否全部就绪
     warmupRunning: boolean;
     daysBack: number;       // 实际覆盖交易日数
+    degraded?: boolean;     // true = 东财不可用，降级为本地缓存快照（前端显示降级徽章 + 拉长轮询）
   };
   error?: string;
 }
@@ -330,9 +331,10 @@ function kickWarmup() {
 
 // ── 排名计算 ────────────────────────────────────────────
 
-function buildResponse(list: Map<string, ListRow>, daysBackReq: number): HotConceptsResponse {
+function buildResponse(list: Map<string, ListRow>, daysBackReq: number, opts?: { todayFromSnapshot?: boolean }): HotConceptsResponse {
   const todayStr = beijingToday();
-  const todayTrading = !isWeekend(todayStr) && list.size > 0;
+  // todayFromSnapshot=false（降级且无快照）→ 今日列从历史缓存的今日 K 渲染（最近一次 warmup 的盘中快照）
+  const todayTrading = !isWeekend(todayStr) && list.size > 0 && opts?.todayFromSnapshot !== false;
 
   // 交易日窗口：缓存条目日期并集 ∪ 今日
   const dateSet = new Set<string>();
@@ -439,6 +441,37 @@ function buildResponse(list: Map<string, ListRow>, daysBackReq: number): HotConc
 
 // ── GET Handler ────────────────────────────────────────
 
+/** 降级用虚拟清单：仅提供板块名映射（pct 全空 → 今日列自动回退到缓存今日 K） */
+function buildVirtualList(): Map<string, ListRow> {
+  const m = new Map<string, ListRow>();
+  for (const [code, e] of historyCache) {
+    m.set(code, { code, name: e.name || code, pct: null, volume: null, amount: null, gain5d: null, mainNet: null });
+  }
+  return m;
+}
+
+/**
+ * 东财限流/网络故障降级：历史日 K 条目永不变化，磁盘缓存足以完整渲染近 5 日每日 Top8，
+ * 不应因实时清单失败而整页报错。
+ *   · 进程内有上一次成功清单（lastList）→ 今日列用该快照（口径 = 最近一次成功抓取）
+ *   · 无 lastList（冷启动即限流）→ 虚拟清单 + 缓存中的今日 K
+ * 返回 null 表示缓存也不足以渲染（调用方继续走原有报错路径）。
+ */
+function buildDegradedResponse(daysBackReq: number, reason: string): HotConceptsResponse | null {
+  if (historyCache.size === 0) return null;
+  const hasSnapshot = !!lastList && lastList.size > 0;
+  const list = hasSnapshot ? lastList! : buildVirtualList();
+  const data = buildResponse(list, daysBackReq, { todayFromSnapshot: hasSnapshot });
+  if (data.perDay.every(d => d.items.length === 0)) return null; // 缓存也渲染不出任何列
+  return {
+    ...data,
+    success: true,
+    updatedAt: new Date().toISOString(),
+    meta: { ...data.meta, complete: false, warmupRunning: false, degraded: true },
+    error: `${reason}——已降级为本地缓存数据`,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const refresh = searchParams.get("refresh") === "1";
@@ -454,7 +487,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const list = await fetchConceptList();
-    if (list.size === 0) throw new Error("概念板块清单获取失败（东财限流？请稍后重试）");
+    if (list.size === 0) {
+      // 降级优先：磁盘/内存历史足以渲染近 5 日热点，不要因实时清单失败整页报错
+      const degraded = buildDegradedResponse(daysBackReq, "概念板块清单获取失败（东财限流？）");
+      if (degraded) return NextResponse.json(degraded, { headers: { "Cache-Control": "no-store" } });
+      throw new Error("概念板块清单获取失败（东财限流？请稍后重试）");
+    }
     lastList = list;
 
     kickWarmup();
@@ -474,6 +512,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("hot-concepts API error:", error?.message || error);
+    // 降级优先（同上）：能渲染就渲染缓存快照，不能才报错
+    const degraded = buildDegradedResponse(daysBackReq, error?.message || "东财数据获取失败");
+    if (degraded) return NextResponse.json(degraded, { headers: { "Cache-Control": "no-store" } });
     return NextResponse.json(
       {
         success: false,

@@ -72,3 +72,6 @@ server.log
 *.png
 /tool-results/
 /dev.log
+
+# runtime data caches (server-side snapshots, not source)
+/.cache/
