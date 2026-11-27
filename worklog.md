@@ -2333,3 +2333,29 @@ Work Log:
 - 涉及文件：src/lib/concept-categories.ts（新增）、scripts/dump-em-boards.ts（新增）、
   scripts/validate-concept-categories.ts（新增）、hot-concepts-panel.tsx、
   limit-up-pullback-screener.tsx、src/app/page.tsx（header 溢出修复）
+
+## Task 58: 每日热点主题归类（每个日期列内聚合「当日主线」）
+- 用户诉求：把近 5 日热点概念中**每天**的热点概念进行热点主题归类（此前 Task 57 只有
+  全期聚合行 + 概念色点，单日主线仍需自己按色点数出来）。
+- 实现（hot-concepts-panel.tsx）：
+  - 新增 perDayThemes memo：单日 Top8 概念按 classifyConcept 大类归并 → {id,name,count}[]，
+    按概念数降序（同数按名称 zh-CN 排序）；与全期聚合 themeChips 共享归类引擎，零新增请求
+  - 每个日期列在日期头与概念列表之间插入主题 chips 行：类别色点 + 大类名 + ×概念数，
+    点击 = 与顶部聚合行一致的整类筛选联动（toggleCategory，aria-pressed 激活态同步高亮
+    顶部聚合 chip 与筛选行归类徽章）；未接回调时不可点
+  - 窄列防噪：MAX_DAY_THEME_CHIPS=4，超出折叠为 +N（悬停 title 列出其余主题 明细）；
+    data-testid=day-themes-{date} 供测试定位；加载骨架屏高度 104→128px 对齐真实列
+  - 语义：日期列保持涨幅名次原序（不重排概念），主题行只做聚合摘要——rank 语义与
+    「当日主线」两全
+- 实测数据（mock 东财限流窗口验证 UI，数据为真实缓存 hot2.json）：
+  - 11/23 机器人·智造×3 人工智能×3 环保·公用×1 消费电子×1；11/25 医药医疗×6 消费×2
+    （正是用户举例的 流感/独家药品/特色药→医药 场景）；11/27 平台生态×3 人工智能×2
+    半导体×1 金融×1 +1（折叠生效，title=其余主题：数字经济×1）
+  - 点 11/25「医药医疗×6」→ chip amber ring + aria-pressed=true + 顶部聚合行同步高亮 +
+    筛选行「归类「医药医疗」」徽章 + 整类匹配 11 只（与 Task 57 交叉验证一致）；
+    再点取消恢复 20 条；点 11/24「消费电子×4」→ 顶部聚合行显示 消费电子×6（全期口径，
+    单日口径 ×4 各自正确）
+  - 控制台 0 错误；390px 移动端无横向溢出（chips 列内换行）；lint 通过
+- 备注：验证时东财概念清单接口正处限流窗口（面板 error 态 + 重试按钮渲染正常），
+  用 agent-browser network route 注入真实缓存响应完成 UI 验证后已 unroute 清理。
+- 涉及文件：src/components/hot-concepts-panel.tsx

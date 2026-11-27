@@ -62,6 +62,9 @@ interface HotConceptsData {
   error?: string;
 }
 
+/** 每日主题 chips 上限：窄列内超出折叠为 +N（悬停 title 可见全部） */
+const MAX_DAY_THEME_CHIPS = 4;
+
 const RANK_STYLES = [
   "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40", // 1
   "bg-muted text-foreground/80 border-border",                               // 2
@@ -169,6 +172,25 @@ export function HotConceptsPanel({
   const dayColumns = useMemo(() => (data ? [...data.perDay] : []), [data]); // 日期从小到大（升序）
   const freqChips = useMemo(() => (data?.frequency || []).filter(f => f.count >= 2).slice(0, 5), [data]);
 
+  // 每日主题归类：单日 Top8 概念按大类归并（如 流感/独家药品/特色药 → 医药×6 · 消费×2），
+  // 让「当天热点是什么」在每个日期列内一眼可读；排序按概念数降序，超出 MAX_DAY_THEME_CHIPS 折叠
+  const perDayThemes = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; count: number }[]>();
+    if (!data) return m;
+    for (const d of data.perDay) {
+      const seen = new Map<string, number>();
+      for (const it of d.items) {
+        const cid = classifyConcept(it.name);
+        seen.set(cid, (seen.get(cid) || 0) + 1);
+      }
+      const arr = [...seen.entries()]
+        .map(([id, count]) => ({ id, name: getConceptCategory(id).name, count }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh-CN"));
+      m.set(d.date, arr);
+    }
+    return m;
+  }, [data]);
+
   // 热点主题聚合：把 5 日榜单出现过的概念按大类归并（如 流感/独家药品/特色药 → 医药），
   // 排序按期内上榜概念数降序，一眼看出主线；点击大类可整类筛选个股
   const themeChips = useMemo(() => {
@@ -251,10 +273,10 @@ export function HotConceptsPanel({
         </div>
 
         {collapsed ? null : loading && !data ? (
-          /* Loading skeleton */
+          /* Loading skeleton（高度对齐真实列：日期头 + 主题行 + 8 条概念） */
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-[104px] rounded-lg" />
+              <Skeleton key={i} className="h-[128px] rounded-lg" />
             ))}
           </div>
         ) : error && !data ? (
@@ -305,9 +327,13 @@ export function HotConceptsPanel({
               </div>
             )}
 
-            {/* 5 日榜单（日期从早到晚，今日在最右） */}
+            {/* 5 日榜单（日期从早到晚，今日在最右；每日列内主题归类 chips） */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
-              {dayColumns.map(d => (
+              {dayColumns.map(d => {
+                const dayThemes = perDayThemes.get(d.date) ?? [];
+                const shownThemes = dayThemes.slice(0, MAX_DAY_THEME_CHIPS);
+                const restThemes = dayThemes.length - shownThemes.length;
+                return (
                 <div key={d.date} className="rounded-lg border border-border/60 bg-muted/20 p-2.5 min-w-0">
                   <div className="flex items-center justify-between gap-1 mb-1.5">
                     <span className="text-xs font-semibold text-foreground/90">{d.date.slice(5).replace("-", "/")}</span>
@@ -320,6 +346,42 @@ export function HotConceptsPanel({
                       <span className="text-[10px] text-muted-foreground">{d.weekday}</span>
                     </span>
                   </div>
+                  {shownThemes.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1.5" data-testid={`day-themes-${d.date}`}>
+                      {shownThemes.map(g => {
+                        const cat = getConceptCategory(g.id);
+                        const themeActive = selectedCategoryId === g.id;
+                        return (
+                          <Badge
+                            key={g.id}
+                            variant="outline"
+                            role={categoryClickable ? "button" : undefined}
+                            aria-pressed={categoryClickable ? themeActive : undefined}
+                            aria-label={`当日主题：${g.name}，${g.count} 个概念`}
+                            onClick={categoryClickable ? () => toggleCategory(g.id) : undefined}
+                            className={`h-[18px] px-1.5 py-0 text-[10px] gap-1 ${categoryClickable ? "cursor-pointer" : ""} ${
+                              themeActive
+                                ? "ring-1 ring-amber-500/60 bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400"
+                                : "bg-muted/50 border-border/50 text-muted-foreground hover:bg-accent/60"
+                            }`}
+                            title={`当日主题：${g.name}（${g.count} 个上榜概念）${categoryClickable ? `\n点击${themeActive ? "取消" : ""}按该大类整类筛选个股` : ""}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${cat.dot}`} aria-hidden />
+                            {g.name}
+                            <span className="font-semibold tabular-nums">×{g.count}</span>
+                          </Badge>
+                        );
+                      })}
+                      {restThemes > 0 && (
+                        <span
+                          className="inline-flex h-[18px] items-center px-0.5 text-[10px] text-muted-foreground/70"
+                          title={`其余主题：${dayThemes.slice(MAX_DAY_THEME_CHIPS).map(t => `${t.name}×${t.count}`).join("、")}`}
+                        >
+                          +{restThemes}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="space-y-1">
                     {d.items.length === 0 && (
                       <div className="text-[10px] text-muted-foreground py-1">数据补全中…</div>
@@ -364,7 +426,8 @@ export function HotConceptsPanel({
                     })}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* 频次摘要 + 口径说明 */}
