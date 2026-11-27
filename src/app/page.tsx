@@ -943,14 +943,14 @@ export default function StockTAssistant() {
       <style dangerouslySetInnerHTML={{ __html: SIGNAL_PULSE_CSS }} />
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-[1400px] mx-auto px-4 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 shrink-0">
-              <Zap className="h-6 w-6 text-primary" />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-2 shrink-0 min-w-0 max-w-full">
+              <Zap className="h-6 w-6 text-primary shrink-0" />
               <h1 className="text-lg font-bold hidden sm:block">做T助手</h1>
               <Badge variant="outline" className="text-xs hidden sm:flex">A股</Badge>
-              <div className="flex items-center border border-border rounded-md overflow-hidden ml-1">
+              <div className="flex items-center border border-border rounded-md overflow-hidden ml-1 overflow-x-auto max-w-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {(["limit-up-pullback", "t-assistant", "screener", "low-open", "intraday-screener", "sector-rotation", "early-screen", "baota-deploy"] as const).map((mode) => (
-                  <button key={mode} onClick={() => { setPageMode(mode); setScreenerSubView("screener"); }} className={`px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1 ${pageMode === mode ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}>
+                  <button key={mode} onClick={() => { setPageMode(mode); setScreenerSubView("screener"); }} className={`px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1 shrink-0 ${pageMode === mode ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}>
                     {mode === "t-assistant" && "做T"}
                     {mode === "screener" && <><Filter className="w-3 h-3" />选股</>}
                     {mode === "intraday-screener" && <><Activity className="w-3 h-3" />分时选股</>}
@@ -963,7 +963,7 @@ export default function StockTAssistant() {
                 ))}
               </div>
             </div>
-            <div className="flex-1 max-w-md relative">
+            <div className="flex-1 min-w-[200px] max-w-md relative">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input value={searchQuery} onChange={(e) => { handleSearch(e.target.value); setShowSearch(true); }} onFocus={() => setShowSearch(true)} placeholder="搜索A股代码或名称..." className="pl-9 pr-8 h-9" />
@@ -982,7 +982,7 @@ export default function StockTAssistant() {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <div className="hidden lg:flex items-center gap-1">
                 {menuStocks.map((s) => (<Button key={s.symbol} variant={mounted && symbol === s.symbol ? "default" : "ghost"} size="sm" className="h-7 text-xs px-2" onClick={() => handleSelectStock(s.symbol)}>{s.name}</Button>))}
               </div>

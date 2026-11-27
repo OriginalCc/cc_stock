@@ -78,6 +78,7 @@ import { cachedFetch, getCachedData, isCacheFresh } from "@/lib/client-cache";
 import { PullbackCommonality } from "@/components/pullback-commonality";
 import { HotConceptsPanel } from "@/components/hot-concepts-panel";
 import { extractConceptTokens } from "@/lib/concept-tokens";
+import { classifyConcept, getConceptCategory } from "@/lib/concept-categories";
 import {
   buildExt,
   buildSectorStats,
@@ -2774,24 +2775,48 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
   // Selected row symbol (keyboard navigation highlight)
   const [selectedRowSymbol, setSelectedRowSymbol] = useState<string | null>(null);
 
-  // 概念筛选（关键词模式）：两个入口 —— ①点击「近 5 日热点概念」面板概念（填入完整
-  // 概念名，包含匹配语义下等价旧精确匹配）②自由输入模糊关键词（如「医疗」命中概念名
-  // 含「医疗」的全部个股）；空格分隔多关键词，任一命中即入选
+  // 概念筛选（两种互斥模式）：
+  // ① 关键词模式 conceptKeyword：面板点击填入完整概念名 / 自由输入模糊词，
+  //    概念名包含匹配 + 自动分词扩展，多词空格分隔任一命中
+  // ② 归类模式 conceptCategory：面板「热点主题」大类点击（如 医药医疗），
+  //    个股任一概念归类命中即入选，比单一概念更宽的整类筛选口径
   const [conceptKeyword, setConceptKeyword] = useState<string | null>(null);
+  const [conceptCategory, setConceptCategory] = useState<string | null>(null);
   const handleSelectHotConcept = useCallback((c: string | null) => {
     setConceptKeyword(c);
+    setConceptCategory(null);
+    setCurrentPage(1);
+  }, []);
+  const handleSelectHotCategory = useCallback((id: string | null) => {
+    setConceptCategory(id);
+    setConceptKeyword(null);
     setCurrentPage(1);
   }, []);
   const handleConceptKeywordChange = useCallback((v: string) => {
     setConceptKeyword(v || null);
+    setConceptCategory(null);
     setCurrentPage(1);
   }, []);
+
+  // 当前激活的归类元信息（null = 未按大类筛选）
+  const conceptCategoryInfo = useMemo(
+    () => (conceptCategory ? getConceptCategory(conceptCategory) : null),
+    [conceptCategory]
+  );
 
   // 关键词分词（空格/竖线/逗号等分隔，任一命中 OR 语义）
   const conceptKeywords = useMemo(
     () => (conceptKeyword ?? "").trim().split(/[\s|/、,，]+/).filter(Boolean),
     [conceptKeyword]
   );
+
+  // 关键词模式下的归类提示：单一关键词命中一个大类时，提示可切换为整类筛选
+  // （如输入「医疗」→ 可一键切换到「医药医疗」整类口径；其他/未知类不提示）
+  const keywordCategoryHint = useMemo(() => {
+    if (conceptKeywords.length !== 1 || conceptCategory) return null;
+    const cat = getConceptCategory(classifyConcept(conceptKeywords[0]));
+    return cat.id === "other" ? null : cat;
+  }, [conceptKeywords, conceptCategory]);
 
   // 概念词表（候选池全部个股的贴切概念名）：数据驱动分词的形态素来源
   const conceptVocab = useMemo(() => {
@@ -3123,8 +3148,16 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         );
       });
     }
+    // 概念归类模式：个股任一概念归类命中该大类即入选（如「医药医疗」→
+    // 中药概念/创新药/生物疫苗…整族命中，比单一概念更宽的口径）
+    if (conceptCategory) {
+      base = base.filter(s => {
+        const names = s.concepts?.length ? s.concepts : s.concept ? [s.concept] : [];
+        return names.some(c => classifyConcept(c) === conceptCategory);
+      });
+    }
     return base;
-  }, [filteredStocks, histogramBins, conceptKeywordTokens]);
+  }, [filteredStocks, histogramBins, conceptKeywordTokens, conceptCategory]);
 
   // isDefaultFilters / activePreset use the live `filters` (draft) for instant UI feedback
   const isDefaultFilters = useMemo(
@@ -3646,16 +3679,18 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         </Collapsible>
       </Card>
 
-      {/* ── 近 5 日热点概念（每日涨幅前八，板块共振的市况参照；点击概念可筛选下方股票） ── */}
+      {/* ── 近 5 日热点概念（每日涨幅前八，板块共振的市况参照；点击概念可筛选下方股票，点击热点主题按大类整类筛选） ── */}
       <HotConceptsPanel
         selectedConcept={conceptKeyword}
         onSelectConcept={handleSelectHotConcept}
+        selectedCategoryId={conceptCategory}
+        onSelectCategory={handleSelectHotCategory}
       />
 
-      {/* ── 概念筛选行（常驻：面板点击填入完整概念名 / 关键词模糊匹配） ── */}
+      {/* ── 概念筛选行（常驻：面板点击填入完整概念名 / 关键词模糊匹配 / 热点主题大类整类筛选） ── */}
       <div
         className={`flex items-center justify-between flex-wrap gap-2 rounded-lg border px-3 py-2 ${
-          conceptKeywords.length > 0
+          conceptKeywords.length > 0 || conceptCategoryInfo
             ? "border-amber-500/30 bg-amber-500/5"
             : "border-border/50 bg-background"
         }`}
@@ -3663,7 +3698,7 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
         <div className="flex items-center gap-2 text-xs flex-wrap min-w-0">
           <Flame
             className={`w-3.5 h-3.5 shrink-0 ${
-              conceptKeywords.length > 0 ? "text-amber-500" : "text-muted-foreground/50"
+              conceptKeywords.length > 0 || conceptCategoryInfo ? "text-amber-500" : "text-muted-foreground/50"
             }`}
           />
           <span className="text-muted-foreground shrink-0">概念筛选</span>
@@ -3675,39 +3710,71 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
             aria-label="概念关键词筛选"
           />
           <span className="text-[11px] text-muted-foreground">
-            概念名包含匹配 + 长词自动分词，多词空格分隔任一命中；点击上方热点概念快速填入
+            概念名包含匹配 + 长词自动分词，多词空格分隔任一命中；点击上方热点概念快速填入，或点「热点主题」按大类整类筛选
           </span>
         </div>
-        {conceptKeywords.length > 0 && (
+        {(conceptKeywords.length > 0 || conceptCategoryInfo) && (
           <div className="flex items-center gap-2 text-xs flex-wrap">
-            <Badge
-              variant="outline"
-              className="bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 max-w-[220px] truncate"
-            >
-              {conceptKeyword}
-            </Badge>
-            {conceptTokenDisplay.length > 0 && (
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                自动分词
-                {conceptTokenDisplay.map(t => (
-                  <Badge
-                    key={t}
+            {conceptCategoryInfo ? (
+              <>
+                <Badge
+                  variant="outline"
+                  className="bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 gap-1.5 max-w-[260px]"
+                >
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${conceptCategoryInfo.dot}`} aria-hidden />
+                  归类「{conceptCategoryInfo.name}」
+                </Badge>
+                <span className="text-[11px] text-muted-foreground">
+                  整类匹配 · <span className="font-mono font-semibold text-foreground">{displayedStocks.length}</span> 只（与其他筛选条件叠加）
+                </span>
+              </>
+            ) : (
+              <>
+                <Badge
+                  variant="outline"
+                  className="bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 max-w-[220px] truncate"
+                >
+                  {conceptKeyword}
+                </Badge>
+                {conceptTokenDisplay.length > 0 && (
+                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    自动分词
+                    {conceptTokenDisplay.map(t => (
+                      <Badge
+                        key={t}
+                        variant="outline"
+                        className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground"
+                      >
+                        {t}
+                      </Badge>
+                    ))}
+                  </span>
+                )}
+                {keywordCategoryHint && (
+                  <Button
                     variant="outline"
-                    className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] gap-1 text-muted-foreground"
+                    onClick={() => handleSelectHotCategory(keywordCategoryHint.id)}
+                    title={`「${conceptKeyword}」属于大类「${keywordCategoryHint.name}」\n切换为整类匹配（命中该大类下全部概念，口径更宽）`}
                   >
-                    {t}
-                  </Badge>
-                ))}
-              </span>
+                    <Layers className="w-3 h-3" />
+                    按大类「{keywordCategoryHint.name}」筛选
+                  </Button>
+                )}
+                <span className="text-[11px] text-muted-foreground">
+                  匹配 <span className="font-mono font-semibold text-foreground">{displayedStocks.length}</span> 只（与其他筛选条件叠加）
+                </span>
+              </>
             )}
-            <span className="text-[11px] text-muted-foreground">
-              匹配 <span className="font-mono font-semibold text-foreground">{displayedStocks.length}</span> 只（与其他筛选条件叠加）
-            </span>
             <Button
               variant="outline"
               size="sm"
               className="h-7 text-xs gap-1 shrink-0"
-              onClick={() => handleConceptKeywordChange("")}
+              onClick={() => {
+                if (conceptCategoryInfo) handleSelectHotCategory(null);
+                else handleConceptKeywordChange("");
+              }}
             >
               <X className="w-3 h-3" />
               清除
@@ -4065,24 +4132,31 @@ export const LimitUpPullbackScreener = React.memo(function LimitUpPullbackScreen
           <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <Filter className="w-8 h-8 mb-2" />
             <p className="text-sm font-medium text-foreground">
-              {conceptKeyword != null
+              {conceptCategoryInfo
+                ? `概念归类「${conceptCategoryInfo.name}」下无符合当前条件的股票`
+                : conceptKeyword != null
                 ? `概念关键词「${conceptKeyword}」下无符合当前条件的股票`
                 : filteredStocks.length > 0 && histogramBins.length > 0
                 ? "当前直方图选中区间无股票"
                 : "当前筛选条件下无结果"}
             </p>
             <p className="text-xs mt-1">
-              {conceptKeyword != null
+              {conceptCategoryInfo
+                ? `已按候选股票的概念大类整类匹配（${filteredStocks.length} 只候选），可清除概念筛选或放宽其他条件`
+                : conceptKeyword != null
                 ? `已按 ${filteredStocks.length} 只候选股票的概念名包含匹配与自动分词扩展（多词任一命中），可清除概念筛选或放宽其他条件`
                 : filteredStocks.length > 0 && histogramBins.length > 0
                 ? `已筛选出 ${filteredStocks.length} 只，但未选中任何回踩深度区间`
                 : `原始数据 ${result.stocks.length} 只，可尝试降低回踩深度阈值或重置筛选`}
             </p>
-            {conceptKeyword != null ? (
+            {conceptCategoryInfo || conceptKeyword != null ? (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleSelectHotConcept(null)}
+                onClick={() => {
+                  if (conceptCategoryInfo) handleSelectHotCategory(null);
+                  else handleSelectHotConcept(null);
+                }}
                 className="mt-3 h-7 text-xs gap-1"
               >
                 <X className="w-3 h-3" />

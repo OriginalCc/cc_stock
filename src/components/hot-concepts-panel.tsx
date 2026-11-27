@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { classifyConcept, getConceptCategory } from "@/lib/concept-categories";
 import {
   Flame,
   RefreshCw,
@@ -12,6 +13,7 @@ import {
   ChevronUp,
   AlertTriangle,
   Loader2,
+  Layers,
 } from "lucide-react";
 
 // ── 近 5 日热点概念面板（每日概念板块涨幅前八） ─────────────────
@@ -94,9 +96,18 @@ interface HotConceptsPanelProps {
   selectedConcept?: string | null;
   /** 点击概念条目回调（传 null 表示取消选中） */
   onSelectConcept?: (concept: string | null) => void;
+  /** 当前选中的概念大类 id（主题聚合行联动，null/undefined = 未选） */
+  selectedCategoryId?: string | null;
+  /** 点击主题大类回调（传 null 表示取消选中） */
+  onSelectCategory?: (id: string | null) => void;
 }
 
-export function HotConceptsPanel({ selectedConcept = null, onSelectConcept }: HotConceptsPanelProps) {
+export function HotConceptsPanel({
+  selectedConcept = null,
+  onSelectConcept,
+  selectedCategoryId = null,
+  onSelectCategory,
+}: HotConceptsPanelProps) {
   const [data, setData] = useState<HotConceptsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -157,6 +168,24 @@ export function HotConceptsPanel({ selectedConcept = null, onSelectConcept }: Ho
 
   const dayColumns = useMemo(() => (data ? [...data.perDay] : []), [data]); // 日期从小到大（升序）
   const freqChips = useMemo(() => (data?.frequency || []).filter(f => f.count >= 2).slice(0, 5), [data]);
+
+  // 热点主题聚合：把 5 日榜单出现过的概念按大类归并（如 流感/独家药品/特色药 → 医药），
+  // 排序按期内上榜概念数降序，一眼看出主线；点击大类可整类筛选个股
+  const themeChips = useMemo(() => {
+    if (!data) return [];
+    const seen = new Map<string, { id: string; name: string; concepts: string[] }>();
+    for (const d of data.perDay) {
+      for (const it of d.items) {
+        const cid = classifyConcept(it.name);
+        const g = seen.get(cid) ?? { id: cid, name: getConceptCategory(cid).name, concepts: [] };
+        if (!g.concepts.includes(it.name)) g.concepts.push(it.name);
+        seen.set(cid, g);
+      }
+    }
+    return [...seen.values()].sort(
+      (a, b) => b.concepts.length - a.concepts.length || a.name.localeCompare(b.name, "zh-CN")
+    );
+  }, [data]);
   const incomplete = !!data && !data.meta.complete;
   const knownRatio = data && data.meta.candidates > 0
     ? Math.min(100, Math.round((data.meta.boardsKnown / data.meta.candidates) * 100))
@@ -167,7 +196,13 @@ export function HotConceptsPanel({ selectedConcept = null, onSelectConcept }: Ho
     if (!onSelectConcept) return;
     onSelectConcept(selectedConcept === name ? null : name);
   };
+  // 点击主题大类 → 通知父组件整类筛选/取消
+  const toggleCategory = (id: string) => {
+    if (!onSelectCategory) return;
+    onSelectCategory(selectedCategoryId === id ? null : id);
+  };
   const clickable = typeof onSelectConcept === "function";
+  const categoryClickable = typeof onSelectCategory === "function";
 
   return (
     <Card className="border-border/50 shadow-sm" data-testid="hot-concepts-panel">
@@ -237,6 +272,39 @@ export function HotConceptsPanel({ selectedConcept = null, onSelectConcept }: Ho
           <div className="mt-3 text-xs text-muted-foreground">暂无数据，请稍后刷新重试</div>
         ) : data ? (
           <>
+            {/* 热点主题聚合（概念归类）：同期同族概念归并成主线 */}
+            {themeChips.length > 0 && (
+              <div className="mt-3 flex items-center gap-1.5 flex-wrap" data-testid="theme-agg-row">
+                <span className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
+                  <Layers className="w-3.5 h-3.5 text-amber-500" />
+                  热点主题：
+                </span>
+                {themeChips.map(g => {
+                  const cat = getConceptCategory(g.id);
+                  const isActive = selectedCategoryId === g.id;
+                  return (
+                    <Badge
+                      key={g.id}
+                      variant="outline"
+                      role={categoryClickable ? "button" : undefined}
+                      aria-pressed={categoryClickable ? isActive : undefined}
+                      onClick={categoryClickable ? () => toggleCategory(g.id) : undefined}
+                      className={`h-6 px-2 py-0 text-[11px] gap-1.5 ${categoryClickable ? "cursor-pointer" : ""} ${
+                        isActive
+                          ? "ring-1 ring-amber-500/60 bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400"
+                          : "bg-muted/40 border-border/60 hover:bg-accent/60"
+                      }`}
+                      title={`${g.name}：期内 ${g.concepts.length} 个上榜概念（${g.concepts.slice(0, 6).join("、")}${g.concepts.length > 6 ? "…" : ""}）${categoryClickable ? `\n点击${isActive ? "取消" : ""}按该大类整类筛选个股` : ""}`}
+                    >
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${cat.dot}`} aria-hidden />
+                      {g.name}
+                      <span className="font-semibold tabular-nums">×{g.concepts.length}</span>
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
+
             {/* 5 日榜单（日期从早到晚，今日在最右） */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
               {dayColumns.map(d => (
@@ -259,6 +327,7 @@ export function HotConceptsPanel({ selectedConcept = null, onSelectConcept }: Ho
                     {d.items.map(it => {
                       const hot = appearCount.get(it.code) || 0;
                       const isActive = it.name === selectedConcept;
+                      const cat = getConceptCategory(classifyConcept(it.name));
                       return (
                         <button
                           type="button"
@@ -267,7 +336,7 @@ export function HotConceptsPanel({ selectedConcept = null, onSelectConcept }: Ho
                           disabled={!clickable}
                           aria-pressed={clickable ? isActive : undefined}
                           className={`flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors min-w-0 ${clickable ? "cursor-pointer" : "cursor-default"} ${isActive ? "bg-amber-500/15 ring-1 ring-amber-500/50" : "hover:bg-accent/60"}`}
-                          title={`${it.name}（${it.code}）\n当日 ${fmtPct(it.changePercent)} · 成交 ${it.amountYi} 亿${it.volRatio != null ? ` · 量能 ${it.volRatio}x` : ""}${hot >= 2 ? `\n近5日上榜 ${hot} 次` : ""}${clickable ? `\n点击${isActive ? "取消" : ""}筛选该概念` : ""}`}
+                          title={`${it.name}（${it.code}）· 归类：${cat.name}\n当日 ${fmtPct(it.changePercent)} · 成交 ${it.amountYi} 亿${it.volRatio != null ? ` · 量能 ${it.volRatio}x` : ""}${hot >= 2 ? `\n近5日上榜 ${hot} 次` : ""}${clickable ? `\n点击${isActive ? "取消" : ""}筛选该概念` : ""}`}
                         >
                           <span
                             className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] font-bold ${RANK_STYLES[it.rank - 1]}`}
@@ -275,6 +344,11 @@ export function HotConceptsPanel({ selectedConcept = null, onSelectConcept }: Ho
                           >
                             {it.rank}
                           </span>
+                          <span
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${cat.dot}`}
+                            aria-label={`归类：${cat.name}`}
+                            title={`归类：${cat.name}`}
+                          />
                           <span className={`flex-1 truncate text-xs font-medium ${isActive ? "text-amber-700 dark:text-amber-400" : ""}`}>{it.name}</span>
                           {hot >= 2 && (
                             <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-amber-600 dark:text-amber-400 shrink-0" title={`近5日上榜 ${hot} 次`}>
